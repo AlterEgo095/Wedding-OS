@@ -20,13 +20,15 @@ interface GuestData {
   invitationViewed: boolean
   invitationViewCount: number
   lastAccessAt: string | null
+  encryptedLink?: string
 }
 
 interface GuestAuthContextType {
   guest: GuestData | null
   authenticated: boolean
   loading: boolean
-  login: (code: string, firstName?: string, lastName?: string) => Promise<{ success: boolean; error?: string }>
+  login: (code: string, firstName?: string, lastName?: string) => Promise<{ success: boolean; error?: string; remainingAttempts?: number }>
+  loginWithLinkToken: (token: string) => Promise<{ success: boolean; error?: string }>
   logout: () => Promise<void>
   refresh: () => Promise<void>
 }
@@ -36,6 +38,7 @@ const GuestAuthContext = createContext<GuestAuthContextType>({
   authenticated: false,
   loading: true,
   login: async () => ({ success: false }),
+  loginWithLinkToken: async () => ({ success: false }),
   logout: async () => {},
   refresh: async () => {},
 })
@@ -90,7 +93,32 @@ export function GuestAuthProvider({ children }: { children: ReactNode }) {
         return { success: true }
       }
 
-      return { success: false, error: data.error || 'Erreur d\'authentification' }
+      return {
+        success: false,
+        error: data.error || 'Erreur d\'authentification',
+        remainingAttempts: data.remainingAttempts,
+      }
+    } catch {
+      return { success: false, error: 'Erreur de connexion au serveur' }
+    }
+  }, [])
+
+  const loginWithLinkToken = useCallback(async (linkToken: string) => {
+    try {
+      // Use the dedicated invite API route
+      const res = await fetch(`/api/guest/invite?token=${encodeURIComponent(linkToken)}`)
+      const data = await res.json()
+
+      if (res.ok && data.success) {
+        setGuest(data.guest)
+        setAuthenticated(true)
+        return { success: true }
+      }
+
+      return {
+        success: false,
+        error: data.error || 'Lien d\'invitation invalide',
+      }
     } catch {
       return { success: false, error: 'Erreur de connexion au serveur' }
     }
@@ -111,7 +139,7 @@ export function GuestAuthProvider({ children }: { children: ReactNode }) {
   }, [checkSession])
 
   return (
-    <GuestAuthContext.Provider value={{ guest, authenticated, loading, login, logout, refresh }}>
+    <GuestAuthContext.Provider value={{ guest, authenticated, loading, login, loginWithLinkToken, logout, refresh }}>
       {children}
     </GuestAuthContext.Provider>
   )

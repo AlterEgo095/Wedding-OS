@@ -62,9 +62,10 @@ function HomeContent() {
 
   const searchParams = useSearchParams()
   const codeParam = searchParams.get('code')
+  const inviteParam = searchParams.get('invite')
 
-  // Auto-authenticate with URL code param
-  const { guest, authenticated, loading: authLoading, login } = useGuestAuth()
+  // Auto-authenticate with URL params
+  const { guest, authenticated, loading: authLoading, login, loginWithLinkToken } = useGuestAuth()
 
   useEffect(() => {
     async function fetchData() {
@@ -112,12 +113,14 @@ function HomeContent() {
     fetchData()
   }, [])
 
-  // Auto-login with code from URL
+  // Auto-login with encrypted invite link token (priority over code param)
   useEffect(() => {
-    if (codeParam && !authenticated && !authLoading) {
+    if (inviteParam && !authenticated && !authLoading) {
+      loginWithLinkToken(inviteParam)
+    } else if (codeParam && !authenticated && !authLoading && !inviteParam) {
       login(codeParam)
     }
-  }, [codeParam, authenticated, authLoading, login])
+  }, [codeParam, inviteParam, authenticated, authLoading, login, loginWithLinkToken])
 
   return (
     <div className="min-h-screen flex flex-col">
