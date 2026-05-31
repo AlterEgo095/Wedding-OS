@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import Navigation from '@/components/Navigation'
 import HeroSection from '@/components/HeroSection'
 import CoupleGallery, { CoupleGallerySkeleton } from '@/components/CoupleGallery'
+import CouplePhotosSection from '@/components/CouplePhotosSection'
 import EventTimeline, { EventTimelineSkeleton } from '@/components/EventTimeline'
 import MapSection, { MapSectionSkeleton } from '@/components/MapSection'
 import Footer from '@/components/Footer'
@@ -147,6 +148,9 @@ function HomeContent() {
         ) : (
           /* ─── NOT AUTHENTICATED: Show public site + auth form ─── */
           <>
+            {/* Premium couple photos section */}
+            <CouplePhotosSection />
+
             {loading ? (
               <CoupleGallerySkeleton />
             ) : (

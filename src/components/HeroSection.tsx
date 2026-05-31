@@ -2,8 +2,8 @@
 
 import { useState, useEffect, useMemo } from 'react'
 import Image from 'next/image'
-import { motion, useScroll, useTransform } from 'framer-motion'
-import { Search, MailOpen } from 'lucide-react'
+import { motion, useScroll, useTransform, AnimatePresence } from 'framer-motion'
+import { Search, MailOpen, ChevronDown, Sparkles } from 'lucide-react'
 
 interface TimeLeft {
   days: number
@@ -39,6 +39,7 @@ function CountdownUnit({ value, label }: { value: number; label: string }) {
 export default function HeroSection() {
   const [settings, setSettings] = useState<Record<string, string>>({})
   const [timeLeft, setTimeLeft] = useState<TimeLeft>({ days: 0, hours: 0, minutes: 0, seconds: 0 })
+  const [currentBg, setCurrentBg] = useState(0)
   const { scrollY } = useScroll()
   const y = useTransform(scrollY, [0, 800], [0, 200])
   const bgScale = useTransform(scrollY, [0, 800], [1, 1.15])
@@ -49,11 +50,13 @@ export default function HeroSection() {
   const brideName = settings.bride_name || 'Hornella'
   const dateDisplay = settings.site_subtitle || 'Vendredi 26 Juin 2026'
 
-  // Stable wedding date string to prevent infinite re-renders
   const weddingDateStr = useMemo(
     () => `${settings.wedding_date || '2026-06-26'}T${settings.wedding_time || '14:00:00'}`,
     [settings.wedding_date, settings.wedding_time]
   )
+
+  // Background photos for crossfade
+  const bgPhotos = ['/couple-hero.png', '/couple-moment.jpeg']
 
   useEffect(() => {
     fetch('/api/settings')
@@ -66,15 +69,10 @@ export default function HeroSection() {
 
   useEffect(() => {
     const weddingDate = new Date(weddingDateStr)
-
     const calculateTimeLeft = (): TimeLeft => {
       const now = new Date()
       const difference = weddingDate.getTime() - now.getTime()
-
-      if (difference <= 0) {
-        return { days: 0, hours: 0, minutes: 0, seconds: 0 }
-      }
-
+      if (difference <= 0) return { days: 0, hours: 0, minutes: 0, seconds: 0 }
       return {
         days: Math.floor(difference / (1000 * 60 * 60 * 24)),
         hours: Math.floor((difference / (1000 * 60 * 60)) % 24),
@@ -82,60 +80,74 @@ export default function HeroSection() {
         seconds: Math.floor((difference / 1000) % 60),
       }
     }
-
     const tick = () => setTimeLeft(calculateTimeLeft())
     tick()
     const timer = setInterval(tick, 1000)
     return () => clearInterval(timer)
   }, [weddingDateStr])
 
+  // Auto-rotate background photos
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setCurrentBg(prev => (prev + 1) % bgPhotos.length)
+    }, 6000)
+    return () => clearInterval(interval)
+  }, [bgPhotos.length])
+
   return (
     <section
       id="accueil"
       className="relative min-h-screen flex items-center justify-center overflow-hidden"
     >
-      {/* ═══ Parallax Background ═══ */}
+      {/* ═══ Parallax Background with Photo Crossfade ═══ */}
       <motion.div
         style={{ y, scale: bgScale }}
         className="absolute inset-0 z-0 -top-20 -bottom-20"
       >
-        {/* Main couple photo as background */}
-        <div
-          className="absolute inset-0 bg-cover bg-center bg-no-repeat"
-          style={{
-            backgroundImage: `url('/upload/couple-photo-1.jpeg')`,
-          }}
-        />
-        {/* Dark cinematic overlay for readability */}
-        <div className="absolute inset-0 bg-gradient-to-b from-black/60 via-black/50 to-black/75" />
-        {/* Side vignette */}
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_40%,rgba(0,0,0,0.5)_100%)]" />
+        {/* Crossfading couple photos */}
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={currentBg}
+            initial={{ opacity: 0, scale: 1.05 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 2, ease: 'easeInOut' }}
+            className="absolute inset-0 bg-cover bg-center bg-no-repeat"
+            style={{
+              backgroundImage: `url('${bgPhotos[currentBg]}')`,
+            }}
+          />
+        </AnimatePresence>
+        {/* Cinematic dark overlay */}
+        <div className="absolute inset-0 bg-gradient-to-b from-black/65 via-black/55 to-black/80" />
+        {/* Side vignette for depth */}
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_30%,rgba(0,0,0,0.6)_100%)]" />
         {/* Warm gold tint overlay */}
         <div className="absolute inset-0 bg-gradient-to-br from-gold-dark/10 via-transparent to-rose-gold/10" />
       </motion.div>
 
       {/* ═══ Ambient Gold Particles ═══ */}
       <div className="absolute inset-0 z-[1] pointer-events-none overflow-hidden">
-        {[...Array(6)].map((_, i) => (
+        {[...Array(8)].map((_, i) => (
           <motion.div
             key={i}
-            className="absolute rounded-full bg-gold/25 dark:bg-gold-light/15"
+            className="absolute rounded-full bg-gold/20 dark:bg-gold-light/10"
             style={{
-              left: `${15 + i * 15}%`,
-              top: `${20 + (i % 3) * 25}%`,
+              left: `${10 + i * 12}%`,
+              top: `${15 + (i % 4) * 22}%`,
               width: `${1 + (i % 3)}px`,
               height: `${1 + (i % 3)}px`,
             }}
             animate={{
-              y: [-20, 20, -20],
-              opacity: [0.1, 0.5, 0.1],
-              scale: [1, 1.8, 1],
+              y: [-30, 30, -30],
+              opacity: [0.1, 0.4, 0.1],
+              scale: [1, 2, 1],
             }}
             transition={{
-              duration: 5 + i * 0.8,
+              duration: 6 + i * 0.7,
               repeat: Infinity,
               ease: 'easeInOut',
-              delay: i * 0.5,
+              delay: i * 0.4,
             }}
           />
         ))}
@@ -170,101 +182,113 @@ export default function HeroSection() {
           Nous nous marions
         </motion.p>
 
-        {/* ═══ Couple Photos ═══ */}
+        {/* ═══ Premium Couple Photo Showcase ═══ */}
         <motion.div
-          initial={{ opacity: 0, scale: 0.8 }}
+          initial={{ opacity: 0, scale: 0.85 }}
           animate={{ opacity: 1, scale: 1 }}
-          transition={{ duration: 1.2, delay: 0.7, ease: "easeOut" }}
-          className="relative flex items-center justify-center mb-10 sm:mb-12"
+          transition={{ duration: 1.4, delay: 0.7, ease: "easeOut" }}
+          className="relative flex items-center justify-center mb-10 sm:mb-14"
         >
-          {/* Josué Photo */}
-          <div className="relative z-[2]">
-            {/* Outer decorative ring */}
-            <div className="absolute -inset-3 rounded-full animate-spin-slow"
+          {/* Josué Photo - Elegant Rounded Frame */}
+          <motion.div
+            initial={{ opacity: 0, x: -30 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ duration: 1, delay: 0.9 }}
+            className="relative z-[2]"
+          >
+            {/* Outer rotating ring */}
+            <div className="absolute -inset-4 rounded-full animate-spin-slow"
               style={{
-                background: 'conic-gradient(from 0deg, transparent 0%, oklch(0.68 0.12 85 / 30%) 10%, transparent 20%, transparent 50%, oklch(0.68 0.12 85 / 30%) 60%, transparent 70%)',
+                background: 'conic-gradient(from 0deg, transparent 0%, oklch(0.68 0.12 85 / 25%) 8%, transparent 16%, transparent 48%, oklch(0.68 0.12 85 / 25%) 56%, transparent 64%)',
               }}
             />
-            {/* Gold border ring */}
-            <div className="absolute -inset-1.5 rounded-full bg-gradient-to-br from-gold via-gold-light to-rose-gold p-[2px]">
-              <div className="w-full h-full rounded-full bg-black/20" />
+            {/* Gold gradient border */}
+            <div className="absolute -inset-2 rounded-full bg-gradient-to-br from-gold via-gold-light to-rose-gold p-[2.5px]">
+              <div className="w-full h-full rounded-full bg-black/30" />
             </div>
-            {/* Photo container */}
-            <div className="relative w-28 h-28 sm:w-36 sm:h-36 md:w-44 md:h-44 rounded-full overflow-hidden border-2 border-gold/40 dark:border-gold-light/30 shadow-2xl shadow-black/50">
+            {/* Photo */}
+            <div className="relative w-32 h-32 sm:w-40 sm:h-40 md:w-48 md:h-48 rounded-full overflow-hidden border-[3px] border-gold/30 shadow-[0_0_40px_rgba(0,0,0,0.6),0_0_20px_oklch(0.68_0.12_85/20%)]">
               <Image
-                src="/upload/couple-photo-1.jpeg"
+                src="/couple-hero.png"
                 alt={groomName}
                 fill
-                className="object-cover"
+                className="object-cover object-top"
                 priority
-                sizes="(max-width: 640px) 112px, (max-width: 768px) 144px, 176px"
+                sizes="(max-width: 640px) 128px, (max-width: 768px) 160px, 192px"
               />
             </div>
-            {/* Name label */}
+            {/* Name */}
             <motion.p
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.8, delay: 1.5 }}
-              className="mt-4 font-display text-sm sm:text-base md:text-lg tracking-[0.15em] text-white/80 uppercase font-semibold"
+              transition={{ duration: 0.8, delay: 1.6 }}
+              className="mt-5 font-serif text-base sm:text-lg md:text-xl tracking-[0.12em] text-white/90 uppercase font-bold"
             >
               {groomName}
             </motion.p>
-          </div>
+          </motion.div>
 
-          {/* Heart / Ampersand between photos */}
+          {/* Heart / Ampersand */}
           <motion.div
             initial={{ opacity: 0, scale: 0 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ duration: 0.8, delay: 1.3, type: 'spring', stiffness: 200 }}
-            className="relative z-[3] mx-[-16px] sm:mx-[-20px] md:mx-[-24px] flex flex-col items-center"
+            className="relative z-[3] mx-[-18px] sm:mx-[-22px] md:mx-[-28px] flex flex-col items-center"
           >
-            <div className="relative w-12 h-12 sm:w-14 sm:h-14 md:w-16 md:h-16 rounded-full bg-gradient-to-br from-gold via-gold-light to-rose-gold flex items-center justify-center shadow-xl shadow-gold/30 animate-pulse-gold">
-              <span className="font-display text-xl sm:text-2xl md:text-3xl font-semibold text-background dark:text-background">
+            <div className="relative w-14 h-14 sm:w-16 sm:h-16 md:w-20 md:h-20 rounded-full bg-gradient-to-br from-gold via-gold-light to-rose-gold flex items-center justify-center shadow-[0_0_30px_oklch(0.68_0.12_85/40%)] animate-pulse-gold">
+              <span className="font-serif text-2xl sm:text-3xl md:text-4xl font-bold text-background dark:text-background">
                 &
               </span>
             </div>
+            <Sparkles className="absolute -top-2 -right-2 size-4 text-gold-light/60 animate-pulse" />
+            <Sparkles className="absolute -bottom-1 -left-2 size-3 text-rose-gold/50 animate-pulse" style={{ animationDelay: '0.5s' }} />
           </motion.div>
 
-          {/* Hornella Photo */}
-          <div className="relative z-[2]">
-            {/* Outer decorative ring */}
-            <div className="absolute -inset-3 rounded-full animate-spin-slow"
+          {/* Hornella Photo - Elegant Rounded Frame */}
+          <motion.div
+            initial={{ opacity: 0, x: 30 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ duration: 1, delay: 0.9 }}
+            className="relative z-[2]"
+          >
+            {/* Outer rotating ring */}
+            <div className="absolute -inset-4 rounded-full animate-spin-slow"
               style={{
-                background: 'conic-gradient(from 180deg, transparent 0%, oklch(0.72 0.08 30 / 30%) 10%, transparent 20%, transparent 50%, oklch(0.72 0.08 30 / 30%) 60%, transparent 70%)',
+                background: 'conic-gradient(from 180deg, transparent 0%, oklch(0.72 0.08 30 / 25%) 8%, transparent 16%, transparent 48%, oklch(0.72 0.08 30 / 25%) 56%, transparent 64%)',
               }}
             />
-            {/* Gold border ring */}
-            <div className="absolute -inset-1.5 rounded-full bg-gradient-to-br from-rose-gold via-gold-light to-gold p-[2px]">
-              <div className="w-full h-full rounded-full bg-black/20" />
+            {/* Rose-gold gradient border */}
+            <div className="absolute -inset-2 rounded-full bg-gradient-to-br from-rose-gold via-gold-light to-gold p-[2.5px]">
+              <div className="w-full h-full rounded-full bg-black/30" />
             </div>
-            {/* Photo container */}
-            <div className="relative w-28 h-28 sm:w-36 sm:h-36 md:w-44 md:h-44 rounded-full overflow-hidden border-2 border-rose-gold/40 dark:border-rose-gold/30 shadow-2xl shadow-black/50">
+            {/* Photo */}
+            <div className="relative w-32 h-32 sm:w-40 sm:h-40 md:w-48 md:h-48 rounded-full overflow-hidden border-[3px] border-rose-gold/30 shadow-[0_0_40px_rgba(0,0,0,0.6),0_0_20px_oklch(0.72_0.08_30/20%)]">
               <Image
-                src="/upload/couple-photo-2.png"
+                src="/couple-moment.jpeg"
                 alt={brideName}
                 fill
-                className="object-cover"
+                className="object-cover object-top"
                 priority
-                sizes="(max-width: 640px) 112px, (max-width: 768px) 144px, 176px"
+                sizes="(max-width: 640px) 128px, (max-width: 768px) 160px, 192px"
               />
             </div>
-            {/* Name label */}
+            {/* Name */}
             <motion.p
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.8, delay: 1.5 }}
-              className="mt-4 font-display text-sm sm:text-base md:text-lg tracking-[0.15em] text-white/80 uppercase font-semibold"
+              transition={{ duration: 0.8, delay: 1.6 }}
+              className="mt-5 font-serif text-base sm:text-lg md:text-xl tracking-[0.12em] text-white/90 uppercase font-bold"
             >
               {brideName}
             </motion.p>
-          </div>
+          </motion.div>
         </motion.div>
 
         {/* ═══ Names - Large gold gradient ═══ */}
         <motion.h1
           initial={{ opacity: 0, y: 30 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 1.4, delay: 1.0, ease: "easeOut" }}
+          transition={{ duration: 1.4, delay: 1.2, ease: "easeOut" }}
           className="font-serif text-5xl sm:text-6xl md:text-7xl lg:text-8xl font-bold mb-3 text-shadow-elegant"
         >
           <span className="gold-gradient">{groomName}</span>
@@ -278,7 +302,7 @@ export default function HeroSection() {
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 1, delay: 1.4 }}
+          transition={{ duration: 1, delay: 1.6 }}
           className="mt-6 mb-12"
         >
           <div className="flex items-center justify-center gap-3 mb-4">
@@ -296,17 +320,16 @@ export default function HeroSection() {
           </div>
         </motion.div>
 
-        {/* ═══ Countdown Timer - Premium Enhanced ═══ */}
+        {/* ═══ Countdown Timer ═══ */}
         <motion.div
           initial={{ opacity: 0, y: 30 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 1.2, delay: 1.7 }}
+          transition={{ duration: 1.2, delay: 1.9 }}
         >
-          {/* Countdown label */}
           <motion.p
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            transition={{ delay: 2.0, duration: 0.8 }}
+            transition={{ delay: 2.2, duration: 0.8 }}
             className="font-display text-sm sm:text-base md:text-lg tracking-[0.3em] uppercase text-white/50 mb-6 font-semibold"
           >
             Compte à rebours
@@ -327,7 +350,7 @@ export default function HeroSection() {
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 1, delay: 2.0 }}
+          transition={{ duration: 1, delay: 2.2 }}
           className="flex flex-col sm:flex-row items-center justify-center gap-4 mt-12"
         >
           <a
@@ -359,7 +382,7 @@ export default function HeroSection() {
       <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
-        transition={{ delay: 2.5, duration: 1 }}
+        transition={{ delay: 2.8, duration: 1 }}
         className="absolute bottom-8 left-1/2 -translate-x-1/2 z-20"
       >
         <motion.div
