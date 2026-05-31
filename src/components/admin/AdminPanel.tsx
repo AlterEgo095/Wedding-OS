@@ -4,7 +4,6 @@ import { useState, useCallback } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import Image from 'next/image'
 import { Button } from '@/components/ui/button'
-import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
 import {
   LayoutDashboard, Users, Grid3X3, Image as ImageIcon, Clock, Shield, Settings, LogOut,
@@ -32,6 +31,7 @@ interface AuthUser {
 interface AdminPanelProps {
   isOpen: boolean
   onClose: () => void
+  onAdminStateChange?: (isLoggedIn: boolean) => void
 }
 
 type TabId = 'dashboard' | 'guests' | 'tables' | 'media' | 'timeline' | 'users' | 'settings' | 'access-logs'
@@ -54,7 +54,7 @@ const NAV_ITEMS: NavItem[] = [
   { id: 'settings', label: 'Paramètres', icon: Settings, superAdminOnly: true },
 ]
 
-export default function AdminPanel({ isOpen, onClose }: AdminPanelProps) {
+export default function AdminPanel({ isOpen, onClose, onAdminStateChange }: AdminPanelProps) {
   // Use lazy initializer to read from localStorage on client only
   const [token, setToken] = useState<string | null>(() => {
     if (typeof window !== 'undefined') {
@@ -79,15 +79,17 @@ export default function AdminPanel({ isOpen, onClose }: AdminPanelProps) {
   const handleLogin = useCallback((newToken: string, newUser: AuthUser) => {
     setToken(newToken)
     setUser(newUser)
-  }, [])
+    onAdminStateChange?.(true)
+  }, [onAdminStateChange])
 
   const handleLogout = useCallback(() => {
     setToken(null)
     setUser(null)
     localStorage.removeItem('admin_token')
     localStorage.removeItem('admin_user')
+    onAdminStateChange?.(false)
     toast.success('Déconnexion réussie')
-  }, [])
+  }, [onAdminStateChange])
 
   const handleTabChange = useCallback((tabId: TabId) => {
     setActiveTab(tabId)
@@ -162,7 +164,7 @@ export default function AdminPanel({ isOpen, onClose }: AdminPanelProps) {
                 <div className="relative shrink-0">
                   <div className="w-10 h-10 rounded-full gold-border p-[2px] overflow-hidden">
                     <Image
-                      src="/upload/couple-photo-1.jpeg"
+                      src="/uploads/couple-photo-1.jpeg"
                       alt="Josué & Hornella"
                       width={40}
                       height={40}
@@ -189,7 +191,7 @@ export default function AdminPanel({ isOpen, onClose }: AdminPanelProps) {
               <Separator className="bg-white/10" />
 
               {/* Nav Items */}
-              <ScrollArea className="flex-1 py-2">
+              <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar py-2">
                 <nav className="px-2 space-y-1">
                   {visibleNavItems.map((item) => {
                     const isActive = activeTab === item.id
@@ -215,7 +217,7 @@ export default function AdminPanel({ isOpen, onClose }: AdminPanelProps) {
                     )
                   })}
                 </nav>
-              </ScrollArea>
+              </div>
 
               <Separator className="bg-white/10" />
 
@@ -268,7 +270,7 @@ export default function AdminPanel({ isOpen, onClose }: AdminPanelProps) {
                       <div className="flex items-center gap-3">
                         <div className="w-10 h-10 rounded-full gold-border p-[2px] overflow-hidden">
                           <Image
-                            src="/upload/couple-photo-1.jpeg"
+                            src="/uploads/couple-photo-1.jpeg"
                             alt="Josué & Hornella"
                             width={40}
                             height={40}
@@ -289,7 +291,7 @@ export default function AdminPanel({ isOpen, onClose }: AdminPanelProps) {
 
                     <Separator className="bg-white/10" />
 
-                    <ScrollArea className="flex-1 py-2">
+                    <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar py-2">
                       <nav className="px-2 space-y-1">
                         {visibleNavItems.map((item) => {
                           const isActive = activeTab === item.id
@@ -309,7 +311,7 @@ export default function AdminPanel({ isOpen, onClose }: AdminPanelProps) {
                           )
                         })}
                       </nav>
-                    </ScrollArea>
+                    </div>
 
                     <Separator className="bg-white/10" />
 
@@ -331,7 +333,7 @@ export default function AdminPanel({ isOpen, onClose }: AdminPanelProps) {
             </AnimatePresence>
 
             {/* Main Content Area */}
-            <div className="flex-1 flex flex-col min-w-0">
+            <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
               {/* Top Bar */}
               <header className="h-14 shrink-0 flex items-center gap-3 px-4 border-b border-white/10 bg-white/[0.02]">
                 <Button
@@ -364,8 +366,8 @@ export default function AdminPanel({ isOpen, onClose }: AdminPanelProps) {
                 </div>
               </header>
 
-              {/* Content */}
-              <ScrollArea className="flex-1">
+              {/* Content — Scrollable area */}
+              <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar">
                 <AnimatePresence mode="wait">
                   {token && user ? (
                     <motion.div
@@ -374,6 +376,7 @@ export default function AdminPanel({ isOpen, onClose }: AdminPanelProps) {
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0, y: -10 }}
                       transition={{ duration: 0.2 }}
+                      className="min-h-full"
                     >
                       {renderContent()}
                     </motion.div>
@@ -383,13 +386,13 @@ export default function AdminPanel({ isOpen, onClose }: AdminPanelProps) {
                       initial={{ opacity: 0 }}
                       animate={{ opacity: 1 }}
                       exit={{ opacity: 0 }}
-                      className="min-h-full"
+                      className="min-h-full flex items-center justify-center"
                     >
                       <LoginForm onLogin={handleLogin} />
                     </motion.div>
                   )}
                 </AnimatePresence>
-              </ScrollArea>
+              </div>
 
               {/* Mobile Bottom Tab Bar */}
               {token && user && (

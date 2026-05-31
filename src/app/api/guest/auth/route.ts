@@ -10,6 +10,7 @@ import {
   clearBruteForce,
   decryptInvitationLinkToken,
   generateInvitationLinkToken,
+  validateGuestSession,
 } from '@/lib/guest-auth';
 import { checkRateLimit, getRateLimitKey } from '@/lib/rate-limit';
 
@@ -17,6 +18,53 @@ export async function POST(request: NextRequest) {
   try {
     const clientInfo = getClientInfo(request);
     const rateLimitKey = getRateLimitKey(request);
+
+    // ═══════════════════════════════════════════════════════════
+    // SECURITY: Search Lock — If guest already has an active session,
+    // they CANNOT authenticate as a different guest.
+    // ═══════════════════════════════════════════════════════════
+    const existingToken = request.cookies.get('guest_session')?.value;
+    if (existingToken) {
+      const existingSession = await validateGuestSession(existingToken, clientInfo.userAgent, clientInfo.ipAddress);
+      if (existingSession.valid && existingSession.guestId) {
+        // Guest already has an active session — block re-authentication
+        await logGuestAccess({
+          guestId: existingSession.guestId,
+          action: 'SEARCH_BLOCKED',
+          details: 'Authenticated guest attempted to re-authenticate as a different guest — blocked by search lock',
+          ...clientInfo,
+        });
+
+        // Return their existing session info instead
+        const existingGuest = await db.guest.findUnique({
+          where: { id: existingSession.guestId },
+          include: {
+            table: { select: { id: true, name: true, number: true } },
+          },
+        });
+
+        if (existingGuest) {
+          const encryptedLink = generateInvitationLinkToken(existingGuest.invitationCode);
+          return NextResponse.json({
+            success: true,
+            alreadyAuthenticated: true,
+            guest: {
+              id: existingGuest.id,
+              firstName: existingGuest.firstName,
+              lastName: existingGuest.lastName,
+              invitationCode: existingGuest.invitationCode,
+              seats: existingGuest.seats,
+              category: existingGuest.category,
+              status: existingGuest.status,
+              personalMessage: existingGuest.personalMessage,
+              checkedIn: existingGuest.checkedIn,
+              table: existingGuest.table,
+              encryptedLink,
+            },
+          });
+        }
+      }
+    }
 
     // Rate limit: 10 attempts per minute per IP
     if (!checkRateLimit(`guest-auth-${rateLimitKey}`, 10, 60 * 1000)) {
@@ -89,8 +137,12 @@ export async function POST(request: NextRequest) {
       invitationCode: invitationCode,
     };
 
-    if (firstName && lastName) {
+    // If firstName is provided, verify it matches (case-insensitive partial match)
+    if (firstName) {
       whereClause.firstName = { contains: firstName.trim() };
+    }
+    // If lastName is also provided, add it as additional verification
+    if (lastName) {
       whereClause.lastName = { contains: lastName.trim() };
     }
 

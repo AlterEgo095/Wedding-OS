@@ -157,7 +157,7 @@ export default function GuestSearch({ initialCode }: { initialCode?: string }) {
       <div className="absolute inset-0 pointer-events-none overflow-hidden">
         <div className="absolute -top-20 -left-20 w-72 h-72 rounded-full opacity-[0.04]">
           <img
-            src="/upload/couple-photo-1.jpeg"
+            src="/uploads/couple-photo-1.jpeg"
             alt=""
             className="w-full h-full object-cover rounded-full"
             aria-hidden="true"
@@ -165,7 +165,7 @@ export default function GuestSearch({ initialCode }: { initialCode?: string }) {
         </div>
         <div className="absolute -bottom-20 -right-20 w-72 h-72 rounded-full opacity-[0.04]">
           <img
-            src="/upload/couple-photo-2.png"
+            src="/uploads/couple-photo-2.jpeg"
             alt=""
             className="w-full h-full object-cover rounded-full"
             aria-hidden="true"
@@ -190,7 +190,7 @@ export default function GuestSearch({ initialCode }: { initialCode?: string }) {
               className="w-16 h-16 sm:w-20 sm:h-20 rounded-full overflow-hidden gold-border shadow-lg shadow-gold/10"
             >
               <img
-                src="/upload/couple-photo-1.jpeg"
+                src="/uploads/couple-photo-1.jpeg"
                 alt="Josué"
                 className="w-full h-full object-cover"
               />
@@ -212,7 +212,7 @@ export default function GuestSearch({ initialCode }: { initialCode?: string }) {
               className="w-16 h-16 sm:w-20 sm:h-20 rounded-full overflow-hidden gold-border shadow-lg shadow-gold/10"
             >
               <img
-                src="/upload/couple-photo-2.png"
+                src="/uploads/couple-photo-2.jpeg"
                 alt="Hornella"
                 className="w-full h-full object-cover"
               />
@@ -313,7 +313,7 @@ export default function GuestSearch({ initialCode }: { initialCode?: string }) {
                       <div className="shrink-0 hidden sm:block">
                         <div className="w-12 h-12 rounded-full overflow-hidden gold-border shadow-sm">
                           <img
-                            src="/upload/couple-photo-1.jpeg"
+                            src="/uploads/couple-photo-1.jpeg"
                             alt=""
                             className="w-full h-full object-cover"
                             aria-hidden="true"
@@ -433,7 +433,7 @@ export default function GuestSearch({ initialCode }: { initialCode?: string }) {
               <div className="flex items-center justify-center gap-3 mb-6">
                 <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-full overflow-hidden gold-border shadow-lg shadow-gold/10">
                   <img
-                    src="/upload/couple-photo-1.jpeg"
+                    src="/uploads/couple-photo-1.jpeg"
                     alt="Josué"
                     className="w-full h-full object-cover"
                   />
@@ -446,7 +446,7 @@ export default function GuestSearch({ initialCode }: { initialCode?: string }) {
                 </motion.div>
                 <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-full overflow-hidden gold-border shadow-lg shadow-gold/10">
                   <img
-                    src="/upload/couple-photo-2.png"
+                    src="/uploads/couple-photo-2.jpeg"
                     alt="Hornella"
                     className="w-full h-full object-cover"
                   />

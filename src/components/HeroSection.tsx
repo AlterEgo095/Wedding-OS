@@ -51,12 +51,12 @@ export default function HeroSection() {
   const dateDisplay = settings.site_subtitle || 'Vendredi 26 Juin 2026'
 
   const weddingDateStr = useMemo(
-    () => `${settings.wedding_date || '2026-06-26'}T${settings.wedding_time || '14:00:00'}`,
+    () => `${settings.wedding_date || '2026-06-26'}T${settings.wedding_time || '21:30:00'}`,
     [settings.wedding_date, settings.wedding_time]
   )
 
   // Background photos for crossfade
-  const bgPhotos = ['/couple-hero.png', '/couple-moment.jpeg']
+  const bgPhotos = ['/couple-hero.jpeg', '/couple-moment.jpeg', '/photos/couple-bridge.jpeg', '/photos/couple-bouquet.jpeg']
 
   useEffect(() => {
     fetch('/api/settings')
@@ -90,7 +90,7 @@ export default function HeroSection() {
   useEffect(() => {
     const interval = setInterval(() => {
       setCurrentBg(prev => (prev + 1) % bgPhotos.length)
-    }, 6000)
+    }, 8000)
     return () => clearInterval(interval)
   }, [bgPhotos.length])
 
@@ -209,7 +209,7 @@ export default function HeroSection() {
             {/* Photo */}
             <div className="relative w-32 h-32 sm:w-40 sm:h-40 md:w-48 md:h-48 rounded-full overflow-hidden border-[3px] border-gold/30 shadow-[0_0_40px_rgba(0,0,0,0.6),0_0_20px_oklch(0.68_0.12_85/20%)]">
               <Image
-                src="/couple-hero.png"
+                src="/couple-hero.jpeg"
                 alt={groomName}
                 fill
                 className="object-cover object-top"
