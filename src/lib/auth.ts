@@ -3,7 +3,12 @@ import bcrypt from 'bcryptjs';
 import { NextRequest } from 'next/server';
 import { db } from './db';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'wedding-platform-secret-key-2025-premium';
+// CRITICAL: JWT_SECRET must be set via environment variable in production
+const JWT_SECRET = process.env.JWT_SECRET || (
+  process.env.NODE_ENV === 'production'
+    ? (() => { throw new Error('FATAL: JWT_SECRET environment variable is required in production') })()
+    : 'wedding-platform-dev-secret-key-not-for-production'
+);
 
 export interface AuthUser {
   id: string;
@@ -13,7 +18,7 @@ export interface AuthUser {
 }
 
 export async function hashPassword(password: string): Promise<string> {
-  return bcrypt.hash(password, 10);
+  return bcrypt.hash(password, 12);
 }
 
 export async function verifyPassword(password: string, hashedPassword: string): Promise<boolean> {
@@ -24,7 +29,7 @@ export function generateToken(user: AuthUser): string {
   return jwt.sign(
     { id: user.id, email: user.email, name: user.name, role: user.role },
     JWT_SECRET,
-    { expiresIn: '24h' }
+    { expiresIn: '8h' }
   );
 }
 
@@ -65,4 +70,31 @@ export function hasPermission(role: string, requiredRoles: string[]): boolean {
   };
   const userLevel = roleHierarchy[role] || 0;
   return requiredRoles.some(r => (roleHierarchy[r] || 0) <= userLevel);
+}
+
+// Simple in-memory rate limiter for login attempts
+const loginAttempts = new Map<string, { count: number; lastAttempt: number }>();
+const MAX_LOGIN_ATTEMPTS = 5;
+const LOGIN_WINDOW_MS = 15 * 60 * 1000; // 15 minutes
+
+export function checkLoginRateLimit(email: string): boolean {
+  const now = Date.now();
+  const record = loginAttempts.get(email);
+
+  if (!record || (now - record.lastAttempt) > LOGIN_WINDOW_MS) {
+    loginAttempts.set(email, { count: 1, lastAttempt: now });
+    return true;
+  }
+
+  if (record.count >= MAX_LOGIN_ATTEMPTS) {
+    return false;
+  }
+
+  record.count++;
+  record.lastAttempt = now;
+  return true;
+}
+
+export function resetLoginRateLimit(email: string): void {
+  loginAttempts.delete(email);
 }

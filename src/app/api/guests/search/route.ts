@@ -6,9 +6,9 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const q = searchParams.get('q');
 
-    if (!q || q.trim().length === 0) {
+    if (!q || q.trim().length < 2) {
       return NextResponse.json(
-        { error: 'Search query parameter "q" is required' },
+        { error: 'Search query must be at least 2 characters' },
         { status: 400 }
       );
     }
@@ -23,7 +23,15 @@ export async function GET(request: NextRequest) {
           { invitationCode: { contains: searchTerm } },
         ],
       },
-      include: {
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        invitationCode: true,
+        seats: true,
+        category: true,
+        status: true,
+        personalMessage: true,
         table: {
           select: {
             id: true,
@@ -32,7 +40,7 @@ export async function GET(request: NextRequest) {
           },
         },
       },
-      take: 50,
+      take: 20,
     });
 
     return NextResponse.json({ guests });
