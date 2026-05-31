@@ -174,7 +174,7 @@ export default function HeroSection() {
         <motion.div
           initial={{ opacity: 0, scale: 0.8 }}
           animate={{ opacity: 1, scale: 1 }}
-          transition={{ duration: 1.2, delay: 0.7, ease: [0.22, 1, 0.36, 1] }}
+          transition={{ duration: 1.2, delay: 0.7, ease: "easeOut" }}
           className="relative flex items-center justify-center mb-10 sm:mb-12"
         >
           {/* Josué Photo */}
@@ -264,7 +264,7 @@ export default function HeroSection() {
         <motion.h1
           initial={{ opacity: 0, y: 30 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 1.4, delay: 1.0, ease: [0.22, 1, 0.36, 1] }}
+          transition={{ duration: 1.4, delay: 1.0, ease: "easeOut" }}
           className="font-serif text-5xl sm:text-6xl md:text-7xl lg:text-8xl font-bold mb-3 text-shadow-elegant"
         >
           <span className="gold-gradient">{groomName}</span>

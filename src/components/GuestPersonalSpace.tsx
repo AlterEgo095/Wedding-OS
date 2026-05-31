@@ -131,7 +131,7 @@ const itemVariants = {
     opacity: 1,
     y: 0,
     scale: 1,
-    transition: { duration: 0.6, ease: [0.22, 1, 0.36, 1] },
+    transition: { duration: 0.6, ease: "easeOut" },
   },
 }
 
@@ -140,7 +140,7 @@ const fadeUpVariants = {
   visible: {
     opacity: 1,
     y: 0,
-    transition: { duration: 0.5, ease: [0.22, 1, 0.36, 1] },
+    transition: { duration: 0.5, ease: "easeOut" },
   },
 }
 
@@ -344,7 +344,7 @@ export default function GuestPersonalSpace({ guest, settings, onLogout }: GuestP
             <motion.div
               initial={{ scaleX: 0 }}
               animate={{ scaleX: 1 }}
-              transition={{ delay: 0.4, duration: 0.8, ease: [0.22, 1, 0.36, 1] }}
+              transition={{ delay: 0.4, duration: 0.8, ease: "easeOut" }}
               className="relative z-10 flex items-center justify-center gap-3 mb-8"
             >
               <div className="w-16 sm:w-28 h-px bg-gradient-to-r from-transparent via-gold/40 to-transparent" />
@@ -357,7 +357,7 @@ export default function GuestPersonalSpace({ guest, settings, onLogout }: GuestP
               <motion.div
                 initial={{ opacity: 0, x: -30, scale: 0.9 }}
                 animate={{ opacity: 1, x: 0, scale: 1 }}
-                transition={{ delay: 0.5, duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
+                transition={{ delay: 0.5, duration: 0.7, ease: "easeOut" }}
                 className="flex flex-col items-center"
               >
                 <div className="relative">
@@ -396,7 +396,7 @@ export default function GuestPersonalSpace({ guest, settings, onLogout }: GuestP
               <motion.div
                 initial={{ opacity: 0, x: 30, scale: 0.9 }}
                 animate={{ opacity: 1, x: 0, scale: 1 }}
-                transition={{ delay: 0.5, duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
+                transition={{ delay: 0.5, duration: 0.7, ease: "easeOut" }}
                 className="flex flex-col items-center"
               >
                 <div className="relative">
@@ -431,7 +431,7 @@ export default function GuestPersonalSpace({ guest, settings, onLogout }: GuestP
             <motion.div
               initial={{ opacity: 0, y: 24 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.9, duration: 0.8, ease: [0.22, 1, 0.36, 1] }}
+              transition={{ delay: 0.9, duration: 0.8, ease: "easeOut" }}
               className="relative z-10"
             >
               <p className="font-display text-[11px] sm:text-xs tracking-[0.3em] uppercase text-gold/40 mb-3 font-bold">
