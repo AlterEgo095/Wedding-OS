@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import Image from 'next/image'
 import { motion, useScroll, useTransform } from 'framer-motion'
 import { Search, MailOpen } from 'lucide-react'
@@ -44,10 +44,15 @@ export default function HeroSection() {
   const contentOpacity = useTransform(scrollY, [0, 500], [1, 0])
   const contentY = useTransform(scrollY, [0, 500], [0, 80])
 
-  const weddingDate = settings.wedding_date ? new Date(`${settings.wedding_date}T${settings.wedding_time || '14:00:00'}`) : new Date('2026-06-26T14:00:00')
   const groomName = settings.groom_name || 'Josué'
   const brideName = settings.bride_name || 'Hornella'
   const dateDisplay = settings.site_subtitle || 'Vendredi 26 Juin 2026'
+
+  // Stable wedding date string to prevent infinite re-renders
+  const weddingDateStr = useMemo(
+    () => `${settings.wedding_date || '2026-06-26'}T${settings.wedding_time || '14:00:00'}`,
+    [settings.wedding_date, settings.wedding_time]
+  )
 
   useEffect(() => {
     fetch('/api/settings')
@@ -58,28 +63,30 @@ export default function HeroSection() {
       .catch(() => {})
   }, [])
 
-  const calculateTimeLeft = useCallback((): TimeLeft => {
-    const now = new Date()
-    const difference = weddingDate.getTime() - now.getTime()
-
-    if (difference <= 0) {
-      return { days: 0, hours: 0, minutes: 0, seconds: 0 }
-    }
-
-    return {
-      days: Math.floor(difference / (1000 * 60 * 60 * 24)),
-      hours: Math.floor((difference / (1000 * 60 * 60)) % 24),
-      minutes: Math.floor((difference / 1000 / 60) % 60),
-      seconds: Math.floor((difference / 1000) % 60),
-    }
-  }, [weddingDate])
-
   useEffect(() => {
+    const weddingDate = new Date(weddingDateStr)
+
+    const calculateTimeLeft = (): TimeLeft => {
+      const now = new Date()
+      const difference = weddingDate.getTime() - now.getTime()
+
+      if (difference <= 0) {
+        return { days: 0, hours: 0, minutes: 0, seconds: 0 }
+      }
+
+      return {
+        days: Math.floor(difference / (1000 * 60 * 60 * 24)),
+        hours: Math.floor((difference / (1000 * 60 * 60)) % 24),
+        minutes: Math.floor((difference / 1000 / 60) % 60),
+        seconds: Math.floor((difference / 1000) % 60),
+      }
+    }
+
     const tick = () => setTimeLeft(calculateTimeLeft())
     tick()
     const timer = setInterval(tick, 1000)
     return () => clearInterval(timer)
-  }, [calculateTimeLeft])
+  }, [weddingDateStr])
 
   return (
     <section
