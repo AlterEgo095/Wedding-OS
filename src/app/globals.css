@@ -552,3 +552,48 @@ body,
     border-color 0.3s ease,
     box-shadow 0.3s ease;
 }
+
+/* ══════════════════════════════════════════════════════════════
+   PWA & PREMIUM ENHANCEMENTS
+   ══════════════════════════════════════════════════════════════ */
+
+/* PWA standalone mode adjustments */
+@media (display-mode: standalone) {
+  body {
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+  }
+}
+
+/* Touch action for better mobile experience */
+@media (hover: none) and (pointer: coarse) {
+  * {
+    -webkit-tap-highlight-color: transparent;
+  }
+}
+
+/* Prevent overscroll bounce on iOS */
+html {
+  overscroll-behavior: none;
+}
+
+/* Safe area padding for notch devices */
+@supports (padding: max(0px)) {
+  .safe-bottom {
+    padding-bottom: max(1rem, env(safe-area-inset-bottom));
+  }
+}
+
+/* Premium number transition for countdown */
+@keyframes count-pulse {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.05); }
+  100% { transform: scale(1); }
+}
+
+/* Smooth number change animation */
+.countdown-change {
+  animation: count-pulse 0.3s ease-out;
+}

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import Image from 'next/image'
 import { motion, useScroll, useTransform } from 'framer-motion'
 import { Search, MailOpen } from 'lucide-react'
@@ -12,23 +12,24 @@ interface TimeLeft {
   seconds: number
 }
 
-
-
 function CountdownUnit({ value, label }: { value: number; label: string }) {
   return (
     <div className="flex flex-col items-center">
-      <div className="relative w-16 h-16 sm:w-20 sm:h-20 md:w-24 md:h-24 flex items-center justify-center">
-        {/* Outer ornamental ring */}
-        <div className="absolute inset-0 rounded-full border border-gold/25 dark:border-gold-light/20" />
-        <div className="absolute inset-1 rounded-full border border-gold/15 dark:border-gold-light/10" />
-        {/* Inner glass card */}
-        <div className="absolute inset-2 rounded-full glass-card flex items-center justify-center">
-          <span className="font-serif text-2xl sm:text-3xl md:text-4xl font-bold text-gold-dark dark:text-gold-light">
+      <div className="relative w-20 h-20 sm:w-28 sm:h-28 md:w-36 md:h-36 flex items-center justify-center">
+        {/* Outermost glow ring */}
+        <div className="absolute inset-0 rounded-full border-2 border-gold/10 dark:border-gold-light/10 animate-pulse-gold" />
+        {/* Middle ornamental ring */}
+        <div className="absolute inset-1.5 rounded-full border border-gold/20 dark:border-gold-light/15" />
+        {/* Inner ornamental ring */}
+        <div className="absolute inset-3 rounded-full border border-gold/30 dark:border-gold-light/25" />
+        {/* Inner glass card with glow */}
+        <div className="absolute inset-4 rounded-full bg-black/30 dark:bg-black/40 backdrop-blur-md flex items-center justify-center shadow-[0_0_30px_oklch(0.68_0.12_85/20%)]">
+          <span className="font-serif text-3xl sm:text-5xl md:text-7xl font-black text-transparent bg-clip-text bg-gradient-to-b from-white via-gold-light to-gold drop-shadow-[0_0_20px_oklch(0.68_0.12_85/50%)]" style={{ WebkitTextStroke: '0.5px oklch(0.82 0.08 85 / 30%)' }}>
             {String(value).padStart(2, '0')}
           </span>
         </div>
       </div>
-      <span className="mt-2 text-[10px] sm:text-xs md:text-sm font-display tracking-[0.2em] uppercase text-foreground/50 dark:text-foreground/40">
+      <span className="mt-3 text-xs sm:text-sm md:text-base font-bold tracking-[0.25em] uppercase text-white/80 drop-shadow-[0_0_10px_oklch(0.68_0.12_85/30%)]">
         {label}
       </span>
     </div>
@@ -106,33 +107,35 @@ export default function HeroSection() {
           }}
         />
         {/* Dark cinematic overlay for readability */}
-        <div className="absolute inset-0 bg-gradient-to-b from-black/55 via-black/45 to-black/70" />
+        <div className="absolute inset-0 bg-gradient-to-b from-black/60 via-black/50 to-black/75" />
         {/* Side vignette */}
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_40%,rgba(0,0,0,0.4)_100%)]" />
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_40%,rgba(0,0,0,0.5)_100%)]" />
         {/* Warm gold tint overlay */}
-        <div className="absolute inset-0 bg-gradient-to-br from-gold-dark/8 via-transparent to-rose-gold/8" />
+        <div className="absolute inset-0 bg-gradient-to-br from-gold-dark/10 via-transparent to-rose-gold/10" />
       </motion.div>
 
       {/* ═══ Ambient Gold Particles ═══ */}
       <div className="absolute inset-0 z-[1] pointer-events-none overflow-hidden">
-        {[...Array(6)].map((_, i) => (
+        {[...Array(12)].map((_, i) => (
           <motion.div
             key={i}
-            className="absolute w-1 h-1 rounded-full bg-gold/30 dark:bg-gold-light/20"
+            className="absolute rounded-full bg-gold/25 dark:bg-gold-light/15"
             style={{
-              left: `${15 + i * 15}%`,
-              top: `${20 + (i % 3) * 25}%`,
+              left: `${8 + (i * 7.5) % 85}%`,
+              top: `${10 + (i * 13) % 80}%`,
+              width: `${1 + (i % 3)}px`,
+              height: `${1 + (i % 3)}px`,
             }}
             animate={{
-              y: [-20, 20, -20],
-              opacity: [0.2, 0.6, 0.2],
-              scale: [1, 1.5, 1],
+              y: [-30, 30, -30],
+              opacity: [0.1, 0.5, 0.1],
+              scale: [1, 1.8, 1],
             }}
             transition={{
-              duration: 4 + i * 0.8,
+              duration: 5 + i * 0.7,
               repeat: Infinity,
               ease: 'easeInOut',
-              delay: i * 0.6,
+              delay: i * 0.4,
             }}
           />
         ))}
@@ -151,9 +154,9 @@ export default function HeroSection() {
           className="mb-8"
         >
           <div className="flex items-center justify-center gap-3">
-            <div className="w-16 sm:w-24 h-px bg-gradient-to-r from-transparent via-gold/50 to-transparent" />
+            <div className="w-16 sm:w-28 h-px bg-gradient-to-r from-transparent via-gold/60 to-transparent" />
             <span className="flourish text-xl sm:text-2xl">✦</span>
-            <div className="w-16 sm:w-24 h-px bg-gradient-to-r from-transparent via-gold/50 to-transparent" />
+            <div className="w-16 sm:w-28 h-px bg-gradient-to-r from-transparent via-gold/60 to-transparent" />
           </div>
         </motion.div>
 
@@ -162,7 +165,7 @@ export default function HeroSection() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 1, delay: 0.5 }}
-          className="font-display text-base sm:text-lg md:text-xl tracking-[0.3em] uppercase text-white/60 mb-8"
+          className="font-display text-lg sm:text-xl md:text-2xl tracking-[0.35em] uppercase text-white/70 mb-8 font-semibold"
         >
           Nous nous marions
         </motion.p>
@@ -202,7 +205,7 @@ export default function HeroSection() {
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.8, delay: 1.5 }}
-              className="mt-4 font-display text-sm sm:text-base tracking-[0.15em] text-white/70 uppercase"
+              className="mt-4 font-display text-sm sm:text-base md:text-lg tracking-[0.15em] text-white/80 uppercase font-semibold"
             >
               {groomName}
             </motion.p>
@@ -250,7 +253,7 @@ export default function HeroSection() {
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.8, delay: 1.5 }}
-              className="mt-4 font-display text-sm sm:text-base tracking-[0.15em] text-white/70 uppercase"
+              className="mt-4 font-display text-sm sm:text-base md:text-lg tracking-[0.15em] text-white/80 uppercase font-semibold"
             >
               {brideName}
             </motion.p>
@@ -262,10 +265,10 @@ export default function HeroSection() {
           initial={{ opacity: 0, y: 30 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 1.4, delay: 1.0, ease: [0.22, 1, 0.36, 1] }}
-          className="font-serif text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-bold mb-3 text-shadow-elegant"
+          className="font-serif text-5xl sm:text-6xl md:text-7xl lg:text-8xl font-bold mb-3 text-shadow-elegant"
         >
           <span className="gold-gradient">{groomName}</span>
-          <span className="block my-1 font-display text-xl sm:text-2xl md:text-3xl font-light text-gold/50 dark:text-gold-light/40 tracking-[0.3em]">
+          <span className="block my-1 font-display text-2xl sm:text-3xl md:text-4xl font-light text-gold/50 dark:text-gold-light/40 tracking-[0.3em]">
             &
           </span>
           <span className="gold-gradient">{brideName}</span>
@@ -276,37 +279,48 @@ export default function HeroSection() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 1, delay: 1.4 }}
-          className="mt-6 mb-10"
+          className="mt-6 mb-12"
         >
           <div className="flex items-center justify-center gap-3 mb-4">
-            <div className="w-12 sm:w-20 h-px bg-gradient-to-r from-transparent to-gold/50" />
+            <div className="w-12 sm:w-24 h-px bg-gradient-to-r from-transparent to-gold/60" />
             <span className="flourish text-xs sm:text-sm">❧</span>
-            <div className="w-12 sm:w-20 h-px bg-gradient-to-l from-transparent to-gold/50" />
+            <div className="w-12 sm:w-24 h-px bg-gradient-to-l from-transparent to-gold/60" />
           </div>
-          <p className="font-display text-lg sm:text-xl md:text-2xl tracking-[0.2em] text-white/75">
+          <p className="font-display text-xl sm:text-2xl md:text-3xl tracking-[0.2em] text-white/85 font-bold">
             {dateDisplay}
           </p>
           <div className="flex items-center justify-center gap-3 mt-4">
-            <div className="w-12 sm:w-20 h-px bg-gradient-to-r from-transparent to-gold/50" />
+            <div className="w-12 sm:w-24 h-px bg-gradient-to-r from-transparent to-gold/60" />
             <span className="flourish text-xs sm:text-sm">❧</span>
-            <div className="w-12 sm:w-20 h-px bg-gradient-to-l from-transparent to-gold/50" />
+            <div className="w-12 sm:w-24 h-px bg-gradient-to-l from-transparent to-gold/60" />
           </div>
         </motion.div>
 
-        {/* ═══ Countdown Timer ═══ */}
+        {/* ═══ Countdown Timer - Premium Enhanced ═══ */}
         <motion.div
-          initial={{ opacity: 0, y: 20 }}
+          initial={{ opacity: 0, y: 30 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 1, delay: 1.7 }}
-          className="flex items-center justify-center gap-2 sm:gap-3 md:gap-5"
+          transition={{ duration: 1.2, delay: 1.7 }}
         >
-          <CountdownUnit value={timeLeft.days} label="Jours" />
-          <span className="text-gold/25 dark:text-gold-light/20 text-lg sm:text-xl md:text-2xl font-light mt-[-16px]">✦</span>
-          <CountdownUnit value={timeLeft.hours} label="Heures" />
-          <span className="text-gold/25 dark:text-gold-light/20 text-lg sm:text-xl md:text-2xl font-light mt-[-16px]">✦</span>
-          <CountdownUnit value={timeLeft.minutes} label="Minutes" />
-          <span className="text-gold/25 dark:text-gold-light/20 text-lg sm:text-xl md:text-2xl font-light mt-[-16px]">✦</span>
-          <CountdownUnit value={timeLeft.seconds} label="Secondes" />
+          {/* Countdown label */}
+          <motion.p
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 2.0, duration: 0.8 }}
+            className="font-display text-sm sm:text-base md:text-lg tracking-[0.3em] uppercase text-white/50 mb-6 font-semibold"
+          >
+            Compte à rebours
+          </motion.p>
+
+          <div className="flex items-center justify-center gap-1 sm:gap-2 md:gap-4">
+            <CountdownUnit value={timeLeft.days} label="Jours" />
+            <span className="text-gold/40 dark:text-gold-light/30 text-2xl sm:text-3xl md:text-5xl font-light mt-[-24px] sm:mt-[-28px] md:mt-[-32px] animate-pulse">✦</span>
+            <CountdownUnit value={timeLeft.hours} label="Heures" />
+            <span className="text-gold/40 dark:text-gold-light/30 text-2xl sm:text-3xl md:text-5xl font-light mt-[-24px] sm:mt-[-28px] md:mt-[-32px] animate-pulse" style={{ animationDelay: '0.5s' }}>✦</span>
+            <CountdownUnit value={timeLeft.minutes} label="Minutes" />
+            <span className="text-gold/40 dark:text-gold-light/30 text-2xl sm:text-3xl md:text-5xl font-light mt-[-24px] sm:mt-[-28px] md:mt-[-32px] animate-pulse" style={{ animationDelay: '1s' }}>✦</span>
+            <CountdownUnit value={timeLeft.seconds} label="Secondes" />
+          </div>
         </motion.div>
 
         {/* ═══ Action Buttons ═══ */}
@@ -314,7 +328,7 @@ export default function HeroSection() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 1, delay: 2.0 }}
-          className="flex flex-col sm:flex-row items-center justify-center gap-4 mt-10"
+          className="flex flex-col sm:flex-row items-center justify-center gap-4 mt-12"
         >
           <a
             href="#recherche"
@@ -322,7 +336,7 @@ export default function HeroSection() {
               e.preventDefault()
               document.getElementById('recherche')?.scrollIntoView({ behavior: 'smooth' })
             }}
-            className="group relative inline-flex items-center gap-2 px-8 py-3.5 rounded-full bg-gradient-to-r from-gold to-gold-dark hover:from-gold-dark hover:to-gold text-white font-display tracking-wide shadow-xl shadow-gold/30 hover:shadow-2xl hover:shadow-gold/40 transition-all duration-300 text-sm sm:text-base"
+            className="group relative inline-flex items-center gap-2 px-8 py-4 rounded-full bg-gradient-to-r from-gold to-gold-dark hover:from-gold-dark hover:to-gold text-white font-display tracking-wide shadow-xl shadow-gold/30 hover:shadow-2xl hover:shadow-gold/40 transition-all duration-300 text-sm sm:text-base font-semibold"
           >
             <Search className="size-4" />
             Trouver ma table
@@ -333,7 +347,7 @@ export default function HeroSection() {
               e.preventDefault()
               document.getElementById('recherche')?.scrollIntoView({ behavior: 'smooth' })
             }}
-            className="group relative inline-flex items-center gap-2 px-8 py-3.5 rounded-full glass-card gold-border hover:bg-gold/10 text-white/90 font-display tracking-wide transition-all duration-300 text-sm sm:text-base"
+            className="group relative inline-flex items-center gap-2 px-8 py-4 rounded-full glass-card gold-border hover:bg-gold/10 text-white/90 font-display tracking-wide transition-all duration-300 text-sm sm:text-base font-semibold"
           >
             <MailOpen className="size-4" />
             Voir mon invitation
@@ -353,7 +367,7 @@ export default function HeroSection() {
           transition={{ duration: 2.5, repeat: Infinity, ease: 'easeInOut' }}
           className="flex flex-col items-center gap-2"
         >
-          <span className="text-[10px] sm:text-xs font-display tracking-[0.25em] text-white/40 uppercase">
+          <span className="text-[10px] sm:text-xs font-display tracking-[0.25em] text-white/40 uppercase font-semibold">
             Découvrir
           </span>
           <div className="w-6 h-9 border border-white/20 rounded-full flex justify-center pt-2">

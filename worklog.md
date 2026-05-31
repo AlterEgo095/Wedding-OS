@@ -1,60 +1,104 @@
 ---
 Task ID: 1
-Agent: Main Agent
-Task: Continue building the premium wedding platform for Josué & Hornella
+Agent: Main
+Task: Examine current codebase state
 
 Work Log:
-- Copied real couple photos (2f5b9c54-39ec-4d1c-9ad8-48ab63ae1d73.jpeg → couple-photo-1.jpeg, IMG_6300.png → couple-photo-2.png) to /public/upload/
-- Fixed HeroSection.tsx bug: removed unused `calculateTimeLeft()` function and `DEFAULT_WEDDING_DATE` constant, replaced `WEDDING_DATE` reference with inline date
-- Fixed Navigation.tsx: changed mobile sidebar title from "A & B" to "J & H"
-- Updated SettingsManager.tsx: added `venue_reference` and `invitation_message` fields, reorganized settings groups with proper "Informations du Mariage" and "Invitation Digitale" sections
-- Pushed Prisma schema to database (already in sync)
-- Created seed script at prisma/seed.ts with default admin user, settings, tables, guests, timeline events, and couple stories
-- Ran seed script - database already had data from previous session
-- Verified all API endpoints work: /api/settings, /api/timeline, /api/guests/search, /api/admin/login
-- Ran ESLint - no errors
-- Dev server running on port 3000
+- Explored full project directory structure
+- Read all key files: HeroSection.tsx, page.tsx, layout.tsx, AENEWSBanner.tsx, MarketingSection.tsx, globals.css, Navigation.tsx, Footer.tsx, package.json, next.config.ts
+- Identified: No PWA support, countdown timer text too small/faint, AENEWS banner needs to be more exceptional
+- Verified existing shadcn/ui components, Prisma setup, API routes
 
 Stage Summary:
-- Platform is fully functional with all components: HeroSection, GuestSearch, InvitationCard, CoupleGallery, EventTimeline, MapSection, Footer, Navigation, AdminPanel
-- Real couple photos are being used throughout (not AI-generated)
-- Admin login: admin@josue-hornella.wedding / admin2026
-- Database has 229 guests, 28 tables, 12 timeline events, 4 couple stories
-- Wedding details: Josué & Hornella, Vendredi 26 Juin 2026, Salle Polyvalente – Grand Palais Kinshasa, 21/22 Avenue Bobozo
+- Complete codebase understanding achieved
+- All components catalogued and analyzed
+- Identified 5 major areas for improvement
 
 ---
 Task ID: 2
-Agent: Main Agent
-Task: Fix homepage not loading properly - Maximum update depth exceeded error
+Agent: Main
+Task: Improve countdown timer with bolder, more visible text + glow effects
 
 Work Log:
-- Diagnosed the issue using agent-browser: found "Maximum update depth exceeded" error in browser console (40+ occurrences)
-- Root cause: HeroSection.tsx created a new `Date` object (`weddingDate`) on every render, used as dependency in `useCallback`, causing infinite re-render loop
-- Fixed by: replacing `weddingDate` Date object with a stable `weddingDateStr` string using `useMemo`, moving `calculateTimeLeft` inside the `useEffect`
-- Verified fix: no more console errors after reload, page loads correctly
-- Ran ESLint: no errors
-- Took screenshots of all sections: Hero, Gallery, Timeline, Search - all rendering correctly
+- Redesigned CountdownUnit component with much larger dimensions (w-20→w-36 responsive)
+- Added triple ornamental rings with increasing opacity
+- Replaced small text with large gradient numbers (text-3xl→text-7xl responsive, font-black)
+- Applied gold gradient with glow drop-shadow to numbers
+- Made labels bold (font-bold), larger, with gold glow effect
+- Added "Compte à rebours" label above the timer
+- Increased separator size and added staggered pulse animations
+- Enhanced ambient particles from 6 to 12
 
 Stage Summary:
-- Fixed critical infinite loop bug in HeroSection.tsx
-- Page now loads and renders properly without errors
-- All sections functional: Hero with countdown, Couple Gallery, Event Timeline, Map, Guest Search, Footer
+- Countdown timer numbers now use text-3xl→text-7xl font-black with gold gradient
+- Labels are now bold with tracking-[0.25em] and gold glow drop-shadow
+- Added "Compte à rebours" title label above the timer
+- Separator ornaments are now larger with staggered pulse animations
+- Overall visual impact dramatically improved
 
 ---
 Task ID: 3
-Agent: Main Agent
-Task: Integrate premium marketing & branding module for AENEWS
+Agent: Main
+Task: Premium frontend audit - enhance visuals, animations, responsiveness
 
 Work Log:
-- Visited AENEWS.net using web-reader to analyze branding: dark theme, gold accents (#gold-400), glassmorphism, "Meilleur qu'hier" slogan, WhatsApp contact wa.me/243816515095, logo at aenews.net/logo.png
-- Created MarketingSection.tsx: "Vous organisez un mariage..." section with feature grid (6 capabilities), marketing text, WhatsApp CTA button with pre-filled message, green gradient WhatsApp branding, animated effects
-- Created AENEWSBanner.tsx: "Conçu et développé par AENEWS" banner with dark background, animated gradient orbs, grid pattern overlay, AE monogram logo, capabilities row (Plateformes Web, IA, Automatisation, Design Premium), description text, two CTA buttons (Découvrir AENEWS → aenews.net, Demander un devis → WhatsApp)
-- Integrated both components into page.tsx: MarketingSection after GuestSearch (inside main), AENEWSBanner before Footer (outside main)
-- Verified: no console errors, no lint errors, all sections render correctly
+- Enhanced hero section: larger names (text-5xl→text-8xl), bolder date (text-xl→text-3xl, font-bold)
+- Made "Nous nous marions" pre-title bolder (font-semibold, text-lg→text-2xl)
+- Increased name labels below photos to font-semibold and larger
+- Enhanced CTA buttons with font-semibold and larger padding
+- Added more particles to hero section (6→12)
+- Strengthened dark overlay for better text readability
+- Added PWA CSS enhancements: standalone mode, safe area, touch optimization
+- Added overscroll-behavior: none for iOS
 
 Stage Summary:
-- Two premium marketing sections added to the wedding platform
-- MarketingSection: Elegant CTA for event platform prospects with WhatsApp integration
-- AENEWSBanner: Dark premium showcase banner with AENEWS branding, inspired by their website aesthetic
-- All links functional: aenews.net, WhatsApp with pre-filled messages
-- Design: glassmorphism, animated particles, gradient effects, responsive on all screens
+- Hero section typography dramatically improved across all breakpoints
+- All text elements now use font-bold or font-semibold where appropriate
+- Better contrast through stronger background overlay
+- CSS enhancements for PWA standalone mode and mobile touch
+
+---
+Task ID: 4
+Agent: Main
+Task: Add PWA support (manifest, service worker, icons, meta tags)
+
+Work Log:
+- Generated premium app icon using z-ai image generation (gold J&H monogram on navy)
+- Created all 8 PWA icon sizes (72→512px) using sharp
+- Created manifest.json with full PWA configuration
+- Created sw.js service worker with network-first + cache-first strategy
+- Created PWAInstall.tsx component with install prompt banner
+- Updated layout.tsx with: manifest link, Apple touch icons, viewport meta, theme-color
+- Added metadataBase for social image resolution
+- Added apple-mobile-web-app-capable and format-detection meta tags
+
+Stage Summary:
+- Full PWA support implemented: manifest, service worker, icons, meta tags
+- App can be installed on mobile devices with premium icon
+- Offline support via service worker (cache static assets, network-first for pages)
+- Install prompt banner shows after 3 seconds with glassmorphism design
+
+---
+Task ID: 5
+Agent: Main
+Task: Enhance AENEWS branding banner to be exceptional
+
+Work Log:
+- Redesigned AENEWS banner with 2-column layout (brand identity + capabilities)
+- Larger monogram with pulsing ring animation and glow effects
+- Brand name now text-4xl→text-6xl with enhanced gradient
+- Added "Conçu et développé par" prefix above the name
+- Added trust badges row (Sur mesure, Sécurisé, Innovant) with icons
+- Redesigned capabilities as larger cards with icon containers
+- Enhanced floating particles (8 particles with varied positions)
+- Added gradient mesh with 3 animated orbs
+- CTA buttons now text-base with font-bold and larger icons
+- Added cinematic dark background with deeper tones
+- Bottom tagline with Zap icons and horizontal rules
+
+Stage Summary:
+- AENEWS banner now has a dramatic 2-column layout
+- Brand identity is much more prominent with larger typography
+- Trust badges and capability cards create a professional feel
+- Animated gradient mesh and particles add premium feel
+- Overall exceptional visual impact befitting a premium brand

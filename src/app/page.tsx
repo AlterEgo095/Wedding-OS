@@ -14,6 +14,7 @@ import Footer from '@/components/Footer'
 import MarketingSection from '@/components/MarketingSection'
 import AENEWSBanner from '@/components/AENEWSBanner'
 import AdminPanel from '@/components/admin/AdminPanel'
+import PWAInstall from '@/components/PWAInstall'
 
 interface CoupleStory {
   id: string
@@ -80,7 +81,6 @@ function HomeContent() {
               })
               setSettings(obj as VenueSettings)
             } else {
-              // Already a key-value object from the API
               setSettings(data.settings as VenueSettings)
             }
           } else if (Array.isArray(data)) {
@@ -143,6 +143,9 @@ function HomeContent() {
 
       <AENEWSBanner />
 
+      <Footer />
+
+      {/* Floating admin button */}
       <div className="fixed bottom-6 right-6 z-40">
         <Button
           onClick={() => setAdminOpen(true)}
@@ -153,7 +156,8 @@ function HomeContent() {
         </Button>
       </div>
 
-      <Footer />
+      {/* PWA Install Banner */}
+      <PWAInstall />
 
       <AdminPanel isOpen={adminOpen} onClose={() => setAdminOpen(false)} />
     </div>
