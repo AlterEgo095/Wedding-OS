@@ -37,6 +37,9 @@ export async function GET(request: NextRequest) {
               firstName: true,
               lastName: true,
               invitationCode: true,
+              category: true,
+              status: true,
+              checkedIn: true,
             },
           },
         },
@@ -44,13 +47,67 @@ export async function GET(request: NextRequest) {
       db.guestAccessLog.count({ where }),
     ]);
 
-    // Get summary stats
-    const [totalLogins, totalAccessDenied, viewedInvitations, totalGuests] = await Promise.all([
+    // Get comprehensive summary stats
+    const [
+      totalLogins,
+      totalAccessDenied,
+      totalAuthFailed,
+      totalBruteForce,
+      totalFingerprintMismatches,
+      totalLinkVisits,
+      totalQRScans,
+      viewedInvitations,
+      totalGuests,
+      confirmedGuests,
+      checkedInGuests,
+      activeSessions,
+    ] = await Promise.all([
       db.guestAccessLog.count({ where: { action: 'LOGIN' } }),
       db.guestAccessLog.count({ where: { action: 'ACCESS_DENIED' } }),
+      db.guestAccessLog.count({ where: { action: 'AUTH_FAILED' } }),
+      db.guestAccessLog.count({ where: { action: { in: ['BRUTE_FORCE_BLOCKED', 'AUTH_RATE_LIMITED'] } } }),
+      db.guestAccessLog.count({ where: { action: 'FINGERPRINT_MISMATCH' } }),
+      db.guestAccessLog.count({ where: { action: 'LINK_VISIT' } }),
+      db.guestAccessLog.count({ where: { action: 'QR_SCAN' } }),
       db.guest.count({ where: { invitationViewed: true } }),
       db.guest.count(),
+      db.guest.count({ where: { status: 'CONFIRMED' } }),
+      db.guest.count({ where: { checkedIn: true } }),
+      db.guestSession.count({ where: { isActive: true } }),
     ]);
+
+    // Get recent access denied attempts (last 24h)
+    const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const recentAccessDenied = await db.guestAccessLog.count({
+      where: {
+        action: { in: ['ACCESS_DENIED', 'AUTH_FAILED', 'BRUTE_FORCE_BLOCKED'] },
+        createdAt: { gte: twentyFourHoursAgo },
+      },
+    });
+
+    // Get top IPs with failed attempts
+    const failedAttempts = await db.guestAccessLog.findMany({
+      where: { action: { in: ['AUTH_FAILED', 'ACCESS_DENIED', 'BRUTE_FORCE_BLOCKED'] } },
+      select: { ipAddress: true },
+    });
+
+    const ipCounts: Record<string, number> = {};
+    failedAttempts.forEach(log => {
+      if (log.ipAddress && log.ipAddress !== 'unknown') {
+        ipCounts[log.ipAddress] = (ipCounts[log.ipAddress] || 0) + 1;
+      }
+    });
+
+    const suspiciousIPs = Object.entries(ipCounts)
+      .sort(([, a], [, b]) => b - a)
+      .slice(0, 10)
+      .map(([ip, count]) => ({ ip, count }));
+
+    // Get category breakdown
+    const categoryBreakdown = await db.guest.groupBy({
+      by: ['category'],
+      _count: { id: true },
+    });
 
     return NextResponse.json({
       logs,
@@ -58,9 +115,25 @@ export async function GET(request: NextRequest) {
       stats: {
         totalLogins,
         totalAccessDenied,
+        totalAuthFailed,
+        totalBruteForce,
+        totalFingerprintMismatches,
+        totalLinkVisits,
+        totalQRScans,
         viewedInvitations,
         totalGuests,
+        confirmedGuests,
+        checkedInGuests,
+        activeSessions,
         viewRate: totalGuests > 0 ? Math.round((viewedInvitations / totalGuests) * 100) : 0,
+        confirmationRate: totalGuests > 0 ? Math.round((confirmedGuests / totalGuests) * 100) : 0,
+        checkInRate: totalGuests > 0 ? Math.round((checkedInGuests / totalGuests) * 100) : 0,
+        recentAccessDenied,
+        suspiciousIPs,
+        categoryBreakdown: categoryBreakdown.map(c => ({
+          category: c.category,
+          count: c._count.id,
+        })),
       },
     });
   } catch (error) {

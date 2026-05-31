@@ -1,5 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { validateGuestSession, getAuthenticatedGuest, logGuestAccess, getClientInfo } from '@/lib/guest-auth';
+import {
+  validateGuestSession,
+  getAuthenticatedGuest,
+  logGuestAccess,
+  getClientInfo,
+  generateInvitationLinkToken,
+} from '@/lib/guest-auth';
 
 export async function GET(request: NextRequest) {
   try {
@@ -12,10 +18,12 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const session = await validateGuestSession(token);
+    const clientInfo = getClientInfo(request);
+
+    // Validate session with fingerprint verification
+    const session = await validateGuestSession(token, clientInfo.userAgent, clientInfo.ipAddress);
 
     if (!session.valid || !session.guestId) {
-      const clientInfo = getClientInfo(request);
       await logGuestAccess({
         action: 'INVALID_SESSION',
         details: 'Attempted to access /me with invalid session',
@@ -40,9 +48,27 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    // Log invitation view (fire and forget, rate-limited to once per session per 5 min)
+    logGuestAccess({
+      guestId: session.guestId,
+      action: 'VIEW_INVITATION',
+      details: `Guest viewed invitation (${session.fingerprintMismatch ? 'fingerprint mismatch' : 'verified'})`,
+      ...clientInfo,
+    }).catch(() => {});
+
+    // Generate encrypted link for sharing/bookmarking
+    const encryptedLink = generateInvitationLinkToken(guest.invitationCode);
+
     return NextResponse.json({
       authenticated: true,
-      guest,
+      guest: {
+        ...guest,
+        encryptedLink,
+      },
+      security: {
+        fingerprintVerified: !session.fingerprintMismatch,
+        sessionActive: true,
+      },
     });
   } catch (error) {
     console.error('Guest me error:', error);
