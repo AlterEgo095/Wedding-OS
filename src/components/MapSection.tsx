@@ -20,11 +20,11 @@ export default function MapSection({ settings }: { settings: VenueSettings | nul
   const sectionRef = useRef<HTMLDivElement>(null)
   const isInView = useInView(sectionRef, { once: true, margin: '-100px' })
 
-  const venueName = settings?.venue_name || 'Château de Versailles'
-  const venueAddress = settings?.venue_address || 'Place d\'Armes, 78000 Versailles, France'
-  const lat = settings?.venue_lat || '48.8049'
-  const lng = settings?.venue_lng || '2.1204'
-  const parking = settings?.venue_parking || 'Parking gratuit disponible sur place'
+  const venueName = settings?.venue_name || 'Salle Polyvalente – Grand Palais Kinshasa'
+  const venueAddress = settings?.venue_address || '21 / 22 Avenue Bobozo'
+  const lat = settings?.venue_lat || '-4.3250'
+  const lng = settings?.venue_lng || '15.3222'
+  const parking = settings?.venue_parking || 'Parking disponible sur place'
   const venueTime = settings?.venue_time || '14h00 — Cérémonie'
 
   const googleMapsUrl = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`
@@ -67,12 +67,21 @@ export default function MapSection({ settings }: { settings: VenueSettings | nul
               </h3>
 
               {/* Address */}
-              <div className="flex items-start gap-3 mb-6">
+              <div className="flex items-start gap-3 mb-4">
                 <MapPin className="size-5 text-gold shrink-0 mt-0.5" />
                 <p className="font-display text-foreground/80 leading-relaxed">
                   {venueAddress}
                 </p>
               </div>
+
+              {/* Reference */}
+              {(settings as Record<string, string>)?.venue_reference && (
+                <div className="flex items-start gap-3 mb-6 ml-8">
+                  <p className="font-display text-sm text-muted-foreground leading-relaxed italic">
+                    {(settings as Record<string, string>).venue_reference}
+                  </p>
+                </div>
+              )}
 
               {/* Time */}
               <div className="flex items-center gap-3 mb-6">

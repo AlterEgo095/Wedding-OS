@@ -29,31 +29,31 @@ const cormorant = Cormorant_Garamond({
 });
 
 export const metadata: Metadata = {
-  title: "Mariage Alexandre & Béatrice",
+  title: "Mariage Josué & Hornella",
   description:
-    "Rejoignez-nous pour célébrer l'union d'Alexandre et Béatrice. Découvrez les détails de notre mariage, confirmez votre présence et partagez ce moment unique avec nous.",
+    "Rejoignez-nous pour célébrer l'union de Josué et Hornella. Découvrez les détails de notre mariage, trouvez votre table et partagez ce moment unique avec nous.",
   keywords: [
     "mariage",
     "wedding",
-    "Alexandre",
-    "Béatrice",
+    "Josué",
+    "Hornella",
     "invitation",
-    "célibataire",
+    "Kinshasa",
     "celebration",
   ],
-  authors: [{ name: "Alexandre & Béatrice" }],
+  authors: [{ name: "Josué & Hornella" }],
   openGraph: {
-    title: "Mariage Alexandre & Béatrice",
+    title: "Mariage Josué & Hornella",
     description:
-      "Rejoignez-nous pour célébrer l'union d'Alexandre et Béatrice.",
+      "Rejoignez-nous pour célébrer l'union de Josué et Hornella.",
     type: "website",
     locale: "fr_FR",
   },
   twitter: {
     card: "summary_large_image",
-    title: "Mariage Alexandre & Béatrice",
+    title: "Mariage Josué & Hornella",
     description:
-      "Rejoignez-nous pour célébrer l'union d'Alexandre et Béatrice.",
+      "Rejoignez-nous pour célébrer l'union de Josué et Hornella.",
   },
 };
 

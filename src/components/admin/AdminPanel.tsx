@@ -159,7 +159,7 @@ export default function AdminPanel({ isOpen, onClose }: AdminPanelProps) {
                   <div className="w-10 h-10 rounded-full gold-border p-[2px] overflow-hidden">
                     <Image
                       src="/upload/couple-photo-1.jpeg"
-                      alt="Alexandre & Béatrice"
+                      alt="Josué & Hornella"
                       width={40}
                       height={40}
                       className="w-full h-full rounded-full object-cover"
@@ -167,7 +167,7 @@ export default function AdminPanel({ isOpen, onClose }: AdminPanelProps) {
                   </div>
                 </div>
                 <div className="flex-1 min-w-0">
-                  <h2 className="font-bold text-sm gold-gradient font-display">Alexandre & Béatrice</h2>
+                  <h2 className="font-bold text-sm gold-gradient font-display">Josué & Hornella</h2>
                   <p className="text-xs text-muted-foreground truncate">
                     {user?.name || 'Non connecté'}
                   </p>
@@ -265,13 +265,13 @@ export default function AdminPanel({ isOpen, onClose }: AdminPanelProps) {
                         <div className="w-10 h-10 rounded-full gold-border p-[2px] overflow-hidden">
                           <Image
                             src="/upload/couple-photo-1.jpeg"
-                            alt="Alexandre & Béatrice"
+                            alt="Josué & Hornella"
                             width={40}
                             height={40}
                             className="w-full h-full rounded-full object-cover"
                           />
                         </div>
-                        <h2 className="font-bold text-sm gold-gradient font-display">Alexandre & Béatrice</h2>
+                        <h2 className="font-bold text-sm gold-gradient font-display">Josué & Hornella</h2>
                       </div>
                       <Button
                         variant="ghost"

@@ -3,8 +3,9 @@
 import { useState, useEffect, useCallback } from 'react'
 import Image from 'next/image'
 import { motion, useScroll, useTransform } from 'framer-motion'
+import { Search, MailOpen } from 'lucide-react'
 
-const WEDDING_DATE = new Date('2025-09-15T14:00:00')
+const DEFAULT_WEDDING_DATE = new Date('2026-06-26T14:00:00')
 
 interface TimeLeft {
   days: number
@@ -51,21 +52,50 @@ function CountdownUnit({ value, label }: { value: number; label: string }) {
 }
 
 export default function HeroSection() {
-  const [timeLeft, setTimeLeft] = useState<TimeLeft>(calculateTimeLeft())
+  const [settings, setSettings] = useState<Record<string, string>>({})
+  const [timeLeft, setTimeLeft] = useState<TimeLeft>({ days: 0, hours: 0, minutes: 0, seconds: 0 })
   const { scrollY } = useScroll()
   const y = useTransform(scrollY, [0, 800], [0, 200])
   const bgScale = useTransform(scrollY, [0, 800], [1, 1.15])
   const contentOpacity = useTransform(scrollY, [0, 500], [1, 0])
   const contentY = useTransform(scrollY, [0, 500], [0, 80])
 
-  const tick = useCallback(() => {
-    setTimeLeft(calculateTimeLeft())
-  }, [])
+  const weddingDate = settings.wedding_date ? new Date(`${settings.wedding_date}T${settings.wedding_time || '14:00:00'}`) : DEFAULT_WEDDING_DATE
+  const groomName = settings.groom_name || 'Josué'
+  const brideName = settings.bride_name || 'Hornella'
+  const dateDisplay = settings.site_subtitle || 'Vendredi 26 Juin 2026'
 
   useEffect(() => {
+    fetch('/api/settings')
+      .then(res => res.ok ? res.json() : null)
+      .then(data => {
+        if (data?.settings) setSettings(data.settings)
+      })
+      .catch(() => {})
+  }, [])
+
+  const calculateTimeLeft = useCallback((): TimeLeft => {
+    const now = new Date()
+    const difference = weddingDate.getTime() - now.getTime()
+
+    if (difference <= 0) {
+      return { days: 0, hours: 0, minutes: 0, seconds: 0 }
+    }
+
+    return {
+      days: Math.floor(difference / (1000 * 60 * 60 * 24)),
+      hours: Math.floor((difference / (1000 * 60 * 60)) % 24),
+      minutes: Math.floor((difference / 1000 / 60) % 60),
+      seconds: Math.floor((difference / 1000) % 60),
+    }
+  }, [weddingDate])
+
+  useEffect(() => {
+    const tick = () => setTimeLeft(calculateTimeLeft())
+    tick()
     const timer = setInterval(tick, 1000)
     return () => clearInterval(timer)
-  }, [tick])
+  }, [calculateTimeLeft])
 
   return (
     <section
@@ -153,7 +183,7 @@ export default function HeroSection() {
           transition={{ duration: 1.2, delay: 0.7, ease: [0.22, 1, 0.36, 1] }}
           className="relative flex items-center justify-center mb-10 sm:mb-12"
         >
-          {/* Alexandre Photo */}
+          {/* Josué Photo */}
           <div className="relative z-[2]">
             {/* Outer decorative ring */}
             <div className="absolute -inset-3 rounded-full animate-spin-slow"
@@ -169,7 +199,7 @@ export default function HeroSection() {
             <div className="relative w-28 h-28 sm:w-36 sm:h-36 md:w-44 md:h-44 rounded-full overflow-hidden border-2 border-gold/40 dark:border-gold-light/30 shadow-2xl shadow-black/50">
               <Image
                 src="/upload/couple-photo-1.jpeg"
-                alt="Alexandre"
+                alt={groomName}
                 fill
                 className="object-cover"
                 priority
@@ -183,7 +213,7 @@ export default function HeroSection() {
               transition={{ duration: 0.8, delay: 1.5 }}
               className="mt-4 font-display text-sm sm:text-base tracking-[0.15em] text-white/70 uppercase"
             >
-              Alexandre
+              {groomName}
             </motion.p>
           </div>
 
@@ -201,7 +231,7 @@ export default function HeroSection() {
             </div>
           </motion.div>
 
-          {/* Béatrice Photo */}
+          {/* Hornella Photo */}
           <div className="relative z-[2]">
             {/* Outer decorative ring */}
             <div className="absolute -inset-3 rounded-full animate-spin-slow"
@@ -217,7 +247,7 @@ export default function HeroSection() {
             <div className="relative w-28 h-28 sm:w-36 sm:h-36 md:w-44 md:h-44 rounded-full overflow-hidden border-2 border-rose-gold/40 dark:border-rose-gold/30 shadow-2xl shadow-black/50">
               <Image
                 src="/upload/couple-photo-2.png"
-                alt="Béatrice"
+                alt={brideName}
                 fill
                 className="object-cover"
                 priority
@@ -231,7 +261,7 @@ export default function HeroSection() {
               transition={{ duration: 0.8, delay: 1.5 }}
               className="mt-4 font-display text-sm sm:text-base tracking-[0.15em] text-white/70 uppercase"
             >
-              Béatrice
+              {brideName}
             </motion.p>
           </div>
         </motion.div>
@@ -243,11 +273,11 @@ export default function HeroSection() {
           transition={{ duration: 1.4, delay: 1.0, ease: [0.22, 1, 0.36, 1] }}
           className="font-serif text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-bold mb-3 text-shadow-elegant"
         >
-          <span className="gold-gradient">Alexandre</span>
+          <span className="gold-gradient">{groomName}</span>
           <span className="block my-1 font-display text-xl sm:text-2xl md:text-3xl font-light text-gold/50 dark:text-gold-light/40 tracking-[0.3em]">
             &
           </span>
-          <span className="gold-gradient">Béatrice</span>
+          <span className="gold-gradient">{brideName}</span>
         </motion.h1>
 
         {/* ═══ Date ═══ */}
@@ -263,7 +293,7 @@ export default function HeroSection() {
             <div className="w-12 sm:w-20 h-px bg-gradient-to-l from-transparent to-gold/50" />
           </div>
           <p className="font-display text-lg sm:text-xl md:text-2xl tracking-[0.2em] text-white/75">
-            15 Septembre 2025
+            {dateDisplay}
           </p>
           <div className="flex items-center justify-center gap-3 mt-4">
             <div className="w-12 sm:w-20 h-px bg-gradient-to-r from-transparent to-gold/50" />
@@ -286,6 +316,37 @@ export default function HeroSection() {
           <CountdownUnit value={timeLeft.minutes} label="Minutes" />
           <span className="text-gold/25 dark:text-gold-light/20 text-lg sm:text-xl md:text-2xl font-light mt-[-16px]">✦</span>
           <CountdownUnit value={timeLeft.seconds} label="Secondes" />
+        </motion.div>
+
+        {/* ═══ Action Buttons ═══ */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 1, delay: 2.0 }}
+          className="flex flex-col sm:flex-row items-center justify-center gap-4 mt-10"
+        >
+          <a
+            href="#recherche"
+            onClick={(e) => {
+              e.preventDefault()
+              document.getElementById('recherche')?.scrollIntoView({ behavior: 'smooth' })
+            }}
+            className="group relative inline-flex items-center gap-2 px-8 py-3.5 rounded-full bg-gradient-to-r from-gold to-gold-dark hover:from-gold-dark hover:to-gold text-white font-display tracking-wide shadow-xl shadow-gold/30 hover:shadow-2xl hover:shadow-gold/40 transition-all duration-300 text-sm sm:text-base"
+          >
+            <Search className="size-4" />
+            Trouver ma table
+          </a>
+          <a
+            href="#recherche"
+            onClick={(e) => {
+              e.preventDefault()
+              document.getElementById('recherche')?.scrollIntoView({ behavior: 'smooth' })
+            }}
+            className="group relative inline-flex items-center gap-2 px-8 py-3.5 rounded-full glass-card gold-border hover:bg-gold/10 text-white/90 font-display tracking-wide transition-all duration-300 text-sm sm:text-base"
+          >
+            <MailOpen className="size-4" />
+            Voir mon invitation
+          </a>
         </motion.div>
       </motion.div>
 
