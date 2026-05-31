@@ -1,8 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -39,7 +38,8 @@ import {
 import {
   Plus, Search, Download, Upload, QrCode, MoreHorizontal,
   Pencil, Trash2, ChevronLeft, ChevronRight, Loader2, X, Users,
-  Link2, Copy, Check, Share2, Mail
+  Link2, Copy, Check, Share2, Mail, FileText, AlertTriangle,
+  CheckCircle2, XCircle, FileUp
 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -67,6 +67,20 @@ interface TableInfo {
   number: number
   capacity: number
   guestCount: number
+}
+
+interface ImportResult {
+  tablesCreated: number
+  tablesUpdated: number
+  guestsCreated: number
+  guestsSkipped: number
+  duplicatesDetected: string[]
+  errors: string[]
+  details: {
+    table: string
+    guestsAdded: string[]
+    guestsSkipped: string[]
+  }[]
 }
 
 interface GuestManagerProps {
@@ -114,16 +128,22 @@ export default function GuestManager({ token }: GuestManagerProps) {
   const [search, setSearch] = useState('')
   const [filterStatus, setFilterStatus] = useState<string>('all')
   const [filterCategory, setFilterCategory] = useState<string>('all')
+  const [filterTable, setFilterTable] = useState<string>('all')
 
   // Dialogs
   const [showAddDialog, setShowAddDialog] = useState(false)
   const [showEditDialog, setShowEditDialog] = useState(false)
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
   const [showQRDialog, setShowQRDialog] = useState(false)
+  const [showImportResult, setShowImportResult] = useState(false)
+  const [showImportDialog, setShowImportDialog] = useState(false)
+  const [importMergeMode, setImportMergeMode] = useState<string>('merge')
   const [selectedGuest, setSelectedGuest] = useState<Guest | null>(null)
   const [qrCodeData, setQrCodeData] = useState<{ qrCode: string; guest: Guest } | null>(null)
   const [saving, setSaving] = useState(false)
   const [copiedLinkId, setCopiedLinkId] = useState<string | null>(null)
+  const [importResult, setImportResult] = useState<ImportResult | null>(null)
+  const [importing, setImporting] = useState(false)
 
   // Generate encrypted invitation link for a guest
   const getInvitationLink = async (guest: Guest): Promise<string> => {
@@ -153,7 +173,6 @@ export default function GuestManager({ token }: GuestManagerProps) {
       toast.success('Lien copié dans le presse-papiers')
       setTimeout(() => setCopiedLinkId(null), 2000)
     } catch {
-      // Fallback
       const textArea = document.createElement('textarea')
       textArea.value = link
       document.body.appendChild(textArea)
@@ -207,6 +226,7 @@ export default function GuestManager({ token }: GuestManagerProps) {
   })
 
   const importRef = useRef<HTMLInputElement>(null)
+  const docxImportRef = useRef<HTMLInputElement>(null)
 
   const fetchGuests = async () => {
     try {
@@ -217,6 +237,7 @@ export default function GuestManager({ token }: GuestManagerProps) {
       if (search) params.set('search', search)
       if (filterStatus !== 'all') params.set('status', filterStatus)
       if (filterCategory !== 'all') params.set('category', filterCategory)
+      if (filterTable !== 'all') params.set('tableId', filterTable)
 
       const res = await fetch(`/api/guests?${params}`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -251,7 +272,7 @@ export default function GuestManager({ token }: GuestManagerProps) {
 
   useEffect(() => {
     fetchGuests()
-  }, [page, search, filterStatus, filterCategory, token])
+  }, [page, search, filterStatus, filterCategory, filterTable, token])
 
   useEffect(() => {
     fetchTables()
@@ -288,6 +309,7 @@ export default function GuestManager({ token }: GuestManagerProps) {
         setShowAddDialog(false)
         resetForm()
         fetchGuests()
+        fetchTables()
       } else {
         toast.error(json.error || 'Erreur')
       }
@@ -323,6 +345,7 @@ export default function GuestManager({ token }: GuestManagerProps) {
         setSelectedGuest(null)
         resetForm()
         fetchGuests()
+        fetchTables()
       } else {
         toast.error(json.error || 'Erreur')
       }
@@ -346,6 +369,7 @@ export default function GuestManager({ token }: GuestManagerProps) {
         setShowDeleteDialog(false)
         setSelectedGuest(null)
         fetchGuests()
+        fetchTables()
       } else {
         const json = await res.json()
         toast.error(json.error || 'Erreur')
@@ -379,7 +403,7 @@ export default function GuestManager({ token }: GuestManagerProps) {
     }
   }
 
-  const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleXlsxImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
     try {
@@ -394,6 +418,7 @@ export default function GuestManager({ token }: GuestManagerProps) {
       if (res.ok) {
         toast.success(`${json.imported} invités importés${json.errors > 0 ? `, ${json.errors} erreurs` : ''}`)
         fetchGuests()
+        fetchTables()
       } else {
         toast.error(json.error || 'Erreur d\'import')
       }
@@ -401,6 +426,44 @@ export default function GuestManager({ token }: GuestManagerProps) {
       toast.error('Erreur de connexion')
     }
     if (importRef.current) importRef.current.value = ''
+  }
+
+  const handleDocxImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    setImporting(true)
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+      formData.append('mergeMode', importMergeMode)
+      const res = await fetch('/api/guests/import-docx', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: formData,
+      })
+      const json = await res.json()
+      if (res.ok) {
+        setImportResult(json)
+        setShowImportResult(true)
+        setShowImportDialog(false)
+        fetchGuests()
+        fetchTables()
+        if (json.guestsCreated > 0) {
+          toast.success(`${json.guestsCreated} invités importés avec succès !`)
+        }
+        if (json.errors.length > 0) {
+          toast.warning(`${json.errors.length} erreurs détectées`)
+        }
+      } else {
+        toast.error(json.error || 'Erreur d\'import')
+      }
+    } catch {
+      toast.error('Erreur de connexion au serveur')
+    } finally {
+      setImporting(false)
+    }
+    if (docxImportRef.current) docxImportRef.current.value = ''
   }
 
   const handleQRCode = async (guest: Guest) => {
@@ -465,7 +528,7 @@ export default function GuestManager({ token }: GuestManagerProps) {
             <SelectItem value="none">Aucune table</SelectItem>
             {tables.map((t) => (
               <SelectItem key={t.id} value={t.id}>
-                {t.name} (#{t.number}) — {t.guestCount}/{t.capacity}
+                Table {t.number} - {t.name} ({t.guestCount}/{t.capacity})
               </SelectItem>
             ))}
           </SelectContent>
@@ -525,10 +588,14 @@ export default function GuestManager({ token }: GuestManagerProps) {
           <Button onClick={handleExport} variant="outline" size="sm" className="border-gold/30">
             <Download className="w-4 h-4 mr-1" /> Export
           </Button>
-          <Button onClick={() => importRef.current?.click()} variant="outline" size="sm" className="border-gold/30">
-            <Upload className="w-4 h-4 mr-1" /> Import
+          <Button onClick={() => setShowImportDialog(true)} variant="outline" size="sm" className="border-gold/30">
+            <FileUp className="w-4 h-4 mr-1" /> Import Word
           </Button>
-          <input ref={importRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleImport} />
+          <Button onClick={() => importRef.current?.click()} variant="outline" size="sm" className="border-gold/30">
+            <Upload className="w-4 h-4 mr-1" /> Import Excel
+          </Button>
+          <input ref={importRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleXlsxImport} />
+          <input ref={docxImportRef} type="file" accept=".docx,.doc" className="hidden" onChange={handleDocxImport} />
           <Button onClick={() => { resetForm(); setShowAddDialog(true) }} size="sm" className="bg-gradient-gold text-white">
             <Plus className="w-4 h-4 mr-1" /> Ajouter
           </Button>
@@ -571,6 +638,17 @@ export default function GuestManager({ token }: GuestManagerProps) {
                 ))}
               </SelectContent>
             </Select>
+            <Select value={filterTable} onValueChange={(v) => { setFilterTable(v); setPage(1) }}>
+              <SelectTrigger className="w-full sm:w-44"><SelectValue placeholder="Table" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Toutes les tables</SelectItem>
+                {tables.map((t) => (
+                  <SelectItem key={t.id} value={t.id}>
+                    Table {t.number} - {t.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
         </CardContent>
       </Card>
@@ -588,6 +666,7 @@ export default function GuestManager({ token }: GuestManagerProps) {
             <div className="py-12 text-center text-muted-foreground">
               <Users className="w-12 h-12 mx-auto mb-3 opacity-30" />
               <p>Aucun invité trouvé</p>
+              <p className="text-xs mt-1">Importez un document Word ou ajoutez des invités manuellement</p>
             </div>
           ) : (
             <div className="overflow-x-auto">
@@ -598,30 +677,26 @@ export default function GuestManager({ token }: GuestManagerProps) {
                     <TableHead className="text-xs">Table</TableHead>
                     <TableHead className="text-xs hidden sm:table-cell">Catégorie</TableHead>
                     <TableHead className="text-xs">Statut</TableHead>
-                    <TableHead className="text-xs hidden md:table-cell">Places</TableHead>
+                    <TableHead className="text-xs hidden md:table-cell">Code</TableHead>
                     <TableHead className="text-xs hidden lg:table-cell">Check-in</TableHead>
                     <TableHead className="text-xs w-12"></TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  <AnimatePresence>
-                    {guests.map((guest) => (
-                      <motion.tr
-                        key={guest.id}
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        exit={{ opacity: 0 }}
-                        className="border-white/5 hover:bg-white/5 transition-colors"
-                      >
+                  {guests.map((guest) => (
+                    <TableRow
+                      key={guest.id}
+                      className="border-white/5 hover:bg-white/5 transition-colors"
+                    >
                         <TableCell>
                           <div>
                             <p className="font-medium text-sm">{guest.firstName} {guest.lastName}</p>
-                            <p className="text-xs text-muted-foreground sm:hidden">{CATEGORY_LABELS[guest.category]}</p>
+                            <p className="text-xs text-muted-foreground">{guest.seats} place{guest.seats > 1 ? 's' : ''}</p>
                           </div>
                         </TableCell>
                         <TableCell className="text-sm">
                           {guest.table ? (
-                            <span className="text-gold">{guest.table.name}</span>
+                            <span className="text-gold">T{guest.table.number} - {guest.table.name}</span>
                           ) : (
                             <span className="text-muted-foreground">—</span>
                           )}
@@ -636,7 +711,11 @@ export default function GuestManager({ token }: GuestManagerProps) {
                             {STATUS_LABELS[guest.status] || guest.status}
                           </Badge>
                         </TableCell>
-                        <TableCell className="text-sm hidden md:table-cell">{guest.seats}</TableCell>
+                        <TableCell className="hidden md:table-cell">
+                          <code className="text-xs font-mono text-muted-foreground bg-white/5 px-2 py-0.5 rounded">
+                            {guest.invitationCode}
+                          </code>
+                        </TableCell>
                         <TableCell className="hidden lg:table-cell">
                           {guest.checkedIn ? (
                             <Badge className="bg-green-500/20 text-green-400 text-xs">✓</Badge>
@@ -680,9 +759,8 @@ export default function GuestManager({ token }: GuestManagerProps) {
                             </DropdownMenuContent>
                           </DropdownMenu>
                         </TableCell>
-                      </motion.tr>
-                    ))}
-                  </AnimatePresence>
+                    </TableRow>
+                  ))}
                 </TableBody>
               </Table>
             </div>
@@ -714,6 +792,168 @@ export default function GuestManager({ token }: GuestManagerProps) {
           )}
         </CardContent>
       </Card>
+
+      {/* ─── Import Dialog ─── */}
+      <Dialog open={showImportDialog} onOpenChange={setShowImportDialog}>
+        <DialogContent className="glass-card gold-border max-w-md">
+          <DialogHeader>
+            <DialogTitle className="gold-gradient flex items-center gap-2">
+              <FileText className="w-5 h-5" />
+              Importer un document Word
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <p className="text-sm text-muted-foreground">
+              Importez la liste des invités depuis un fichier Word (.docx).
+              Le document doit contenir des sections &quot;Table N NOM&quot; suivies des noms des invités.
+            </p>
+
+            <div className="space-y-2">
+              <Label>Mode d&apos;importation</Label>
+              <Select value={importMergeMode} onValueChange={setImportMergeMode}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="merge">
+                    Fusionner — Ajouter aux données existantes (recommandé)
+                  </SelectItem>
+                  <SelectItem value="replace">
+                    Remplacer — Supprimer toutes les données actuelles
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {importMergeMode === 'replace' && (
+              <div className="flex items-start gap-2 p-3 rounded-lg bg-red-500/10 border border-red-500/20">
+                <AlertTriangle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-xs font-medium text-red-400">Attention</p>
+                  <p className="text-xs text-muted-foreground">
+                    Ce mode supprimera tous les invités et tables existants avant l&apos;import.
+                    Les codes d&apos;invitation existants ne fonctionneront plus.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            <div className="flex items-center justify-center p-6 border-2 border-dashed border-gold/20 rounded-xl bg-gold/[0.02]">
+              <Button
+                onClick={() => docxImportRef.current?.click()}
+                disabled={importing}
+                className="bg-gradient-gold text-white"
+              >
+                {importing ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Import en cours...
+                  </>
+                ) : (
+                  <>
+                    <FileUp className="w-4 h-4 mr-2" />
+                    Choisir un fichier .docx
+                  </>
+                )}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ─── Import Results Dialog ─── */}
+      <Dialog open={showImportResult} onOpenChange={setShowImportResult}>
+        <DialogContent className="glass-card gold-border max-w-lg max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="gold-gradient flex items-center gap-2">
+              <CheckCircle2 className="w-5 h-5" />
+              Résultat de l&apos;import
+            </DialogTitle>
+          </DialogHeader>
+          {importResult && (
+            <div className="space-y-4">
+              {/* Summary */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="p-3 rounded-xl bg-green-500/10 border border-green-500/20 text-center">
+                  <p className="text-2xl font-bold text-green-400">{importResult.guestsCreated}</p>
+                  <p className="text-xs text-muted-foreground">Invités créés</p>
+                </div>
+                <div className="p-3 rounded-xl bg-blue-500/10 border border-blue-500/20 text-center">
+                  <p className="text-2xl font-bold text-blue-400">{importResult.tablesCreated}</p>
+                  <p className="text-xs text-muted-foreground">Tables créées</p>
+                </div>
+                <div className="p-3 rounded-xl bg-yellow-500/10 border border-yellow-500/20 text-center">
+                  <p className="text-2xl font-bold text-yellow-400">{importResult.guestsSkipped}</p>
+                  <p className="text-xs text-muted-foreground">Doublons ignorés</p>
+                </div>
+                <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-center">
+                  <p className="text-2xl font-bold text-red-400">{importResult.errors.length}</p>
+                  <p className="text-xs text-muted-foreground">Erreurs</p>
+                </div>
+              </div>
+
+              {/* Details per table */}
+              <div className="space-y-3">
+                <h4 className="text-sm font-semibold">Détail par table</h4>
+                {importResult.details.map((detail, idx) => (
+                  <div key={idx} className="p-3 rounded-lg bg-white/[0.02] border border-white/5">
+                    <div className="flex items-center justify-between mb-2">
+                      <p className="text-sm font-medium text-gold">{detail.table}</p>
+                      <Badge variant="outline" className="text-xs bg-green-500/10 text-green-400 border-green-500/20">
+                        +{detail.guestsAdded.length}
+                      </Badge>
+                    </div>
+                    {detail.guestsAdded.length > 0 && (
+                      <div className="flex flex-wrap gap-1 mb-1">
+                        {detail.guestsAdded.map((name, i) => (
+                          <span key={i} className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-green-500/10 text-green-400 border border-green-500/20">
+                            <CheckCircle2 className="w-2.5 h-2.5" />
+                            {name}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                    {detail.guestsSkipped.length > 0 && (
+                      <div className="flex flex-wrap gap-1">
+                        {detail.guestsSkipped.map((name, i) => (
+                          <span key={i} className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-yellow-500/10 text-yellow-400 border border-yellow-500/20">
+                            <XCircle className="w-2.5 h-2.5" />
+                            {name} (doublon)
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              {/* Errors */}
+              {importResult.errors.length > 0 && (
+                <div className="space-y-2">
+                  <h4 className="text-sm font-semibold text-red-400">Erreurs</h4>
+                  {importResult.errors.map((err, idx) => (
+                    <p key={idx} className="text-xs text-red-400/80 bg-red-500/5 p-2 rounded-lg">{err}</p>
+                  ))}
+                </div>
+              )}
+
+              {/* Duplicates */}
+              {importResult.duplicatesDetected.length > 0 && (
+                <div className="space-y-2">
+                  <h4 className="text-sm font-semibold text-yellow-400">Doublons détectés</h4>
+                  <div className="flex flex-wrap gap-1">
+                    {importResult.duplicatesDetected.map((dup, idx) => (
+                      <span key={idx} className="text-[10px] px-2 py-0.5 rounded-full bg-yellow-500/10 text-yellow-400 border border-yellow-500/20">
+                        {dup}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* Add Dialog */}
       <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>

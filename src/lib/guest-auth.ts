@@ -180,6 +180,10 @@ export async function createGuestSession(
 
   const fingerprint = generateFingerprint(userAgent || 'unknown', ipAddress || 'unknown');
 
+  // Parse device info for detailed recording
+  const parsedDevice = parseUserAgent(userAgent || 'unknown');
+  const deviceInfoJson = JSON.stringify(parsedDevice);
+
   const token = generateGuestToken({
     guestId,
     sessionId: '', // Will be set after creation
@@ -196,6 +200,8 @@ export async function createGuestSession(
       token,
       userAgent: userAgent || null,
       ipAddress: ipAddress || null,
+      fingerprint,
+      deviceInfo: deviceInfoJson,
       expiresAt,
       isActive: true,
     },
@@ -297,6 +303,11 @@ export async function logGuestAccess(params: {
   ipAddress?: string;
   referrer?: string;
 }) {
+  // Parse device info from user agent for detailed recording
+  const parsedDevice = parseUserAgent(params.userAgent || 'unknown');
+  const deviceInfoJson = JSON.stringify(parsedDevice);
+  const fingerprint = generateFingerprint(params.userAgent || 'unknown', params.ipAddress || 'unknown');
+
   await db.guestAccessLog.create({
     data: {
       guestId: params.guestId || null,
@@ -305,6 +316,8 @@ export async function logGuestAccess(params: {
       userAgent: params.userAgent || null,
       ipAddress: params.ipAddress || null,
       referrer: params.referrer || null,
+      fingerprint,
+      deviceInfo: deviceInfoJson,
     },
   });
 }

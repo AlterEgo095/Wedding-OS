@@ -25,7 +25,7 @@ export default function MapSection({ settings }: { settings: VenueSettings | nul
   const lat = settings?.venue_lat || '-4.3250'
   const lng = settings?.venue_lng || '15.3222'
   const parking = settings?.venue_parking || 'Parking disponible sur place'
-  const venueTime = settings?.venue_time || '14h00 — Cérémonie'
+  const venueTime = settings?.venue_time || '21H30'
 
   const googleMapsUrl = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`
   const osmEmbedUrl = `https://www.openstreetmap.org/export/embed.html?bbox=${parseFloat(lng) - 0.005}%2C${parseFloat(lat) - 0.003}%2C${parseFloat(lng) + 0.005}%2C${parseFloat(lat) + 0.003}&layer=mapnik&marker=${lat}%2C${lng}`

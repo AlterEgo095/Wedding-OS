@@ -1,13 +1,13 @@
 'use client'
 
 import { motion } from 'framer-motion'
-import { Heart } from 'lucide-react'
+import { Heart, Sparkles } from 'lucide-react'
 
 export default function Footer() {
   const currentYear = new Date().getFullYear()
 
   return (
-    <footer className="relative border-t border-gold/10 bg-gradient-to-b from-background to-champagne/5 dark:to-champagne/3">
+    <footer className="relative border-t border-gold/10 bg-gradient-to-b from-background to-champagne/5 dark:to-champagne/3 mt-auto">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 md:py-16">
         {/* Top divider */}
         <div className="section-divider max-w-md mx-auto mb-8">
@@ -24,7 +24,7 @@ export default function Footer() {
         >
           <div className="w-14 h-14 md:w-16 md:h-16 rounded-full overflow-hidden gold-border shadow-md shadow-gold/10">
             <img
-              src="/upload/couple-photo-1.jpeg"
+              src="/uploads/couple-photo-1.jpeg"
               alt="Josué"
               className="w-full h-full object-cover"
             />
@@ -37,7 +37,7 @@ export default function Footer() {
           </motion.div>
           <div className="w-14 h-14 md:w-16 md:h-16 rounded-full overflow-hidden gold-border shadow-md shadow-gold/10">
             <img
-              src="/upload/couple-photo-2.png"
+              src="/uploads/couple-photo-2.jpeg"
               alt="Hornella"
               className="w-full h-full object-cover"
             />
@@ -73,6 +73,24 @@ export default function Footer() {
             #JosueEtHornella2026
             <Heart className="size-3 fill-gold" />
           </span>
+        </motion.div>
+
+        {/* Premium tagline */}
+        <motion.div
+          initial={{ opacity: 0 }}
+          whileInView={{ opacity: 1 }}
+          viewport={{ once: true }}
+          transition={{ duration: 0.8, delay: 0.2 }}
+          className="text-center mb-6"
+        >
+          <p className="font-display text-[10px] tracking-[0.25em] uppercase text-gold/40 font-semibold">
+            Une expérience digitale par
+          </p>
+          <div className="flex items-center justify-center gap-1 mt-1">
+            <Sparkles className="size-3 text-gold/40" />
+            <span className="font-display text-xs font-bold tracking-[0.15em] text-gold/50">AENEWS</span>
+            <Sparkles className="size-3 text-gold/40" />
+          </div>
         </motion.div>
 
         {/* Copyright */}
