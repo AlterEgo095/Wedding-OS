@@ -34,3 +34,35 @@ Stage Summary:
 - Production deployment infrastructure complete (Docker + Nginx + deploy script)
 - Application is production-ready for VPS deployment
 - Key config files: Dockerfile, docker-compose.yml, nginx/nginx.conf, deploy.sh, .env.production
+
+---
+Task ID: 2
+Agent: Main Agent
+Task: Implement Ultra Premium Invitation System with Private Secure Personal Space
+
+Work Log:
+- Updated Prisma schema: Added GuestSession model (id, guestId, token, userAgent, ipAddress, isActive, createdAt, expiresAt, lastAccessedAt), GuestAccessLog model (id, guestId, action, details, userAgent, ipAddress, referrer, createdAt), and new Guest fields (invitationViewed, invitationViewedAt, invitationViewCount, lastAccessAt)
+- Ran db:push to sync database with new schema
+- Created /src/lib/guest-auth.ts: Complete guest authentication library with JWT token generation/verification, session management (create, validate, deactivate), access logging, secure guest data retrieval (only own data), client info extraction
+- Created API route /api/guest/auth: POST endpoint for guest authentication by invitation code + optional name verification, rate limited (10/min), sets HttpOnly cookie, logs access attempts
+- Created API route /api/guest/me: GET endpoint that validates session cookie and returns ONLY the authenticated guest's data (server-side verification prevents cross-access)
+- Created API route /api/guest/logout: POST endpoint to deactivate session and clear cookie
+- Created API route /api/guest/access-logs: GET endpoint (admin-only) for viewing guest access logs with stats
+- Created /src/components/GuestAuthProvider.tsx: React context for guest auth state management (guest, authenticated, loading, login, logout, refresh)
+- Created /src/components/GuestAuthForm.tsx: Premium login form with code input + optional name+code mode, security indicators, glassmorphism design, rate limit protection
+- Created /src/components/GuestPersonalSpace.tsx: Exclusive invitation display showing couple photos, guest name, personal message, table info, seats, QR code, venue details, category badge, copy code button, expandable details, logout option
+- Updated /src/app/page.tsx: Integrated GuestAuthProvider, conditional rendering (authenticated → personal space, not authenticated → public site + auth form), auto-login via URL ?code= parameter
+- Made /api/guests/search admin-only (regular guests must use /api/guest/auth)
+- Created /src/components/admin/AccessLogManager.tsx: Admin panel for viewing access logs with stats grid, filterable by action type, color-coded entries
+- Updated AdminPanel.tsx: Added "Accès" tab with AccessLogManager component
+- Tested full auth flow: auth → session → /me → security verification → logout — all working correctly
+
+Stage Summary:
+- Complete secure invitation system implemented with private personal spaces
+- Guest search is now admin-only — guests authenticate via unique code
+- Each guest can only access their own data (server-side enforced)
+- HttpOnly cookies with JWT sessions (30-day expiry)
+- Auto-login via ?code= URL parameter
+- Access logging for admin dashboard
+- Admin can view: logins, failed attempts, access denied, view rates
+- All APIs tested and verified working
