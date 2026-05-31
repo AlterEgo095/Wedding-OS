@@ -25,7 +25,7 @@ export default function Footer() {
           <div className="w-14 h-14 md:w-16 md:h-16 rounded-full overflow-hidden gold-border shadow-md shadow-gold/10">
             <img
               src="/upload/couple-photo-1.jpeg"
-              alt="Alexandre"
+              alt="Josué"
               className="w-full h-full object-cover"
             />
           </div>
@@ -38,7 +38,7 @@ export default function Footer() {
           <div className="w-14 h-14 md:w-16 md:h-16 rounded-full overflow-hidden gold-border shadow-md shadow-gold/10">
             <img
               src="/upload/couple-photo-2.png"
-              alt="Béatrice"
+              alt="Hornella"
               className="w-full h-full object-cover"
             />
           </div>
@@ -53,10 +53,10 @@ export default function Footer() {
           className="text-center mb-6"
         >
           <h3 className="font-serif text-2xl md:text-3xl font-bold gold-gradient mb-2">
-            Alexandre & Béatrice
+            Josué & Hornella
           </h3>
           <p className="font-display text-sm tracking-[0.3em] uppercase text-muted-foreground">
-            15 Septembre 2025
+            Vendredi 26 Juin 2026
           </p>
         </motion.div>
 
@@ -70,7 +70,7 @@ export default function Footer() {
         >
           <span className="inline-flex items-center gap-2 px-5 py-2 rounded-full glass-card gold-border text-sm font-display tracking-wide text-gold">
             <Heart className="size-3 fill-gold" />
-            #AlexandreEtBeatrice2025
+            #JosueEtHornella2026
             <Heart className="size-3 fill-gold" />
           </span>
         </motion.div>
@@ -78,7 +78,7 @@ export default function Footer() {
         {/* Copyright */}
         <div className="text-center space-y-2">
           <p className="text-xs text-muted-foreground/60 font-display">
-            &copy; {currentYear} Alexandre & Béatrice — Tous droits réservés
+            &copy; {currentYear} Josué & Hornella — Tous droits réservés
           </p>
           <p className="text-xs text-muted-foreground/40 font-display flex items-center justify-center gap-1">
             Fait avec <Heart className="size-3 text-rose-400 fill-rose-400" /> pour un jour exceptionnel
