@@ -57,7 +57,7 @@ export default function PWAInstall() {
           initial={{ opacity: 0, y: 80 }}
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: 80 }}
-          transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
+          transition={{ duration: 0.5, ease: "easeOut" }}
           className="fixed bottom-20 left-4 right-4 sm:left-auto sm:right-6 sm:w-auto sm:max-w-sm z-50"
         >
           <div className="glass-card gold-border p-4 flex items-center gap-3">
