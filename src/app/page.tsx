@@ -6,7 +6,6 @@ import { Crown } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import Navigation from '@/components/Navigation'
 import HeroSection from '@/components/HeroSection'
-import GuestSearch from '@/components/GuestSearch'
 import CoupleGallery, { CoupleGallerySkeleton } from '@/components/CoupleGallery'
 import EventTimeline, { EventTimelineSkeleton } from '@/components/EventTimeline'
 import MapSection, { MapSectionSkeleton } from '@/components/MapSection'
@@ -15,6 +14,9 @@ import MarketingSection from '@/components/MarketingSection'
 import AENEWSBanner from '@/components/AENEWSBanner'
 import AdminPanel from '@/components/admin/AdminPanel'
 import PWAInstall from '@/components/PWAInstall'
+import { GuestAuthProvider, useGuestAuth } from '@/components/GuestAuthProvider'
+import GuestAuthForm from '@/components/GuestAuthForm'
+import GuestPersonalSpace from '@/components/GuestPersonalSpace'
 
 interface CoupleStory {
   id: string
@@ -37,10 +39,17 @@ interface TimelineEvent {
 interface VenueSettings {
   venue_name?: string
   venue_address?: string
+  venue_city?: string
   venue_lat?: string
   venue_lng?: string
   venue_parking?: string
   venue_time?: string
+  groom_name?: string
+  bride_name?: string
+  site_subtitle?: string
+  welcome_message?: string
+  hashtag?: string
+  venue_reference?: string
   [key: string]: string | undefined
 }
 
@@ -53,6 +62,9 @@ function HomeContent() {
 
   const searchParams = useSearchParams()
   const codeParam = searchParams.get('code')
+
+  // Auto-authenticate with URL code param
+  const { guest, authenticated, loading: authLoading, login } = useGuestAuth()
 
   useEffect(() => {
     async function fetchData() {
@@ -100,16 +112,12 @@ function HomeContent() {
     fetchData()
   }, [])
 
+  // Auto-login with code from URL
   useEffect(() => {
-    if (codeParam) {
-      const searchSection = document.getElementById('recherche')
-      if (searchSection) {
-        setTimeout(() => {
-          searchSection.scrollIntoView({ behavior: 'smooth' })
-        }, 500)
-      }
+    if (codeParam && !authenticated && !authLoading) {
+      login(codeParam)
     }
-  }, [codeParam])
+  }, [codeParam, authenticated, authLoading, login])
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -118,31 +126,54 @@ function HomeContent() {
       <main className="flex-1">
         <HeroSection />
 
-        {loading ? (
-          <CoupleGallerySkeleton />
+        {/* ─── Conditional rendering based on auth state ─── */}
+        {authLoading ? (
+          <div className="flex items-center justify-center py-32">
+            <div className="shimmer w-full max-w-2xl h-64 rounded-2xl mx-4" />
+          </div>
+        ) : authenticated && guest ? (
+          /* ─── AUTHENTICATED: Show personal space ONLY ─── */
+          <GuestPersonalSpace
+            guest={guest}
+            settings={settings || {}}
+            onLogout={async () => {
+              await fetch('/api/guest/logout', { method: 'POST' })
+              window.location.href = '/'
+            }}
+          />
         ) : (
-          <CoupleGallery stories={stories} />
+          /* ─── NOT AUTHENTICATED: Show public site + auth form ─── */
+          <>
+            {loading ? (
+              <CoupleGallerySkeleton />
+            ) : (
+              <CoupleGallery stories={stories} />
+            )}
+
+            {loading ? (
+              <EventTimelineSkeleton />
+            ) : (
+              <EventTimeline events={timeline} />
+            )}
+
+            {loading ? (
+              <MapSectionSkeleton />
+            ) : (
+              <MapSection settings={settings} />
+            )}
+
+            {/* Auth form replaces the old search section */}
+            <GuestAuthForm
+              onLogin={login}
+              initialCode={codeParam || undefined}
+            />
+
+            <MarketingSection />
+          </>
         )}
-
-        {loading ? (
-          <EventTimelineSkeleton />
-        ) : (
-          <EventTimeline events={timeline} />
-        )}
-
-        {loading ? (
-          <MapSectionSkeleton />
-        ) : (
-          <MapSection settings={settings} />
-        )}
-
-        <GuestSearch initialCode={codeParam || undefined} />
-
-        <MarketingSection />
       </main>
 
       <AENEWSBanner />
-
       <Footer />
 
       {/* Floating admin button */}
@@ -156,9 +187,7 @@ function HomeContent() {
         </Button>
       </div>
 
-      {/* PWA Install Banner */}
       <PWAInstall />
-
       <AdminPanel isOpen={adminOpen} onClose={() => setAdminOpen(false)} />
     </div>
   )
@@ -171,7 +200,9 @@ export default function Home() {
         <div className="shimmer w-full h-full fixed inset-0" />
       </div>
     }>
-      <HomeContent />
+      <GuestAuthProvider>
+        <HomeContent />
+      </GuestAuthProvider>
     </Suspense>
   )
 }
