@@ -38,7 +38,8 @@ import {
 } from '@/components/ui/dropdown-menu'
 import {
   Plus, Search, Download, Upload, QrCode, MoreHorizontal,
-  Pencil, Trash2, ChevronLeft, ChevronRight, Loader2, X, Users
+  Pencil, Trash2, ChevronLeft, ChevronRight, Loader2, X, Users,
+  Link2, Copy, Check, Share2, Mail
 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -122,6 +123,75 @@ export default function GuestManager({ token }: GuestManagerProps) {
   const [selectedGuest, setSelectedGuest] = useState<Guest | null>(null)
   const [qrCodeData, setQrCodeData] = useState<{ qrCode: string; guest: Guest } | null>(null)
   const [saving, setSaving] = useState(false)
+  const [copiedLinkId, setCopiedLinkId] = useState<string | null>(null)
+
+  // Generate encrypted invitation link for a guest
+  const getInvitationLink = async (guest: Guest): Promise<string> => {
+    try {
+      const res = await fetch('/api/guest/invite', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ invitationCode: guest.invitationCode }),
+      })
+      if (res.ok) {
+        const data = await res.json()
+        if (data.encryptedToken) {
+          return `${window.location.origin}?invite=${data.encryptedToken}`
+        }
+      }
+    } catch {
+      // Fallback to simple code link
+    }
+    return `${window.location.origin}?code=${guest.invitationCode}`
+  }
+
+  const handleCopyLink = async (guest: Guest) => {
+    const link = await getInvitationLink(guest)
+    try {
+      await navigator.clipboard.writeText(link)
+      setCopiedLinkId(guest.id)
+      toast.success('Lien copié dans le presse-papiers')
+      setTimeout(() => setCopiedLinkId(null), 2000)
+    } catch {
+      // Fallback
+      const textArea = document.createElement('textarea')
+      textArea.value = link
+      document.body.appendChild(textArea)
+      textArea.select()
+      document.execCommand('copy')
+      document.body.removeChild(textArea)
+      setCopiedLinkId(guest.id)
+      toast.success('Lien copié')
+      setTimeout(() => setCopiedLinkId(null), 2000)
+    }
+  }
+
+  const handleShareLink = async (guest: Guest) => {
+    const link = await getInvitationLink(guest)
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: `Invitation - ${guest.firstName} ${guest.lastName}`,
+          text: `Voici votre invitation privée pour le mariage de Josué & Hornella`,
+          url: link,
+        })
+      } catch {
+        // User cancelled share
+      }
+    } else {
+      await handleCopyLink(guest)
+    }
+  }
+
+  const handleSendViaWhatsApp = async (guest: Guest) => {
+    const link = await getInvitationLink(guest)
+    const message = `Cher(e) ${guest.firstName} ${guest.lastName}, voici votre invitation privée pour le mariage de Josué & Hornella : ${link}`
+    const phone = guest.phone?.replace(/\s/g, '').replace(/^\+/, '')
+    const url = phone
+      ? `https://wa.me/${phone}?text=${encodeURIComponent(message)}`
+      : `https://wa.me/?text=${encodeURIComponent(message)}`
+    window.open(url, '_blank')
+  }
 
   // Form state
   const [form, setForm] = useState({
@@ -585,6 +655,22 @@ export default function GuestManager({ token }: GuestManagerProps) {
                               <DropdownMenuItem onClick={() => handleQRCode(guest)}>
                                 <QrCode className="w-4 h-4 mr-2" /> QR Code
                               </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => handleCopyLink(guest)}>
+                                {copiedLinkId === guest.id ? (
+                                  <Check className="w-4 h-4 mr-2 text-green-500" />
+                                ) : (
+                                  <Link2 className="w-4 h-4 mr-2" />
+                                )}
+                                {copiedLinkId === guest.id ? 'Copié !' : 'Copier le lien'}
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => handleShareLink(guest)}>
+                                <Share2 className="w-4 h-4 mr-2" /> Partager
+                              </DropdownMenuItem>
+                              {guest.phone && (
+                                <DropdownMenuItem onClick={() => handleSendViaWhatsApp(guest)}>
+                                  <Mail className="w-4 h-4 mr-2" /> WhatsApp
+                                </DropdownMenuItem>
+                              )}
                               <DropdownMenuItem onClick={() => openEditDialog(guest)}>
                                 <Pencil className="w-4 h-4 mr-2" /> Modifier
                               </DropdownMenuItem>

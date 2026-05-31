@@ -1,68 +1,52 @@
-# Work Log — Josué & Hornella Wedding Platform
+# Worklog — Josué & Hornella Wedding Platform
 
 ---
 Task ID: 1
 Agent: Main Agent
-Task: Fix homepage not loading and prepare for production deployment
+Task: Audit current project state and plan ultra-secure VPS deployment
 
 Work Log:
-- Restarted dev server (was not running)
-- Verified homepage returns HTTP 200
-- Performed comprehensive production audit of entire codebase
-- Fixed CRITICAL: Removed hardcoded JWT secret in auth.ts (now throws in production if JWT_SECRET not set)
-- Fixed CRITICAL: Updated next.config.ts — disabled ignoreBuildErrors, enabled reactStrictMode, added security headers (HSTS, X-Frame-Options, CSP, etc.)
-- Fixed CRITICAL: QR code route now uses NEXT_PUBLIC_BASE_URL instead of localhost:3000 fallback
-- Fixed CRITICAL: Guest search now requires minimum 2 chars, returns limited fields (no email/phone), capped at 20 results
-- Fixed HIGH: Added rate limiting to login endpoint (in-memory + per-email tracking)
-- Fixed HIGH: Added file upload validation — size limit (10MB), extension whitelist, MIME type validation
-- Fixed HIGH: Updated db.ts — production logging only shows errors, not queries
-- Fixed HIGH: Increased bcrypt salt rounds from 10 to 12
-- Fixed HIGH: Reduced JWT expiry from 24h to 8h
-- Created /src/lib/rate-limit.ts for shared rate limiting utility
-- Created Dockerfile (multi-stage build: deps → builder → runner)
-- Created docker-compose.yml (app + nginx with SSL support)
-- Created nginx/nginx.conf (reverse proxy with security headers, caching, rate limiting)
-- Created .env.production template with all required variables
-- Created deploy.sh deployment script (full deploy, zero-downtime update, SSL setup, backup/restore)
-- Created .dockerignore for Docker builds
-- Updated layout.tsx to use NEXT_PUBLIC_BASE_URL for metadata
-- Updated package.json with production scripts (db:migrate:prod, db:seed, node instead of bun for start)
-- Removed middleware.ts (deprecated in Next.js 16, moved logic to route-level rate limiting)
+- Explored full project structure at /home/z/my-project/
+- Identified existing guest auth system, session management, access logging
+- Reviewed all API routes, components, deployment files
+- Found that the system already has a solid foundation but needs security enhancements
 
 Stage Summary:
-- All CRITICAL and HIGH security issues resolved
-- Production deployment infrastructure complete (Docker + Nginx + deploy script)
-- Application is production-ready for VPS deployment
-- Key config files: Dockerfile, docker-compose.yml, nginx/nginx.conf, deploy.sh, .env.production
+- Project uses Next.js 16, TypeScript, Prisma/SQLite, Framer Motion
+- Guest auth already exists but lacks encrypted IDs, brute force protection
+- Deployment files exist but need security hardening
+- Nginx SSL is commented out, no .env.production template
 
 ---
 Task ID: 2
 Agent: Main Agent
-Task: Implement Ultra Premium Invitation System with Private Secure Personal Space
+Task: Implement Ultra Premium Invitation System and VPS Security Hardening
 
 Work Log:
-- Updated Prisma schema: Added GuestSession model (id, guestId, token, userAgent, ipAddress, isActive, createdAt, expiresAt, lastAccessedAt), GuestAccessLog model (id, guestId, action, details, userAgent, ipAddress, referrer, createdAt), and new Guest fields (invitationViewed, invitationViewedAt, invitationViewCount, lastAccessAt)
-- Ran db:push to sync database with new schema
-- Created /src/lib/guest-auth.ts: Complete guest authentication library with JWT token generation/verification, session management (create, validate, deactivate), access logging, secure guest data retrieval (only own data), client info extraction
-- Created API route /api/guest/auth: POST endpoint for guest authentication by invitation code + optional name verification, rate limited (10/min), sets HttpOnly cookie, logs access attempts
-- Created API route /api/guest/me: GET endpoint that validates session cookie and returns ONLY the authenticated guest's data (server-side verification prevents cross-access)
-- Created API route /api/guest/logout: POST endpoint to deactivate session and clear cookie
-- Created API route /api/guest/access-logs: GET endpoint (admin-only) for viewing guest access logs with stats
-- Created /src/components/GuestAuthProvider.tsx: React context for guest auth state management (guest, authenticated, loading, login, logout, refresh)
-- Created /src/components/GuestAuthForm.tsx: Premium login form with code input + optional name+code mode, security indicators, glassmorphism design, rate limit protection
-- Created /src/components/GuestPersonalSpace.tsx: Exclusive invitation display showing couple photos, guest name, personal message, table info, seats, QR code, venue details, category badge, copy code button, expandable details, logout option
-- Updated /src/app/page.tsx: Integrated GuestAuthProvider, conditional rendering (authenticated → personal space, not authenticated → public site + auth form), auto-login via URL ?code= parameter
-- Made /api/guests/search admin-only (regular guests must use /api/guest/auth)
-- Created /src/components/admin/AccessLogManager.tsx: Admin panel for viewing access logs with stats grid, filterable by action type, color-coded entries
-- Updated AdminPanel.tsx: Added "Accès" tab with AccessLogManager component
-- Tested full auth flow: auth → session → /me → security verification → logout — all working correctly
+- Enhanced guest-auth.ts with AES-256-GCM encrypted IDs, device fingerprinting, brute force protection
+- Created /api/guest/invite route with GET (auto-auth via encrypted link) and POST (admin link generation)
+- Updated /api/guest/auth with brute force protection, encrypted link token support
+- Updated /api/guest/me with fingerprint verification, security status
+- Updated /api/guest/access-logs with comprehensive stats (brute force, fingerprint, category breakdown, suspicious IPs)
+- Updated GuestAuthProvider with loginWithLinkToken method
+- Updated page.tsx with ?invite= parameter handling
+- Enhanced AccessLogManager with device tracking, suspicious IPs, category breakdown
+- Enhanced GuestManager with copy link, share, WhatsApp integration
+- Created .env.production template with all security variables
+- Enhanced Nginx config with SSL, rate limiting, attack path blocking, security headers
+- Enhanced Dockerfile and docker-compose.yml with resource limits, security options
+- Created ultra-secure deploy.sh with --harden, --check, --rollback commands
+- Updated .env with ENCRYPTION_KEY and NEXT_PUBLIC_BASE_URL
 
 Stage Summary:
-- Complete secure invitation system implemented with private personal spaces
-- Guest search is now admin-only — guests authenticate via unique code
-- Each guest can only access their own data (server-side enforced)
-- HttpOnly cookies with JWT sessions (30-day expiry)
-- Auto-login via ?code= URL parameter
-- Access logging for admin dashboard
-- Admin can view: logins, failed attempts, access denied, view rates
-- All APIs tested and verified working
+- AES-256-GCM encryption for guest IDs in URLs (prevents enumeration)
+- Brute force protection (10 attempts/hour, 60min ban)
+- Device fingerprinting for session validation
+- Encrypted invitation links (e.g., ?invite=ENCRYPTED_TOKEN)
+- Auto-login via encrypted links for returning guests
+- Access denied message: "Cette invitation est privée et exclusivement réservée à son titulaire."
+- Comprehensive admin dashboard with suspicious IPs, device info, category breakdown
+- UFW firewall, Fail2Ban, automatic security updates in deploy.sh
+- Docker security: no-new-privileges, resource limits, non-root user
+- Nginx: TLS 1.2+1.3, rate limiting, attack path blocking, CSP headers
+- Security audit command: ./deploy.sh --check (15-point checklist)
