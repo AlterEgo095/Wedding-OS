@@ -82,3 +82,36 @@ Stage Summary:
 - Memory usage: ~34MB / 512MB limit
 - Response time: ~0.1s
 - DNS: heureuxmariage.aenews.net → 95.111.226.63
+
+---
+Task ID: 4
+Agent: Main Agent
+Task: Integrate couple photos (IMG_6300.png, 2f5b9c54.jpeg) into homepage with ultra premium design
+
+Work Log:
+- Analyzed both uploaded photos with VLM: identified Josué (chemise noire) & Hornella (robe CHANEL noire)
+- IMG_6300.png: Couple photo in golden window light, romantic ambiance, invitation-style
+- 2f5b9c54.jpeg: Intimate moment, couple sharing a glass, warm complicity
+- Copied photos to public/couple-hero.png and public/couple-moment.jpeg
+- Completely redesigned HeroSection with:
+  - Crossfading background between the two couple photos (6s interval)
+  - AnimatePresence for smooth photo transitions
+  - Premium circular photo frames with rotating conic-gradient borders
+  - Gold/rose-gold gradient borders with sparkle decorations
+  - Larger photo sizes (w-32→w-48 responsive)
+- Created new CouplePhotosSection component:
+  - Full cinematic photo gallery with two large cards
+  - Aspect 3:4 / 4:5 premium ratio cards
+  - Gold and rose-gold border frames with hover effects
+  - Cinematic bottom gradients with overlay text
+  - Floating glass badges ("Mariage 2026", "Pour toujours")
+  - Elegant J&H monogram divider
+- Added CouplePhotosSection to page.tsx (between Hero and CoupleGallery)
+- Rebuilt Docker image on VPS and redeployed
+- Verified: both photos accessible (HTTP 200, correct sizes), site working, all containers healthy
+
+Stage Summary:
+- HeroSection now features crossfading couple photos as background
+- New CouplePhotosSection provides a cinematic dual-photo gallery
+- Photos are served at /couple-hero.png (1.2MB) and /couple-moment.jpeg (759KB)
+- Site redeployed at https://heureuxmariage.aenews.net with photo integration
