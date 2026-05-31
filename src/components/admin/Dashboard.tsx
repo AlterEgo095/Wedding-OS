@@ -2,9 +2,10 @@
 
 import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
+import Image from 'next/image'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Users, UserCheck, Clock, CheckCircle, Grid3X3, Armchair, Activity } from 'lucide-react'
+import { Users, UserCheck, Clock, CheckCircle, Grid3X3, Armchair, Activity, Heart } from 'lucide-react'
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts'
 import { toast } from 'sonner'
 
@@ -131,6 +132,74 @@ export default function Dashboard({ token }: DashboardProps) {
 
   return (
     <div className="space-y-6 p-4 md:p-6">
+      {/* Couple Banner */}
+      <motion.div
+        initial={{ opacity: 0, y: -10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.6, ease: 'easeOut' }}
+        className="relative overflow-hidden rounded-2xl gold-border"
+      >
+        {/* Background */}
+        <div className="absolute inset-0 bg-gradient-to-r from-[#1a1209] via-[#2a1f10] to-[#1a1209]" />
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(212,168,83,0.12)_0%,transparent_70%)]" />
+
+        {/* Ornamental top line */}
+        <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-gold/40 to-transparent" />
+
+        <div className="relative flex items-center justify-between px-4 py-5 md:px-8 md:py-6">
+          {/* Left Photo */}
+          <div className="relative shrink-0">
+            <div className="w-16 h-16 md:w-20 md:h-20 rounded-full gold-border p-[2px] overflow-hidden">
+              <Image
+                src="/upload/couple-photo-1.jpeg"
+                alt="Alexandre"
+                width={80}
+                height={80}
+                className="w-full h-full rounded-full object-cover"
+              />
+            </div>
+            <div className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-gradient-gold flex items-center justify-center">
+              <Heart className="w-3 h-3 text-white fill-white" />
+            </div>
+          </div>
+
+          {/* Center Text */}
+          <div className="flex-1 text-center px-3 md:px-6">
+            <div className="flex items-center justify-center gap-2 md:gap-3 mb-1">
+              <span className="hidden sm:block h-px flex-1 max-w-16 bg-gradient-to-r from-transparent to-gold/50" />
+              <div className="flourish text-gold/60 text-sm">✦</div>
+              <span className="hidden sm:block h-px flex-1 max-w-16 bg-gradient-to-l from-transparent to-gold/50" />
+            </div>
+            <h2 className="font-display text-xl md:text-2xl lg:text-3xl gold-gradient font-semibold tracking-wide">
+              Mariage Alexandre & Béatrice
+            </h2>
+            <div className="flex items-center justify-center gap-2 mt-1.5">
+              <span className="h-px w-8 bg-gradient-to-r from-transparent to-gold/40" />
+              <p className="text-xs md:text-sm text-gold-light/80 font-serif tracking-widest uppercase">
+                15 Septembre 2025
+              </p>
+              <span className="h-px w-8 bg-gradient-to-l from-transparent to-gold/40" />
+            </div>
+          </div>
+
+          {/* Right Photo */}
+          <div className="relative shrink-0">
+            <div className="w-16 h-16 md:w-20 md:h-20 rounded-full gold-border p-[2px] overflow-hidden">
+              <Image
+                src="/upload/couple-photo-2.png"
+                alt="Béatrice"
+                width={80}
+                height={80}
+                className="w-full h-full rounded-full object-cover"
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Ornamental bottom line */}
+        <div className="absolute bottom-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-gold/40 to-transparent" />
+      </motion.div>
+
       {/* Metric Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 md:gap-4">
         {metricCards.map((card, i) => (

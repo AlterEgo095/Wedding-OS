@@ -130,3 +130,156 @@ Stage Summary:
 - Full admin panel with dashboard, CRUD operations, charts
 - Guest search with QR code generation
 - Timeline, couple gallery, map sections
+
+---
+Task ID: 5
+Agent: Invitation Card Creator
+Task: Create premium digital invitation card component
+
+Work Log:
+- Read worklog.md to understand project history (Tasks 0-4 completed)
+- Studied existing components (GuestSearch, HeroSection), CSS theme (globals.css), and project structure
+- Verified couple photos exist at /upload/couple-photo-1.jpeg and /upload/couple-photo-2.png
+- Created InvitationCard.tsx with premium physical invitation card design
+- Implemented paper texture background using CSS repeating-linear-gradient for both light and dark modes
+- Added gold border with glow (gold-border class) and inner golden frame
+- Built animated shimmer overlay using framer-motion on gold elements
+- Created custom OrnamentalFlourish SVG component with elegant curves and dots
+- Created SmallDivider component for ornamental section dividers
+- Implemented overlapping couple photo circles with floating animation (staggered)
+- Used gold-gradient class for couple names "Alexandre & Béatrice"
+- Built guest info section with Hash/Armchair icons, category badges with color-coded styles
+- Implemented personal message section with Quote icons as ornamental markers
+- Added QR code display with white background and subtle shadow
+- Included couple photo watermark at bottom with gentle float animation
+- Added close button with glassmorphism styling
+- Card has 3:4.2 aspect ratio matching real invitation proportions
+- All animations use framer-motion with staggered delays (0.3s-1.8s)
+- Lint check passed with zero errors
+
+Stage Summary:
+- Created premium InvitationCard component at /home/z/my-project/src/components/InvitationCard.tsx
+- Features: paper texture, gold shimmer, overlapping couple photos, ornamental flourishes, category badges, QR code, personal message with quote icons, couple photo watermark
+- Fully responsive with mobile/desktop support
+- All lint checks pass
+
+---
+Task ID: 7-8
+Agent: Dashboard & Admin Updater
+Task: Update Dashboard banner and AdminPanel with couple photos
+
+Work Log:
+- Read existing Dashboard.tsx and AdminPanel.tsx to understand current structure
+- Verified couple photos exist at /public/upload/couple-photo-1.jpeg and couple-photo-2.png
+- Added Image import from next/image and Heart icon from lucide-react to Dashboard.tsx
+- Created premium couple banner at top of Dashboard with: circular couple photos (left: Alexandre, right: Béatrice) with gold borders, center text "Mariage Alexandre & Béatrice" in gold gradient with font-display, subtitle "15 Septembre 2025" with ornamental dividers, semi-transparent dark gradient background with radial gold accent, ornamental top/bottom gold lines
+- Updated AdminPanel.tsx desktop sidebar header: replaced Crown icon with circular couple photo thumbnail (couple-photo-1.jpeg) with gold border, changed "Wedding Admin" to "Alexandre & Béatrice" with gold-gradient and font-display
+- Updated AdminPanel.tsx mobile sidebar header: same changes as desktop sidebar (couple photo + new names)
+- Removed unused Crown import from lucide-react in AdminPanel.tsx
+- All existing functionality preserved intact
+- ESLint passed with zero errors
+- Dev server compiled successfully
+
+Stage Summary:
+- Dashboard now has a beautiful couple photo banner above metric cards
+- AdminPanel sidebar headers (both desktop and mobile) show couple photo and "Alexandre & Béatrice"
+- Both components use the real couple photos from /upload/ directory
+- Luxury gold theme consistency maintained across all changes
+
+---
+Task ID: 6
+Agent: GuestSearch Updater
+Task: Update GuestSearch with invitation card and couple photos
+
+Work Log:
+- Read existing GuestSearch.tsx component and worklog.md for context
+- Found InvitationCard.tsx did not exist yet, created it as a premium invitation card component with full interface
+- Updated GuestSearch.tsx with comprehensive enhancements:
+  1. Imported InvitationCard from @/components/InvitationCard
+  2. Added decorative couple photo thumbnails in section header (Alexandre + heart + Béatrice)
+  3. Added subtle background decorative couple photos with low opacity
+  4. Created full-screen overlay InvitationCard dialog when guest clicks "Voir mon invitation"
+  5. Added "Voir mon invitation" primary button with gold gradient styling to each result card
+  6. Added couple photo thumbnail to each search result card (desktop)
+  7. Added animated welcome state with couple photos, gold-bordered glass card, and warm message
+  8. Pre-fetches QR code when opening invitation card for seamless experience
+  9. Kept existing QR code dialog as secondary access point
+  10. Added result count display ("X invitation(s) trouvée(s)")
+  11. Updated subtitle text to include "Alexandre & Béatrice vous invitent"
+- Created InvitationCard.tsx with premium design: gradient header, guest name highlight, table/seats grid, category badge, personal message quote block, QR code section, invitation code footer
+- ESLint passed with zero errors on modified files
+- Dev server compiled successfully
+
+Stage Summary:
+- GuestSearch now offers a premium invitation experience flow: search → results → "Voir mon invitation" → full-screen InvitationCard overlay
+- Couple photos integrated into section header, welcome state, result cards, and subtle background decorations
+- InvitationCard component created with matching luxury gold theme
+- All existing functionality (debounced search, URL code param, QR code dialog) preserved
+
+---
+Task ID: 4
+Agent: HeroSection Updater
+Task: Update HeroSection with couple photos and premium design
+
+Work Log:
+- Read worklog.md and existing HeroSection.tsx to understand current state
+- Verified couple photos exist at /public/upload/couple-photo-1.jpeg and couple-photo-2.png
+- Read globals.css to understand available CSS classes (glass, glass-card, gold-gradient, gold-border, section-divider, flourish, bg-gradient-hero, shimmer, animate-pulse-gold, animate-spin-slow)
+- Completely rewrote HeroSection.tsx with premium Rolls-Royce inspired design:
+  1. Full-screen parallax background using couple-photo-1.jpeg with dark cinematic overlay, vignette, and warm gold tint
+  2. Two overlapping circular couple photos with ornamental gold borders (conic-gradient spinning rings, gold-gradient border rings, rose-gold accents for Béatrice)
+  3. Gold ampersand (&) symbol between photos in a circular badge with pulse-gold animation
+  4. Individual name labels ("Alexandre", "Béatrice") below each photo
+  5. Large gold-gradient names heading "Alexandre & Béatrice"
+  6. Date "15 Septembre 2025" with ornamental flourish dividers (❧)
+  7. Restyled countdown timer with circular glass-card units, double ornamental rings, and gold ✦ separators
+  8. Ambient floating gold particles animation
+  9. Parallax scrolling with scale effect on background
+  10. Content fade-out on scroll with parallax Y offset
+  11. Premium scroll indicator with gold dot animation
+  12. Bottom gradient fade to background color for seamless section transition
+  13. Fixed wedding date from March 15 to September 15, 2025
+  14. Added next/image for couple photos with proper sizing and priority loading
+- Fixed ESLint error: removed `mounted` state (set-state-in-effect rule violation) - replaced with direct framer-motion animate props
+- All lint checks pass with zero errors
+- Dev server compiled successfully
+
+Stage Summary:
+- HeroSection transformed into a stunning cinematic full-screen hero with real couple photos
+- Parallax background using couple-photo-1.jpeg with dark overlays for readability
+- Side-by-side circular couple portraits with spinning ornamental gold rings and & symbol badge
+- Restyled countdown timer with circular glass-card design and ornamental rings
+- Wedding date corrected to 15 Septembre 2025
+- All animations use framer-motion with staggered entrance effects
+- ESLint clean, no errors
+
+---
+Task ID: 9
+Agent: Main Orchestrator
+Task: Complete integration - real guest data, couple photos, and premium invitation card
+
+Work Log:
+- Extracted guest list from DOCX file (MES INVITATION.docx) containing 229 guests across 28 tables
+- Created comprehensive seed script with all real guest data, proper table assignments, categories, and personal messages
+- Pushed database schema and seeded with real wedding data (229 guests, 28 tables, 12 timeline events, 4 couple stories, 4 media items, 25 settings)
+- Copied real couple photos (couple-photo-1.jpeg, couple-photo-2.png) to public/upload directory
+- Launched 4 parallel subagents to update all frontend components simultaneously
+- Updated HeroSection: cinematic parallax background with couple-photo-1, overlapping circular couple portraits with spinning ornamental gold rings, & symbol badge, restyled countdown timer, ambient gold particles
+- Created InvitationCard component: premium digital wedding invitation card with paper texture, gold shimmer, overlapping couple photos, ornamental flourishes, category badges, personal message with quote icons, QR code section, couple photo watermark
+- Updated GuestSearch: integrated InvitationCard as full-screen overlay, added "Voir mon invitation" gold button, couple photos in section header and welcome state, decorative background photos, result count display
+- Updated Dashboard: premium couple photo banner with circular photos (Alexandre left, Béatrice right), "Mariage Alexandre & Béatrice" center text with ornamental dividers, dark gradient background
+- Updated AdminPanel: replaced Crown icon with couple photo thumbnail, changed "Wedding Admin" to "Alexandre & Béatrice" with gold gradient (both desktop and mobile sidebars)
+- Updated Footer: added couple photos with heart between them, fixed date to "15 Septembre 2025"
+- Updated Navigation: fixed date in mobile sheet to "15 Septembre 2025"
+- Fixed AdminPanel Image naming conflict (Image from next/image vs lucide-react)
+- All lint checks pass with zero errors
+- All API endpoints verified working (guest search, dashboard stats, admin login)
+- Site renders successfully with HTTP 200
+
+Stage Summary:
+- Complete premium wedding platform with real couple photos integrated across all sections
+- 229 real guests seeded from the DOCX invitation list across 28 themed tables
+- Premium digital invitation card experience for guests
+- Admin dashboard with couple photo banner and full management capabilities
+- All components use the real couple photos (couple-photo-1.jpeg and couple-photo-2.png)
+- Zero lint errors, all APIs functional, site compiles and renders correctly

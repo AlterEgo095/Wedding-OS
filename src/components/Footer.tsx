@@ -14,6 +14,36 @@ export default function Footer() {
           <span className="flourish text-sm">✦</span>
         </div>
 
+        {/* Couple Photos */}
+        <motion.div
+          initial={{ opacity: 0, scale: 0.9 }}
+          whileInView={{ opacity: 1, scale: 1 }}
+          viewport={{ once: true }}
+          transition={{ duration: 0.6 }}
+          className="flex items-center justify-center gap-3 mb-6"
+        >
+          <div className="w-14 h-14 md:w-16 md:h-16 rounded-full overflow-hidden gold-border shadow-md shadow-gold/10">
+            <img
+              src="/upload/couple-photo-1.jpeg"
+              alt="Alexandre"
+              className="w-full h-full object-cover"
+            />
+          </div>
+          <motion.div
+            animate={{ scale: [1, 1.15, 1] }}
+            transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
+          >
+            <Heart className="size-5 text-gold fill-gold/30" />
+          </motion.div>
+          <div className="w-14 h-14 md:w-16 md:h-16 rounded-full overflow-hidden gold-border shadow-md shadow-gold/10">
+            <img
+              src="/upload/couple-photo-2.png"
+              alt="Béatrice"
+              className="w-full h-full object-cover"
+            />
+          </div>
+        </motion.div>
+
         {/* Couple Names */}
         <motion.div
           initial={{ opacity: 0, y: 10 }}
@@ -26,7 +56,7 @@ export default function Footer() {
             Alexandre & Béatrice
           </h3>
           <p className="font-display text-sm tracking-[0.3em] uppercase text-muted-foreground">
-            15 Mars 2025
+            15 Septembre 2025
           </p>
         </motion.div>
 
