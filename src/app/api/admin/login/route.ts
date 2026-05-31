@@ -1,9 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { verifyPassword, generateToken } from '@/lib/auth';
+import { verifyPassword, generateToken, checkLoginRateLimit, resetLoginRateLimit } from '@/lib/auth';
+import { getRateLimitKey, checkRateLimit, withSecurityHeaders } from '@/lib/rate-limit';
 
 export async function POST(request: NextRequest) {
   try {
+    // Rate limiting - stricter for login
+    const rateLimitKey = getRateLimitKey(request);
+    if (!checkRateLimit(`login-${rateLimitKey}`, 10, 15 * 60 * 1000)) {
+      return NextResponse.json(
+        { error: 'Too many login attempts. Please try again later.' },
+        { status: 429 }
+      );
+    }
+
     const body = await request.json();
     const { email, password } = body;
 
@@ -11,6 +21,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { error: 'Email and password are required' },
         { status: 400 }
+      );
+    }
+
+    // Application-level rate limiting per email
+    if (!checkLoginRateLimit(email.toLowerCase())) {
+      return NextResponse.json(
+        { error: 'Too many login attempts. Please try again later.' },
+        { status: 429 }
       );
     }
 
@@ -33,6 +51,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Reset rate limit on successful login
+    resetLoginRateLimit(email.toLowerCase());
+
     const token = generateToken({
       id: user.id,
       email: user.email,
@@ -49,7 +70,7 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    return NextResponse.json({
+    const response = NextResponse.json({
       token,
       user: {
         id: user.id,
@@ -58,6 +79,8 @@ export async function POST(request: NextRequest) {
         role: user.role,
       },
     });
+
+    return withSecurityHeaders(response);
   } catch (error) {
     console.error('Login error:', error);
     return NextResponse.json(

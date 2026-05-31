@@ -1,0 +1,14 @@
+node_modules
+.next
+.git
+*.md
+.env
+.env.local
+.env.production
+backups/
+dev.log
+server.log
+*.png
+*.jpeg
+agent-ctx/
+3000
