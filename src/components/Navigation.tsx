@@ -185,7 +185,7 @@ export default function Navigation() {
           </nav>
           <div className="mt-auto pt-8 border-t border-gold/10">
             <p className="text-sm text-muted-foreground text-center font-display">
-              15 Mars 2025
+              15 Septembre 2025
             </p>
           </div>
         </SheetContent>

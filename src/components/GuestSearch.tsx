@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { motion, AnimatePresence, useInView } from 'framer-motion'
-import { Search, QrCode, X, Users, Hash, Armchair, MessageSquareHeart } from 'lucide-react'
+import { Search, QrCode, X, Users, Hash, Armchair, MessageSquareHeart, Heart, MailOpen, Sparkles } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -14,6 +14,7 @@ import {
   DialogTitle,
   DialogDescription,
 } from '@/components/ui/dialog'
+import InvitationCard from '@/components/InvitationCard'
 
 interface GuestResult {
   id: string
@@ -70,6 +71,9 @@ export default function GuestSearch({ initialCode }: { initialCode?: string }) {
   const [qrDialogOpen, setQrDialogOpen] = useState(false)
   const [qrData, setQrData] = useState<QRData | null>(null)
   const [qrLoading, setQrLoading] = useState(false)
+  const [invitationOpen, setInvitationOpen] = useState(false)
+  const [selectedGuest, setSelectedGuest] = useState<GuestResult | null>(null)
+  const [selectedQrCodeUrl, setSelectedQrCodeUrl] = useState<string | undefined>(undefined)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const sectionRef = useRef<HTMLDivElement>(null)
   const isInView = useInView(sectionRef, { once: true, margin: '-100px' })
@@ -113,7 +117,24 @@ export default function GuestSearch({ initialCode }: { initialCode?: string }) {
     }
   }, [initialCode, performSearch])
 
-  // QR Code dialog
+  // Open invitation card for a guest
+  const openInvitation = async (guest: GuestResult) => {
+    setSelectedGuest(guest)
+    setSelectedQrCodeUrl(undefined)
+    setInvitationOpen(true)
+    // Pre-fetch QR code for the invitation card
+    try {
+      const res = await fetch(`/api/guests/qrcode/${guest.invitationCode}`)
+      if (res.ok) {
+        const data = await res.json()
+        setSelectedQrCodeUrl(data.qrCode)
+      }
+    } catch {
+      // QR code fetch failed, card still works without it
+    }
+  }
+
+  // QR Code dialog (kept for secondary access)
   const openQRCode = async (code: string) => {
     setQrLoading(true)
     setQrDialogOpen(true)
@@ -131,20 +152,78 @@ export default function GuestSearch({ initialCode }: { initialCode?: string }) {
   }
 
   return (
-    <section id="recherche" ref={sectionRef} className="py-20 md:py-32 relative">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        {/* Section Title */}
+    <section id="recherche" ref={sectionRef} className="py-20 md:py-32 relative overflow-hidden">
+      {/* Subtle background couple photos as decorative elements */}
+      <div className="absolute inset-0 pointer-events-none overflow-hidden">
+        <div className="absolute -top-20 -left-20 w-72 h-72 rounded-full opacity-[0.04]">
+          <img
+            src="/upload/couple-photo-1.jpeg"
+            alt=""
+            className="w-full h-full object-cover rounded-full"
+            aria-hidden="true"
+          />
+        </div>
+        <div className="absolute -bottom-20 -right-20 w-72 h-72 rounded-full opacity-[0.04]">
+          <img
+            src="/upload/couple-photo-2.png"
+            alt=""
+            className="w-full h-full object-cover rounded-full"
+            aria-hidden="true"
+          />
+        </div>
+      </div>
+
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
+        {/* Section Title with Couple Photos */}
         <motion.div
           initial={{ opacity: 0, y: 30 }}
           animate={isInView ? { opacity: 1, y: 0 } : {}}
           transition={{ duration: 0.8 }}
           className="text-center mb-12"
         >
+          {/* Couple photo thumbnails in header */}
+          <div className="flex items-center justify-center gap-4 mb-6">
+            <motion.div
+              initial={{ opacity: 0, x: -20, scale: 0.8 }}
+              animate={isInView ? { opacity: 1, x: 0, scale: 1 } : {}}
+              transition={{ duration: 0.6, delay: 0.3 }}
+              className="w-16 h-16 sm:w-20 sm:h-20 rounded-full overflow-hidden gold-border shadow-lg shadow-gold/10"
+            >
+              <img
+                src="/upload/couple-photo-1.jpeg"
+                alt="Alexandre"
+                className="w-full h-full object-cover"
+              />
+            </motion.div>
+
+            <motion.div
+              initial={{ opacity: 0, scale: 0 }}
+              animate={isInView ? { opacity: 1, scale: 1 } : {}}
+              transition={{ duration: 0.5, delay: 0.5 }}
+              className="flex items-center justify-center"
+            >
+              <Heart className="size-6 text-gold fill-gold/30" />
+            </motion.div>
+
+            <motion.div
+              initial={{ opacity: 0, x: 20, scale: 0.8 }}
+              animate={isInView ? { opacity: 1, x: 0, scale: 1 } : {}}
+              transition={{ duration: 0.6, delay: 0.3 }}
+              className="w-16 h-16 sm:w-20 sm:h-20 rounded-full overflow-hidden gold-border shadow-lg shadow-gold/10"
+            >
+              <img
+                src="/upload/couple-photo-2.png"
+                alt="Béatrice"
+                className="w-full h-full object-cover"
+              />
+            </motion.div>
+          </div>
+
           <h2 className="font-serif text-3xl md:text-5xl font-bold mb-4">
             <span className="gold-gradient">Retrouvez Votre Place</span>
           </h2>
           <p className="font-display text-lg text-muted-foreground max-w-xl mx-auto">
-            Recherchez votre invitation par nom, prénom ou code d&apos;invitation
+            Alexandre &amp; Béatrice vous invitent — Recherchez votre invitation par nom, prénom ou code
           </p>
           <div className="section-divider max-w-xs mx-auto mt-6">
             <span className="flourish text-sm">✦</span>
@@ -209,6 +288,14 @@ export default function GuestSearch({ initialCode }: { initialCode?: string }) {
               exit={{ opacity: 0 }}
               className="max-w-2xl mx-auto space-y-4"
             >
+              <motion.p
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                className="text-center text-sm font-display text-muted-foreground mb-2"
+              >
+                {results.length} invitation{results.length > 1 ? 's' : ''} trouvée{results.length > 1 ? 's' : ''}
+              </motion.p>
+
               {results.map((guest, i) => {
                 const catStyle = categoryStyles[guest.category] || categoryStyles.AMIS
                 const statStyle = statusStyles[guest.status] || statusStyles.PENDING
@@ -219,9 +306,21 @@ export default function GuestSearch({ initialCode }: { initialCode?: string }) {
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: i * 0.08, duration: 0.4 }}
-                    className="glass-card p-6 rounded-xl hover:shadow-lg hover:shadow-gold/5 transition-all duration-300 group"
+                    className="glass-card p-5 sm:p-6 rounded-xl hover:shadow-lg hover:shadow-gold/5 transition-all duration-300 group"
                   >
-                    <div className="flex items-start justify-between gap-4">
+                    <div className="flex items-start gap-4">
+                      {/* Couple photo thumbnail on result card */}
+                      <div className="shrink-0 hidden sm:block">
+                        <div className="w-12 h-12 rounded-full overflow-hidden gold-border shadow-sm">
+                          <img
+                            src="/upload/couple-photo-1.jpeg"
+                            alt=""
+                            className="w-full h-full object-cover"
+                            aria-hidden="true"
+                          />
+                        </div>
+                      </div>
+
                       <div className="flex-1 min-w-0">
                         {/* Name */}
                         <h3 className="font-serif text-xl font-semibold text-foreground mb-2">
@@ -245,7 +344,7 @@ export default function GuestSearch({ initialCode }: { initialCode?: string }) {
                         </div>
 
                         {/* Details */}
-                        <div className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
+                        <div className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground mb-4">
                           {guest.table && (
                             <span className="flex items-center gap-1.5">
                               <Hash className="size-3.5" />
@@ -264,25 +363,38 @@ export default function GuestSearch({ initialCode }: { initialCode?: string }) {
 
                         {/* Personal message */}
                         {guest.personalMessage && (
-                          <div className="mt-3 p-3 rounded-lg bg-gold/5 dark:bg-gold/5 border border-gold/10">
+                          <div className="mb-4 p-3 rounded-lg bg-gold/5 dark:bg-gold/5 border border-gold/10">
                             <p className="text-sm text-foreground/80 flex items-start gap-2">
                               <MessageSquareHeart className="size-4 text-gold shrink-0 mt-0.5" />
                               <span className="italic font-display">{guest.personalMessage}</span>
                             </p>
                           </div>
                         )}
-                      </div>
 
-                      {/* QR Button */}
-                      <Button
-                        variant="outline"
-                        size="icon"
-                        onClick={() => openQRCode(guest.invitationCode)}
-                        className="shrink-0 border-gold/20 hover:border-gold/40 hover:bg-gold/5 text-gold/70 hover:text-gold transition-all"
-                        aria-label="Voir le QR code"
-                      >
-                        <QrCode className="size-5" />
-                      </Button>
+                        {/* Action Buttons */}
+                        <div className="flex flex-wrap items-center gap-3">
+                          {/* Primary: Voir mon invitation */}
+                          <Button
+                            onClick={() => openInvitation(guest)}
+                            className="bg-gradient-to-r from-gold to-gold-dark hover:from-gold-dark hover:to-gold text-white shadow-md shadow-gold/20 hover:shadow-lg hover:shadow-gold/30 transition-all font-display"
+                          >
+                            <MailOpen className="size-4 mr-2" />
+                            Voir mon invitation
+                          </Button>
+
+                          {/* Secondary: QR Code */}
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => openQRCode(guest.invitationCode)}
+                            className="border-gold/20 hover:border-gold/40 hover:bg-gold/5 text-gold/70 hover:text-gold transition-all font-display"
+                            aria-label="Voir le QR code"
+                          >
+                            <QrCode className="size-4 mr-1.5" />
+                            QR Code
+                          </Button>
+                        </div>
+                      </div>
                     </div>
                   </motion.div>
                 )
@@ -308,22 +420,97 @@ export default function GuestSearch({ initialCode }: { initialCode?: string }) {
           </motion.div>
         )}
 
-        {/* Initial State */}
+        {/* Welcome State — when no search is active */}
         {!loading && !searched && (
           <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            className="text-center py-8"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.8, delay: 0.4 }}
+            className="max-w-2xl mx-auto"
           >
-            <div className="flourish text-3xl mb-4">⟡</div>
-            <p className="font-display text-muted-foreground">
-              Entrez votre nom ou code d&apos;invitation pour retrouver vos informations
-            </p>
+            <div className="glass-card gold-border rounded-2xl p-8 sm:p-10 text-center">
+              {/* Couple photos in welcome */}
+              <div className="flex items-center justify-center gap-3 mb-6">
+                <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-full overflow-hidden gold-border shadow-lg shadow-gold/10">
+                  <img
+                    src="/upload/couple-photo-1.jpeg"
+                    alt="Alexandre"
+                    className="w-full h-full object-cover"
+                  />
+                </div>
+                <motion.div
+                  animate={{ scale: [1, 1.2, 1] }}
+                  transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
+                >
+                  <Heart className="size-7 text-gold fill-gold/20" />
+                </motion.div>
+                <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-full overflow-hidden gold-border shadow-lg shadow-gold/10">
+                  <img
+                    src="/upload/couple-photo-2.png"
+                    alt="Béatrice"
+                    className="w-full h-full object-cover"
+                  />
+                </div>
+              </div>
+
+              {/* Welcome message */}
+              <h3 className="font-serif text-2xl sm:text-3xl font-bold gold-gradient mb-3">
+                Bienvenue !
+              </h3>
+              <p className="font-display text-lg text-muted-foreground mb-4 max-w-md mx-auto">
+                Recherchez votre nom pour retrouver votre invitation.
+              </p>
+              <p className="font-display text-sm text-muted-foreground/70 mb-6">
+                Alexandre &amp; Béatrice sont impatients de célébrer ce moment avec vous
+              </p>
+
+              {/* Decorative elements */}
+              <div className="flex items-center justify-center gap-2 text-gold/40">
+                <Sparkles className="size-4" />
+                <span className="text-xs font-display tracking-widest uppercase">Mariage 2025</span>
+                <Sparkles className="size-4" />
+              </div>
+            </div>
           </motion.div>
         )}
       </div>
 
-      {/* QR Code Dialog */}
+      {/* Invitation Card Overlay */}
+      <AnimatePresence>
+        {invitationOpen && selectedGuest && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.3 }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+            onClick={() => setInvitationOpen(false)}
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 30 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 30 }}
+              transition={{ duration: 0.4, ease: 'easeOut' }}
+              className="w-full max-w-2xl max-h-[90vh] overflow-y-auto"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <InvitationCard
+                guestName={`${selectedGuest.firstName} ${selectedGuest.lastName}`}
+                tableName={selectedGuest.table?.name ?? 'À confirmer'}
+                tableNumber={selectedGuest.table?.number ?? 0}
+                seats={selectedGuest.seats}
+                category={selectedGuest.category}
+                invitationCode={selectedGuest.invitationCode}
+                personalMessage={selectedGuest.personalMessage}
+                qrCodeUrl={selectedQrCodeUrl}
+                onClose={() => setInvitationOpen(false)}
+              />
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* QR Code Dialog (secondary access) */}
       <Dialog open={qrDialogOpen} onOpenChange={setQrDialogOpen}>
         <DialogContent className="glass-card gold-border sm:max-w-md">
           <DialogHeader>
