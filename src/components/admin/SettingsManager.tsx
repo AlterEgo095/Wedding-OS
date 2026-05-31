@@ -26,14 +26,23 @@ const SETTINGS_GROUPS = [
     ],
   },
   {
-    title: 'Événement',
+    title: 'Informations du Mariage',
     keys: [
       { key: 'wedding_date', label: 'Date du Mariage', type: 'date' },
       { key: 'wedding_time', label: 'Heure de la Cérémonie' },
       { key: 'venue_name', label: 'Nom du Lieu' },
       { key: 'venue_address', label: 'Adresse du Lieu' },
+      { key: 'venue_reference', label: 'Référence / Indication' },
       { key: 'venue_city', label: 'Ville' },
       { key: 'reception_venue', label: 'Lieu de Réception' },
+    ],
+  },
+  {
+    title: 'Invitation Digitale',
+    keys: [
+      { key: 'invitation_message', label: 'Message d\'invitation', multiline: true },
+      { key: 'site_title', label: 'Titre du Site' },
+      { key: 'site_subtitle', label: 'Sous-titre (Date affichée)' },
     ],
   },
   {
@@ -48,8 +57,6 @@ const SETTINGS_GROUPS = [
   {
     title: 'Apparence',
     keys: [
-      { key: 'site_title', label: 'Titre du Site' },
-      { key: 'site_subtitle', label: 'Sous-titre' },
       { key: 'primary_color', label: 'Couleur Principale' },
       { key: 'accent_color', label: 'Couleur d\'Accent' },
     ],
