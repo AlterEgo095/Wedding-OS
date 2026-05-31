@@ -162,7 +162,7 @@ export default function Navigation() {
         <SheetContent side="left" className="w-80 glass-card border-gold/10">
           <SheetHeader>
             <SheetTitle className="font-serif text-2xl gold-gradient text-left">
-              A & B
+              J & H
             </SheetTitle>
           </SheetHeader>
           <nav className="flex flex-col gap-2 mt-8">
