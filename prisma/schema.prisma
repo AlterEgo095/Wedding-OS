@@ -19,22 +19,28 @@ model AdminUser {
 }
 
 model Guest {
-  id              String   @id @default(cuid())
-  firstName       String
-  lastName        String
-  phone           String?
-  email           String?
-  tableId         String?
-  seats           Int      @default(1)
-  category        String   @default("AMIS") // VIP, FAMILLE, AMIS, SPONSORS, COLLEGUES
-  status          String   @default("PENDING") // CONFIRMED, PENDING, DECLINED
-  invitationCode  String   @unique
-  personalMessage String?
-  checkedIn       Boolean  @default(false)
-  checkedInAt     DateTime?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-  table           Table?   @relation(fields: [tableId], references: [id])
+  id                String           @id @default(cuid())
+  firstName         String
+  lastName          String
+  phone             String?
+  email             String?
+  tableId           String?
+  seats             Int              @default(1)
+  category          String           @default("AMIS") // VIP, FAMILLE, AMIS, SPONSORS, COLLEGUES
+  status            String           @default("PENDING") // CONFIRMED, PENDING, DECLINED
+  invitationCode    String           @unique
+  personalMessage   String?
+  checkedIn         Boolean          @default(false)
+  checkedInAt       DateTime?
+  invitationViewed  Boolean          @default(false)
+  invitationViewedAt DateTime?
+  invitationViewCount Int            @default(0)
+  lastAccessAt      DateTime?
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+  table             Table?           @relation(fields: [tableId], references: [id])
+  sessions          GuestSession[]
+  accessLogs        GuestAccessLog[]
 }
 
 model Table {
@@ -97,4 +103,31 @@ model Settings {
   value       String
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+}
+
+// ─── Guest Session Management ───
+model GuestSession {
+  id            String   @id @default(cuid())
+  guestId       String
+  token         String   @unique
+  userAgent     String?
+  ipAddress     String?
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  expiresAt     DateTime
+  lastAccessedAt DateTime @default(now())
+  guest         Guest    @relation(fields: [guestId], references: [id], onDelete: Cascade)
+}
+
+// ─── Guest Access Logging ───
+model GuestAccessLog {
+  id          String   @id @default(cuid())
+  guestId     String?
+  action      String   // LOGIN, VIEW_INVITATION, ACCESS_DENIED, LOGOUT, QR_SCAN, LINK_VISIT
+  details     String?
+  userAgent   String?
+  ipAddress   String?
+  referrer    String?
+  createdAt   DateTime @default(now())
+  guest       Guest?   @relation(fields: [guestId], references: [id], onDelete: SetNull)
 }
