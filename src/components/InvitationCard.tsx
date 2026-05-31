@@ -137,7 +137,7 @@ export default function InvitationCard({
       initial={{ opacity: 0, scale: 0.92, y: 20 }}
       animate={{ opacity: 1, scale: 1, y: 0 }}
       exit={{ opacity: 0, scale: 0.95, y: 10 }}
-      transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
+      transition={{ duration: 0.7, ease: "easeOut" }}
       className="relative flex items-center justify-center p-4 md:p-6"
     >
       {/* Close button */}
@@ -283,7 +283,7 @@ export default function InvitationCard({
           <motion.div
             initial={{ opacity: 0, scale: 0.8 }}
             animate={{ opacity: 1, scale: 1 }}
-            transition={{ delay: 0.7, duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
+            transition={{ delay: 0.7, duration: 0.6, ease: "easeOut" }}
             className="relative flex items-center mt-5 mb-4"
           >
             {/* Photo 1 (left, slightly behind) */}
