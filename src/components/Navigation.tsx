@@ -70,7 +70,7 @@ export default function Navigation() {
               className="flex items-center gap-2"
             >
               <span className="font-serif text-xl md:text-2xl font-bold gold-gradient">
-                A & B
+                J & H
               </span>
             </a>
 
@@ -185,7 +185,7 @@ export default function Navigation() {
           </nav>
           <div className="mt-auto pt-8 border-t border-gold/10">
             <p className="text-sm text-muted-foreground text-center font-display">
-              15 Septembre 2025
+              Vendredi 26 Juin 2026
             </p>
           </div>
         </SheetContent>

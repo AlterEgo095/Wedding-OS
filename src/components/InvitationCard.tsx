@@ -1,5 +1,6 @@
 'use client'
 
+import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { X, Heart, Gem, Users, Hash, Armchair, Ticket, Quote } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
@@ -112,6 +113,24 @@ export default function InvitationCard({
   onClose,
 }: InvitationCardProps) {
   const catConfig = categoryConfig[category] || categoryConfig.AMIS
+  const [settings, setSettings] = useState<Record<string, string>>({})
+
+  useEffect(() => {
+    fetch('/api/settings')
+      .then(res => res.ok ? res.json() : null)
+      .then(data => {
+        if (data?.settings) setSettings(data.settings)
+      })
+      .catch(() => {})
+  }, [])
+
+  const venueName = settings.venue_name || 'Salle Polyvalente – Grand Palais Kinshasa'
+  const venueAddress = settings.venue_address || '21 / 22 Avenue Bobozo'
+  const venueReference = settings.venue_reference || 'Réf. Hôpital AKRAM, à la diagonale du Centre TELEMA'
+  const weddingDateDisplay = settings.site_subtitle || 'Vendredi 26 Juin 2026'
+  const groomName = settings.groom_name || 'Josué'
+  const brideName = settings.bride_name || 'Hornella'
+  const invitationMessage = settings.invitation_message || `${groomName} & ${brideName} ont l'honneur de vous inviter à leur célébration de mariage.`
 
   return (
     <motion.div
@@ -249,7 +268,15 @@ export default function InvitationCard({
             transition={{ delay: 0.5, duration: 0.8 }}
             className="font-display text-sm md:text-base tracking-[0.25em] uppercase text-muted-foreground mt-3"
           >
-            Vous êtes invité(e)
+            {groomName} & {brideName} ont l&apos;honneur
+          </motion.p>
+          <motion.p
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.6, duration: 0.8 }}
+            className="font-display text-xs md:text-sm tracking-[0.15em] text-muted-foreground/70"
+          >
+            de vous inviter à leur célébration de mariage
           </motion.p>
 
           {/* ─── COUPLE PHOTOS (overlapping circles) ─── */}
@@ -268,7 +295,7 @@ export default function InvitationCard({
               <div className="w-16 h-16 md:w-20 md:h-20 rounded-full overflow-hidden ring-2 ring-gold/40 shadow-lg shadow-gold/10">
                 <Image
                   src="/upload/couple-photo-1.jpeg"
-                  alt="Alexandre"
+                  alt="Josué"
                   width={80}
                   height={80}
                   className="w-full h-full object-cover"
@@ -284,7 +311,7 @@ export default function InvitationCard({
               <div className="w-16 h-16 md:w-20 md:h-20 rounded-full overflow-hidden ring-2 ring-rose-gold/40 shadow-lg shadow-rose-gold/10">
                 <Image
                   src="/upload/couple-photo-2.png"
-                  alt="Béatrice"
+                  alt="Hornella"
                   width={80}
                   height={80}
                   className="w-full h-full object-cover"
@@ -300,11 +327,11 @@ export default function InvitationCard({
             transition={{ delay: 0.9, duration: 0.8 }}
           >
             <h2 className="font-serif text-2xl md:text-3xl font-bold">
-              <span className="gold-gradient">Alexandre</span>
+              <span className="gold-gradient">{groomName}</span>
               <span className="block my-0.5 font-display text-lg font-light text-gold/50 tracking-[0.15em]">
                 &amp;
               </span>
-              <span className="gold-gradient">Béatrice</span>
+              <span className="gold-gradient">{brideName}</span>
             </h2>
           </motion.div>
 
@@ -409,8 +436,19 @@ export default function InvitationCard({
               <span className="flourish text-[10px]">✦</span>
             </div>
             <p className="font-display text-base md:text-lg tracking-[0.15em] text-foreground/80">
-              15 Septembre 2025
+              {weddingDateDisplay}
             </p>
+            <p className="font-display text-xs md:text-sm tracking-[0.1em] text-foreground/60 mt-1">
+              {venueName}
+            </p>
+            <p className="font-display text-[10px] md:text-xs tracking-[0.1em] text-muted-foreground/60 mt-0.5">
+              {venueAddress}
+            </p>
+            {venueReference && (
+              <p className="font-display text-[9px] md:text-[10px] tracking-[0.08em] text-muted-foreground/40 mt-0.5 italic">
+                {venueReference}
+              </p>
+            )}
 
             {/* QR Code */}
             {qrCodeUrl && (

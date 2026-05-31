@@ -1,4 +1,37 @@
 ---
+Task ID: 10
+Agent: Main Orchestrator
+Task: Rebrand wedding platform to Josué & Hornella with full venue/date/identity update
+
+Work Log:
+- Generated new AI couple photos: couple-photo-1.jpeg (groom, 1152x864) and couple-photo-2.png (bride, 864x1152)
+- Updated seed.ts with new settings: groom_name=Josué, bride_name=Hornella, wedding_date=2026-06-26, venue_name=Salle Polyvalente – Grand Palais Kinshasa, venue_address=21/22 Avenue Bobozo, venue_reference=Réf. Hôpital AKRAM
+- Re-seeded database with 26 settings, 28 tables, 229 guests
+- Updated HeroSection: dynamic names/date from settings API, "Trouver ma table" and "Voir mon invitation" buttons, parallax couple photos, countdown timer with dynamic date
+- Updated InvitationCard: dynamic couple names, venue info, invitation text "Josué & Hornella ont l'honneur de vous inviter...", venue reference, all fetched from settings API
+- Updated GuestSearch: all couple references changed to Josué & Hornella, alt texts updated, Mariage 2026
+- Updated Navigation: J & H branding, Vendredi 26 Juin 2026 in mobile sheet
+- Updated Footer: Josué & Hornella names, new date, #JosueEtHornella2026, copyright updated
+- Updated MapSection: default venue name/address/coordinates for Kinshasa, venue reference display
+- Updated Dashboard: Mariage Josué & Hornella banner, Vendredi 26 Juin 2026, couple photo alts
+- Updated AdminPanel: Josué & Hornella in sidebar headers (both desktop and mobile)
+- Updated layout.tsx: metadata title, description, keywords, OpenGraph, Twitter cards all updated
+- Made HeroSection and InvitationCard dynamically fetch settings from /api/settings API
+- All lint checks pass with zero errors
+- Site renders with HTTP 200, API settings verified correct
+
+Stage Summary:
+- Complete rebrand from Alexandre & Béatrice to Josué & Hornella
+- Wedding date updated to Vendredi 26 Juin 2026
+- Venue updated to Salle Polyvalente – Grand Palais Kinshasa, 21/22 Avenue Bobozo
+- Venue reference: Réf. Hôpital AKRAM, à la diagonale du Centre TELEMA
+- Hero action buttons added: "Trouver ma table" and "Voir mon invitation"
+- InvitationCard now shows full invitation text and venue details
+- Dynamic settings: HeroSection and InvitationCard fetch live settings from API
+- New AI-generated couple photos installed
+- Zero lint errors, all APIs functional
+
+---
 Task ID: 0
 Agent: Main
 Task: Initial project analysis and planning

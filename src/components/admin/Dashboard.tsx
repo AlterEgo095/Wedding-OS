@@ -152,7 +152,7 @@ export default function Dashboard({ token }: DashboardProps) {
             <div className="w-16 h-16 md:w-20 md:h-20 rounded-full gold-border p-[2px] overflow-hidden">
               <Image
                 src="/upload/couple-photo-1.jpeg"
-                alt="Alexandre"
+                alt="Josué"
                 width={80}
                 height={80}
                 className="w-full h-full rounded-full object-cover"
@@ -171,12 +171,12 @@ export default function Dashboard({ token }: DashboardProps) {
               <span className="hidden sm:block h-px flex-1 max-w-16 bg-gradient-to-l from-transparent to-gold/50" />
             </div>
             <h2 className="font-display text-xl md:text-2xl lg:text-3xl gold-gradient font-semibold tracking-wide">
-              Mariage Alexandre & Béatrice
+              Mariage Josué & Hornella
             </h2>
             <div className="flex items-center justify-center gap-2 mt-1.5">
               <span className="h-px w-8 bg-gradient-to-r from-transparent to-gold/40" />
               <p className="text-xs md:text-sm text-gold-light/80 font-serif tracking-widest uppercase">
-                15 Septembre 2025
+                Vendredi 26 Juin 2026
               </p>
               <span className="h-px w-8 bg-gradient-to-l from-transparent to-gold/40" />
             </div>
@@ -187,7 +187,7 @@ export default function Dashboard({ token }: DashboardProps) {
             <div className="w-16 h-16 md:w-20 md:h-20 rounded-full gold-border p-[2px] overflow-hidden">
               <Image
                 src="/upload/couple-photo-2.png"
-                alt="Béatrice"
+                alt="Hornella"
                 width={80}
                 height={80}
                 className="w-full h-full rounded-full object-cover"
