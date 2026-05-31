@@ -4,8 +4,10 @@ import { NextRequest } from 'next/server';
 import { db } from './db';
 
 // CRITICAL: JWT_SECRET must be set via environment variable in production
+// During build (next build), NODE_ENV may be 'production' but JWT_SECRET isn't available
+// We use a placeholder during build and validate at runtime
 const JWT_SECRET = process.env.JWT_SECRET || (
-  process.env.NODE_ENV === 'production'
+  process.env.NODE_ENV === 'production' && process.env.NEXT_PHASE !== 'phase-production-build'
     ? (() => { throw new Error('FATAL: JWT_SECRET environment variable is required in production') })()
     : 'wedding-platform-dev-secret-key-not-for-production'
 );
