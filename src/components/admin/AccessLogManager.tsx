@@ -11,6 +11,7 @@ import {
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { toast } from 'sonner'
 
 interface AccessLogManagerProps {
   token: string
@@ -44,6 +45,8 @@ interface AccessStats {
   totalFingerprintMismatches: number
   totalLinkVisits: number
   totalQRScans: number
+  totalSearches: number
+  totalSearchBlocked: number
   viewedInvitations: number
   totalGuests: number
   confirmedGuests: number
@@ -60,6 +63,8 @@ interface AccessStats {
 const actionConfig: Record<string, { label: string; icon: typeof LogIn; color: string; bg: string }> = {
   LOGIN: { label: 'Connexion', icon: LogIn, color: 'text-green-500', bg: 'bg-green-500/10' },
   VIEW_INVITATION: { label: 'Consultation', icon: Eye, color: 'text-blue-500', bg: 'bg-blue-500/10' },
+  SEARCH: { label: 'Recherche nom', icon: Search, color: 'text-cyan-500', bg: 'bg-cyan-500/10' },
+  SEARCH_BLOCKED: { label: 'Recherche bloquée', icon: Ban, color: 'text-orange-500', bg: 'bg-orange-500/10' },
   ACCESS_DENIED: { label: 'Accès refusé', icon: Ban, color: 'text-red-500', bg: 'bg-red-500/10' },
   LOGOUT: { label: 'Déconnexion', icon: LogOut, color: 'text-gray-500', bg: 'bg-gray-500/10' },
   QR_SCAN: { label: 'Scan QR', icon: QrCode, color: 'text-purple-500', bg: 'bg-purple-500/10' },
@@ -136,6 +141,10 @@ export default function AccessLogManager({ token }: AccessLogManagerProps) {
         headers: { Authorization: `Bearer ${token}` },
       })
 
+      if (res.status === 401) {
+        toast.error('Session expirée')
+        return
+      }
       if (res.ok) {
         const data = await res.json()
         setLogs(data.logs || [])
@@ -265,9 +274,9 @@ export default function AccessLogManager({ token }: AccessLogManagerProps) {
             <p className="text-[9px] font-display tracking-wide uppercase text-muted-foreground">Sessions actives</p>
           </div>
           <div className="glass-card p-3 rounded-xl text-center">
-            <Link className="size-4 text-amber-500 mx-auto mb-1.5" />
-            <p className="text-lg font-bold font-serif">{stats.totalLinkVisits}</p>
-            <p className="text-[9px] font-display tracking-wide uppercase text-muted-foreground">Visites par lien</p>
+            <Search className="size-4 text-cyan-500 mx-auto mb-1.5" />
+            <p className="text-lg font-bold font-serif">{stats.totalSearches}</p>
+            <p className="text-[9px] font-display tracking-wide uppercase text-muted-foreground">Recherches nom</p>
           </div>
           <div className="glass-card p-3 rounded-xl text-center">
             <Fingerprint className="size-4 text-orange-500 mx-auto mb-1.5" />
@@ -351,7 +360,7 @@ export default function AccessLogManager({ token }: AccessLogManagerProps) {
       {/* ─── Filter ─── */}
       <div className="flex items-center gap-2 flex-wrap">
         <span className="text-xs font-display text-muted-foreground font-bold uppercase tracking-wide">Filtrer :</span>
-        {['', 'LOGIN', 'VIEW_INVITATION', 'ACCESS_DENIED', 'AUTH_FAILED', 'BRUTE_FORCE_BLOCKED', 'FINGERPRINT_MISMATCH', 'LOGOUT'].map((action) => (
+        {['', 'LOGIN', 'SEARCH', 'SEARCH_BLOCKED', 'VIEW_INVITATION', 'ACCESS_DENIED', 'AUTH_FAILED', 'BRUTE_FORCE_BLOCKED', 'FINGERPRINT_MISMATCH', 'LOGOUT'].map((action) => (
           <button
             key={action}
             onClick={() => setFilter(action)}

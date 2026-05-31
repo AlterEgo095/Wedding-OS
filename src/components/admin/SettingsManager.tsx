@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Save, Loader2, Settings as SettingsIcon } from 'lucide-react'
+import { Textarea } from '@/components/ui/textarea'
 import { toast } from 'sonner'
 
 interface SettingsManagerProps {
@@ -178,13 +179,23 @@ export default function SettingsManager({ token, userRole }: SettingsManagerProp
               {group.keys.map((field) => (
                 <div key={field.key} className="space-y-1.5">
                   <Label className="text-xs text-muted-foreground">{field.label}</Label>
-                  <Input
-                    type={field.type || 'text'}
-                    value={settings[field.key] || ''}
-                    onChange={(e) => setSettings({ ...settings, [field.key]: e.target.value })}
-                    placeholder={field.label}
-                    className="bg-white/5"
-                  />
+                  {field.multiline ? (
+                    <Textarea
+                      value={settings[field.key] || ''}
+                      onChange={(e) => setSettings({ ...settings, [field.key]: e.target.value })}
+                      placeholder={field.label}
+                      className="bg-white/5 min-h-[100px] resize-y"
+                      rows={4}
+                    />
+                  ) : (
+                    <Input
+                      type={field.type || 'text'}
+                      value={settings[field.key] || ''}
+                      onChange={(e) => setSettings({ ...settings, [field.key]: e.target.value })}
+                      placeholder={field.label}
+                      className="bg-white/5"
+                    />
+                  )}
                 </div>
               ))}
             </CardContent>

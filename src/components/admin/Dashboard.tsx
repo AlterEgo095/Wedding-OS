@@ -124,6 +124,7 @@ export default function Dashboard({ token }: DashboardProps) {
     { title: 'Total Invités', value: data.totalGuests, icon: Users, color: 'from-gold/20 to-gold-light/10' },
     { title: 'Confirmés', value: data.confirmedGuests, icon: UserCheck, color: 'from-green-500/20 to-green-600/10' },
     { title: 'En attente', value: data.pendingGuests, icon: Clock, color: 'from-amber-500/20 to-amber-600/10' },
+    { title: 'Déclinés', value: data.declinedGuests, icon: Heart, color: 'from-red-500/20 to-red-600/10' },
     { title: 'Check-in', value: data.checkedInGuests, icon: CheckCircle, color: 'from-emerald-500/20 to-emerald-600/10' },
     { title: 'Tables', value: data.totalTables, icon: Grid3X3, color: 'from-violet-500/20 to-violet-600/10' },
   ]
@@ -151,7 +152,7 @@ export default function Dashboard({ token }: DashboardProps) {
           <div className="relative shrink-0">
             <div className="w-16 h-16 md:w-20 md:h-20 rounded-full gold-border p-[2px] overflow-hidden">
               <Image
-                src="/upload/couple-photo-1.jpeg"
+                src="/uploads/couple-photo-1.jpeg"
                 alt="Josué"
                 width={80}
                 height={80}
@@ -186,7 +187,7 @@ export default function Dashboard({ token }: DashboardProps) {
           <div className="relative shrink-0">
             <div className="w-16 h-16 md:w-20 md:h-20 rounded-full gold-border p-[2px] overflow-hidden">
               <Image
-                src="/upload/couple-photo-2.png"
+                src="/uploads/couple-photo-2.jpeg"
                 alt="Hornella"
                 width={80}
                 height={80}
@@ -201,7 +202,7 @@ export default function Dashboard({ token }: DashboardProps) {
       </motion.div>
 
       {/* Metric Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 md:gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 md:gap-4">
         {metricCards.map((card, i) => (
           <motion.div
             key={card.title}

@@ -29,6 +29,7 @@ interface GuestAuthContextType {
   loading: boolean
   login: (code: string, firstName?: string, lastName?: string) => Promise<{ success: boolean; error?: string; remainingAttempts?: number }>
   loginWithLinkToken: (token: string) => Promise<{ success: boolean; error?: string }>
+  loginByLookupToken: (lookupToken: string) => Promise<{ success: boolean; error?: string }>
   logout: () => Promise<void>
   refresh: () => Promise<void>
 }
@@ -39,6 +40,7 @@ const GuestAuthContext = createContext<GuestAuthContextType>({
   loading: true,
   login: async () => ({ success: false }),
   loginWithLinkToken: async () => ({ success: false }),
+  loginByLookupToken: async () => ({ success: false }),
   logout: async () => {},
   refresh: async () => {},
 })
@@ -105,7 +107,6 @@ export function GuestAuthProvider({ children }: { children: ReactNode }) {
 
   const loginWithLinkToken = useCallback(async (linkToken: string) => {
     try {
-      // Use the dedicated invite API route
       const res = await fetch(`/api/guest/invite?token=${encodeURIComponent(linkToken)}`)
       const data = await res.json()
 
@@ -118,6 +119,35 @@ export function GuestAuthProvider({ children }: { children: ReactNode }) {
       return {
         success: false,
         error: data.error || 'Lien d\'invitation invalide',
+      }
+    } catch {
+      return { success: false, error: 'Erreur de connexion au serveur' }
+    }
+  }, [])
+
+  // ═══════════════════════════════════════════════════════════
+  // NEW: Auto-authenticate via lookup token (name-based, no code)
+  // This is the primary authentication method for guests.
+  // ═══════════════════════════════════════════════════════════
+  const loginByLookupToken = useCallback(async (lookupToken: string) => {
+    try {
+      const res = await fetch('/api/guest/auto-auth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lookupToken }),
+      })
+
+      const data = await res.json()
+
+      if (res.ok && data.success) {
+        setGuest(data.guest)
+        setAuthenticated(true)
+        return { success: true }
+      }
+
+      return {
+        success: false,
+        error: data.error || 'Impossible de trouver votre invitation',
       }
     } catch {
       return { success: false, error: 'Erreur de connexion au serveur' }
@@ -139,7 +169,7 @@ export function GuestAuthProvider({ children }: { children: ReactNode }) {
   }, [checkSession])
 
   return (
-    <GuestAuthContext.Provider value={{ guest, authenticated, loading, login, loginWithLinkToken, logout, refresh }}>
+    <GuestAuthContext.Provider value={{ guest, authenticated, loading, login, loginWithLinkToken, loginByLookupToken, logout, refresh }}>
       {children}
     </GuestAuthContext.Provider>
   )

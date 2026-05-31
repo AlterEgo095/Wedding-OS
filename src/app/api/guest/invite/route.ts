@@ -86,6 +86,8 @@ export async function GET(request: NextRequest) {
         ...clientInfo,
       });
 
+      const encryptedLink = generateInvitationLinkToken(guest.invitationCode);
+
       return NextResponse.json({
         success: true,
         authenticated: true,
@@ -100,6 +102,7 @@ export async function GET(request: NextRequest) {
           personalMessage: guest.personalMessage,
           checkedIn: guest.checkedIn,
           table: guest.table,
+          encryptedLink,
         },
       });
     }
@@ -128,6 +131,8 @@ export async function GET(request: NextRequest) {
     });
 
     // Set HttpOnly cookie and return guest data
+    const encryptedLink = generateInvitationLinkToken(guest.invitationCode);
+
     const response = NextResponse.json({
       success: true,
       authenticated: true,
@@ -142,6 +147,7 @@ export async function GET(request: NextRequest) {
         personalMessage: guest.personalMessage,
         checkedIn: guest.checkedIn,
         table: guest.table,
+        encryptedLink,
       },
     });
 

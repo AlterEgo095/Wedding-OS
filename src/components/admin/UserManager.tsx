@@ -1,7 +1,6 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -252,15 +251,11 @@ export default function UserManager({ token, userRole }: UserManagerProps) {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                <AnimatePresence>
-                  {users.map((user) => (
-                    <motion.tr
-                      key={user.id}
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      exit={{ opacity: 0 }}
-                      className="border-white/5 hover:bg-white/5 transition-colors"
-                    >
+                {users.map((user) => (
+                  <TableRow
+                    key={user.id}
+                    className="border-white/5 hover:bg-white/5 transition-colors"
+                  >
                       <TableCell>
                         <div className="flex items-center gap-2">
                           <div className="w-8 h-8 rounded-full bg-gradient-gold flex items-center justify-center text-white text-xs font-bold">
@@ -299,9 +294,8 @@ export default function UserManager({ token, userRole }: UserManagerProps) {
                           </Button>
                         </div>
                       </TableCell>
-                    </motion.tr>
+                    </TableRow>
                   ))}
-                </AnimatePresence>
               </TableBody>
             </Table>
           </div>
