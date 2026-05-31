@@ -8,7 +8,7 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
 import {
   LayoutDashboard, Users, Grid3X3, Image as ImageIcon, Clock, Shield, Settings, LogOut,
-  X, Menu
+  X, Menu, FileSearch
 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -20,6 +20,7 @@ import MediaManager from './MediaManager'
 import UserManager from './UserManager'
 import TimelineManager from './TimelineManager'
 import SettingsManager from './SettingsManager'
+import AccessLogManager from './AccessLogManager'
 
 interface AuthUser {
   id: string
@@ -33,7 +34,7 @@ interface AdminPanelProps {
   onClose: () => void
 }
 
-type TabId = 'dashboard' | 'guests' | 'tables' | 'media' | 'timeline' | 'users' | 'settings'
+type TabId = 'dashboard' | 'guests' | 'tables' | 'media' | 'timeline' | 'users' | 'settings' | 'access-logs'
 
 interface NavItem {
   id: TabId
@@ -46,6 +47,7 @@ const NAV_ITEMS: NavItem[] = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { id: 'guests', label: 'Invités', icon: Users },
   { id: 'tables', label: 'Tables', icon: Grid3X3 },
+  { id: 'access-logs', label: 'Accès', icon: FileSearch },
   { id: 'media', label: 'Médias', icon: ImageIcon },
   { id: 'timeline', label: 'Programme', icon: Clock },
   { id: 'users', label: 'Utilisateurs', icon: Shield, superAdminOnly: true },
@@ -112,6 +114,8 @@ export default function AdminPanel({ isOpen, onClose }: AdminPanelProps) {
         return <TimelineManager token={token} />
       case 'users':
         return <UserManager token={token} userRole={user?.role || ''} />
+      case 'access-logs':
+        return <AccessLogManager token={token} />
       case 'settings':
         return <SettingsManager token={token} userRole={user?.role || ''} />
       default:

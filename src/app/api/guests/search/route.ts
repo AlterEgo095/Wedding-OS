@@ -1,8 +1,24 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import { getAuthUser, hasPermission } from '@/lib/auth';
 
+// Guest search is now ADMIN-ONLY for security
+// Regular guests authenticate via /api/guest/auth
 export async function GET(request: NextRequest) {
   try {
+    // Require admin authentication
+    const user = await getAuthUser(request);
+    if (!user) {
+      return NextResponse.json(
+        { error: 'Accès non autorisé. Utilisez votre code d\'invitation pour accéder à votre espace personnel.' },
+        { status: 401 }
+      );
+    }
+
+    if (!hasPermission(user.role, ['ORGANIZER'])) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+
     const { searchParams } = new URL(request.url);
     const q = searchParams.get('q');
 
@@ -28,10 +44,16 @@ export async function GET(request: NextRequest) {
         firstName: true,
         lastName: true,
         invitationCode: true,
+        phone: true,
+        email: true,
         seats: true,
         category: true,
         status: true,
         personalMessage: true,
+        checkedIn: true,
+        invitationViewed: true,
+        invitationViewCount: true,
+        lastAccessAt: true,
         table: {
           select: {
             id: true,
@@ -40,7 +62,7 @@ export async function GET(request: NextRequest) {
           },
         },
       },
-      take: 20,
+      take: 50,
     });
 
     return NextResponse.json({ guests });
