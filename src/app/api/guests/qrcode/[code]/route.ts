@@ -37,10 +37,10 @@ export async function GET(
     }
 
     // Build the URL that the QR code will encode
-    const host = request.headers.get('host') || 'localhost:3000';
-    const protocol = request.headers.get('x-forwarded-proto') || 'https';
-    const baseURL = `${protocol}://${host}`;
-    const qrUrl = `${baseURL}/?code=${code}`;
+    // Priority: NEXT_PUBLIC_BASE_URL > x-forwarded headers > request host
+    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL ||
+      `${request.headers.get('x-forwarded-proto') || 'https'}://${request.headers.get('host') || 'localhost:3000'}`;
+    const qrUrl = `${baseUrl}/?code=${code}`;
 
     // Generate QR code as data URL
     const qrDataUrl = await QRCode.toDataURL(qrUrl, {

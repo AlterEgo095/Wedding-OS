@@ -39,7 +39,7 @@ export const viewport: Viewport = {
 };
 
 export const metadata: Metadata = {
-  metadataBase: new URL("https://x16kp4ft4d40-d.space-z.ai"),
+  metadataBase: new URL(process.env.NEXT_PUBLIC_BASE_URL || "https://x16kp4ft4d40-d.space-z.ai"),
   title: "Mariage Josué & Hornella",
   description:
     "Rejoignez-nous pour célébrer l'union de Josué et Hornella. Découvrez les détails de notre mariage, trouvez votre table et partagez ce moment unique avec nous.",
