@@ -5,8 +5,6 @@ import Image from 'next/image'
 import { motion, useScroll, useTransform } from 'framer-motion'
 import { Search, MailOpen } from 'lucide-react'
 
-const DEFAULT_WEDDING_DATE = new Date('2026-06-26T14:00:00')
-
 interface TimeLeft {
   days: number
   hours: number
@@ -14,21 +12,7 @@ interface TimeLeft {
   seconds: number
 }
 
-function calculateTimeLeft(): TimeLeft {
-  const now = new Date()
-  const difference = WEDDING_DATE.getTime() - now.getTime()
 
-  if (difference <= 0) {
-    return { days: 0, hours: 0, minutes: 0, seconds: 0 }
-  }
-
-  return {
-    days: Math.floor(difference / (1000 * 60 * 60 * 24)),
-    hours: Math.floor((difference / (1000 * 60 * 60)) % 24),
-    minutes: Math.floor((difference / 1000 / 60) % 60),
-    seconds: Math.floor((difference / 1000) % 60),
-  }
-}
 
 function CountdownUnit({ value, label }: { value: number; label: string }) {
   return (
@@ -60,7 +44,7 @@ export default function HeroSection() {
   const contentOpacity = useTransform(scrollY, [0, 500], [1, 0])
   const contentY = useTransform(scrollY, [0, 500], [0, 80])
 
-  const weddingDate = settings.wedding_date ? new Date(`${settings.wedding_date}T${settings.wedding_time || '14:00:00'}`) : DEFAULT_WEDDING_DATE
+  const weddingDate = settings.wedding_date ? new Date(`${settings.wedding_date}T${settings.wedding_time || '14:00:00'}`) : new Date('2026-06-26T14:00:00')
   const groomName = settings.groom_name || 'Josué'
   const brideName = settings.bride_name || 'Hornella'
   const dateDisplay = settings.site_subtitle || 'Vendredi 26 Juin 2026'
