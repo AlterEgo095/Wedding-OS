@@ -1,8 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getAuthUser, hasPermission } from '@/lib/auth';
-import { writeFile, unlink } from 'fs/promises';
+import { writeFile, unlink, mkdir } from 'fs/promises';
 import path from 'path';
+
+const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+const ALLOWED_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg', '.mp4', '.webm', '.pdf'];
+const ALLOWED_MIME_TYPES = [
+  'image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/svg+xml',
+  'video/mp4', 'video/webm',
+  'application/pdf',
+];
 
 export async function GET(request: NextRequest) {
   try {
@@ -51,6 +59,31 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // File size validation
+    if (file.size > MAX_FILE_SIZE) {
+      return NextResponse.json(
+        { error: `File size exceeds maximum limit of ${MAX_FILE_SIZE / 1024 / 1024}MB` },
+        { status: 400 }
+      );
+    }
+
+    // File extension validation
+    const ext = path.extname(file.name).toLowerCase();
+    if (!ALLOWED_EXTENSIONS.includes(ext)) {
+      return NextResponse.json(
+        { error: `File type "${ext}" is not allowed. Allowed: ${ALLOWED_EXTENSIONS.join(', ')}` },
+        { status: 400 }
+      );
+    }
+
+    // MIME type validation
+    if (file.type && !ALLOWED_MIME_TYPES.includes(file.type)) {
+      return NextResponse.json(
+        { error: `MIME type "${file.type}" is not allowed` },
+        { status: 400 }
+      );
+    }
+
     const validTypes = ['PHOTO', 'VIDEO', 'LOGO', 'DOCUMENT'];
     if (!validTypes.includes(mediaType)) {
       return NextResponse.json(
@@ -71,10 +104,12 @@ export async function POST(request: NextRequest) {
     const buffer = Buffer.from(bytes);
 
     // Generate unique filename
-    const ext = path.extname(file.name) || '.jpg';
     const uniqueName = `${Date.now()}-${Math.random().toString(36).substring(2, 8)}${ext}`;
-    const filePath = path.join(process.cwd(), 'public', 'uploads', uniqueName);
+    const uploadDir = path.join(process.cwd(), 'public', 'uploads');
+    const filePath = path.join(uploadDir, uniqueName);
 
+    // Ensure upload directory exists
+    await mkdir(uploadDir, { recursive: true });
     await writeFile(filePath, buffer);
 
     const url = `/uploads/${uniqueName}`;
