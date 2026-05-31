@@ -116,26 +116,26 @@ export default function HeroSection() {
 
       {/* ═══ Ambient Gold Particles ═══ */}
       <div className="absolute inset-0 z-[1] pointer-events-none overflow-hidden">
-        {[...Array(12)].map((_, i) => (
+        {[...Array(6)].map((_, i) => (
           <motion.div
             key={i}
             className="absolute rounded-full bg-gold/25 dark:bg-gold-light/15"
             style={{
-              left: `${8 + (i * 7.5) % 85}%`,
-              top: `${10 + (i * 13) % 80}%`,
+              left: `${15 + i * 15}%`,
+              top: `${20 + (i % 3) * 25}%`,
               width: `${1 + (i % 3)}px`,
               height: `${1 + (i % 3)}px`,
             }}
             animate={{
-              y: [-30, 30, -30],
+              y: [-20, 20, -20],
               opacity: [0.1, 0.5, 0.1],
               scale: [1, 1.8, 1],
             }}
             transition={{
-              duration: 5 + i * 0.7,
+              duration: 5 + i * 0.8,
               repeat: Infinity,
               ease: 'easeInOut',
-              delay: i * 0.4,
+              delay: i * 0.5,
             }}
           />
         ))}

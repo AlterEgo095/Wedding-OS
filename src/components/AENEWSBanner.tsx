@@ -71,7 +71,7 @@ export default function AENEWSBanner() {
 
       {/* Floating particles */}
       <div className="absolute inset-0 pointer-events-none overflow-hidden">
-        {[...Array(8)].map((_, i) => (
+        {[...Array(4)].map((_, i) => (
           <motion.div
             key={i}
             className="absolute w-0.5 h-0.5 rounded-full bg-[oklch(0.68_0.12_85/30%)]"
