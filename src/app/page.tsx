@@ -11,6 +11,8 @@ import CoupleGallery, { CoupleGallerySkeleton } from '@/components/CoupleGallery
 import EventTimeline, { EventTimelineSkeleton } from '@/components/EventTimeline'
 import MapSection, { MapSectionSkeleton } from '@/components/MapSection'
 import Footer from '@/components/Footer'
+import MarketingSection from '@/components/MarketingSection'
+import AENEWSBanner from '@/components/AENEWSBanner'
 import AdminPanel from '@/components/admin/AdminPanel'
 
 interface CoupleStory {
@@ -135,7 +137,11 @@ function HomeContent() {
         )}
 
         <GuestSearch initialCode={codeParam || undefined} />
+
+        <MarketingSection />
       </main>
+
+      <AENEWSBanner />
 
       <div className="fixed bottom-6 right-6 z-40">
         <Button
