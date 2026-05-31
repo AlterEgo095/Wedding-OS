@@ -2,12 +2,13 @@
 
 import { useState, useCallback } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
+import Image from 'next/image'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
 import {
-  LayoutDashboard, Users, Grid3X3, Image, Clock, Shield, Settings, LogOut,
-  X, Menu, Crown
+  LayoutDashboard, Users, Grid3X3, Image as ImageIcon, Clock, Shield, Settings, LogOut,
+  X, Menu
 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -45,7 +46,7 @@ const NAV_ITEMS: NavItem[] = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { id: 'guests', label: 'Invités', icon: Users },
   { id: 'tables', label: 'Tables', icon: Grid3X3 },
-  { id: 'media', label: 'Médias', icon: Image },
+  { id: 'media', label: 'Médias', icon: ImageIcon },
   { id: 'timeline', label: 'Programme', icon: Clock },
   { id: 'users', label: 'Utilisateurs', icon: Shield, superAdminOnly: true },
   { id: 'settings', label: 'Paramètres', icon: Settings, superAdminOnly: true },
@@ -154,11 +155,19 @@ export default function AdminPanel({ isOpen, onClose }: AdminPanelProps) {
             <aside className="hidden md:flex flex-col w-64 shrink-0 border-r border-white/10 bg-white/[0.02]">
               {/* Sidebar Header */}
               <div className="p-4 flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-gradient-gold flex items-center justify-center shadow-lg">
-                  <Crown className="w-5 h-5 text-white" />
+                <div className="relative shrink-0">
+                  <div className="w-10 h-10 rounded-full gold-border p-[2px] overflow-hidden">
+                    <Image
+                      src="/upload/couple-photo-1.jpeg"
+                      alt="Alexandre & Béatrice"
+                      width={40}
+                      height={40}
+                      className="w-full h-full rounded-full object-cover"
+                    />
+                  </div>
                 </div>
                 <div className="flex-1 min-w-0">
-                  <h2 className="font-bold text-sm gold-gradient">Wedding Admin</h2>
+                  <h2 className="font-bold text-sm gold-gradient font-display">Alexandre & Béatrice</h2>
                   <p className="text-xs text-muted-foreground truncate">
                     {user?.name || 'Non connecté'}
                   </p>
@@ -253,10 +262,16 @@ export default function AdminPanel({ isOpen, onClose }: AdminPanelProps) {
                   >
                     <div className="p-4 flex items-center justify-between">
                       <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-xl bg-gradient-gold flex items-center justify-center">
-                          <Crown className="w-5 h-5 text-white" />
+                        <div className="w-10 h-10 rounded-full gold-border p-[2px] overflow-hidden">
+                          <Image
+                            src="/upload/couple-photo-1.jpeg"
+                            alt="Alexandre & Béatrice"
+                            width={40}
+                            height={40}
+                            className="w-full h-full rounded-full object-cover"
+                          />
                         </div>
-                        <h2 className="font-bold text-sm gold-gradient">Wedding Admin</h2>
+                        <h2 className="font-bold text-sm gold-gradient font-display">Alexandre & Béatrice</h2>
                       </div>
                       <Button
                         variant="ghost"
