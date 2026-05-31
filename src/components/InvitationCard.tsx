@@ -294,7 +294,7 @@ export default function InvitationCard({
             >
               <div className="w-16 h-16 md:w-20 md:h-20 rounded-full overflow-hidden ring-2 ring-gold/40 shadow-lg shadow-gold/10">
                 <Image
-                  src="/upload/couple-photo-1.jpeg"
+                  src="/uploads/couple-photo-1.jpeg"
                   alt="Josué"
                   width={80}
                   height={80}
@@ -310,7 +310,7 @@ export default function InvitationCard({
             >
               <div className="w-16 h-16 md:w-20 md:h-20 rounded-full overflow-hidden ring-2 ring-rose-gold/40 shadow-lg shadow-rose-gold/10">
                 <Image
-                  src="/upload/couple-photo-2.png"
+                  src="/uploads/couple-photo-2.jpeg"
                   alt="Hornella"
                   width={80}
                   height={80}
@@ -480,7 +480,7 @@ export default function InvitationCard({
             >
               <div className="w-10 h-10 rounded-full overflow-hidden ring-1 ring-gold/20">
                 <Image
-                  src="/upload/couple-photo-1.jpeg"
+                  src="/uploads/couple-photo-1.jpeg"
                   alt=""
                   width={40}
                   height={40}

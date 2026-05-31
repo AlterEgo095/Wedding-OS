@@ -36,6 +36,10 @@ model Guest {
   invitationViewedAt DateTime?
   invitationViewCount Int            @default(0)
   lastAccessAt      DateTime?
+  // ─── RSVP Fields ───
+  rsvpAt            DateTime?        // When guest confirmed/declined
+  rsvpMessage       String?          // Optional message from guest
+  rsvpPlusOne       Boolean          @default(false) // Bringing additional guest
   createdAt         DateTime         @default(now())
   updatedAt         DateTime         @updatedAt
   table             Table?           @relation(fields: [tableId], references: [id])
@@ -112,6 +116,8 @@ model GuestSession {
   token         String   @unique
   userAgent     String?
   ipAddress     String?
+  fingerprint   String?  // Device fingerprint hash
+  deviceInfo    String?  // JSON: { browser, os, device, isMobile }
   isActive      Boolean  @default(true)
   createdAt     DateTime @default(now())
   expiresAt     DateTime
@@ -123,11 +129,13 @@ model GuestSession {
 model GuestAccessLog {
   id          String   @id @default(cuid())
   guestId     String?
-  action      String   // LOGIN, VIEW_INVITATION, ACCESS_DENIED, LOGOUT, QR_SCAN, LINK_VISIT
+  action      String   // LOGIN, VIEW_INVITATION, ACCESS_DENIED, LOGOUT, QR_SCAN, LINK_VISIT, SEARCH_BLOCKED
   details     String?
   userAgent   String?
   ipAddress   String?
   referrer    String?
+  fingerprint String?  // Device fingerprint hash
+  deviceInfo  String?  // JSON: { browser, os, device, isMobile }
   createdAt   DateTime @default(now())
   guest       Guest?   @relation(fields: [guestId], references: [id], onDelete: SetNull)
 }

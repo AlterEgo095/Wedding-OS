@@ -2,6 +2,7 @@ export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getAuthUser, hasPermission } from '@/lib/auth';
+import { validateGuestSession, logGuestAccess, getClientInfo } from '@/lib/guest-auth';
 
 export async function GET(
   request: NextRequest,
@@ -9,26 +10,90 @@ export async function GET(
 ) {
   try {
     const { id } = await params;
+    const clientInfo = getClientInfo(request);
 
-    const guest = await db.guest.findUnique({
-      where: { id },
-      include: {
-        table: {
-          select: {
-            id: true,
-            name: true,
-            number: true,
-            capacity: true,
+    // ═══════════════════════════════════════════════════════════
+    // SECURITY: This endpoint requires authentication
+    // Option 1: Admin user (can access any guest)
+    // Option 2: Authenticated guest (can ONLY access their own data)
+    // ═══════════════════════════════════════════════════════════
+
+    // Check admin auth first
+    const adminUser = await getAuthUser(request);
+    if (adminUser && hasPermission(adminUser.role, ['ORGANIZER'])) {
+      // Admin can access any guest
+      const guest = await db.guest.findUnique({
+        where: { id },
+        include: {
+          table: {
+            select: {
+              id: true,
+              name: true,
+              number: true,
+              capacity: true,
+            },
           },
         },
-      },
-    });
+      });
 
-    if (!guest) {
-      return NextResponse.json({ error: 'Guest not found' }, { status: 404 });
+      if (!guest) {
+        return NextResponse.json({ error: 'Guest not found' }, { status: 404 });
+      }
+
+      return NextResponse.json({ guest });
     }
 
-    return NextResponse.json({ guest });
+    // Check guest session auth
+    const guestToken = request.cookies.get('guest_session')?.value;
+    if (guestToken) {
+      const session = await validateGuestSession(guestToken, clientInfo.userAgent, clientInfo.ipAddress);
+
+      if (session.valid && session.guestId) {
+        // Guest can ONLY access their own data
+        if (session.guestId !== id) {
+          // Log unauthorized access attempt
+          await logGuestAccess({
+            guestId: session.guestId,
+            action: 'ACCESS_DENIED',
+            details: `Guest attempted to access another guest's data (target: ${id.substring(0, 8)}***)`,
+            userAgent: clientInfo.userAgent,
+            ipAddress: clientInfo.ipAddress,
+          });
+
+          return NextResponse.json(
+            { error: 'Cette invitation est privée et exclusivement réservée à son titulaire.' },
+            { status: 403 }
+          );
+        }
+
+        // Return own guest data
+        const guest = await db.guest.findUnique({
+          where: { id },
+          include: {
+            table: {
+              select: {
+                id: true,
+                name: true,
+                number: true,
+                capacity: true,
+              },
+            },
+          },
+        });
+
+        if (!guest) {
+          return NextResponse.json({ error: 'Guest not found' }, { status: 404 });
+        }
+
+        return NextResponse.json({ guest });
+      }
+    }
+
+    // No valid authentication
+    return NextResponse.json(
+      { error: 'Authentification requise' },
+      { status: 401 }
+    );
   } catch (error) {
     console.error('Get guest error:', error);
     return NextResponse.json(

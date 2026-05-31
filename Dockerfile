@@ -16,7 +16,6 @@ COPY package.json ./
 COPY bun.lock* package-lock.json* yarn.lock* ./
 
 # Install dependencies using the appropriate lockfile
-# npm ci requires package-lock.json; fallback to npm i for bun.lock / yarn.lock
 RUN \
   if [ -f yarn.lock ]; then \
     echo "Detected yarn.lock — installing with npm ci (yarn.lock present for reference)"; \
@@ -84,24 +83,30 @@ COPY --from=builder /app/.next/static ./.next/static
 # ── Copy public directory for static serving ──
 COPY --from=builder /app/public ./public
 
-# ── Copy Prisma client (required at runtime for SQLite queries) ──
+# ── Copy Prisma client + CLI (required at runtime for db push + queries) ──
 COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
+COPY --from=builder /app/node_modules/prisma ./node_modules/prisma
 
-# ── Copy Prisma schema (required for migrations at runtime if needed) ──
+# ── Copy Prisma schema (required for db push at runtime) ──
 COPY --from=builder /app/prisma ./prisma
 
+# ── Copy required runtime dependencies for init-db.js ──
+COPY --from=builder /app/node_modules/bcryptjs ./node_modules/bcryptjs
+
+# ── Copy database init script and entrypoint ──
+COPY --from=builder /app/init-db.js ./init-db.js
+COPY --from=builder /app/docker-entrypoint.sh ./docker-entrypoint.sh
+RUN chmod +x ./docker-entrypoint.sh
+
 # ── Create data directories with secure ownership ──
-# /app/db         — SQLite database files (persistent volume)
-# /app/public/uploads — User-uploaded media (persistent volume)
-# /app/logs       — Application log files (persistent volume)
 RUN mkdir -p /app/db /app/public/uploads /app/logs && \
     chown -R nextjs:nodejs /app/db /app/public/uploads /app/logs && \
     chmod -R 770 /app/db /app/public/uploads /app/logs
 
-# Ensure the nextjs user owns the standalone server files it needs to execute
-RUN chown -R nextjs:nodejs /app/.next && \
-    chown nextjs:nodejs /app/server.js /app/package.json 2>/dev/null || true
+# Ensure the nextjs user owns everything it needs
+RUN chown -R nextjs:nodejs /app/.next /app/node_modules /app/prisma && \
+    chown nextjs:nodejs /app/server.js /app/package.json /app/init-db.js /app/docker-entrypoint.sh 2>/dev/null || true
 
 # ── Switch to non-root user ──
 USER nextjs
@@ -110,10 +115,8 @@ USER nextjs
 EXPOSE 3000
 
 # ── Health Check ──
-# Verify the HTTP server is responsive every 30 seconds
-# wget with --spider performs a HEAD request (lightweight check)
-HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-  CMD wget --no-verbose --tries=1 --spider http://localhost:3000/ || exit 1
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+  CMD wget --no-verbose --tries=1 --spider http://127.0.0.1:3000/ || exit 1
 
-# ── Start the Next.js standalone server ──
-CMD ["node", "server.js"]
+# ── Start via entrypoint (init-db + server) ──
+ENTRYPOINT ["sh", "./docker-entrypoint.sh"]

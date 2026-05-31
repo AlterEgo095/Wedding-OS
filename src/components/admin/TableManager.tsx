@@ -43,6 +43,7 @@ interface GuestInfo {
   lastName: string
   seats: number
   category: string
+  tableId: string | null
 }
 
 interface TableManagerProps {
@@ -214,7 +215,7 @@ export default function TableManager({ token }: TableManagerProps) {
 
   const openGuestDialog = (table: TableInfo) => {
     setSelectedTable(table)
-    const tGuests = guests.filter(g => (g as GuestInfo & { tableId: string | null }).tableId === table.id)
+    const tGuests = guests.filter(g => g.tableId === table.id)
     setTableGuests(tGuests)
     setShowGuestDialog(true)
   }
@@ -229,22 +230,23 @@ export default function TableManager({ token }: TableManagerProps) {
     if (!movingGuest || !targetTableId) return
     setSaving(true)
     try {
+      const actualTableId = targetTableId === 'none' ? null : targetTableId
       const res = await fetch(`/api/guests/${movingGuest.id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ tableId: targetTableId }),
+        body: JSON.stringify({ tableId: actualTableId }),
       })
       if (res.ok) {
         toast.success('Invité déplacé')
         setShowMoveDialog(false)
         setMovingGuest(null)
-        fetchTables()
-        fetchAllGuests()
+        await fetchTables()
+        await fetchAllGuests()
         if (selectedTable) {
-          const tGuests = guests.filter(g => (g as GuestInfo & { tableId: string | null }).tableId === selectedTable.id)
+          const tGuests = guests.filter(g => g.tableId === selectedTable.id)
           setTableGuests(tGuests)
         }
       } else {
