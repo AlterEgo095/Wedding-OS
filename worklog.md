@@ -21,3 +21,21 @@ Stage Summary:
 - Admin login: admin@josue-hornella.wedding / admin2026
 - Database has 229 guests, 28 tables, 12 timeline events, 4 couple stories
 - Wedding details: Josué & Hornella, Vendredi 26 Juin 2026, Salle Polyvalente – Grand Palais Kinshasa, 21/22 Avenue Bobozo
+
+---
+Task ID: 2
+Agent: Main Agent
+Task: Fix homepage not loading properly - Maximum update depth exceeded error
+
+Work Log:
+- Diagnosed the issue using agent-browser: found "Maximum update depth exceeded" error in browser console (40+ occurrences)
+- Root cause: HeroSection.tsx created a new `Date` object (`weddingDate`) on every render, used as dependency in `useCallback`, causing infinite re-render loop
+- Fixed by: replacing `weddingDate` Date object with a stable `weddingDateStr` string using `useMemo`, moving `calculateTimeLeft` inside the `useEffect`
+- Verified fix: no more console errors after reload, page loads correctly
+- Ran ESLint: no errors
+- Took screenshots of all sections: Hero, Gallery, Timeline, Search - all rendering correctly
+
+Stage Summary:
+- Fixed critical infinite loop bug in HeroSection.tsx
+- Page now loads and renders properly without errors
+- All sections functional: Hero with countdown, Couple Gallery, Event Timeline, Map, Guest Search, Footer
