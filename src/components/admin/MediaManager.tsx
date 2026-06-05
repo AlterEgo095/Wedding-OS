@@ -40,6 +40,7 @@ interface MediaItem {
 
 interface MediaManagerProps {
   token: string
+  onSessionExpired: () => void
 }
 
 const TYPE_ICONS: Record<string, React.ReactNode> = {
@@ -63,7 +64,7 @@ const CATEGORY_LABELS: Record<string, string> = {
   OTHER: 'Autre',
 }
 
-export default function MediaManager({ token }: MediaManagerProps) {
+export default function MediaManager({ token, onSessionExpired }: MediaManagerProps) {
   const [media, setMedia] = useState<MediaItem[]>([])
   const [loading, setLoading] = useState(true)
   const [uploading, setUploading] = useState(false)
@@ -86,7 +87,7 @@ export default function MediaManager({ token }: MediaManagerProps) {
       const res = await fetch('/api/media', {
         headers: { Authorization: `Bearer ${token}` },
       })
-      if (res.status === 401) { toast.error('Session expirée'); return }
+      if (res.status === 401) { onSessionExpired(); return }
       if (res.ok) {
         const json = await res.json()
         setMedia(json.media)

@@ -1,0 +1,324 @@
+[2026-06-05T06:00:31.833Z] ═══════════════════════════════════════════════════════════════
+[2026-06-05T06:00:31.834Z] MIGRATION STARTED: Guest List Replacement
+[2026-06-05T06:00:31.834Z] ═══════════════════════════════════════════════════════════════
+[2026-06-05T06:00:31.834Z] 
+─── Step 1: Pre-migration audit ───
+[2026-06-05T06:00:31.844Z] Current guests in DB: 229
+[2026-06-05T06:00:31.845Z] Current tables in DB: 28
+[2026-06-05T06:00:31.846Z] 
+─── Step 2: Sync tables ───
+[2026-06-05T06:00:31.846Z] Tables needed: 31 → ANSET, CEMYCINE, CESACAL, CEPIME, NORMEGYL, SECTAB, ESOMEX, CEFAM, VOGLITUS, CESAKROL, TELSOTON, DICLOFENAC, APHEROL, PARACETAMOL, DIGEST, DEZOLIN, CITRIMEX-DT, CEFUROCLAV, NICAR, TRACOL, FECOND, PASMEX, LINZOX, VITRON-Z, ROSUMEX, CETHER-L, NEBIMEX, MICOFLU, HEMOREX, AMOXYCILLINE, CESADOX
+[2026-06-05T06:00:31.846Z]   Table "ANSET" already exists (id: cmptnk4f40000sq7wx2gzaduj)
+[2026-06-05T06:00:31.846Z]   Table "CEMYCINE" already exists (id: cmptnk4f60001sq7wr6u5s5ih)
+[2026-06-05T06:00:31.846Z]   Table "CESACAL" already exists (id: cmptnk4fc000asq7wae9wbpn4)
+[2026-06-05T06:00:31.846Z]   Table "CEPIME" already exists (id: cmptnk4fd000csq7wshaxsp8v)
+[2026-06-05T06:00:31.846Z]   Table "NORMEGYL" already exists (id: cmptnk4f80005sq7wm6ktmlgh)
+[2026-06-05T06:00:31.847Z]   Created table "SECTAB" (number: 29, id: cmq0imgkn0000naxbnvuoakrw)
+[2026-06-05T06:00:31.847Z]   Table "ESOMEX" already exists (id: cmptnk4fe000esq7wu38bp4vi)
+[2026-06-05T06:00:31.847Z]   Table "CEFAM" already exists (id: cmptnk4f80004sq7wwjk77j0b)
+[2026-06-05T06:00:31.847Z]   Table "VOGLITUS" already exists (id: cmptnk4fg000isq7wmd2gm5ch)
+[2026-06-05T06:00:31.848Z]   Table "CESAKROL" already exists (id: cmptnk4f70002sq7wq1i80bhb)
+[2026-06-05T06:00:31.848Z]   Table "TELSOTON" already exists (id: cmptnk4fg000jsq7w78ohwjwl)
+[2026-06-05T06:00:31.848Z]   Created table "DICLOFENAC" (number: 30, id: cmq0imgko0001naxbrvmfnoot)
+[2026-06-05T06:00:31.848Z]   Table "APHEROL" already exists (id: cmptnk4f90007sq7wfu2exrxx)
+[2026-06-05T06:00:31.849Z]   Created table "PARACETAMOL" (number: 31, id: cmq0imgkp0002naxb0fnb7d9k)
+[2026-06-05T06:00:31.849Z]   Table "DIGEST" already exists (id: cmptnk4f70003sq7w3hiklzrs)
+[2026-06-05T06:00:31.849Z]   Table "DEZOLIN" already exists (id: cmptnk4fp000qsq7w3idnnwd5)
+[2026-06-05T06:00:31.849Z]   Table "CITRIMEX-DT" already exists (id: cmptnk4f90006sq7wmxr1x9nw)
+[2026-06-05T06:00:31.849Z]   Table "CEFUROCLAV" already exists (id: cmptnk4fc0009sq7we4bobvxy)
+[2026-06-05T06:00:31.849Z]   Table "NICAR" already exists (id: cmptnk4fa0008sq7wr27cgkd7)
+[2026-06-05T06:00:31.849Z]   Table "TRACOL" already exists (id: cmptnk4fd000bsq7wy2dpa2x7)
+[2026-06-05T06:00:31.849Z]   Table "FECOND" already exists (id: cmptnk4fe000dsq7w8tr5sqxk)
+[2026-06-05T06:00:31.849Z]   Table "PASMEX" already exists (id: cmptnk4ff000fsq7wltyx9elr)
+[2026-06-05T06:00:31.849Z]   Table "LINZOX" already exists (id: cmptnk4ff000gsq7wa71rj24x)
+[2026-06-05T06:00:31.849Z]   Table "VITRON-Z" already exists (id: cmptnk4fg000hsq7wc0vgnuo9)
+[2026-06-05T06:00:31.849Z]   Table "ROSUMEX" already exists (id: cmptnk4fh000ksq7w1subnd8w)
+[2026-06-05T06:00:31.849Z]   Table "CETHER-L" already exists (id: cmptnk4fi000msq7wd9dh5pov)
+[2026-06-05T06:00:31.849Z]   Table "NEBIMEX" already exists (id: cmptnk4fm000nsq7w6gv2op8g)
+[2026-06-05T06:00:31.849Z]   Table "MICOFLU" already exists (id: cmptnk4fq000rsq7w3eb2oqgd)
+[2026-06-05T06:00:31.849Z]   Table "HEMOREX" already exists (id: cmptnk4fn000osq7wl4hgk7dc)
+[2026-06-05T06:00:31.850Z]   Created table "AMOXYCILLINE" (number: 32, id: cmq0imgkq0003naxbslqjzsho)
+[2026-06-05T06:00:31.850Z]   Created table "CESADOX" (number: 33, id: cmq0imgkq0004naxbgjw4kbm9)
+[2026-06-05T06:00:31.850Z] 
+─── Step 3: Clear old guest data ───
+[2026-06-05T06:00:31.851Z]   Deleted 76 guest access logs
+[2026-06-05T06:00:31.852Z]   Deleted 12 guest sessions
+[2026-06-05T06:00:31.853Z]   Deleted 229 old guests
+[2026-06-05T06:00:31.853Z] 
+─── Step 4: Import new guests ───
+[2026-06-05T06:00:31.854Z]   ✅ [1/243] "Couple PASTEUR GUYGUY" → firstName="Couple", lastName="PASTEUR GUYGUY", type=couple, cat=VIP, seats=2, table=ANSET
+[2026-06-05T06:00:31.855Z]   ✅ [2/243] "Couple Pasteur PECHO" → firstName="Couple", lastName="Pasteur PECHO", type=couple, cat=VIP, seats=2, table=ANSET
+[2026-06-05T06:00:31.856Z]   ✅ [3/243] "Couple Berge  MUSEMA" → firstName="Couple", lastName="Berge MUSEMA", type=couple, cat=FAMILLE, seats=2, table=ANSET
+[2026-06-05T06:00:31.857Z]   ✅ [4/243] "Couple Berge KALO" → firstName="Couple", lastName="Berge KALO", type=couple, cat=FAMILLE, seats=2, table=ANSET
+[2026-06-05T06:00:31.858Z]   ✅ [5/243] "Couple TANTE MAGUY" → firstName="Couple", lastName="TANTE MAGUY", type=couple, cat=COUPLE, seats=2, table=ANSET
+[2026-06-05T06:00:31.859Z]   ✅ [6/243] "Couple KALO" → firstName="Couple", lastName="KALO", type=couple, cat=COUPLE, seats=2, table=ANSET
+[2026-06-05T06:00:31.860Z]   ✅ [7/243] "Couple PAUL" → firstName="Couple", lastName="PAUL", type=couple, cat=COUPLE, seats=2, table=CEMYCINE
+[2026-06-05T06:00:31.860Z]   ✅ [8/243] "Pasteur IMBULE" → firstName="Pasteur", lastName="IMBULE", type=individuel, cat=VIP, seats=1, table=CEMYCINE
+[2026-06-05T06:00:31.861Z]   ✅ [9/243] "Ma MARIE JEANE" → firstName="Ma", lastName="MARIE JEANE", type=individuel, cat=AMIS, seats=1, table=CEMYCINE
+[2026-06-05T06:00:31.862Z]   ✅ [10/243] "Couple Pa MICHEL" → firstName="Couple", lastName="Pa MICHEL", type=couple, cat=COUPLE, seats=2, table=CEMYCINE
+[2026-06-05T06:00:31.863Z]   ✅ [11/243] "Couple MARC" → firstName="Couple", lastName="MARC", type=couple, cat=COUPLE, seats=2, table=CEMYCINE
+[2026-06-05T06:00:31.864Z]   ✅ [12/243] "Sr GRACIA" → firstName="Sr", lastName="GRACIA", type=individuel, cat=AMIS, seats=1, table=CEMYCINE
+[2026-06-05T06:00:31.864Z]   ✅ [13/243] "MA CHANTAL DJONGA" → firstName="MA", lastName="CHANTAL DJONGA", type=individuel, cat=AMIS, seats=1, table=CEMYCINE
+[2026-06-05T06:00:31.865Z]   ✅ [14/243] "Couple PARAIN" → firstName="Couple", lastName="PARAIN", type=couple, cat=COUPLE, seats=2, table=CEMYCINE
+[2026-06-05T06:00:31.866Z]   ✅ [15/243] "Couple NEHEMIE" → firstName="Couple", lastName="NEHEMIE", type=couple, cat=COUPLE, seats=2, table=CESACAL
+[2026-06-05T06:00:31.867Z]   ✅ [16/243] "Couple Fr GUELORD" → firstName="Couple", lastName="Fr GUELORD", type=couple, cat=COUPLE, seats=2, table=CESACAL
+[2026-06-05T06:00:31.867Z]   ✅ [17/243] "Couple MOTENDA" → firstName="Couple", lastName="MOTENDA", type=couple, cat=COUPLE, seats=2, table=CESACAL
+[2026-06-05T06:00:31.868Z]   ✅ [18/243] "Sr DEBORHA ILUNGA" → firstName="Sr", lastName="DEBORHA ILUNGA", type=individuel, cat=AMIS, seats=1, table=CESACAL
+[2026-06-05T06:00:31.869Z]   ✅ [19/243] "Sr GIVE ILUNGA" → firstName="Sr", lastName="GIVE ILUNGA", type=individuel, cat=AMIS, seats=1, table=CESACAL
+[2026-06-05T06:00:31.870Z]   ✅ [20/243] "PRISCA ILUNGA" → firstName="PRISCA", lastName="ILUNGA", type=individuel, cat=AMIS, seats=1, table=CESACAL
+[2026-06-05T06:00:31.871Z]   ✅ [21/243] "MA ONO" → firstName="MA", lastName="ONO", type=individuel, cat=AMIS, seats=1, table=CESACAL
+[2026-06-05T06:00:31.871Z]   ✅ [22/243] "Couple KAMBA" → firstName="Couple", lastName="KAMBA", type=couple, cat=COUPLE, seats=2, table=CEPIME
+[2026-06-05T06:00:31.872Z]   ✅ [23/243] "Couple BOB" → firstName="Couple", lastName="BOB", type=couple, cat=COUPLE, seats=2, table=CEPIME
+[2026-06-05T06:00:31.872Z]   ✅ [24/243] "GUSLAINE" → firstName="GUSLAINE", lastName="GUSLAINE", type=individuel, cat=AMIS, seats=1, table=CEPIME
+[2026-06-05T06:00:31.873Z]   ✅ [25/243] "DEBORHA" → firstName="DEBORHA", lastName="DEBORHA", type=individuel, cat=AMIS, seats=1, table=CEPIME
+[2026-06-05T06:00:31.874Z]   ✅ [26/243] "DJENNY MBONGE" → firstName="DJENNY", lastName="MBONGE", type=individuel, cat=AMIS, seats=1, table=CEPIME
+[2026-06-05T06:00:31.875Z]   ✅ [27/243] "ATOCHA SARAH" → firstName="ATOCHA", lastName="SARAH", type=individuel, cat=AMIS, seats=1, table=CEPIME
+[2026-06-05T06:00:31.875Z]   ✅ [28/243] "Couple MUNGUANZI" → firstName="Couple", lastName="MUNGUANZI", type=couple, cat=COUPLE, seats=2, table=CEPIME
+[2026-06-05T06:00:31.876Z]   ✅ [29/243] "KAPINGA ANNIE" → firstName="KAPINGA", lastName="ANNIE", type=individuel, cat=AMIS, seats=1, table=CEPIME
+[2026-06-05T06:00:31.877Z]   ✅ [30/243] "SEYA" → firstName="SEYA", lastName="SEYA", type=individuel, cat=AMIS, seats=1, table=CEPIME
+[2026-06-05T06:00:31.877Z]   ✅ [31/243] "Couple MBELE" → firstName="Couple", lastName="MBELE", type=couple, cat=COUPLE, seats=2, table=NORMEGYL
+[2026-06-05T06:00:31.878Z]   ✅ [32/243] "Couple MPUTU" → firstName="Couple", lastName="MPUTU", type=couple, cat=COUPLE, seats=2, table=NORMEGYL
+[2026-06-05T06:00:31.879Z]   ✅ [33/243] "Couple BILU" → firstName="Couple", lastName="BILU", type=couple, cat=COUPLE, seats=2, table=NORMEGYL
+[2026-06-05T06:00:31.880Z]   ✅ [34/243] "DJODJO" → firstName="DJODJO", lastName="DJODJO", type=individuel, cat=AMIS, seats=1, table=NORMEGYL
+[2026-06-05T06:00:31.880Z]   ✅ [35/243] "Couple HERNANDEZ" → firstName="Couple", lastName="HERNANDEZ", type=couple, cat=COUPLE, seats=2, table=NORMEGYL
+[2026-06-05T06:00:31.881Z]   ✅ [36/243] "Couple MATANDA" → firstName="Couple", lastName="MATANDA", type=couple, cat=COUPLE, seats=2, table=NORMEGYL
+[2026-06-05T06:00:31.882Z]   ✅ [37/243] "Couple MOMPOLE HUMAINE" → firstName="Couple", lastName="MOMPOLE HUMAINE", type=couple, cat=COUPLE, seats=2, table=SECTAB
+[2026-06-05T06:00:31.882Z]   ✅ [38/243] "Couple MWANZA" → firstName="Couple", lastName="MWANZA", type=couple, cat=COUPLE, seats=2, table=SECTAB
+[2026-06-05T06:00:31.883Z]   ✅ [39/243] "Couple VERRO" → firstName="Couple", lastName="VERRO", type=couple, cat=COUPLE, seats=2, table=SECTAB
+[2026-06-05T06:00:31.884Z]   ✅ [40/243] "CHRISTEL" → firstName="CHRISTEL", lastName="CHRISTEL", type=individuel, cat=AMIS, seats=1, table=SECTAB
+[2026-06-05T06:00:31.885Z]   ✅ [41/243] "MA FRANCOISE" → firstName="MA", lastName="FRANCOISE", type=individuel, cat=AMIS, seats=1, table=SECTAB
+[2026-06-05T06:00:31.885Z]   ✅ [42/243] "MA DANIELA" → firstName="MA", lastName="DANIELA", type=individuel, cat=AMIS, seats=1, table=SECTAB
+[2026-06-05T06:00:31.886Z]   ✅ [43/243] "RAISA" → firstName="RAISA", lastName="RAISA", type=individuel, cat=AMIS, seats=1, table=SECTAB
+[2026-06-05T06:00:31.887Z]   ✅ [44/243] "Dr DIKENS" → firstName="Dr", lastName="DIKENS", type=individuel, cat=AMIS, seats=1, table=SECTAB
+[2026-06-05T06:00:31.888Z]   ✅ [45/243] "ARLON" → firstName="ARLON", lastName="ARLON", type=individuel, cat=AMIS, seats=1, table=SECTAB
+[2026-06-05T06:00:31.889Z]   ✅ [46/243] "FRANCK WASSA" → firstName="FRANCK", lastName="WASSA", type=individuel, cat=AMIS, seats=1, table=ESOMEX
+[2026-06-05T06:00:31.889Z]   ✅ [47/243] "Couple V HUGO" → firstName="Couple", lastName="V HUGO", type=couple, cat=COUPLE, seats=2, table=ESOMEX
+[2026-06-05T06:00:31.890Z]   ✅ [48/243] "Couple GUELOR BIDE" → firstName="Couple", lastName="GUELOR BIDE", type=couple, cat=COUPLE, seats=2, table=ESOMEX
+[2026-06-05T06:00:31.891Z]   ✅ [49/243] "JOSELINE WASSA" → firstName="JOSELINE", lastName="WASSA", type=individuel, cat=AMIS, seats=1, table=ESOMEX
+[2026-06-05T06:00:31.891Z]   ✅ [50/243] "ODETTE" → firstName="ODETTE", lastName="ODETTE", type=individuel, cat=AMIS, seats=1, table=ESOMEX
+[2026-06-05T06:00:31.892Z]   ✅ [51/243] "KIKI" → firstName="KIKI", lastName="KIKI", type=individuel, cat=AMIS, seats=1, table=ESOMEX
+[2026-06-05T06:00:31.893Z]   ✅ [52/243] "TANTE NELLY" → firstName="TANTE", lastName="NELLY", type=individuel, cat=AMIS, seats=1, table=ESOMEX
+[2026-06-05T06:00:31.893Z]   ✅ [53/243] "Ma JACQUIE" → firstName="Ma", lastName="JACQUIE", type=individuel, cat=AMIS, seats=1, table=ESOMEX
+[2026-06-05T06:00:31.894Z]   ✅ [54/243] "Couple ABANI" → firstName="Couple", lastName="ABANI", type=couple, cat=COUPLE, seats=2, table=CEFAM
+[2026-06-05T06:00:31.895Z]   ✅ [55/243] "Couple KALAMBAYI" → firstName="Couple", lastName="KALAMBAYI", type=couple, cat=COUPLE, seats=2, table=CEFAM
+[2026-06-05T06:00:31.895Z]   ⚠ DUPLICATE: "Couple MBELE" (skipped)
+[2026-06-05T06:00:31.896Z]   ✅ [57/243] "Couple IZUELE" → firstName="Couple", lastName="IZUELE", type=couple, cat=COUPLE, seats=2, table=CEFAM
+[2026-06-05T06:00:31.909Z]   ✅ [58/243] "Couple BENA" → firstName="Couple", lastName="BENA", type=couple, cat=COUPLE, seats=2, table=CEFAM
+[2026-06-05T06:00:31.910Z]   ✅ [59/243] "Couple KIFATA" → firstName="Couple", lastName="KIFATA", type=couple, cat=COUPLE, seats=2, table=CEFAM
+[2026-06-05T06:00:31.911Z]   ✅ [60/243] "BERNADETTE" → firstName="BERNADETTE", lastName="BERNADETTE", type=individuel, cat=AMIS, seats=1, table=VOGLITUS
+[2026-06-05T06:00:31.912Z]   ✅ [61/243] "Couple SOLANGE" → firstName="Couple", lastName="SOLANGE", type=couple, cat=COUPLE, seats=2, table=VOGLITUS
+[2026-06-05T06:00:31.913Z]   ✅ [62/243] "ELIEL" → firstName="ELIEL", lastName="ELIEL", type=individuel, cat=AMIS, seats=1, table=VOGLITUS
+[2026-06-05T06:00:31.914Z]   ✅ [63/243] "ARISTOTE ABANI" → firstName="ARISTOTE", lastName="ABANI", type=individuel, cat=AMIS, seats=1, table=VOGLITUS
+[2026-06-05T06:00:31.915Z]   ✅ [64/243] "SANDRA" → firstName="SANDRA", lastName="SANDRA", type=individuel, cat=AMIS, seats=1, table=VOGLITUS
+[2026-06-05T06:00:31.916Z]   ✅ [65/243] "PAMELA" → firstName="PAMELA", lastName="PAMELA", type=individuel, cat=AMIS, seats=1, table=VOGLITUS
+[2026-06-05T06:00:31.917Z]   ✅ [66/243] "FRANKLIN" → firstName="FRANKLIN", lastName="FRANKLIN", type=individuel, cat=AMIS, seats=1, table=VOGLITUS
+[2026-06-05T06:00:31.918Z]   ✅ [67/243] "LUMIERE" → firstName="LUMIERE", lastName="LUMIERE", type=individuel, cat=AMIS, seats=1, table=VOGLITUS
+[2026-06-05T06:00:31.918Z]   ✅ [68/243] "BABY" → firstName="BABY", lastName="BABY", type=individuel, cat=AMIS, seats=1, table=VOGLITUS
+[2026-06-05T06:00:31.919Z]   ✅ [69/243] "GRACE" → firstName="GRACE", lastName="GRACE", type=individuel, cat=AMIS, seats=1, table=VOGLITUS
+[2026-06-05T06:00:31.920Z]   ✅ [70/243] "Couple MAGUY LIBAZA" → firstName="Couple", lastName="MAGUY LIBAZA", type=couple, cat=COUPLE, seats=2, table=CESAKROL
+[2026-06-05T06:00:31.921Z]   ✅ [71/243] "ELMA LIBAZA" → firstName="ELMA", lastName="LIBAZA", type=individuel, cat=AMIS, seats=1, table=CESAKROL
+[2026-06-05T06:00:31.922Z]   ✅ [72/243] "THETHE LIBAZA" → firstName="THETHE", lastName="LIBAZA", type=individuel, cat=AMIS, seats=1, table=CESAKROL
+[2026-06-05T06:00:31.923Z]   ✅ [73/243] "Couple NYALO" → firstName="Couple", lastName="NYALO", type=couple, cat=COUPLE, seats=2, table=CESAKROL
+[2026-06-05T06:00:31.923Z]   ✅ [74/243] "Couple WEMBA" → firstName="Couple", lastName="WEMBA", type=couple, cat=COUPLE, seats=2, table=CESAKROL
+[2026-06-05T06:00:31.925Z]   ✅ [75/243] "Couple MEYA" → firstName="Couple", lastName="MEYA", type=couple, cat=COUPLE, seats=2, table=CESAKROL
+[2026-06-05T06:00:31.925Z]   ✅ [76/243] "Couple MOTELU CLARIS" → firstName="Couple", lastName="MOTELU CLARIS", type=couple, cat=COUPLE, seats=2, table=CESAKROL
+[2026-06-05T06:00:31.926Z]   ✅ [77/243] "Couple FABRICE" → firstName="Couple", lastName="FABRICE", type=couple, cat=COUPLE, seats=2, table=TELSOTON
+[2026-06-05T06:00:31.927Z]   ✅ [78/243] "Couple GLODY" → firstName="Couple", lastName="GLODY", type=couple, cat=COUPLE, seats=2, table=TELSOTON
+[2026-06-05T06:00:31.932Z]   ✅ [79/243] "Couple KYRIA" → firstName="Couple", lastName="KYRIA", type=couple, cat=COUPLE, seats=2, table=TELSOTON
+[2026-06-05T06:00:31.932Z]   ✅ [80/243] "Couple MIREIL" → firstName="Couple", lastName="MIREIL", type=couple, cat=COUPLE, seats=2, table=TELSOTON
+[2026-06-05T06:00:31.933Z]   ✅ [81/243] "Couple ANTHO" → firstName="Couple", lastName="ANTHO", type=couple, cat=COUPLE, seats=2, table=TELSOTON
+[2026-06-05T06:00:31.934Z]   ✅ [82/243] "Couple FLORIDA" → firstName="Couple", lastName="FLORIDA", type=couple, cat=COUPLE, seats=2, table=TELSOTON
+[2026-06-05T06:00:31.934Z]   ✅ [83/243] "RACHEL LIBAZA" → firstName="RACHEL", lastName="LIBAZA", type=individuel, cat=AMIS, seats=1, table=DICLOFENAC
+[2026-06-05T06:00:31.935Z]   ✅ [84/243] "REAGAN MPEMPE" → firstName="REAGAN", lastName="MPEMPE", type=individuel, cat=AMIS, seats=1, table=DICLOFENAC
+[2026-06-05T06:00:31.936Z]   ✅ [85/243] "NORNA LIBAZA" → firstName="NORNA", lastName="LIBAZA", type=individuel, cat=AMIS, seats=1, table=DICLOFENAC
+[2026-06-05T06:00:31.937Z]   ✅ [86/243] "ZACKARIE LIBAZA" → firstName="ZACKARIE", lastName="LIBAZA", type=individuel, cat=AMIS, seats=1, table=DICLOFENAC
+[2026-06-05T06:00:31.937Z]   ✅ [87/243] "JOSUE LIBAZA" → firstName="JOSUE", lastName="LIBAZA", type=individuel, cat=AMIS, seats=1, table=DICLOFENAC
+[2026-06-05T06:00:31.938Z]   ✅ [88/243] "ELIE LIBAZA" → firstName="ELIE", lastName="LIBAZA", type=individuel, cat=AMIS, seats=1, table=DICLOFENAC
+[2026-06-05T06:00:31.939Z]   ✅ [89/243] "CHRISTEVIE LIBAZA" → firstName="CHRISTEVIE", lastName="LIBAZA", type=individuel, cat=AMIS, seats=1, table=DICLOFENAC
+[2026-06-05T06:00:31.939Z]   ✅ [90/243] "CLEMENCE LIBAZA" → firstName="CLEMENCE", lastName="LIBAZA", type=individuel, cat=AMIS, seats=1, table=DICLOFENAC
+[2026-06-05T06:00:31.940Z]   ✅ [91/243] "COUPLE CATHY" → firstName="COUPLE", lastName="CATHY", type=couple, cat=COUPLE, seats=2, table=DICLOFENAC
+[2026-06-05T06:00:31.941Z]   ✅ [92/243] "AIMERDIE" → firstName="AIMERDIE", lastName="AIMERDIE", type=individuel, cat=AMIS, seats=1, table=DICLOFENAC
+[2026-06-05T06:00:31.941Z]   ✅ [93/243] "MBUYI ELI" → firstName="MBUYI", lastName="ELI", type=individuel, cat=AMIS, seats=1, table=DICLOFENAC
+[2026-06-05T06:00:31.942Z]   ✅ [94/243] "Couple HILDA" → firstName="Couple", lastName="HILDA", type=couple, cat=COUPLE, seats=2, table=APHEROL
+[2026-06-05T06:00:31.943Z]   ✅ [95/243] "Couple LUKA" → firstName="Couple", lastName="LUKA", type=couple, cat=COUPLE, seats=2, table=APHEROL
+[2026-06-05T06:00:31.943Z]   ✅ [96/243] "Couple MULAYI" → firstName="Couple", lastName="MULAYI", type=couple, cat=COUPLE, seats=2, table=APHEROL
+[2026-06-05T06:00:31.944Z]   ✅ [97/243] "Couple NGANGO" → firstName="Couple", lastName="NGANGO", type=couple, cat=COUPLE, seats=2, table=APHEROL
+[2026-06-05T06:00:31.945Z]   ✅ [98/243] "Couple JEREDART" → firstName="Couple", lastName="JEREDART", type=couple, cat=COUPLE, seats=2, table=APHEROL
+[2026-06-05T06:00:31.946Z]   ✅ [99/243] "UNIQUE" → firstName="UNIQUE", lastName="UNIQUE", type=individuel, cat=AMIS, seats=1, table=PARACETAMOL
+[2026-06-05T06:00:31.946Z]   ✅ [100/243] "GABAHEL GLOIRE LUZOLANU" → firstName="GABAHEL", lastName="GLOIRE LUZOLANU", type=individuel, cat=AMIS, seats=1, table=PARACETAMOL
+[2026-06-05T06:00:31.947Z]   ✅ [101/243] "PRINCE PHARMA" → firstName="PRINCE", lastName="PHARMA", type=individuel, cat=AMIS, seats=1, table=PARACETAMOL
+[2026-06-05T06:00:31.948Z]   ✅ [102/243] "CAISSA" → firstName="CAISSA", lastName="CAISSA", type=individuel, cat=AMIS, seats=1, table=PARACETAMOL
+[2026-06-05T06:00:31.949Z]   ✅ [103/243] "NEWS CESAMEX" → firstName="NEWS", lastName="CESAMEX", type=individuel, cat=AMIS, seats=1, table=PARACETAMOL
+[2026-06-05T06:00:31.950Z]   ✅ [104/243] "INF PAPY" → firstName="INF", lastName="PAPY", type=individuel, cat=AMIS, seats=1, table=PARACETAMOL
+[2026-06-05T06:00:31.950Z]   ✅ [105/243] "ELIE JOSEPH" → firstName="ELIE", lastName="JOSEPH", type=individuel, cat=AMIS, seats=1, table=PARACETAMOL
+[2026-06-05T06:00:31.951Z]   ✅ [106/243] "INFIRMIERES CARINE" → firstName="INFIRMIERES", lastName="CARINE", type=individuel, cat=AMIS, seats=1, table=PARACETAMOL
+[2026-06-05T06:00:31.952Z]   ✅ [107/243] "Couple P ROSSY MANDULU" → firstName="Couple", lastName="P ROSSY MANDULU", type=couple, cat=COUPLE, seats=2, table=PARACETAMOL
+[2026-06-05T06:00:31.953Z]   ✅ [108/243] "Couple BUMBA" → firstName="Couple", lastName="BUMBA", type=couple, cat=COUPLE, seats=2, table=DIGEST
+[2026-06-05T06:00:31.953Z]   ✅ [109/243] "Couple BAVON MBELE" → firstName="Couple", lastName="BAVON MBELE", type=couple, cat=COUPLE, seats=2, table=DIGEST
+[2026-06-05T06:00:31.954Z]   ✅ [110/243] "Couple HUGUETTE" → firstName="Couple", lastName="HUGUETTE", type=couple, cat=COUPLE, seats=2, table=DIGEST
+[2026-06-05T06:00:31.955Z]   ✅ [111/243] "Couple FELLY" → firstName="Couple", lastName="FELLY", type=couple, cat=COUPLE, seats=2, table=DIGEST
+[2026-06-05T06:00:31.955Z]   ✅ [112/243] "Couple MBOYO" → firstName="Couple", lastName="MBOYO", type=couple, cat=COUPLE, seats=2, table=DIGEST
+[2026-06-05T06:00:31.956Z]   ✅ [113/243] "Couple SERAPHIN" → firstName="Couple", lastName="SERAPHIN", type=couple, cat=COUPLE, seats=2, table=DEZOLIN
+[2026-06-05T06:00:31.957Z]   ✅ [114/243] "Couple GUYAUME" → firstName="Couple", lastName="GUYAUME", type=couple, cat=COUPLE, seats=2, table=DEZOLIN
+[2026-06-05T06:00:31.957Z]   ✅ [115/243] "Couple CEDRICK" → firstName="Couple", lastName="CEDRICK", type=couple, cat=COUPLE, seats=2, table=DEZOLIN
+[2026-06-05T06:00:31.958Z]   ✅ [116/243] "Couple PELAGIE" → firstName="Couple", lastName="PELAGIE", type=couple, cat=COUPLE, seats=2, table=DEZOLIN
+[2026-06-05T06:00:31.958Z]   ✅ [117/243] "Couple IRENE" → firstName="Couple", lastName="IRENE", type=couple, cat=COUPLE, seats=2, table=DEZOLIN
+[2026-06-05T06:00:31.959Z]   ✅ [118/243] "Couple JUDITH" → firstName="Couple", lastName="JUDITH", type=couple, cat=COUPLE, seats=2, table=DEZOLIN
+[2026-06-05T06:00:31.960Z]   ✅ [119/243] "Couple NZILA MATONDO" → firstName="Couple", lastName="NZILA MATONDO", type=couple, cat=COUPLE, seats=2, table=CITRIMEX-DT
+[2026-06-05T06:00:31.961Z]   ✅ [120/243] "Couple ELVICE KOYALA" → firstName="Couple", lastName="ELVICE KOYALA", type=couple, cat=COUPLE, seats=2, table=CITRIMEX-DT
+[2026-06-05T06:00:31.961Z]   ✅ [121/243] "Couple JOEL MALUNDA" → firstName="Couple", lastName="JOEL MALUNDA", type=couple, cat=COUPLE, seats=2, table=CITRIMEX-DT
+[2026-06-05T06:00:31.962Z]   ✅ [122/243] "BEN MUZOMWE" → firstName="BEN", lastName="MUZOMWE", type=individuel, cat=AMIS, seats=1, table=CITRIMEX-DT
+[2026-06-05T06:00:31.963Z]   ✅ [123/243] "ISAAC NGWANZO" → firstName="ISAAC", lastName="NGWANZO", type=individuel, cat=AMIS, seats=1, table=CITRIMEX-DT
+[2026-06-05T06:00:31.963Z]   ✅ [124/243] "NICKSON DONGO" → firstName="NICKSON", lastName="DONGO", type=individuel, cat=AMIS, seats=1, table=CITRIMEX-DT
+[2026-06-05T06:00:31.964Z]   ✅ [125/243] "VINNY BENDE" → firstName="VINNY", lastName="BENDE", type=individuel, cat=AMIS, seats=1, table=CITRIMEX-DT
+[2026-06-05T06:00:31.965Z]   ✅ [126/243] "FRANCY MOKOLI" → firstName="FRANCY", lastName="MOKOLI", type=individuel, cat=AMIS, seats=1, table=CITRIMEX-DT
+[2026-06-05T06:00:31.966Z]   ✅ [127/243] "GLODY MASANDI" → firstName="GLODY", lastName="MASANDI", type=individuel, cat=AMIS, seats=1, table=CITRIMEX-DT
+[2026-06-05T06:00:31.966Z]   ✅ [128/243] "Couple DADA" → firstName="Couple", lastName="DADA", type=couple, cat=COUPLE, seats=2, table=CEFUROCLAV
+[2026-06-05T06:00:31.967Z]   ✅ [129/243] "OSEE BOPUPA" → firstName="OSEE", lastName="BOPUPA", type=individuel, cat=AMIS, seats=1, table=CEFUROCLAV
+[2026-06-05T06:00:31.968Z]   ✅ [130/243] "BENI BODIKO" → firstName="BENI", lastName="BODIKO", type=individuel, cat=AMIS, seats=1, table=CEFUROCLAV
+[2026-06-05T06:00:31.969Z]   ✅ [131/243] "JONATHAN NZOBALE" → firstName="JONATHAN", lastName="NZOBALE", type=individuel, cat=AMIS, seats=1, table=CEFUROCLAV
+[2026-06-05T06:00:31.970Z]   ✅ [132/243] "MOISE LUKOMBO" → firstName="MOISE", lastName="LUKOMBO", type=individuel, cat=AMIS, seats=1, table=CEFUROCLAV
+[2026-06-05T06:00:31.971Z]   ✅ [133/243] "DAVID MANYA" → firstName="DAVID", lastName="MANYA", type=individuel, cat=AMIS, seats=1, table=CEFUROCLAV
+[2026-06-05T06:00:31.971Z]   ✅ [134/243] "DJENNY KISALU" → firstName="DJENNY", lastName="KISALU", type=individuel, cat=AMIS, seats=1, table=CEFUROCLAV
+[2026-06-05T06:00:31.972Z]   ✅ [135/243] "Sr LISETTE" → firstName="Sr", lastName="LISETTE", type=individuel, cat=AMIS, seats=1, table=CEFUROCLAV
+[2026-06-05T06:00:31.973Z]   ✅ [136/243] "NADEGE BODIKO" → firstName="NADEGE", lastName="BODIKO", type=individuel, cat=AMIS, seats=1, table=CEFUROCLAV
+[2026-06-05T06:00:31.974Z]   ✅ [137/243] "PLATINI KAKILA" → firstName="PLATINI", lastName="KAKILA", type=individuel, cat=AMIS, seats=1, table=NICAR
+[2026-06-05T06:00:31.975Z]   ✅ [138/243] "JOSE MPAKA" → firstName="JOSE", lastName="MPAKA", type=individuel, cat=AMIS, seats=1, table=NICAR
+[2026-06-05T06:00:31.975Z]   ✅ [139/243] "YELENGE" → firstName="YELENGE", lastName="YELENGE", type=individuel, cat=AMIS, seats=1, table=NICAR
+[2026-06-05T06:00:31.976Z]   ✅ [140/243] "SERA MANDEFU" → firstName="SERA", lastName="MANDEFU", type=individuel, cat=AMIS, seats=1, table=NICAR
+[2026-06-05T06:00:31.977Z]   ✅ [141/243] "CADETTE SUNDA" → firstName="CADETTE", lastName="SUNDA", type=individuel, cat=AMIS, seats=1, table=NICAR
+[2026-06-05T06:00:31.978Z]   ✅ [142/243] "Fr MEDIO" → firstName="Fr", lastName="MEDIO", type=individuel, cat=AMIS, seats=1, table=NICAR
+[2026-06-05T06:00:31.979Z]   ✅ [143/243] "GIRESSE ZIRI" → firstName="GIRESSE", lastName="ZIRI", type=individuel, cat=AMIS, seats=1, table=NICAR
+[2026-06-05T06:00:31.979Z]   ✅ [144/243] "Couple MAKWELA" → firstName="Couple", lastName="MAKWELA", type=couple, cat=COUPLE, seats=2, table=NICAR
+[2026-06-05T06:00:31.980Z]   ✅ [145/243] "ANDY LIMBA" → firstName="ANDY", lastName="LIMBA", type=individuel, cat=AMIS, seats=1, table=NICAR
+[2026-06-05T06:00:31.981Z]   ✅ [146/243] "JACK LEMBI" → firstName="JACK", lastName="LEMBI", type=individuel, cat=AMIS, seats=1, table=NICAR
+[2026-06-05T06:00:31.982Z]   ✅ [147/243] "ANNO MAYEMBO" → firstName="ANNO", lastName="MAYEMBO", type=individuel, cat=AMIS, seats=1, table=NICAR
+[2026-06-05T06:00:31.982Z]   ✅ [148/243] "Couple BLAISE DONGO" → firstName="Couple", lastName="BLAISE DONGO", type=couple, cat=COUPLE, seats=2, table=TRACOL
+[2026-06-05T06:00:31.983Z]   ✅ [149/243] "Couple DJYMMY" → firstName="Couple", lastName="DJYMMY", type=couple, cat=COUPLE, seats=2, table=TRACOL
+[2026-06-05T06:00:31.984Z]   ✅ [150/243] "Couple SYSTÈME" → firstName="Couple", lastName="SYSTÈME", type=couple, cat=COUPLE, seats=2, table=TRACOL
+[2026-06-05T06:00:31.984Z]   ✅ [151/243] "ALBERT KANDOLO" → firstName="ALBERT", lastName="KANDOLO", type=individuel, cat=AMIS, seats=1, table=TRACOL
+[2026-06-05T06:00:31.985Z]   ✅ [152/243] "Mrs HIPPOLITE" → firstName="Mrs", lastName="HIPPOLITE", type=individuel, cat=AMIS, seats=1, table=TRACOL
+[2026-06-05T06:00:31.986Z]   ✅ [153/243] "Couple KAZADI" → firstName="Couple", lastName="KAZADI", type=couple, cat=COUPLE, seats=2, table=TRACOL
+[2026-06-05T06:00:31.987Z]   ✅ [154/243] "Couple MVITA" → firstName="Couple", lastName="MVITA", type=couple, cat=COUPLE, seats=2, table=FECOND
+[2026-06-05T06:00:31.987Z]   ✅ [155/243] "SHAROWN" → firstName="SHAROWN", lastName="SHAROWN", type=individuel, cat=AMIS, seats=1, table=FECOND
+[2026-06-05T06:00:31.988Z]   ✅ [156/243] "MALACHIE" → firstName="MALACHIE", lastName="MALACHIE", type=individuel, cat=AMIS, seats=1, table=FECOND
+[2026-06-05T06:00:31.989Z]   ✅ [157/243] "WISLET" → firstName="WISLET", lastName="WISLET", type=individuel, cat=AMIS, seats=1, table=FECOND
+[2026-06-05T06:00:31.990Z]   ✅ [158/243] "KASEMA" → firstName="KASEMA", lastName="KASEMA", type=individuel, cat=AMIS, seats=1, table=FECOND
+[2026-06-05T06:00:31.990Z]   ✅ [159/243] "NASH" → firstName="NASH", lastName="NASH", type=individuel, cat=AMIS, seats=1, table=FECOND
+[2026-06-05T06:00:31.991Z]   ✅ [160/243] "JEREMIE" → firstName="JEREMIE", lastName="JEREMIE", type=individuel, cat=AMIS, seats=1, table=FECOND
+[2026-06-05T06:00:31.992Z]   ✅ [161/243] "BENJI" → firstName="BENJI", lastName="BENJI", type=individuel, cat=AMIS, seats=1, table=FECOND
+[2026-06-05T06:00:31.993Z]   ✅ [162/243] "ELIEZER" → firstName="ELIEZER", lastName="ELIEZER", type=individuel, cat=AMIS, seats=1, table=FECOND
+[2026-06-05T06:00:31.993Z]   ✅ [163/243] "SIKA MERVEILLE" → firstName="SIKA", lastName="MERVEILLE", type=individuel, cat=AMIS, seats=1, table=FECOND
+[2026-06-05T06:00:31.994Z]   ✅ [164/243] "MICHE" → firstName="MICHE", lastName="MICHE", type=individuel, cat=AMIS, seats=1, table=FECOND
+[2026-06-05T06:00:31.995Z]   ✅ [165/243] "Couple ISAAC WASSA" → firstName="Couple", lastName="ISAAC WASSA", type=couple, cat=COUPLE, seats=2, table=PASMEX
+[2026-06-05T06:00:31.995Z]   ✅ [166/243] "Couple KINA" → firstName="Couple", lastName="KINA", type=couple, cat=COUPLE, seats=2, table=PASMEX
+[2026-06-05T06:00:31.996Z]   ✅ [167/243] "Couple SHAKO" → firstName="Couple", lastName="SHAKO", type=couple, cat=COUPLE, seats=2, table=PASMEX
+[2026-06-05T06:00:31.997Z]   ✅ [168/243] "GLOIRIES SANALISE" → firstName="GLOIRIES", lastName="SANALISE", type=individuel, cat=AMIS, seats=1, table=PASMEX
+[2026-06-05T06:00:31.998Z]   ✅ [169/243] "BENEDICTE NDAKA" → firstName="BENEDICTE", lastName="NDAKA", type=individuel, cat=AMIS, seats=1, table=PASMEX
+[2026-06-05T06:00:31.998Z]   ✅ [170/243] "DJENNY" → firstName="DJENNY", lastName="DJENNY", type=individuel, cat=AMIS, seats=1, table=PASMEX
+[2026-06-05T06:00:31.999Z]   ✅ [171/243] "DJAMAR" → firstName="DJAMAR", lastName="DJAMAR", type=individuel, cat=AMIS, seats=1, table=PASMEX
+[2026-06-05T06:00:32.000Z]   ✅ [172/243] "TADE" → firstName="TADE", lastName="TADE", type=individuel, cat=AMIS, seats=1, table=PASMEX
+[2026-06-05T06:00:32.000Z]   ✅ [173/243] "DEBORHA KABUYA" → firstName="DEBORHA", lastName="KABUYA", type=individuel, cat=AMIS, seats=1, table=PASMEX
+[2026-06-05T06:00:32.001Z]   ✅ [174/243] "HERVE WASSA" → firstName="HERVE", lastName="WASSA", type=individuel, cat=AMIS, seats=1, table=LINZOX
+[2026-06-05T06:00:32.002Z]   ✅ [175/243] "Couple ISRAEL" → firstName="Couple", lastName="ISRAEL", type=couple, cat=COUPLE, seats=2, table=LINZOX
+[2026-06-05T06:00:32.002Z]   ✅ [176/243] "Couple TITO NKAMA" → firstName="Couple", lastName="TITO NKAMA", type=couple, cat=COUPLE, seats=2, table=LINZOX
+[2026-06-05T06:00:32.003Z]   ✅ [177/243] "ADIKO NDONGATO" → firstName="ADIKO", lastName="NDONGATO", type=individuel, cat=AMIS, seats=1, table=LINZOX
+[2026-06-05T06:00:32.004Z]   ✅ [178/243] "FERRO" → firstName="FERRO", lastName="FERRO", type=individuel, cat=AMIS, seats=1, table=LINZOX
+[2026-06-05T06:00:32.004Z]   ✅ [179/243] "KADY" → firstName="KADY", lastName="KADY", type=individuel, cat=AMIS, seats=1, table=LINZOX
+[2026-06-05T06:00:32.005Z]   ✅ [180/243] "JONAS WASSA" → firstName="JONAS", lastName="WASSA", type=individuel, cat=AMIS, seats=1, table=LINZOX
+[2026-06-05T06:00:32.006Z]   ✅ [181/243] "DIDIER TEBWA" → firstName="DIDIER", lastName="TEBWA", type=individuel, cat=AMIS, seats=1, table=LINZOX
+[2026-06-05T06:00:32.007Z]   ✅ [182/243] "Couple JEREMIE YEVUNDU" → firstName="Couple", lastName="JEREMIE YEVUNDU", type=couple, cat=COUPLE, seats=2, table=VITRON-Z
+[2026-06-05T06:00:32.007Z]   ✅ [183/243] "Danny BEDI" → firstName="Danny", lastName="BEDI", type=individuel, cat=AMIS, seats=1, table=VITRON-Z
+[2026-06-05T06:00:32.008Z]   ✅ [184/243] "VALENCIA" → firstName="VALENCIA", lastName="VALENCIA", type=individuel, cat=AMIS, seats=1, table=VITRON-Z
+[2026-06-05T06:00:32.009Z]   ✅ [185/243] "TONNY NDOMBA" → firstName="TONNY", lastName="NDOMBA", type=individuel, cat=AMIS, seats=1, table=VITRON-Z
+[2026-06-05T06:00:32.009Z]   ✅ [186/243] "KOKO KUKU" → firstName="KOKO", lastName="KUKU", type=individuel, cat=AMIS, seats=1, table=VITRON-Z
+[2026-06-05T06:00:32.010Z]   ✅ [187/243] "HENOCK" → firstName="HENOCK", lastName="HENOCK", type=individuel, cat=AMIS, seats=1, table=VITRON-Z
+[2026-06-05T06:00:32.011Z]   ✅ [188/243] "REAGAN LINAKA" → firstName="REAGAN", lastName="LINAKA", type=individuel, cat=AMIS, seats=1, table=VITRON-Z
+[2026-06-05T06:00:32.012Z]   ✅ [189/243] "OBBY NDONGATO" → firstName="OBBY", lastName="NDONGATO", type=individuel, cat=AMIS, seats=1, table=VITRON-Z
+[2026-06-05T06:00:32.012Z]   ✅ [190/243] "ARMAN NONGO" → firstName="ARMAN", lastName="NONGO", type=individuel, cat=AMIS, seats=1, table=VITRON-Z
+[2026-06-05T06:00:32.013Z]   ✅ [191/243] "ADAN" → firstName="ADAN", lastName="ADAN", type=individuel, cat=AMIS, seats=1, table=VITRON-Z
+[2026-06-05T06:00:32.014Z]   ✅ [192/243] "CHARLE" → firstName="CHARLE", lastName="CHARLE", type=individuel, cat=AMIS, seats=1, table=VITRON-Z
+[2026-06-05T06:00:32.014Z]   ✅ [193/243] "FABRICE IZAGOL0" → firstName="FABRICE", lastName="IZAGOL0", type=individuel, cat=AMIS, seats=1, table=ROSUMEX
+[2026-06-05T06:00:32.015Z]   ✅ [194/243] "FAIDA IZAGOLO" → firstName="FAIDA", lastName="IZAGOLO", type=individuel, cat=AMIS, seats=1, table=ROSUMEX
+[2026-06-05T06:00:32.016Z]   ✅ [195/243] "NADEGE IZAGOLO" → firstName="NADEGE", lastName="IZAGOLO", type=individuel, cat=AMIS, seats=1, table=ROSUMEX
+[2026-06-05T06:00:32.017Z]   ✅ [196/243] "MELVA IZAGOLO" → firstName="MELVA", lastName="IZAGOLO", type=individuel, cat=AMIS, seats=1, table=ROSUMEX
+[2026-06-05T06:00:32.018Z]   ✅ [197/243] "DIVINE IZAGOLO" → firstName="DIVINE", lastName="IZAGOLO", type=individuel, cat=AMIS, seats=1, table=ROSUMEX
+[2026-06-05T06:00:32.018Z]   ✅ [198/243] "TYCHIQUE IZAGOLO" → firstName="TYCHIQUE", lastName="IZAGOLO", type=individuel, cat=AMIS, seats=1, table=ROSUMEX
+[2026-06-05T06:00:32.019Z]   ✅ [199/243] "PIERRETE IZAGOLA" → firstName="PIERRETE", lastName="IZAGOLA", type=individuel, cat=AMIS, seats=1, table=ROSUMEX
+[2026-06-05T06:00:32.020Z]   ✅ [200/243] "RISNEL" → firstName="RISNEL", lastName="RISNEL", type=individuel, cat=AMIS, seats=1, table=ROSUMEX
+[2026-06-05T06:00:32.021Z]   ✅ [201/243] "PETIT" → firstName="PETIT", lastName="PETIT", type=individuel, cat=AMIS, seats=1, table=ROSUMEX
+[2026-06-05T06:00:32.022Z]   ✅ [202/243] "GLORIA MONTA" → firstName="GLORIA", lastName="MONTA", type=individuel, cat=AMIS, seats=1, table=ROSUMEX
+[2026-06-05T06:00:32.023Z]   ✅ [203/243] "Couple KAPESA" → firstName="Couple", lastName="KAPESA", type=couple, cat=COUPLE, seats=2, table=CETHER-L
+[2026-06-05T06:00:32.023Z]   ✅ [204/243] "Couple CHRISTIAN" → firstName="Couple", lastName="CHRISTIAN", type=couple, cat=COUPLE, seats=2, table=CETHER-L
+[2026-06-05T06:00:32.024Z]   ✅ [205/243] "Couple OKITO" → firstName="Couple", lastName="OKITO", type=couple, cat=COUPLE, seats=2, table=CETHER-L
+[2026-06-05T06:00:32.025Z]   ✅ [206/243] "Couple BERAKO" → firstName="Couple", lastName="BERAKO", type=couple, cat=COUPLE, seats=2, table=CETHER-L
+[2026-06-05T06:00:32.026Z]   ✅ [207/243] "Couple OSEE" → firstName="Couple", lastName="OSEE", type=couple, cat=COUPLE, seats=2, table=CETHER-L
+[2026-06-05T06:00:32.026Z]   ✅ [208/243] "Couple BERLETTE" → firstName="Couple", lastName="BERLETTE", type=couple, cat=COUPLE, seats=2, table=CETHER-L
+[2026-06-05T06:00:32.027Z]   ✅ [209/243] "MA REGINE" → firstName="MA", lastName="REGINE", type=individuel, cat=AMIS, seats=1, table=NEBIMEX
+[2026-06-05T06:00:32.028Z]   ✅ [210/243] "REUNION 9 persones" → firstName="REUNION", lastName="9 persones", type=individuel, cat=AMIS, seats=1, table=NEBIMEX
+[2026-06-05T06:00:32.028Z]   ✅ [211/243] "MA SABINA" → firstName="MA", lastName="SABINA", type=individuel, cat=AMIS, seats=1, table=NEBIMEX
+[2026-06-05T06:00:32.029Z]   ✅ [212/243] "MA EUGENIE" → firstName="MA", lastName="EUGENIE", type=individuel, cat=AMIS, seats=1, table=NEBIMEX
+[2026-06-05T06:00:32.030Z]   ✅ [213/243] "Couple AIME" → firstName="Couple", lastName="AIME", type=couple, cat=COUPLE, seats=2, table=MICOFLU
+[2026-06-05T06:00:32.031Z]   ✅ [214/243] "Couple BRIGITTE" → firstName="Couple", lastName="BRIGITTE", type=couple, cat=COUPLE, seats=2, table=MICOFLU
+[2026-06-05T06:00:32.031Z]   ✅ [215/243] "Couple KENEDI" → firstName="Couple", lastName="KENEDI", type=couple, cat=COUPLE, seats=2, table=MICOFLU
+[2026-06-05T06:00:32.032Z]   ✅ [216/243] "Couple LAURETTE" → firstName="Couple", lastName="LAURETTE", type=couple, cat=COUPLE, seats=2, table=MICOFLU
+[2026-06-05T06:00:32.033Z]   ✅ [217/243] "CHRISTEL MANSAMBU" → firstName="CHRISTEL", lastName="MANSAMBU", type=individuel, cat=AMIS, seats=1, table=MICOFLU
+[2026-06-05T06:00:32.033Z]   ✅ [218/243] "PA JOSE" → firstName="PA", lastName="JOSE", type=individuel, cat=AMIS, seats=1, table=MICOFLU
+[2026-06-05T06:00:32.034Z]   ✅ [219/243] "MOGOLIA PAPY" → firstName="MOGOLIA", lastName="PAPY", type=individuel, cat=AMIS, seats=1, table=MICOFLU
+[2026-06-05T06:00:32.035Z]   ✅ [220/243] "PA DENIS" → firstName="PA", lastName="DENIS", type=individuel, cat=AMIS, seats=1, table=MICOFLU
+[2026-06-05T06:00:32.035Z]   ✅ [221/243] "Couple NAOMIE KAPINGA" → firstName="Couple", lastName="NAOMIE KAPINGA", type=couple, cat=COUPLE, seats=2, table=HEMOREX
+[2026-06-05T06:00:32.036Z]   ✅ [222/243] "Couple HILAIR" → firstName="Couple", lastName="HILAIR", type=couple, cat=COUPLE, seats=2, table=HEMOREX
+[2026-06-05T06:00:32.037Z]   ✅ [223/243] "Couple ABIGAEL" → firstName="Couple", lastName="ABIGAEL", type=couple, cat=COUPLE, seats=2, table=HEMOREX
+[2026-06-05T06:00:32.038Z]   ✅ [224/243] "Couple MILKA" → firstName="Couple", lastName="MILKA", type=couple, cat=COUPLE, seats=2, table=HEMOREX
+[2026-06-05T06:00:32.038Z]   ✅ [225/243] "Couple LAGERDIE" → firstName="Couple", lastName="LAGERDIE", type=couple, cat=COUPLE, seats=2, table=HEMOREX
+[2026-06-05T06:00:32.039Z]   ✅ [226/243] "Couple L'OR KAPESA" → firstName="Couple", lastName="L'OR KAPESA", type=couple, cat=COUPLE, seats=2, table=HEMOREX
+[2026-06-05T06:00:32.040Z]   ✅ [227/243] "JOSIA" → firstName="JOSIA", lastName="JOSIA", type=individuel, cat=AMIS, seats=1, table=AMOXYCILLINE
+[2026-06-05T06:00:32.041Z]   ✅ [228/243] "EUNICE EDIA" → firstName="EUNICE", lastName="EDIA", type=individuel, cat=AMIS, seats=1, table=AMOXYCILLINE
+[2026-06-05T06:00:32.041Z]   ✅ [229/243] "PRINCILIA MONGANGA" → firstName="PRINCILIA", lastName="MONGANGA", type=individuel, cat=AMIS, seats=1, table=AMOXYCILLINE
+[2026-06-05T06:00:32.042Z]   ✅ [230/243] "MIMIE MONGANGA" → firstName="MIMIE", lastName="MONGANGA", type=individuel, cat=AMIS, seats=1, table=AMOXYCILLINE
+[2026-06-05T06:00:32.043Z]   ✅ [231/243] "RUTH MONGANGA" → firstName="RUTH", lastName="MONGANGA", type=individuel, cat=AMIS, seats=1, table=AMOXYCILLINE
+[2026-06-05T06:00:32.043Z]   ✅ [232/243] "MANU MALANDISA" → firstName="MANU", lastName="MALANDISA", type=individuel, cat=AMIS, seats=1, table=AMOXYCILLINE
+[2026-06-05T06:00:32.044Z]   ✅ [233/243] "BELINDA MALANDISA" → firstName="BELINDA", lastName="MALANDISA", type=individuel, cat=AMIS, seats=1, table=AMOXYCILLINE
+[2026-06-05T06:00:32.045Z]   ✅ [234/243] "EUNICE KAKOTO" → firstName="EUNICE", lastName="KAKOTO", type=individuel, cat=AMIS, seats=1, table=AMOXYCILLINE
+[2026-06-05T06:00:32.046Z]   ✅ [235/243] "JONATHAN NZEMA" → firstName="JONATHAN", lastName="NZEMA", type=individuel, cat=AMIS, seats=1, table=AMOXYCILLINE
+[2026-06-05T06:00:32.046Z]   ✅ [236/243] "IVONE MONGANGA" → firstName="IVONE", lastName="MONGANGA", type=individuel, cat=AMIS, seats=1, table=AMOXYCILLINE
+[2026-06-05T06:00:32.047Z]   ✅ [237/243] "Couple MIFI" → firstName="Couple", lastName="MIFI", type=couple, cat=COUPLE, seats=2, table=CESADOX
+[2026-06-05T06:00:32.048Z]   ✅ [238/243] "Couple BEYA" → firstName="Couple", lastName="BEYA", type=couple, cat=COUPLE, seats=2, table=CESADOX
+[2026-06-05T06:00:32.048Z]   ✅ [239/243] "Couple LYDIE" → firstName="Couple", lastName="LYDIE", type=couple, cat=COUPLE, seats=2, table=CESADOX
+[2026-06-05T06:00:32.049Z]   ✅ [240/243] "STEPHIE KAPESA" → firstName="STEPHIE", lastName="KAPESA", type=individuel, cat=AMIS, seats=1, table=CESADOX
+[2026-06-05T06:00:32.050Z]   ✅ [241/243] "MA ANNY" → firstName="MA", lastName="ANNY", type=individuel, cat=AMIS, seats=1, table=CESADOX
+[2026-06-05T06:00:32.051Z]   ✅ [242/243] "PLAME KAPESA" → firstName="PLAME", lastName="KAPESA", type=individuel, cat=AMIS, seats=1, table=CESADOX
+[2026-06-05T06:00:32.051Z]   ✅ [243/243] "DJODJO KAPESA" → firstName="DJODJO", lastName="KAPESA", type=individuel, cat=AMIS, seats=1, table=CESADOX
+[2026-06-05T06:00:32.051Z] 
+─── Step 5: Post-migration validation ───
+[2026-06-05T06:00:32.053Z]   Total guests in DB: 242
+[2026-06-05T06:00:32.053Z]   Couples: 96
+[2026-06-05T06:00:32.053Z]   Individuels: 146
+[2026-06-05T06:00:32.053Z]   Expected total: 243
+[2026-06-05T06:00:32.053Z]   Duplicates skipped: 1
+[2026-06-05T06:00:32.053Z]   Errors: 0
+[2026-06-05T06:00:32.053Z] 
+─── Step 6: Display name verification ───
+[2026-06-05T06:00:32.055Z]   Display name mismatches: 0
+[2026-06-05T06:00:32.055Z] 
+─── Step 7: Search verification ───
+[2026-06-05T06:00:32.056Z]   Search "guyguy" → 1 results, expected found: ✅
+[2026-06-05T06:00:32.056Z]   Search "kamba" → 1 results, expected found: ✅
+[2026-06-05T06:00:32.056Z]   Search "gracia" → 1 results, expected found: ✅
+[2026-06-05T06:00:32.056Z]   Search "imbule" → 1 results, expected found: ✅
+[2026-06-05T06:00:32.056Z]   Search "système" → 1 results, expected found: ✅
+[2026-06-05T06:00:32.056Z]   Search "kapesa" → 5 results ✅
+[2026-06-05T06:00:32.056Z] 
+═══════════════════════════════════════════════════════════════
+[2026-06-05T06:00:32.056Z] MIGRATION COMPLETE
+[2026-06-05T06:00:32.056Z] ═══════════════════════════════════════════════════════════════
+[2026-06-05T06:00:32.056Z] Total guests imported: 242
+[2026-06-05T06:00:32.056Z] Couples: 96
+[2026-06-05T06:00:32.056Z] Individuels: 146
+[2026-06-05T06:00:32.056Z] Duplicates detected: 1
+[2026-06-05T06:00:32.056Z] Errors: 0
+[2026-06-05T06:00:32.056Z] Display name mismatches: 0
+[2026-06-05T06:00:32.056Z] Execution time: 0.22s
+[2026-06-05T06:00:32.057Z] 
+Duplicate entries skipped:
+[2026-06-05T06:00:32.057Z]   - Couple MBELE

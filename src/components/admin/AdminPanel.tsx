@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useRef } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import Image from 'next/image'
 import { Button } from '@/components/ui/button'
@@ -75,21 +75,30 @@ export default function AdminPanel({ isOpen, onClose, onAdminStateChange }: Admi
   })
   const [activeTab, setActiveTab] = useState<TabId>('dashboard')
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const sessionExpiredRef = useRef(false)
 
   const handleLogin = useCallback((newToken: string, newUser: AuthUser) => {
+    sessionExpiredRef.current = false
     setToken(newToken)
     setUser(newUser)
     onAdminStateChange?.(true)
   }, [onAdminStateChange])
 
-  const handleLogout = useCallback(() => {
+  const handleLogout = useCallback((showMessage = true) => {
     setToken(null)
     setUser(null)
     localStorage.removeItem('admin_token')
     localStorage.removeItem('admin_user')
     onAdminStateChange?.(false)
-    toast.success('Déconnexion réussie')
+    if (showMessage) toast.success('Déconnexion réussie')
   }, [onAdminStateChange])
+
+  const handleSessionExpired = useCallback(() => {
+    if (sessionExpiredRef.current) return
+    sessionExpiredRef.current = true
+    handleLogout(false)
+    toast.error('Session expirée, veuillez vous reconnecter')
+  }, [handleLogout])
 
   const handleTabChange = useCallback((tabId: TabId) => {
     setActiveTab(tabId)
@@ -105,23 +114,23 @@ export default function AdminPanel({ isOpen, onClose, onAdminStateChange }: Admi
 
     switch (activeTab) {
       case 'dashboard':
-        return <Dashboard token={token} />
+        return <Dashboard token={token} onSessionExpired={handleSessionExpired} />
       case 'guests':
-        return <GuestManager token={token} />
+        return <GuestManager token={token} onSessionExpired={handleSessionExpired} />
       case 'tables':
-        return <TableManager token={token} />
+        return <TableManager token={token} onSessionExpired={handleSessionExpired} />
       case 'media':
-        return <MediaManager token={token} />
+        return <MediaManager token={token} onSessionExpired={handleSessionExpired} />
       case 'timeline':
-        return <TimelineManager token={token} />
+        return <TimelineManager token={token} onSessionExpired={handleSessionExpired} />
       case 'users':
-        return <UserManager token={token} userRole={user?.role || ''} />
+        return <UserManager token={token} userRole={user?.role || ''} onSessionExpired={handleSessionExpired} />
       case 'access-logs':
-        return <AccessLogManager token={token} />
+        return <AccessLogManager token={token} onSessionExpired={handleSessionExpired} />
       case 'settings':
-        return <SettingsManager token={token} userRole={user?.role || ''} />
+        return <SettingsManager token={token} userRole={user?.role || ''} onSessionExpired={handleSessionExpired} />
       default:
-        return <Dashboard token={token} />
+        return <Dashboard token={token} onSessionExpired={handleSessionExpired} />
     }
   }
 
