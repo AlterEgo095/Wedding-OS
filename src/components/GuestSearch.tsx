@@ -348,7 +348,7 @@ export default function GuestSearch({ initialCode }: { initialCode?: string }) {
                           {guest.table && (
                             <span className="flex items-center gap-1.5">
                               <Hash className="size-3.5" />
-                              Table {guest.table.number} — {guest.table.name}
+                              {guest.table.name}
                             </span>
                           )}
                           <span className="flex items-center gap-1.5">
@@ -543,7 +543,7 @@ export default function GuestSearch({ initialCode }: { initialCode?: string }) {
                 </p>
                 {qrData.guest.table && (
                   <p className="text-sm text-muted-foreground font-display mt-1">
-                    Table {qrData.guest.table.number} — {qrData.guest.table.name}
+                    {qrData.guest.table.name}
                   </p>
                 )}
               </>

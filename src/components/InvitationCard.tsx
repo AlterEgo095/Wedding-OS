@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
-import { X, Heart, Gem, Users, Hash, Armchair, Ticket, Quote } from 'lucide-react'
+import { X, Heart, Gem, Users, Hash, Ticket, Quote } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import Image from 'next/image'
 
@@ -369,15 +369,14 @@ export default function InvitationCard({
           >
             <div className="flex items-center gap-1.5 text-sm font-display text-foreground/80">
               <Hash className="size-3.5 text-gold/60" />
-              <span>
-                Table {tableNumber} — {tableName}
+              <span className="font-semibold">
+                {tableName}
               </span>
             </div>
-            <div className="flex items-center gap-1.5 text-sm font-display text-muted-foreground">
-              <Armchair className="size-3.5 text-gold/50" />
-              <span>
-                {seats} place{seats > 1 ? 's' : ''} réservée{seats > 1 ? 's' : ''}
-              </span>
+            <div className="flex items-center gap-2 text-xs font-display text-muted-foreground/50">
+              <span>Table {tableNumber}</span>
+              <span>·</span>
+              <span>{seats} place{seats > 1 ? 's' : ''} réservée{seats > 1 ? 's' : ''}</span>
             </div>
           </motion.div>
 
