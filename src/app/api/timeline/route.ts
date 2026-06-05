@@ -31,7 +31,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { time, activity, location, description, order } = body;
+    const { time, activity, location, description, icon, order } = body;
 
     if (!time || !activity) {
       return NextResponse.json(
@@ -46,6 +46,7 @@ export async function POST(request: NextRequest) {
         activity,
         location: location || null,
         description: description || null,
+        icon: icon || null,
         order: order || 0,
       },
     });
@@ -80,7 +81,7 @@ export async function PUT(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { id, time, activity, location, description, order } = body;
+    const { id, time, activity, location, description, icon, order } = body;
 
     if (!id) {
       return NextResponse.json(
@@ -99,6 +100,7 @@ export async function PUT(request: NextRequest) {
     if (activity !== undefined) updateData.activity = activity;
     if (location !== undefined) updateData.location = location;
     if (description !== undefined) updateData.description = description;
+    if (icon !== undefined) updateData.icon = icon;
     if (order !== undefined) updateData.order = order;
 
     const event = await db.eventTimeline.update({
