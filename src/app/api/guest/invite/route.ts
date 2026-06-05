@@ -95,6 +95,8 @@ export async function GET(request: NextRequest) {
           id: guest.id,
           firstName: guest.firstName,
           lastName: guest.lastName,
+          displayName: guest.displayName,
+          invitationType: guest.invitationType,
           invitationCode: guest.invitationCode,
           seats: guest.seats,
           category: guest.category,
@@ -140,6 +142,8 @@ export async function GET(request: NextRequest) {
         id: guest.id,
         firstName: guest.firstName,
         lastName: guest.lastName,
+        displayName: guest.displayName,
+        invitationType: guest.invitationType,
         invitationCode: guest.invitationCode,
         seats: guest.seats,
         category: guest.category,
@@ -163,7 +167,7 @@ export async function GET(request: NextRequest) {
 
     return response;
   } catch (error) {
-    console.error('Invite link error:', error);
+    console.error('Invite link error:', error instanceof Error ? { message: error.message, stack: error.stack } : error);
     return NextResponse.json(
       { error: 'Erreur interne du serveur' },
       { status: 500 }

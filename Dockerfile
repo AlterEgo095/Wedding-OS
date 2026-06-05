@@ -70,8 +70,9 @@ ENV HOSTNAME="0.0.0.0"
 
 WORKDIR /app
 
-# ── Security: Create non-root user and group ──
-RUN addgroup --system --gid 1001 nodejs && \
+# ── Security: Create non-root user and group + install su-exec for privilege dropping ──
+RUN apk add --no-cache su-exec && \
+    addgroup --system --gid 1001 nodejs && \
     adduser --system --uid 1001 nextjs
 
 # ── Copy standalone server output ──
@@ -108,8 +109,9 @@ RUN mkdir -p /app/db /app/public/uploads /app/logs && \
 RUN chown -R nextjs:nodejs /app/.next /app/node_modules /app/prisma && \
     chown nextjs:nodejs /app/server.js /app/package.json /app/init-db.js /app/docker-entrypoint.sh 2>/dev/null || true
 
-# ── Switch to non-root user ──
-USER nextjs
+# ── Entrypoint runs as ROOT to fix volume permissions, then drops to nextjs ──
+# Do NOT set USER nextjs here — the entrypoint handles privilege dropping
+# USER nextjs  # Removed: entrypoint runs as root to chown volume files
 
 # ── Expose application port ──
 EXPOSE 3000

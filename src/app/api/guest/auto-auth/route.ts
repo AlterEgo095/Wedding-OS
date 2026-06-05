@@ -80,6 +80,8 @@ export async function POST(request: NextRequest) {
               id: existingGuest.id,
               firstName: existingGuest.firstName,
               lastName: existingGuest.lastName,
+              displayName: existingGuest.displayName,
+              invitationType: existingGuest.invitationType,
               invitationCode: existingGuest.invitationCode,
               seats: existingGuest.seats,
               category: existingGuest.category,
@@ -266,6 +268,8 @@ export async function POST(request: NextRequest) {
         id: guest.id,
         firstName: guest.firstName,
         lastName: guest.lastName,
+        displayName: guest.displayName,
+        invitationType: guest.invitationType,
         invitationCode: guest.invitationCode,
         seats: guest.seats,
         category: guest.category,
@@ -289,7 +293,7 @@ export async function POST(request: NextRequest) {
 
     return response;
   } catch (error) {
-    console.error('Auto-auth error:', error);
+    console.error('Auto-auth error:', error instanceof Error ? { message: error.message, stack: error.stack } : error);
     return NextResponse.json(
       { error: 'Erreur interne du serveur' },
       { status: 500 }
