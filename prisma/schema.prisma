@@ -22,6 +22,8 @@ model Guest {
   id                String           @id @default(cuid())
   firstName         String
   lastName          String
+  displayName       String?          // Exact display name as shown on invitation (no transformation)
+  invitationType    String           @default("individuel") // couple, individuel
   phone             String?
   email             String?
   tableId           String?

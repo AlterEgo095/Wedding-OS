@@ -89,12 +89,15 @@ export async function GET(request: NextRequest) {
         OR: [
           { firstName: { contains: searchTerm } },
           { lastName: { contains: searchTerm } },
+          { displayName: { contains: searchTerm } },
         ],
       },
       select: {
         id: true,
         firstName: true,
         lastName: true,
+        displayName: true,
+        invitationType: true,
         seats: true,
         category: true,
         table: {
@@ -116,12 +119,15 @@ export async function GET(request: NextRequest) {
             // Try first 2 chars for broader match
             { firstName: { contains: searchTerm.substring(0, 2) } },
             { lastName: { contains: searchTerm.substring(0, 2) } },
+            { displayName: { contains: searchTerm.substring(0, 2) } },
           ],
         },
         select: {
           id: true,
           firstName: true,
           lastName: true,
+          displayName: true,
+          invitationType: true,
           seats: true,
           category: true,
           table: {
@@ -138,7 +144,8 @@ export async function GET(request: NextRequest) {
       const accentMatches = allPotentialMatches.filter(g => {
         const normalizedFirst = normalizeForSearch(g.firstName);
         const normalizedLast = normalizeForSearch(g.lastName);
-        return normalizedFirst.includes(normalizedSearch) || normalizedLast.includes(normalizedSearch);
+        const normalizedDisplay = g.displayName ? normalizeForSearch(g.displayName) : '';
+        return normalizedFirst.includes(normalizedSearch) || normalizedLast.includes(normalizedSearch) || normalizedDisplay.includes(normalizedSearch);
       });
 
       // Merge with existing results (avoid duplicates)
@@ -166,14 +173,24 @@ export async function GET(request: NextRequest) {
     const results = guests.map((guest) => {
       const tokenPayload = `${guest.id}:${ipHash}:${now}`;
       const lookupToken = encryptId(tokenPayload);
-      const cleaned = cleanGuestName(guest.firstName, guest.lastName);
+      
+      // Use displayName if available (new system: exact text), otherwise fall back to cleanGuestName
+      const hasDisplayName = guest.displayName;
+      const cleaned = hasDisplayName
+        ? null
+        : cleanGuestName(guest.firstName, guest.lastName);
+      const isCouple = hasDisplayName ? guest.invitationType === 'couple' : cleaned.isCouple;
+      const displayText = hasDisplayName ? guest.displayName : cleaned.displayName;
+      const greeting = hasDisplayName
+        ? (isCouple ? `Invitation exclusive pour le ${guest.displayName}` : `Invitation exclusive pour ${guest.displayName}`)
+        : cleaned.greeting;
 
       return {
-        name: cleaned.displayName,
+        name: displayText,
         firstName: guest.firstName,
         lastName: guest.lastName,
-        isCouple: cleaned.isCouple,
-        greeting: cleaned.greeting,
+        isCouple,
+        greeting,
         table: guest.table ? `Table ${guest.table.number} - ${guest.table.name}` : null,
         seats: guest.seats,
         category: guest.category,

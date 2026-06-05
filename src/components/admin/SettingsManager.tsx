@@ -14,6 +14,7 @@ import { toast } from 'sonner'
 interface SettingsManagerProps {
   token: string
   userRole: string
+  onSessionExpired: () => void
 }
 
 // Default settings keys for the wedding platform
@@ -35,6 +36,10 @@ const SETTINGS_GROUPS = [
       { key: 'venue_address', label: 'Adresse du Lieu' },
       { key: 'venue_reference', label: 'Référence / Indication' },
       { key: 'venue_city', label: 'Ville' },
+      { key: 'venue_lat', label: 'Latitude GPS', type: 'text' },
+      { key: 'venue_lng', label: 'Longitude GPS', type: 'text' },
+      { key: 'venue_time', label: 'Heure de la Cérémonie' },
+      { key: 'venue_parking', label: 'Parking' },
       { key: 'reception_venue', label: 'Lieu de Réception' },
     ],
   },
@@ -72,7 +77,7 @@ const SETTINGS_GROUPS = [
   },
 ]
 
-export default function SettingsManager({ token, userRole }: SettingsManagerProps) {
+export default function SettingsManager({ token, userRole, onSessionExpired }: SettingsManagerProps) {
   const [settings, setSettings] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -108,6 +113,7 @@ export default function SettingsManager({ token, userRole }: SettingsManagerProp
         },
         body: JSON.stringify({ settings }),
       })
+      if (res.status === 401) { onSessionExpired(); return }
       const json = await res.json()
       if (res.ok) {
         toast.success('Paramètres sauvegardés')

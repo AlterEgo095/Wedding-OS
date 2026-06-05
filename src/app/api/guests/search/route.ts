@@ -37,6 +37,7 @@ export async function GET(request: NextRequest) {
         OR: [
           { firstName: { contains: searchTerm } },
           { lastName: { contains: searchTerm } },
+          { displayName: { contains: searchTerm } },
           { invitationCode: { contains: searchTerm } },
         ],
       },
@@ -44,6 +45,8 @@ export async function GET(request: NextRequest) {
         id: true,
         firstName: true,
         lastName: true,
+        displayName: true,
+        invitationType: true,
         invitationCode: true,
         phone: true,
         email: true,

@@ -48,9 +48,10 @@ interface GuestInfo {
 
 interface TableManagerProps {
   token: string
+  onSessionExpired: () => void
 }
 
-export default function TableManager({ token }: TableManagerProps) {
+export default function TableManager({ token, onSessionExpired }: TableManagerProps) {
   const [tables, setTables] = useState<TableInfo[]>([])
   const [guests, setGuests] = useState<GuestInfo[]>([])
   const [loading, setLoading] = useState(true)
@@ -81,7 +82,7 @@ export default function TableManager({ token }: TableManagerProps) {
       const res = await fetch('/api/tables', {
         headers: { Authorization: `Bearer ${token}` },
       })
-      if (res.status === 401) { toast.error('Session expirée'); return }
+      if (res.status === 401) { onSessionExpired(); return }
       if (res.ok) {
         const json = await res.json()
         setTables(json.tables)
