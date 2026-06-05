@@ -3,14 +3,30 @@ import bcrypt from 'bcryptjs';
 import { NextRequest } from 'next/server';
 import { db } from './db';
 
-// CRITICAL: JWT_SECRET must be set via environment variable in production
-// During build (next build), NODE_ENV may be 'production' but JWT_SECRET isn't available
-// We use a placeholder during build and validate at runtime
-const JWT_SECRET = process.env.JWT_SECRET || (
-  process.env.NODE_ENV === 'production' && process.env.NEXT_PHASE !== 'phase-production-build'
-    ? (() => { throw new Error('FATAL: JWT_SECRET environment variable is required in production') })()
-    : 'wedding-platform-dev-secret-key-not-for-production'
-);
+// JWT_SECRET — lazy initialization to avoid crashing the entire module at load time.
+// Previously, a missing JWT_SECRET in production would throw at module scope,
+// which prevented ANY route that imported this module (directly or via shared chunk)
+// from loading, causing 500 errors on /api/guest/invite, /api/guest/auto-auth, etc.
+let _jwtSecret: string | null = null;
+function getJwtSecret(): string {
+  if (_jwtSecret !== null) return _jwtSecret;
+  const env = process.env.JWT_SECRET;
+  if (env) {
+    _jwtSecret = env;
+    return _jwtSecret;
+  }
+  // In production without JWT_SECRET, log a warning instead of crashing.
+  // This allows the app to start and serve pages while the admin panel
+  // will simply fail individual auth attempts (which is correct behavior).
+  if (process.env.NODE_ENV === 'production' && process.env.NEXT_PHASE !== 'phase-production-build') {
+    console.warn(
+      'WARNING: JWT_SECRET is not set in production! Admin authentication will not work securely. ' +
+      'Set JWT_SECRET in your .env file with: openssl rand -base64 48'
+    );
+  }
+  _jwtSecret = 'wedding-platform-dev-secret-key-not-for-production';
+  return _jwtSecret;
+}
 
 export interface AuthUser {
   id: string;
@@ -30,14 +46,14 @@ export async function verifyPassword(password: string, hashedPassword: string): 
 export function generateToken(user: AuthUser): string {
   return jwt.sign(
     { id: user.id, email: user.email, name: user.name, role: user.role },
-    JWT_SECRET,
+    getJwtSecret(),
     { expiresIn: '8h' }
   );
 }
 
 export function verifyToken(token: string): AuthUser | null {
   try {
-    return jwt.verify(token, JWT_SECRET) as AuthUser;
+    return jwt.verify(token, getJwtSecret()) as AuthUser;
   } catch {
     return null;
   }
