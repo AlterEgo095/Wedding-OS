@@ -396,9 +396,14 @@ export default function GuestPersonalSpace({ guest, settings, onLogout }: GuestP
                 <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                   <span style={{ fontSize: '14px' }}>&#127979;</span>
                   <span style={{ fontSize: '14px', fontWeight: 'bold', color: '#8B6914', fontFamily: 'Playfair Display, Georgia, serif' }}>
-                    Table {guest.table?.number ?? '—'}
+                    {guest.table?.name || '—'}
                   </span>
                 </div>
+                {guest.table?.number && (
+                  <span style={{ fontSize: '8px', letterSpacing: '0.1em', color: 'rgba(166,124,61,0.45)', fontWeight: 600, fontFamily: 'Cormorant Garamond, sans-serif', textTransform: 'uppercase' }}>
+                    Table {guest.table.number}
+                  </span>
+                )}
                 <div style={{ height: '16px', width: '1px', background: 'rgba(196,162,101,0.25)' }} />
                 <span style={{ fontSize: '10px', letterSpacing: '0.05em', color: 'rgba(166,124,61,0.65)', fontWeight: 500, fontFamily: 'Cormorant Garamond, sans-serif' }}>
                   {guest.seats} place{guest.seats > 1 ? 's' : ''} r&#233;serv&#233;e{guest.seats > 1 ? 's' : ''}
@@ -572,8 +577,11 @@ export default function GuestPersonalSpace({ guest, settings, onLogout }: GuestP
                   <div className="flex items-center gap-3 mt-2">
                     <div className="flex items-center gap-1.5">
                       <Users className="size-3.5 text-[#C4A265]/65" />
-                      <span className="font-serif text-sm sm:text-base font-bold" style={{ color: '#8B6914' }}>Table {guest.table?.number ?? '—'}</span>
+                      <span className="font-serif text-sm sm:text-base font-bold" style={{ color: '#8B6914' }}>{guest.table?.name || '—'}</span>
                     </div>
+                    {guest.table?.number && (
+                      <span className="font-display text-[7px] sm:text-[8px] tracking-[0.1em] uppercase text-[#A67C3D]/40 font-semibold">Table {guest.table.number}</span>
+                    )}
                     <div className="h-4 w-px" style={{ background: 'rgba(196,162,101,0.25)' }} />
                     <span className="font-display text-[9px] sm:text-[10px] tracking-wider text-[#A67C3D]/65 font-medium">{guest.seats} place{guest.seats > 1 ? 's' : ''} r&#233;serv&#233;e{guest.seats > 1 ? 's' : ''}</span>
                   </div>
