@@ -2,6 +2,7 @@
 
 import { motion } from 'framer-motion'
 import { Heart, Sparkles } from 'lucide-react'
+import Image from 'next/image'
 
 export default function Footer() {
   const currentYear = new Date().getFullYear()
@@ -75,7 +76,7 @@ export default function Footer() {
           </span>
         </motion.div>
 
-        {/* Premium tagline */}
+        {/* AENEWS Signature — Premium with Logo */}
         <motion.div
           initial={{ opacity: 0 }}
           whileInView={{ opacity: 1 }}
@@ -83,13 +84,17 @@ export default function Footer() {
           transition={{ duration: 0.8, delay: 0.2 }}
           className="text-center mb-6"
         >
-          <p className="font-display text-[10px] tracking-[0.25em] uppercase text-gold/40 font-semibold">
-            Une expérience digitale par
+          <p className="font-display text-[10px] tracking-[0.2em] uppercase text-gold/35 font-semibold mb-2">
+            Développé avec passion par
           </p>
-          <div className="flex items-center justify-center gap-1 mt-1">
-            <Sparkles className="size-3 text-gold/40" />
-            <span className="font-display text-xs font-bold tracking-[0.15em] text-gold/50">AENEWS</span>
-            <Sparkles className="size-3 text-gold/40" />
+          <div className="flex items-center justify-center gap-2">
+            <Image
+              src="/aenews-logo.png"
+              alt="AENEWS"
+              width={80}
+              height={53}
+              className="h-8 w-auto opacity-50 hover:opacity-80 transition-opacity duration-300"
+            />
           </div>
         </motion.div>
 
