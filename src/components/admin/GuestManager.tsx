@@ -85,6 +85,7 @@ interface ImportResult {
 
 interface GuestManagerProps {
   token: string
+  onSessionExpired: () => void
 }
 
 const CATEGORIES = ['VIP', 'FAMILLE', 'AMIS', 'SPONSORS', 'COLLEGUES']
@@ -118,7 +119,7 @@ const STATUS_COLORS: Record<string, string> = {
   DECLINED: 'bg-red-500/20 text-red-400 border-red-500/30',
 }
 
-export default function GuestManager({ token }: GuestManagerProps) {
+export default function GuestManager({ token, onSessionExpired }: GuestManagerProps) {
   const [guests, setGuests] = useState<Guest[]>([])
   const [tables, setTables] = useState<TableInfo[]>([])
   const [loading, setLoading] = useState(true)
@@ -242,7 +243,7 @@ export default function GuestManager({ token }: GuestManagerProps) {
       const res = await fetch(`/api/guests?${params}`, {
         headers: { Authorization: `Bearer ${token}` },
       })
-      if (res.status === 401) { toast.error('Session expirée'); return }
+      if (res.status === 401) { onSessionExpired(); return }
       const json = await res.json()
       if (res.ok) {
         setGuests(json.guests)

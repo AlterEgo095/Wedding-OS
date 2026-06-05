@@ -31,9 +31,10 @@ interface TimelineEvent {
 
 interface TimelineManagerProps {
   token: string
+  onSessionExpired: () => void
 }
 
-export default function TimelineManager({ token }: TimelineManagerProps) {
+export default function TimelineManager({ token, onSessionExpired }: TimelineManagerProps) {
   const [events, setEvents] = useState<TimelineEvent[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)

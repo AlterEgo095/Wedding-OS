@@ -30,6 +30,7 @@ interface DashboardData {
 
 interface DashboardProps {
   token: string
+  onSessionExpired: () => void
 }
 
 const STATUS_COLORS: Record<string, string> = {
@@ -60,7 +61,7 @@ const STATUS_LABELS: Record<string, string> = {
   DECLINED: 'Refusé',
 }
 
-export default function Dashboard({ token }: DashboardProps) {
+export default function Dashboard({ token, onSessionExpired }: DashboardProps) {
   const [data, setData] = useState<DashboardData | null>(null)
   const [loading, setLoading] = useState(true)
 
@@ -70,7 +71,7 @@ export default function Dashboard({ token }: DashboardProps) {
         headers: { Authorization: `Bearer ${token}` },
       })
       if (res.status === 401) {
-        toast.error('Session expirée')
+        onSessionExpired()
         return
       }
       const json = await res.json()

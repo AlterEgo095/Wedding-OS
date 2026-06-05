@@ -22,8 +22,8 @@ export default function MapSection({ settings }: { settings: VenueSettings | nul
 
   const venueName = settings?.venue_name || 'Salle Polyvalente – Grand Palais Kinshasa'
   const venueAddress = settings?.venue_address || '21 / 22 Avenue Bobozo'
-  const lat = settings?.venue_lat || '-4.3250'
-  const lng = settings?.venue_lng || '15.3222'
+  const lat = settings?.venue_lat || '-4.3479'
+  const lng = settings?.venue_lng || '15.3395'
   const parking = settings?.venue_parking || 'Parking disponible sur place'
   const venueTime = settings?.venue_time || '21H30'
 

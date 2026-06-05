@@ -46,6 +46,7 @@ interface AdminUser {
 interface UserManagerProps {
   token: string
   userRole: string
+  onSessionExpired: () => void
 }
 
 const ROLES = ['SUPER_ADMIN', 'ORGANIZER', 'RECEPTION', 'CONTROLLER']
@@ -64,7 +65,7 @@ const ROLE_COLORS: Record<string, string> = {
   CONTROLLER: 'bg-sky-500/20 text-sky-400 border-sky-500/30',
 }
 
-export default function UserManager({ token, userRole }: UserManagerProps) {
+export default function UserManager({ token, userRole, onSessionExpired }: UserManagerProps) {
   const [users, setUsers] = useState<AdminUser[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -90,7 +91,7 @@ export default function UserManager({ token, userRole }: UserManagerProps) {
       const res = await fetch('/api/admin/users', {
         headers: { Authorization: `Bearer ${token}` },
       })
-      if (res.status === 401) { toast.error('Session expirée'); return }
+      if (res.status === 401) { onSessionExpired(); return }
       if (res.status === 403) {
         toast.error('Accès refusé')
         setLoading(false)

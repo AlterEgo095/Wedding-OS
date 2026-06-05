@@ -19,6 +19,8 @@ interface GuestData {
   id: string
   firstName: string
   lastName: string
+  displayName?: string | null
+  invitationType?: string | null
   invitationCode: string
   seats: number
   category: string
@@ -87,7 +89,33 @@ export default function GuestPersonalSpace({ guest, settings, onLogout }: GuestP
   const [photo1Base64, setPhoto1Base64] = useState<string | null>(null)
   const [photo2Base64, setPhoto2Base64] = useState<string | null>(null)
 
-  const cleanedName = cleanGuestName(guest.firstName, guest.lastName, guest.category)
+  // Use displayName directly if available (new system: exact text, no transformation)
+  // Otherwise fall back to cleanGuestName (legacy compatibility)
+  const cleanedName = guest.displayName
+    ? {
+        displayName: guest.displayName,
+        isCouple: guest.invitationType === 'couple',
+        isFamille: false,
+        isVip: guest.category === 'VIP',
+        prefixName: guest.invitationType === 'couple' ? guest.displayName.replace(/^couple\s+/i, '') : guest.displayName,
+        greeting: guest.invitationType === 'couple'
+          ? `Invitation exclusive pour le ${guest.displayName}`
+          : `Invitation exclusive pour ${guest.displayName}`,
+        shortGreeting: guest.invitationType === 'couple'
+          ? `Cher ${guest.displayName}`
+          : `Cher ${guest.displayName}`,
+        categoryDisplay: (() => {
+          const catKey = guest.category?.toUpperCase() || 'AMIS'
+          if (guest.invitationType === 'couple') return { emoji: '💍', label: 'Couple', color: '#A67C3D', bgColor: 'rgba(196,162,101,0.08)', borderColor: 'rgba(196,162,101,0.2)' }
+          const configs: Record<string, CategoryDisplay> = {
+            VIP: { emoji: '⭐', label: 'VIP', color: '#8B6914', bgColor: 'rgba(139,105,20,0.08)', borderColor: 'rgba(139,105,20,0.2)' },
+            FAMILLE: { emoji: '👨‍👩‍👧', label: 'Famille', color: '#B05A5A', bgColor: 'rgba(176,90,90,0.08)', borderColor: 'rgba(176,90,90,0.2)' },
+            AMIS: { emoji: '🤝', label: 'Amis', color: '#5A8B5A', bgColor: 'rgba(90,139,90,0.08)', borderColor: 'rgba(90,139,90,0.2)' },
+          }
+          return configs[catKey] || configs.AMIS
+        })(),
+      }
+    : cleanGuestName(guest.firstName, guest.lastName, guest.category)
 
   const groomName = settings.groom_name || 'Josué'
   const brideName = settings.bride_name || 'Hornella'
