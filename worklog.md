@@ -63,3 +63,31 @@ Stage Summary:
 - All platforms back online: aenews.net ✅, heureuxmariage.aenews.net ✅
 - Wedding container running with old image (middleware fix pending rebuild)
 - Docker image rebuild running in background
+
+---
+Task ID: 5
+Agent: Main
+Task: Fix invitation loading Internal Server Error (500) on production
+
+Work Log:
+- User reported "Erreur interne du serveur" when trying to load invitation after name search
+- Tested production API: /api/guest/lookup works (200), but /api/guest/auto-auth returns 500, /api/guest/invite returns 500
+- Analyzed the code flow: lookup (read-only) works, auto-auth/invite (write operations) fail
+- Checked VPS Docker logs: found "attempt to write a readonly database" (SQLite error code 8)
+- Root cause: custom.db owned by root:root with 644 permissions, container runs as nextjs user (can't write)
+- Also found secondary issue: auth.ts throws at module load time if JWT_SECRET is not set in production, crashing any route that imports it
+
+Fixes applied:
+1. Fixed auth.ts: Changed JWT_SECRET from eager module-level throw to lazy initialization with warning (no crash)
+2. Fixed guest data: Added displayName and invitationType fields to auto-auth, invite, auth endpoint responses
+3. Fixed VPS DB permissions: chown nextjs:nodejs /app/db/custom.db, chmod 660
+4. Fixed Dockerfile: Removed USER nextjs, added su-exec for privilege dropping in entrypoint
+5. Fixed docker-entrypoint.sh: Runs as root first to fix volume permissions, then drops to nextjs via su-exec
+6. Added better error logging with stack traces to auto-auth and invite routes
+
+Stage Summary:
+- Root cause 1: Database file had root ownership (readonly for nextjs user) — FIXED ✅
+- Root cause 2: auth.ts module crash when JWT_SECRET missing — FIXED ✅
+- Guest data now includes displayName and invitationType — FIXED ✅
+- Docker entrypoint now fixes volume permissions automatically on restart — FIXED ✅
+- Production invitation loading works: Search → Select → Envelope reveal → Full invitation displayed ✅

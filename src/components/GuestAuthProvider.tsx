@@ -6,6 +6,8 @@ interface GuestData {
   id: string
   firstName: string
   lastName: string
+  displayName?: string | null
+  invitationType?: string | null
   invitationCode: string
   seats: number
   category: string
