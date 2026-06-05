@@ -344,6 +344,8 @@ export async function getAuthenticatedGuest(guestId: string) {
     id: guest.id,
     firstName: guest.firstName,
     lastName: guest.lastName,
+    displayName: guest.displayName,
+    invitationType: guest.invitationType,
     invitationCode: guest.invitationCode,
     seats: guest.seats,
     category: guest.category,
