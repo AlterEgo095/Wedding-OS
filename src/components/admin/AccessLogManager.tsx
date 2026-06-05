@@ -15,6 +15,7 @@ import { toast } from 'sonner'
 
 interface AccessLogManagerProps {
   token: string
+  onSessionExpired: () => void
 }
 
 interface LogEntry {
@@ -122,7 +123,7 @@ const statusIcons: Record<string, { icon: typeof CheckCircle2; color: string }> 
   PENDING: { icon: HelpCircle, color: 'text-amber-500' },
 }
 
-export default function AccessLogManager({ token }: AccessLogManagerProps) {
+export default function AccessLogManager({ token, onSessionExpired }: AccessLogManagerProps) {
   const [logs, setLogs] = useState<LogEntry[]>([])
   const [stats, setStats] = useState<AccessStats | null>(null)
   const [loading, setLoading] = useState(true)
@@ -142,7 +143,7 @@ export default function AccessLogManager({ token }: AccessLogManagerProps) {
       })
 
       if (res.status === 401) {
-        toast.error('Session expirée')
+        onSessionExpired()
         return
       }
       if (res.ok) {
