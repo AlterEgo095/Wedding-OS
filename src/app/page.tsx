@@ -16,6 +16,7 @@ import PWAInstall from '@/components/PWAInstall'
 import { GuestAuthProvider, useGuestAuth } from '@/components/GuestAuthProvider'
 import GuestAuthForm from '@/components/GuestAuthForm'
 import GuestPersonalSpace from '@/components/GuestPersonalSpace'
+import AENEWSBanner from '@/components/AENEWSBanner'
 
 interface CoupleStory {
   id: string
@@ -239,6 +240,9 @@ function HomeContent() {
         onLoginWithLinkToken={loginWithLinkToken}
         initialInviteToken={inviteParam || undefined}
       />
+
+      {/* AENEWS Premium Banner */}
+      <AENEWSBanner variant="homepage" />
     </>
   )
 
@@ -256,14 +260,17 @@ function HomeContent() {
           </div>
         ) : authenticated && guest && !shouldHideGuestSpace ? (
           /* ─── AUTHENTICATED: Show personal space with envelope reveal ─── */
-          <GuestPersonalSpace
-            guest={guest}
-            settings={settings || {}}
-            onLogout={async () => {
-              await fetch('/api/guest/logout', { method: 'POST' })
-              window.location.href = '/'
-            }}
-          />
+          <>
+            <GuestPersonalSpace
+              guest={guest}
+              settings={settings || {}}
+              onLogout={async () => {
+                await fetch('/api/guest/logout', { method: 'POST' })
+                window.location.href = '/'
+              }}
+            />
+            <AENEWSBanner variant="invitation" />
+          </>
         ) : (
           /* ─── NOT AUTHENTICATED / ADMIN VIEWING: Full premium experience ─── */
           regularContent
