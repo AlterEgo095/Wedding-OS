@@ -33,6 +33,7 @@ interface TimelineEvent {
   activity: string
   location?: string | null
   description?: string | null
+  icon?: string | null
   order: number
 }
 
