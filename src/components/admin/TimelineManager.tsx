@@ -25,6 +25,7 @@ interface TimelineEvent {
   activity: string
   location: string | null
   description: string | null
+  icon: string | null
   order: number
   createdAt: string
 }
@@ -51,6 +52,7 @@ export default function TimelineManager({ token, onSessionExpired }: TimelineMan
     activity: '',
     location: '',
     description: '',
+    icon: '',
     order: 0,
   })
 
@@ -73,7 +75,7 @@ export default function TimelineManager({ token, onSessionExpired }: TimelineMan
   }, [])
 
   const resetForm = () => {
-    setForm({ time: '', activity: '', location: '', description: '', order: 0 })
+    setForm({ time: '', activity: '', location: '', description: '', icon: '', order: 0 })
   }
 
   const handleAdd = async () => {
@@ -89,6 +91,7 @@ export default function TimelineManager({ token, onSessionExpired }: TimelineMan
           ...form,
           location: form.location || null,
           description: form.description || null,
+          icon: form.icon || null,
           order: form.order || events.length,
         }),
       })
@@ -123,6 +126,7 @@ export default function TimelineManager({ token, onSessionExpired }: TimelineMan
           ...form,
           location: form.location || null,
           description: form.description || null,
+          icon: form.icon || null,
         }),
       })
       const json = await res.json()
@@ -253,6 +257,9 @@ export default function TimelineManager({ token, onSessionExpired }: TimelineMan
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-1">
                           <span className="text-sm font-bold text-gold">{event.time}</span>
+                          {event.icon && (
+                            <span className="text-sm" role="img" aria-label={event.activity}>{event.icon}</span>
+                          )}
                           {event.location && (
                             <span className="text-xs text-muted-foreground">📍 {event.location}</span>
                           )}
@@ -292,6 +299,7 @@ export default function TimelineManager({ token, onSessionExpired }: TimelineMan
                               activity: event.activity,
                               location: event.location || '',
                               description: event.description || '',
+                              icon: event.icon || '',
                               order: event.order,
                             })
                             setShowEditDialog(true)
@@ -342,6 +350,10 @@ export default function TimelineManager({ token, onSessionExpired }: TimelineMan
               <Input value={form.activity} onChange={(e) => setForm({ ...form, activity: e.target.value })} placeholder="Cérémonie" />
             </div>
             <div className="space-y-2">
+              <Label>Icône (emoji)</Label>
+              <Input value={form.icon} onChange={(e) => setForm({ ...form, icon: e.target.value })} placeholder="📸 ⛪ 🎉" />
+            </div>
+            <div className="space-y-2">
               <Label>Lieu</Label>
               <Input value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} placeholder="Jardin principal" />
             </div>
@@ -380,6 +392,10 @@ export default function TimelineManager({ token, onSessionExpired }: TimelineMan
             <div className="space-y-2">
               <Label>Activité *</Label>
               <Input value={form.activity} onChange={(e) => setForm({ ...form, activity: e.target.value })} />
+            </div>
+            <div className="space-y-2">
+              <Label>Icône (emoji)</Label>
+              <Input value={form.icon} onChange={(e) => setForm({ ...form, icon: e.target.value })} placeholder="📸 ⛪ 🎉" />
             </div>
             <div className="space-y-2">
               <Label>Lieu</Label>
