@@ -19,7 +19,6 @@ import GuestPersonalSpace from '@/components/GuestPersonalSpace'
 import AENEWSBanner from '@/components/AENEWSBanner'
 import AmbientMusicPlayer from '@/components/AmbientMusicPlayer'
 import VisualEffectsLayer from '@/components/effects/VisualEffectsLayer'
-import LuxuryVisualEngine from '@/components/luxury/LuxuryVisualEngine'
 
 interface CoupleStory {
   id: string
@@ -268,9 +267,6 @@ function HomeContent() {
     <div className="min-h-screen flex flex-col">
       {/* Global visual effects layer — sparkles, particles, bokeh */}
       <VisualEffectsLayer />
-
-      {/* Luxury cinematic ambiance engine — independent layer */}
-      <LuxuryVisualEngine />
 
       <Navigation />
 
