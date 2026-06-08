@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 import {
   LayoutDashboard, Users, Grid3X3, Image as ImageIcon, Clock, Shield, Settings, LogOut,
-  X, Menu, FileSearch
+  X, Menu, FileSearch, Music
 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -20,6 +20,7 @@ import UserManager from './UserManager'
 import TimelineManager from './TimelineManager'
 import SettingsManager from './SettingsManager'
 import AccessLogManager from './AccessLogManager'
+import MusicManager from './MusicManager'
 
 interface AuthUser {
   id: string
@@ -34,7 +35,7 @@ interface AdminPanelProps {
   onAdminStateChange?: (isLoggedIn: boolean) => void
 }
 
-type TabId = 'dashboard' | 'guests' | 'tables' | 'media' | 'timeline' | 'users' | 'settings' | 'access-logs'
+type TabId = 'dashboard' | 'guests' | 'tables' | 'media' | 'music' | 'timeline' | 'users' | 'settings' | 'access-logs'
 
 interface NavItem {
   id: TabId
@@ -49,6 +50,7 @@ const NAV_ITEMS: NavItem[] = [
   { id: 'tables', label: 'Tables', icon: Grid3X3 },
   { id: 'access-logs', label: 'Accès', icon: FileSearch },
   { id: 'media', label: 'Médias', icon: ImageIcon },
+  { id: 'music', label: 'Musique', icon: Music },
   { id: 'timeline', label: 'Programme', icon: Clock },
   { id: 'users', label: 'Utilisateurs', icon: Shield, superAdminOnly: true },
   { id: 'settings', label: 'Paramètres', icon: Settings, superAdminOnly: true },
@@ -121,6 +123,8 @@ export default function AdminPanel({ isOpen, onClose, onAdminStateChange }: Admi
         return <TableManager token={token} onSessionExpired={handleSessionExpired} />
       case 'media':
         return <MediaManager token={token} onSessionExpired={handleSessionExpired} />
+      case 'music':
+        return <MusicManager token={token} onSessionExpired={handleSessionExpired} />
       case 'timeline':
         return <TimelineManager token={token} onSessionExpired={handleSessionExpired} />
       case 'users':
