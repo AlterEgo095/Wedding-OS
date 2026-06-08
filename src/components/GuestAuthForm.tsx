@@ -6,6 +6,7 @@ import { User, ArrowRight, Sparkles, ShieldCheck, Lock, Heart, Loader2, Search, 
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { cleanGuestName } from '@/lib/guest-utils'
+import DynamicLightSweep from '@/components/effects/DynamicLightSweep'
 
 interface LookupResult {
   name: string
@@ -157,6 +158,7 @@ export default function GuestAuthForm({ onLoginByLookupToken, onLoginWithLinkTok
       {/* Background */}
       <div className="absolute inset-0 bg-gradient-to-br from-background via-champagne/5 to-background" />
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,oklch(0.68_0.12_85/0.04),transparent_60%)]" />
+      <DynamicLightSweep duration={16} opacity={0.03} direction="diagonal" />
 
       {/* Floating particles */}
       <div className="absolute inset-0 pointer-events-none overflow-hidden">
@@ -210,7 +212,7 @@ export default function GuestAuthForm({ onLoginByLookupToken, onLoginWithLinkTok
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
           transition={{ duration: 0.8, delay: 0.3 }}
-          className="glass-card gold-border rounded-2xl p-6 sm:p-8 md:p-10"
+          className="glass-card gold-border rounded-2xl p-6 sm:p-8 md:p-10 card-premium"
         >
           {/* Security badge */}
           <div className="flex items-center justify-center gap-2 mb-8">
