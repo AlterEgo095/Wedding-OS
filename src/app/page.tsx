@@ -18,6 +18,7 @@ import GuestAuthForm from '@/components/GuestAuthForm'
 import GuestPersonalSpace from '@/components/GuestPersonalSpace'
 import AENEWSBanner from '@/components/AENEWSBanner'
 import AmbientMusicPlayer from '@/components/AmbientMusicPlayer'
+import VisualEffectsLayer from '@/components/effects/VisualEffectsLayer'
 
 interface CoupleStory {
   id: string
@@ -264,6 +265,9 @@ function HomeContent() {
 
   return (
     <div className="min-h-screen flex flex-col">
+      {/* Global visual effects layer — sparkles, particles, bokeh */}
+      <VisualEffectsLayer />
+
       <Navigation />
 
       <main className="flex-1">
