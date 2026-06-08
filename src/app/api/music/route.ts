@@ -39,13 +39,20 @@ async function setMusicSetting(key: string, value: string) {
 /** GET — Retrieve music settings (public, no auth required) */
 export async function GET() {
   try {
+    const musicFile = await getMusicSetting('music_file');
     const settings = {
       music_enabled: await getMusicSetting('music_enabled'),
       music_volume: await getMusicSetting('music_volume'),
-      music_file: await getMusicSetting('music_file'),
+      music_file: musicFile,
       music_original_name: await getMusicSetting('music_original_name'),
     };
-    return NextResponse.json({ music: settings });
+    // Add a playable URL via the API route (works at runtime even in standalone mode)
+    // Next.js standalone server doesn't serve files added to public/ after build,
+    // so we provide an API-based URL that reads and serves the file dynamically.
+    const playableUrl = musicFile
+      ? `/api/music/file?f=${encodeURIComponent(path.basename(musicFile))}`
+      : '';
+    return NextResponse.json({ music: settings, music_url: playableUrl });
   } catch (error) {
     console.error('Get music settings error:', error);
     return NextResponse.json(
@@ -139,7 +146,7 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    // Return updated settings
+    // Return updated settings with playable URL
     const settings = {
       music_enabled: await getMusicSetting('music_enabled'),
       music_volume: await getMusicSetting('music_volume'),
@@ -147,7 +154,8 @@ export async function POST(request: NextRequest) {
       music_original_name: file.name,
     };
 
-    return NextResponse.json({ music: settings }, { status: 201 });
+    const playableUrl = `/api/music/file?f=${encodeURIComponent(uniqueName)}`;
+    return NextResponse.json({ music: settings, music_url: playableUrl }, { status: 201 });
   } catch (error) {
     console.error('Upload music error:', error);
     return NextResponse.json(
@@ -189,15 +197,19 @@ export async function PUT(request: NextRequest) {
       },
     });
 
-    // Return updated settings
+    // Return updated settings with playable URL
+    const musicFile = await getMusicSetting('music_file');
     const settings = {
       music_enabled: await getMusicSetting('music_enabled'),
       music_volume: await getMusicSetting('music_volume'),
-      music_file: await getMusicSetting('music_file'),
+      music_file: musicFile,
       music_original_name: await getMusicSetting('music_original_name'),
     };
 
-    return NextResponse.json({ music: settings });
+    const playableUrl = musicFile
+      ? `/api/music/file?f=${encodeURIComponent(path.basename(musicFile))}`
+      : '';
+    return NextResponse.json({ music: settings, music_url: playableUrl });
   } catch (error) {
     console.error('Update music settings error:', error);
     return NextResponse.json(
