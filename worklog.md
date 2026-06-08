@@ -24,3 +24,27 @@ Stage Summary:
 - Admin panel: "Musique" tab visible with full upload/preview/volume/toggle controls
 - Frontend player: Will appear once admin uploads a music file and enables it
 - Current state: music_enabled=false, no file uploaded yet (admin needs to upload one)
+
+---
+Task ID: 2
+Agent: Main Agent
+Task: Fix missing Musique tab in /admin page on VPS
+
+Work Log:
+- User reported Musique tab not visible in admin panel at /admin route
+- Screenshot analysis confirmed: sidebar had Dashboard, Invités, Tables, Accès, Médias, Programme, Utilisateurs, Paramètres - NO Musique
+- Root cause: VPS had a separate /admin/page.tsx route (full-page admin) that was older than the slide-over AdminPanel.tsx component
+- The /admin/page.tsx was missing: Music import, MusicManager component, Music nav item, and onSessionExpired handling
+- Created local /admin/page.tsx with Music tab integrated (matching AdminPanel.tsx structure)
+- Uploaded updated page.tsx to VPS via SFTP
+- Rebuilt Docker container (docker compose build --no-cache app)
+- Restarted container (docker compose up -d app)
+- Browser verified: Logged in at /admin, sidebar now shows Musique tab
+- Clicked Musique tab: Full MusicManager UI displayed with toggle, upload zone, volume control
+- Screenshot captured confirming working state
+
+Stage Summary:
+- /admin page now includes Musique tab between Médias and Programme
+- MusicManager fully functional: toggle on/off, drag-drop upload, volume slider, preview, delete
+- All 9 nav items visible: Dashboard, Invités, Tables, Accès, Médias, Musique, Programme, Utilisateurs, Paramètres
+- Deployed and verified on VPS (heureuxmariage.aenews.net/admin)
