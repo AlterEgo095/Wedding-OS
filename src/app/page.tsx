@@ -62,7 +62,7 @@ function HomeContent() {
   const [stories, setStories] = useState<CoupleStory[]>([])
   const [timeline, setTimeline] = useState<TimelineEvent[]>([])
   const [settings, setSettings] = useState<VenueSettings | null>(null)
-  const [musicSettings, setMusicSettings] = useState<{ file: string; volume: number; enabled: boolean }>({ file: '', volume: 0.25, enabled: false })
+  const [musicSettings, setMusicSettings] = useState<{ file: string; volume: number; enabled: boolean; url: string }>({ file: '', volume: 0.25, enabled: false, url: '' })
   const [loading, setLoading] = useState(true)
 
   // Long-press state
@@ -207,6 +207,7 @@ function HomeContent() {
               file: musicData.music.music_file || '',
               volume: parseFloat(musicData.music.music_volume) || 0.25,
               enabled: musicData.music.music_enabled === 'true',
+              url: musicData.music_url || musicData.music.music_file || '',
             })
           }
         }
@@ -328,7 +329,7 @@ function HomeContent() {
 
       {/* Ambient Music Player */}
       <AmbientMusicPlayer
-        musicFile={musicSettings.file}
+        musicFile={musicSettings.url || musicSettings.file}
         defaultVolume={musicSettings.volume}
         enabled={musicSettings.enabled}
       />

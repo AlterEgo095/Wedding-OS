@@ -18,80 +18,64 @@ export default function AmbientMusicPlayer({ musicFile, defaultVolume, enabled }
   const [isPlaying, setIsPlaying] = useState(false)
   const [isMuted, setIsMuted] = useState(false)
   const [showPrompt, setShowPrompt] = useState(false)
-  const [audioLoaded, setAudioLoaded] = useState(false)
   const [expanded, setExpanded] = useState(false)
   const audioRef = useRef<HTMLAudioElement | null>(null)
-  const initAttempted = useRef(false)
+  const currentSrcRef = useRef('')
 
-  // Check if music should auto-play based on user preference
-  const shouldAutoPlay = useCallback(() => {
-    if (typeof window === 'undefined') return false
-    const userPref = localStorage.getItem(LS_MUSIC_USER_ENABLED)
-    // If user previously enabled music (or never set preference), try autoplay
-    return userPref === null || userPref === 'true'
-  }, [])
-
-  const wasDismissed = useCallback(() => {
-    if (typeof window === 'undefined') return false
-    return localStorage.getItem(LS_MUSIC_DISMISSED) === 'true'
-  }, [])
-
-  // Determine initial prompt state (derived, not setState in effect)
-  const needsPrompt = enabled && musicFile && !shouldAutoPlay() && !wasDismissed()
-
-  // Initialize audio element
+  // Initialize or re-initialize audio element when musicFile changes
   useEffect(() => {
-    if (!enabled || !musicFile || initAttempted.current) return
-    initAttempted.current = true
+    if (!enabled || !musicFile) return
+
+    // If the source hasn't changed, don't re-initialize
+    if (currentSrcRef.current === musicFile) return
+    currentSrcRef.current = musicFile
+
+    // Clean up previous audio
+    if (audioRef.current) {
+      audioRef.current.pause()
+      audioRef.current.src = ''
+      audioRef.current = null
+    }
 
     const audio = new Audio()
-    audio.preload = 'none' // Don't preload — save bandwidth
+    audio.preload = 'auto' // Preload for better autoplay experience
     audio.loop = true
     audio.volume = defaultVolume
     audio.src = musicFile
 
-    audio.addEventListener('canplaythrough', () => {
-      setAudioLoaded(true)
-    }, { once: true })
-
     audioRef.current = audio
 
-    // Try autoplay if user preference allows
-    if (shouldAutoPlay()) {
+    // Check user preference
+    const userPref = localStorage.getItem(LS_MUSIC_USER_ENABLED)
+    const shouldTryAutoplay = userPref === null || userPref === 'true'
+    const wasDismissed = localStorage.getItem(LS_MUSIC_DISMISSED) === 'true'
+
+    if (shouldTryAutoplay) {
+      // Try autoplay - browsers may block this
       audio.play().then(() => {
         setIsPlaying(true)
         localStorage.setItem(LS_MUSIC_USER_ENABLED, 'true')
       }).catch(() => {
-        // Browser blocked autoplay — show prompt if not previously dismissed
-        if (!wasDismissed()) {
+        // Browser blocked autoplay — show the prompt
+        if (!wasDismissed) {
           setShowPrompt(true)
         }
       })
+    } else if (!wasDismissed) {
+      // User hasn't explicitly dismissed — show prompt
+      setShowPrompt(true)
     }
 
     return () => {
       audio.pause()
       audio.src = ''
       audioRef.current = null
+      currentSrcRef.current = ''
     }
-  }, [enabled, musicFile, defaultVolume, shouldAutoPlay, wasDismissed])
-
-  // Show prompt for users who previously disabled music (derived from needsPrompt)
-  useEffect(() => {
-    if (needsPrompt) {
-      // Use a microtask to avoid synchronous setState in effect
-      const timer = setTimeout(() => setShowPrompt(true), 100)
-      return () => clearTimeout(timer)
-    }
-  }, [needsPrompt])
+  }, [enabled, musicFile, defaultVolume])
 
   const play = useCallback(async () => {
     if (!audioRef.current) return
-    // Lazy load the audio on first play
-    if (!audioLoaded && audioRef.current.preload === 'none') {
-      audioRef.current.preload = 'auto'
-      audioRef.current.load()
-    }
     try {
       await audioRef.current.play()
       setIsPlaying(true)
@@ -101,7 +85,7 @@ export default function AmbientMusicPlayer({ musicFile, defaultVolume, enabled }
     } catch (err) {
       console.error('Play error:', err)
     }
-  }, [audioLoaded])
+  }, [])
 
   const pause = useCallback(() => {
     if (!audioRef.current) return
@@ -234,7 +218,6 @@ export default function AmbientMusicPlayer({ musicFile, defaultVolume, enabled }
           onClick={() => {
             if (!expanded) {
               setExpanded(true)
-              // Auto-close after 5 seconds
               setTimeout(() => setExpanded(false), 5000)
             } else {
               togglePlay()
