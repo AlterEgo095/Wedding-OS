@@ -638,3 +638,223 @@ html {
 .safe-area-pb {
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }
+
+/* ══════════════════════════════════════════════════════════════
+   PREMIUM EFFECTS — Visual Enhancements
+   ══════════════════════════════════════════════════════════════ */
+
+/* Premium button glow effect */
+.btn-premium {
+  position: relative;
+  overflow: hidden;
+  transition: all 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
+.btn-premium::before {
+  content: "";
+  position: absolute;
+  inset: -2px;
+  background: linear-gradient(
+    135deg,
+    oklch(0.68 0.12 85 / 0%),
+    oklch(0.82 0.08 85 / 20%),
+    oklch(0.68 0.12 85 / 0%)
+  );
+  background-size: 200% 200%;
+  border-radius: inherit;
+  z-index: -1;
+  opacity: 0;
+  transition: opacity 0.4s ease;
+  animation: shimmer 3s ease-in-out infinite;
+}
+
+.btn-premium:hover::before {
+  opacity: 1;
+}
+
+.btn-premium:hover {
+  box-shadow:
+    0 4px 20px oklch(0.68 0.12 85 / 25%),
+    0 0 40px oklch(0.68 0.12 85 / 10%);
+  transform: translateY(-1px);
+}
+
+.btn-premium:active {
+  transform: translateY(0);
+}
+
+/* Premium card hover */
+.card-premium {
+  transition: all 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
+.card-premium:hover {
+  box-shadow:
+    0 12px 40px oklch(0.68 0.12 85 / 12%),
+    0 0 20px oklch(0.68 0.12 85 / 5%);
+  transform: translateY(-2px);
+  border-color: oklch(0.68 0.12 85 / 40%);
+}
+
+/* Gold shimmer sweep on hover */
+.gold-shimmer-hover {
+  position: relative;
+  overflow: hidden;
+}
+
+.gold-shimmer-hover::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    oklch(0.82 0.08 85 / 15%),
+    transparent
+  );
+  transition: left 0.6s ease;
+  pointer-events: none;
+}
+
+.gold-shimmer-hover:hover::after {
+  left: 100%;
+}
+
+/* Countdown digit animation */
+@keyframes count-flip {
+  0% {
+    transform: perspective(200px) rotateX(0);
+    opacity: 1;
+  }
+  50% {
+    transform: perspective(200px) rotateX(-90deg);
+    opacity: 0.5;
+  }
+  100% {
+    transform: perspective(200px) rotateX(0);
+    opacity: 1;
+  }
+}
+
+.countdown-flip {
+  animation: count-flip 0.5s ease-out;
+}
+
+/* Countdown halo pulse */
+@keyframes countdown-halo {
+  0%, 100% {
+    box-shadow: 0 0 20px oklch(0.68 0.12 85 / 15%);
+  }
+  50% {
+    box-shadow: 0 0 40px oklch(0.68 0.12 85 / 30%), 0 0 60px oklch(0.82 0.08 85 / 10%);
+  }
+}
+
+.countdown-halo {
+  animation: countdown-halo 3s ease-in-out infinite;
+}
+
+/* Premium entrance animations */
+@keyframes premium-scale-in {
+  from {
+    opacity: 0;
+    transform: scale(0.92);
+    filter: blur(4px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+    filter: blur(0);
+  }
+}
+
+@keyframes premium-slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(24px);
+    filter: blur(2px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+    filter: blur(0);
+  }
+}
+
+@keyframes premium-glow-in {
+  from {
+    opacity: 0;
+    box-shadow: 0 0 0 oklch(0.68 0.12 85 / 0%);
+  }
+  to {
+    opacity: 1;
+    box-shadow: 0 0 20px oklch(0.68 0.12 85 / 15%);
+  }
+}
+
+.animate-premium-scale {
+  animation: premium-scale-in 0.8s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
+.animate-premium-slide {
+  animation: premium-slide-up 0.7s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
+.animate-premium-glow {
+  animation: premium-glow-in 1s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
+/* Enhanced glassmorphism premium */
+.glass-premium {
+  background: oklch(0.99 0.005 85 / 45%);
+  backdrop-filter: blur(24px) saturate(220%);
+  -webkit-backdrop-filter: blur(24px) saturate(220%);
+  border: 1px solid oklch(0.72 0.08 85 / 25%);
+  border-radius: 1rem;
+  box-shadow:
+    0 8px 32px oklch(0.18 0.02 60 / 6%),
+    0 0 0 1px oklch(0.99 0.005 85 / 40%),
+    inset 0 1px 0 oklch(0.99 0.005 85 / 50%);
+}
+
+.dark .glass-premium {
+  background: oklch(0.18 0.02 270 / 40%);
+  border: 1px solid oklch(0.72 0.08 85 / 18%);
+  box-shadow:
+    0 8px 32px oklch(0 0 0 / 25%),
+    0 0 0 1px oklch(0.92 0.04 85 / 5%),
+    inset 0 1px 0 oklch(0.92 0.04 85 / 6%);
+}
+
+/* Subtle paper texture for invitation */
+.paper-texture {
+  background-image: url("data:image/svg+xml,%3Csvg width='100' height='100' viewBox='0 0 100 100' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.02'/%3E%3C/svg%3E");
+}
+
+/* Smooth section transitions */
+.section-transition {
+  transition: opacity 0.6s ease, transform 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
+/* GPU acceleration for animated elements */
+.will-change-transform {
+  will-change: transform;
+}
+
+.will-change-opacity {
+  will-change: opacity;
+}
+
+/* Reduce motion for accessibility */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

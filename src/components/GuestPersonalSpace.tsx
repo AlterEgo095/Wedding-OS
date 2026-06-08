@@ -533,7 +533,7 @@ export default function GuestPersonalSpace({ guest, settings, onLogout }: GuestP
 
       <div className="relative z-10 w-full max-w-2xl">
         <motion.div initial={{ opacity: 0, y: 30, scale: 0.95 }} animate={{ opacity: 1, y: 0, scale: 1 }} transition={{ duration: 0.8, ease: "easeOut" }}>
-          <div ref={invitationRef} className="relative w-full overflow-hidden shadow-2xl" style={{ background: 'linear-gradient(175deg, #FDFAF3 0%, #FBF7EC 30%, #F7F1E5 60%, #FDFAF3 100%)', boxShadow: '0 20px 60px rgba(0,0,0,0.12), 0 0 30px rgba(196,162,101,0.08)' }}>
+          <div ref={invitationRef} className="relative w-full overflow-hidden shadow-2xl paper-texture" style={{ background: 'linear-gradient(175deg, #FDFAF3 0%, #FBF7EC 30%, #F7F1E5 60%, #FDFAF3 100%)', boxShadow: '0 20px 60px rgba(0,0,0,0.12), 0 0 30px rgba(196,162,101,0.08)' }}>
             <div className="absolute inset-0 z-[1] pointer-events-none" style={{ border: '2px solid rgba(196, 162, 101, 0.5)' }} />
             <div className="absolute inset-[5px] z-[1] pointer-events-none" style={{ border: '1px solid rgba(196, 162, 101, 0.2)' }} />
             <motion.div className="absolute inset-0 z-[2] pointer-events-none" style={{ background: 'linear-gradient(105deg, transparent 40%, rgba(196,162,101,0.05) 45%, rgba(196,162,101,0.02) 50%, transparent 55%)', backgroundSize: '200% 100%' }} animate={{ backgroundPosition: ['200% 0', '-200% 0'] }} transition={{ duration: 8, repeat: Infinity, ease: 'linear', repeatDelay: 6 }} />
