@@ -4,6 +4,8 @@ import { useState, useRef } from 'react'
 import { motion, AnimatePresence, useInView } from 'framer-motion'
 import Image from 'next/image'
 import { X, ChevronLeft, ChevronRight, ZoomIn, Camera } from 'lucide-react'
+import DynamicLightSweep from '@/components/effects/DynamicLightSweep'
+import { useVisualEffects } from '@/lib/visual-effects-store'
 
 interface GalleryImage {
   id: string
@@ -33,6 +35,7 @@ export default function PremiumGallery({ images }: PremiumGalleryProps) {
   const isInView = useInView(sectionRef, { once: true, margin: '-100px' })
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null)
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null)
+  const { premiumButtons } = useVisualEffects()
 
   const photos = images && images.length > 0
     ? images.map(img => ({ id: img.id, url: img.url, title: img.title || '', category: img.category || '' }))
@@ -55,6 +58,7 @@ export default function PremiumGallery({ images }: PremiumGalleryProps) {
     <section ref={sectionRef} id="galerie" className="py-20 md:py-32 relative overflow-hidden">
       {/* Background */}
       <div className="absolute inset-0 bg-gradient-to-br from-background via-champagne/3 to-background" />
+      <DynamicLightSweep duration={18} opacity={0.03} direction="left-to-right" />
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
         {/* Header */}
@@ -114,7 +118,7 @@ export default function PremiumGallery({ images }: PremiumGalleryProps) {
                   initial={{ opacity: 0 }}
                   animate={{ opacity: hoveredIndex === i ? 1 : 0 }}
                   transition={{ duration: 0.3 }}
-                  className="absolute inset-0 bg-black/40 backdrop-blur-[2px] flex items-center justify-center"
+                  className="absolute inset-0 bg-black/40 backdrop-blur-[2px] flex items-center justify-center card-premium"
                 >
                   <div className="text-center">
                     <ZoomIn className="size-6 text-white/80 mx-auto mb-2" />
@@ -153,7 +157,7 @@ export default function PremiumGallery({ images }: PremiumGalleryProps) {
             {/* Close button */}
             <button
               onClick={closeLightbox}
-              className="absolute top-4 right-4 z-50 w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-colors"
+              className="absolute top-4 right-4 z-50 w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-colors btn-premium gold-shimmer-hover"
               aria-label="Fermer"
             >
               <X className="size-5 text-white" />
@@ -162,14 +166,14 @@ export default function PremiumGallery({ images }: PremiumGalleryProps) {
             {/* Navigation */}
             <button
               onClick={(e) => { e.stopPropagation(); goPrev() }}
-              className="absolute left-4 z-50 w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-colors"
+              className="absolute left-4 z-50 w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-colors btn-premium gold-shimmer-hover"
               aria-label="Précédent"
             >
               <ChevronLeft className="size-5 text-white" />
             </button>
             <button
               onClick={(e) => { e.stopPropagation(); goNext() }}
-              className="absolute right-4 z-50 w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-colors"
+              className="absolute right-4 z-50 w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-colors btn-premium gold-shimmer-hover"
               aria-label="Suivant"
             >
               <ChevronRight className="size-5 text-white" />
@@ -183,6 +187,7 @@ export default function PremiumGallery({ images }: PremiumGalleryProps) {
               exit={{ opacity: 0, scale: 0.9 }}
               transition={{ duration: 0.3 }}
               className="relative max-w-5xl max-h-[85vh] w-full mx-8"
+              style={{ border: '1px solid oklch(0.68 0.12 85 / 20%)', borderRadius: '0.5rem' }}
               onClick={(e) => e.stopPropagation()}
             >
               <div className="relative w-full aspect-[16/10]">

@@ -1,9 +1,11 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import Image from 'next/image'
 import { motion, useScroll, useTransform, AnimatePresence } from 'framer-motion'
 import { Search, MailOpen, ChevronDown, Sparkles } from 'lucide-react'
+import { useVisualEffects } from '@/lib/visual-effects-store'
+import DynamicLightSweep from '@/components/effects/DynamicLightSweep'
 
 interface TimeLeft {
   days: number
@@ -13,9 +15,15 @@ interface TimeLeft {
 }
 
 function CountdownUnit({ value, label }: { value: number; label: string }) {
+  const prevValueRef = useRef(value)
+
+  useEffect(() => {
+    prevValueRef.current = value
+  }, [value])
+
   return (
     <div className="flex flex-col items-center">
-      <div className="relative w-20 h-20 sm:w-28 sm:h-28 md:w-36 md:h-36 flex items-center justify-center">
+      <div className="relative w-20 h-20 sm:w-28 sm:h-28 md:w-36 md:h-36 flex items-center justify-center countdown-halo">
         {/* Outermost glow ring */}
         <div className="absolute inset-0 rounded-full border-2 border-gold/10 dark:border-gold-light/10 animate-pulse-gold" />
         {/* Middle ornamental ring */}
@@ -24,9 +32,19 @@ function CountdownUnit({ value, label }: { value: number; label: string }) {
         <div className="absolute inset-3 rounded-full border border-gold/30 dark:border-gold-light/25" />
         {/* Inner glass card with glow */}
         <div className="absolute inset-4 rounded-full bg-black/30 dark:bg-black/40 backdrop-blur-md flex items-center justify-center shadow-[0_0_30px_oklch(0.68_0.12_85/20%)]">
-          <span className="font-serif text-3xl sm:text-5xl md:text-7xl font-black text-transparent bg-clip-text bg-gradient-to-b from-white via-gold-light to-gold drop-shadow-[0_0_20px_oklch(0.68_0.12_85/50%)]" style={{ WebkitTextStroke: '0.5px oklch(0.82 0.08 85 / 30%)' }}>
-            {String(value).padStart(2, '0')}
-          </span>
+          <AnimatePresence mode="wait">
+            <motion.span
+              key={value}
+              initial={{ opacity: 0, y: -10, scale: 0.9 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 10, scale: 0.9 }}
+              transition={{ duration: 0.3, ease: [0.25, 0.46, 0.45, 0.94] }}
+              className="font-serif text-3xl sm:text-5xl md:text-7xl font-black text-transparent bg-clip-text bg-gradient-to-b from-white via-gold-light to-gold drop-shadow-[0_0_20px_oklch(0.68_0.12_85/50%)]"
+              style={{ WebkitTextStroke: '0.5px oklch(0.82 0.08 85 / 30%)' }}
+            >
+              {String(value).padStart(2, '0')}
+            </motion.span>
+          </AnimatePresence>
         </div>
       </div>
       <span className="mt-3 text-xs sm:text-sm md:text-base font-bold tracking-[0.25em] uppercase text-white/80 drop-shadow-[0_0_10px_oklch(0.68_0.12_85/30%)]">
@@ -152,6 +170,9 @@ export default function HeroSection() {
           />
         ))}
       </div>
+
+      {/* ═══ Dynamic Light Sweep ═══ */}
+      <DynamicLightSweep duration={15} opacity={0.05} />
 
       {/* ═══ Content ═══ */}
       <motion.div
@@ -359,7 +380,7 @@ export default function HeroSection() {
               e.preventDefault()
               document.getElementById('recherche')?.scrollIntoView({ behavior: 'smooth' })
             }}
-            className="group relative inline-flex items-center gap-2 px-8 py-4 rounded-full bg-gradient-to-r from-gold to-gold-dark hover:from-gold-dark hover:to-gold text-white font-display tracking-wide shadow-xl shadow-gold/30 hover:shadow-2xl hover:shadow-gold/40 transition-all duration-300 text-sm sm:text-base font-semibold"
+            className="group relative inline-flex items-center gap-2 px-8 py-4 rounded-full bg-gradient-to-r from-gold to-gold-dark hover:from-gold-dark hover:to-gold text-white font-display tracking-wide shadow-xl shadow-gold/30 hover:shadow-2xl hover:shadow-gold/40 transition-all duration-300 text-sm sm:text-base font-semibold btn-premium"
           >
             <Search className="size-4" />
             Trouver ma table
@@ -370,7 +391,7 @@ export default function HeroSection() {
               e.preventDefault()
               document.getElementById('recherche')?.scrollIntoView({ behavior: 'smooth' })
             }}
-            className="group relative inline-flex items-center gap-2 px-8 py-4 rounded-full glass-card gold-border hover:bg-gold/10 text-white/90 font-display tracking-wide transition-all duration-300 text-sm sm:text-base font-semibold"
+            className="group relative inline-flex items-center gap-2 px-8 py-4 rounded-full glass-card gold-border hover:bg-gold/10 text-white/90 font-display tracking-wide transition-all duration-300 text-sm sm:text-base font-semibold btn-premium"
           >
             <MailOpen className="size-4" />
             Voir mon invitation
