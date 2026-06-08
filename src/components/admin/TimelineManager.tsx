@@ -338,7 +338,7 @@ export default function TimelineManager({ token, onSessionExpired }: TimelineMan
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-2">
                 <Label>Heure *</Label>
-                <Input value={form.time} onChange={(e) => setForm({ ...form, time: e.target.value })} placeholder="14:00" />
+                <Input value={form.time} onChange={(e) => setForm({ ...form, time: e.target.value })} placeholder="21:30" />
               </div>
               <div className="space-y-2">
                 <Label>Ordre</Label>
