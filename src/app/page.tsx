@@ -17,6 +17,7 @@ import { GuestAuthProvider, useGuestAuth } from '@/components/GuestAuthProvider'
 import GuestAuthForm from '@/components/GuestAuthForm'
 import GuestPersonalSpace from '@/components/GuestPersonalSpace'
 import AENEWSBanner from '@/components/AENEWSBanner'
+import AmbientMusicPlayer from '@/components/AmbientMusicPlayer'
 
 interface CoupleStory {
   id: string
@@ -61,6 +62,7 @@ function HomeContent() {
   const [stories, setStories] = useState<CoupleStory[]>([])
   const [timeline, setTimeline] = useState<TimelineEvent[]>([])
   const [settings, setSettings] = useState<VenueSettings | null>(null)
+  const [musicSettings, setMusicSettings] = useState<{ file: string; volume: number; enabled: boolean }>({ file: '', volume: 0.25, enabled: false })
   const [loading, setLoading] = useState(true)
 
   // Long-press state
@@ -162,10 +164,11 @@ function HomeContent() {
   useEffect(() => {
     async function fetchData() {
       try {
-        const [storiesRes, timelineRes, settingsRes] = await Promise.all([
+        const [storiesRes, timelineRes, settingsRes, musicRes] = await Promise.all([
           fetch('/api/couple-story'),
           fetch('/api/timeline'),
           fetch('/api/settings'),
+          fetch('/api/music'),
         ])
 
         if (storiesRes.ok) {
@@ -194,6 +197,17 @@ function HomeContent() {
               obj[s.key] = s.value
             })
             setSettings(obj as VenueSettings)
+          }
+        }
+        // Fetch music settings
+        if (musicRes.ok) {
+          const musicData = await musicRes.json()
+          if (musicData.music) {
+            setMusicSettings({
+              file: musicData.music.music_file || '',
+              volume: parseFloat(musicData.music.music_volume) || 0.25,
+              enabled: musicData.music.music_enabled === 'true',
+            })
           }
         }
       } catch (error) {
@@ -311,6 +325,13 @@ function HomeContent() {
           </Button>
         </div>
       )}
+
+      {/* Ambient Music Player */}
+      <AmbientMusicPlayer
+        musicFile={musicSettings.file}
+        defaultVolume={musicSettings.volume}
+        enabled={musicSettings.enabled}
+      />
 
       <PWAInstall />
       <AdminPanel
