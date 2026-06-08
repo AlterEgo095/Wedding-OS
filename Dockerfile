@@ -21,11 +21,11 @@ RUN \
     echo "Detected yarn.lock — installing with npm ci (yarn.lock present for reference)"; \
     npm i --frozen-lockfile 2>/dev/null || npm i; \
   elif [ -f package-lock.json ]; then \
-    echo "Detected package-lock.json — installing with npm ci"; \
-    npm ci; \
+    echo "Detected package-lock.json — installing with npm i"; \
+    npm i; \
   elif [ -f bun.lock ]; then \
-    echo "Detected bun.lock — installing with npm ci"; \
-    npm ci 2>/dev/null || npm i; \
+    echo "Detected bun.lock — installing with npm i"; \
+    npm i; \
   else \
     echo "WARNING: No lockfile detected — installing with npm i (non-deterministic)"; \
     npm i; \
