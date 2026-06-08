@@ -48,3 +48,32 @@ Stage Summary:
 - MusicManager fully functional: toggle on/off, drag-drop upload, volume slider, preview, delete
 - All 9 nav items visible: Dashboard, Invités, Tables, Accès, Médias, Musique, Programme, Utilisateurs, Paramètres
 - Deployed and verified on VPS (heureuxmariage.aenews.net/admin)
+
+---
+Task ID: 3
+Agent: Main Agent
+Task: Fix music preview and autoplay - music file not accessible, admin preview broken, user autoplay not working
+
+Work Log:
+- Analyzed user screenshot: music uploaded (VITAA & SLIMANE), enabled, 50% volume, but "Impossible de lire la prévisualisation" error
+- Root cause #1: Next.js standalone server doesn't serve files added to public/ AFTER build time (newly uploaded MP3 returns 404)
+- Root cause #2: Admin preview uses static file path (/uploads/music/xxx.mp3) which is 404 until container restart
+- Root cause #3: AmbientMusicPlayer uses initAttempted ref that prevents re-initialization when musicFile changes
+- Fix #1: Created /api/music/file route that dynamically serves audio files from filesystem (bypasses static file caching)
+- Fix #2: Updated /api/music GET/POST/PUT responses to include music_url field with API-based playable URL
+- Fix #3: Updated MusicManager to use playableUrl state from API response for preview
+- Fix #4: Rewrote AmbientMusicPlayer with proper re-initialization when musicFile prop changes
+- Fix #5: Updated page.tsx to pass musicSettings.url to AmbientMusicPlayer
+- Uploaded all modified files to VPS via SFTP
+- Restarted container - MP3 file now accessible (HTTP 200) at /uploads/music/ path
+- Browser verified: Music button visible on homepage, no errors
+- Docker rebuild started but very slow (VPS resource constraints, 1GB+ node_modules COPY step)
+- Current status: Music IS working with current image (after restart), full code update awaiting Docker rebuild
+
+Stage Summary:
+- Music file serving: Fixed after container restart; /api/music/file route will fix it permanently after rebuild
+- Admin preview: Will work after Docker rebuild (uses API-based URL)
+- User autoplay: AmbientMusicPlayer rewrites to properly reinitialize and attempt autoplay
+- Floating music button: Visible and functional on homepage
+- Docker rebuild: In progress on VPS (very slow due to large node_modules copy)
+- Workaround for current deployment: Container restart makes uploaded files accessible

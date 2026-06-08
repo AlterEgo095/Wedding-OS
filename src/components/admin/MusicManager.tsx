@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   Music, Upload, Play, Pause, Trash2, Volume2, VolumeX,
-  RefreshCw, Check, AlertCircle, FileAudio, Loader2, X
+  RefreshCw, AlertCircle, FileAudio, Loader2, X
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { toast } from 'sonner'
@@ -21,6 +21,13 @@ interface MusicSettings {
   music_original_name: string
 }
 
+/** Helper: build API-based playable URL from music_file path */
+function getPlayableUrl(musicFile: string): string {
+  if (!musicFile) return ''
+  const filename = musicFile.split('/').pop() || ''
+  return `/api/music/file?f=${encodeURIComponent(filename)}`
+}
+
 export default function MusicManager({ token, onSessionExpired }: MusicManagerProps) {
   const [settings, setSettings] = useState<MusicSettings>({
     music_enabled: 'false',
@@ -28,6 +35,7 @@ export default function MusicManager({ token, onSessionExpired }: MusicManagerPr
     music_file: '',
     music_original_name: '',
   })
+  const [playableUrl, setPlayableUrl] = useState('')
   const [loading, setLoading] = useState(true)
   const [uploading, setUploading] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -44,6 +52,7 @@ export default function MusicManager({ token, onSessionExpired }: MusicManagerPr
       if (res.ok) {
         const data = await res.json()
         setSettings(data.music)
+        setPlayableUrl(data.music_url || getPlayableUrl(data.music.music_file))
       }
     } catch (error) {
       console.error('Fetch music settings error:', error)
@@ -85,6 +94,7 @@ export default function MusicManager({ token, onSessionExpired }: MusicManagerPr
 
       if (res.ok) {
         setSettings(data.music)
+        setPlayableUrl(data.music_url || getPlayableUrl(data.music.music_file))
         toast.success(`Musique "${file.name}" importée avec succès`)
       } else {
         toast.error(data.error || 'Erreur lors de l\'import')
@@ -100,7 +110,6 @@ export default function MusicManager({ token, onSessionExpired }: MusicManagerPr
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (file) handleUpload(file)
-    // Reset input so same file can be re-selected
     e.target.value = ''
   }
 
@@ -136,6 +145,7 @@ export default function MusicManager({ token, onSessionExpired }: MusicManagerPr
       if (res.ok) {
         const data = await res.json()
         setSettings(data.music)
+        setPlayableUrl(data.music_url || getPlayableUrl(data.music.music_file))
         toast.success(newEnabled ? 'Musique d\'ambiance activée' : 'Musique d\'ambiance désactivée')
       }
     } catch (error) {
@@ -147,9 +157,7 @@ export default function MusicManager({ token, onSessionExpired }: MusicManagerPr
   }
 
   const handleVolumeChange = async (volume: number) => {
-    // Optimistic update
     setSettings(prev => ({ ...prev, music_volume: volume.toFixed(2) }))
-    // Update preview audio volume too
     if (audioRef.current) audioRef.current.volume = volume
 
     try {
@@ -180,6 +188,7 @@ export default function MusicManager({ token, onSessionExpired }: MusicManagerPr
       if (res.ok) {
         const data = await res.json()
         setSettings(data.music)
+        setPlayableUrl('')
         stopPreview()
         toast.success('Musique supprimée')
       }
@@ -193,12 +202,14 @@ export default function MusicManager({ token, onSessionExpired }: MusicManagerPr
 
   const togglePreview = () => {
     if (!settings.music_file) return
+    const url = playableUrl || getPlayableUrl(settings.music_file)
+    if (!url) return
 
     if (previewPlaying) {
       stopPreview()
     } else {
       if (!audioRef.current) {
-        audioRef.current = new Audio(settings.music_file)
+        audioRef.current = new Audio(url)
         audioRef.current.volume = parseFloat(settings.music_volume) || 0.25
         audioRef.current.loop = true
         audioRef.current.onended = () => setPreviewPlaying(false)
@@ -269,7 +280,6 @@ export default function MusicManager({ token, onSessionExpired }: MusicManagerPr
           </div>
           <div className="flex items-center gap-2">
             {saving && <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />}
-            {/* Toggle Switch */}
             <div
               className={`relative w-11 h-6 rounded-full transition-colors ${
                 isEnabled ? 'bg-emerald-500' : 'bg-white/10'
