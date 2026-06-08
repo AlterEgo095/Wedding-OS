@@ -223,3 +223,46 @@ Stage Summary:
 - ✅ Container healthy, domain https://heureuxmariage.aenews.net/ returns 200
 - ✅ Mobile responsive confirmed
 - ✅ No broken images or regressions detected
+
+---
+Task ID: 9
+Agent: Main
+Task: Système de Musique d'Ambiance Administrable — Implémentation complète
+
+Work Log:
+- Créé API route src/app/api/music/route.ts avec GET/POST/PUT/DELETE
+  - GET: public, retourne les paramètres musique (file, volume, enabled)
+  - POST: upload fichier audio (MP3/WAV/OGG/M4A, max 30MB), sauvegarde dans /uploads/music/
+  - PUT: mise à jour paramètres (enabled, volume) avec auth admin
+  - DELETE: suppression fichier audio et reset settings
+  - Validation: extension + MIME type, suppression automatique de l'ancien fichier
+- Créé composant admin src/components/admin/MusicManager.tsx
+  - Upload drag & drop + sélection fichier
+  - Toggle enable/disable musique
+  - Slider volume (0-100%)
+  - Prévisualisation audio (play/pause)
+  - Boutons Remplacer/Supprimer
+  - Design premium cohérent avec le dashboard admin
+- Créé composant utilisateur src/components/AmbientMusicPlayer.tsx
+  - Bouton flottant discret (bas-gauche) avec icône Music2
+  - Prompt élégant si navigateur bloque autoplay: "Cliquez pour activer la musique"
+  - Contrôles étendus: Play/Pause + Mute/Unmute
+  - Animation rotation quand la musique joue
+  - Indicateur vert pulsant quand en lecture
+  - Persistance LocalStorage: wedding_music_user_enabled + wedding_music_prompt_dismissed
+  - Chargement différé (preload='none'), pas de ralentissement
+  - Volume par défaut configuré depuis les settings admin
+- Intégré dans src/components/admin/AdminPanel.tsx: nouvel onglet "Musique" (🎵)
+- Intégré dans src/app/page.tsx: fetch /api/music + AmbientMusicPlayer
+- Tests locaux: API GET/POST/PUT/DELETE ✅, upload fichier ✅, player visible ✅
+- Vérification Agent Browser: bouton flottant + prompt autoplay fonctionnels ✅
+- Déployé sur VPS: 5 fichiers uploadés, Docker rebuilt, container healthy
+- Vérifié VPS: API musique opérationnelle, upload fonctionne, guest lookup intact
+
+Stage Summary:
+- ✅ API musique complète (GET/POST/PUT/DELETE) avec auth admin
+- ✅ MusicManager admin: upload, preview, volume, enable/disable, supprimer
+- ✅ AmbientMusicPlayer utilisateur: bouton flottant, autoplay, persistance, mute
+- ✅ Aucune régression: invitations, QR codes, recherche, téléchargements intacts
+- ✅ VPS déployé et fonctionnel: https://heureuxmariage.aenews.net
+- ✅ L'admin peut maintenant gérer la musique depuis le Dashboard sans toucher au code
