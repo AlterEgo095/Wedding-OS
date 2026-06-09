@@ -86,6 +86,8 @@ export async function POST(request: NextRequest) {
     const {
       firstName,
       lastName,
+      displayName: explicitDisplayName,
+      invitationType,
       phone,
       email,
       tableId,
@@ -104,10 +106,18 @@ export async function POST(request: NextRequest) {
 
     const invitationCode = uuidv4().substring(0, 8).toUpperCase();
 
+    // Auto-generate displayName if not explicitly provided
+    const invType = invitationType || 'individuel';
+    const displayName = explicitDisplayName || (
+      invType === 'couple' ? `Couple ${lastName}` : `${firstName} ${lastName}`
+    );
+
     const guest = await db.guest.create({
       data: {
         firstName,
         lastName,
+        displayName,
+        invitationType: invType,
         phone: phone || null,
         email: email || null,
         tableId: tableId || null,
@@ -158,7 +168,7 @@ export async function PUT(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { id, firstName, lastName, phone, email, tableId, seats, category, status, personalMessage, checkedIn } = body;
+    const { id, firstName, lastName, displayName, invitationType, phone, email, tableId, seats, category, status, personalMessage, checkedIn } = body;
 
     if (!id) {
       return NextResponse.json(
@@ -175,6 +185,8 @@ export async function PUT(request: NextRequest) {
     const updateData: Record<string, unknown> = {};
     if (firstName !== undefined) updateData.firstName = firstName;
     if (lastName !== undefined) updateData.lastName = lastName;
+    if (displayName !== undefined) updateData.displayName = displayName;
+    if (invitationType !== undefined) updateData.invitationType = invitationType;
     if (phone !== undefined) updateData.phone = phone;
     if (email !== undefined) updateData.email = email;
     if (tableId !== undefined) updateData.tableId = tableId || null;
@@ -185,6 +197,21 @@ export async function PUT(request: NextRequest) {
     if (checkedIn !== undefined) {
       updateData.checkedIn = checkedIn;
       updateData.checkedInAt = checkedIn ? new Date() : null;
+    }
+
+    // Auto-sync displayName when firstName/lastName change and no explicit displayName provided
+    if ((firstName !== undefined || lastName !== undefined) && displayName === undefined) {
+      const newFirst = (updateData.firstName as string) ?? existing.firstName;
+      const newLast = (updateData.lastName as string) ?? existing.lastName;
+      const newInvType = (updateData.invitationType as string) ?? existing.invitationType;
+      // Regenerate displayName based on invitation type
+      if (newInvType === 'couple') {
+        updateData.displayName = `Couple ${newLast}`;
+      } else if (newFirst && newLast) {
+        updateData.displayName = `${newFirst} ${newLast}`;
+      } else {
+        updateData.displayName = newFirst || newLast || existing.displayName;
+      }
     }
 
     const guest = await db.guest.update({
