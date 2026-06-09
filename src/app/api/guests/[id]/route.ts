@@ -119,7 +119,7 @@ export async function PUT(
 
     const { id } = await params;
     const body = await request.json();
-    const { firstName, lastName, phone, email, tableId, seats, category, status, personalMessage, checkedIn } = body;
+    const { firstName, lastName, displayName, invitationType, phone, email, tableId, seats, category, status, personalMessage, checkedIn } = body;
 
     const existing = await db.guest.findUnique({ where: { id } });
     if (!existing) {
@@ -129,6 +129,8 @@ export async function PUT(
     const updateData: Record<string, unknown> = {};
     if (firstName !== undefined) updateData.firstName = firstName;
     if (lastName !== undefined) updateData.lastName = lastName;
+    if (displayName !== undefined) updateData.displayName = displayName;
+    if (invitationType !== undefined) updateData.invitationType = invitationType;
     if (phone !== undefined) updateData.phone = phone;
     if (email !== undefined) updateData.email = email;
     if (tableId !== undefined) updateData.tableId = tableId || null;
@@ -139,6 +141,21 @@ export async function PUT(
     if (checkedIn !== undefined) {
       updateData.checkedIn = checkedIn;
       updateData.checkedInAt = checkedIn ? new Date() : null;
+    }
+
+    // Auto-sync displayName when firstName/lastName change and no explicit displayName provided
+    if ((firstName !== undefined || lastName !== undefined) && displayName === undefined) {
+      const newFirst = (updateData.firstName as string) ?? existing.firstName;
+      const newLast = (updateData.lastName as string) ?? existing.lastName;
+      const newInvType = (updateData.invitationType as string) ?? existing.invitationType;
+      // Regenerate displayName based on invitation type
+      if (newInvType === 'couple') {
+        updateData.displayName = `Couple ${newLast}`;
+      } else if (newFirst && newLast) {
+        updateData.displayName = `${newFirst} ${newLast}`;
+      } else {
+        updateData.displayName = newFirst || newLast || existing.displayName;
+      }
     }
 
     const guest = await db.guest.update({
