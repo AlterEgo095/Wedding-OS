@@ -62,10 +62,14 @@ export async function POST(request: NextRequest) {
 
         const invitationCode = uuidv4().substring(0, 8).toUpperCase();
 
+        // Auto-generate displayName from firstName/lastName
+        const displayName = `${firstName} ${lastName}`;
+
         await db.guest.create({
           data: {
             firstName,
             lastName,
+            displayName,
             phone,
             email,
             seats,

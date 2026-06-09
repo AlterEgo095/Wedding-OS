@@ -344,10 +344,18 @@ export async function POST(request: NextRequest) {
             const category = guessCategory(parsedGuest.prefix, parsedTable.name);
 
             // Create the guest
+            // Auto-generate displayName based on invitation type
+            const invitationType = parsedGuest.isCouple ? 'couple' : 'individuel';
+            const displayName = parsedGuest.isCouple
+              ? `Couple ${parsedGuest.lastName}`
+              : `${parsedGuest.firstName} ${parsedGuest.lastName}`;
+
             await db.guest.create({
               data: {
                 firstName: parsedGuest.firstName,
                 lastName: parsedGuest.lastName,
+                displayName,
+                invitationType,
                 tableId: table.id,
                 seats: parsedGuest.seats,
                 category,

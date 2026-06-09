@@ -217,6 +217,8 @@ export default function GuestManager({ token, onSessionExpired }: GuestManagerPr
   const [form, setForm] = useState({
     firstName: '',
     lastName: '',
+    displayName: '',
+    invitationType: 'individuel',
     phone: '',
     email: '',
     tableId: '',
@@ -281,7 +283,8 @@ export default function GuestManager({ token, onSessionExpired }: GuestManagerPr
 
   const resetForm = () => {
     setForm({
-      firstName: '', lastName: '', phone: '', email: '',
+      firstName: '', lastName: '', displayName: '', invitationType: 'individuel',
+      phone: '', email: '',
       tableId: '', seats: 1, category: 'AMIS', status: 'PENDING',
       personalMessage: '',
     })
@@ -487,6 +490,8 @@ export default function GuestManager({ token, onSessionExpired }: GuestManagerPr
     setForm({
       firstName: guest.firstName,
       lastName: guest.lastName,
+      displayName: guest.displayName || '',
+      invitationType: (guest as Record<string, unknown>).invitationType as string || 'individuel',
       phone: guest.phone || '',
       email: guest.email || '',
       tableId: guest.tableId || '',
@@ -512,6 +517,24 @@ export default function GuestManager({ token, onSessionExpired }: GuestManagerPr
       <div className="space-y-2">
         <Label>Nom *</Label>
         <Input value={form.lastName} onChange={(e) => setForm({ ...form, lastName: e.target.value })} />
+      </div>
+      <div className="space-y-2">
+        <Label>Type d&apos;invitation</Label>
+        <Select value={form.invitationType} onValueChange={(v) => setForm({ ...form, invitationType: v })}>
+          <SelectTrigger><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="individuel">Individuel</SelectItem>
+            <SelectItem value="couple">Couple</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+      <div className="space-y-2">
+        <Label>Nom affiché sur l&apos;invitation</Label>
+        <Input
+          value={form.displayName}
+          onChange={(e) => setForm({ ...form, displayName: e.target.value })}
+          placeholder={form.invitationType === 'couple' ? `Couple ${form.lastName}` : `${form.firstName} ${form.lastName}`}
+        />
       </div>
       <div className="space-y-2">
         <Label>Téléphone</Label>
