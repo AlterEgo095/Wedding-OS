@@ -1,7 +1,8 @@
 export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from 'next/server';
-import { db } from '@/lib/db';
+import { db, tenantDb } from '@/lib/db';
 import { getAuthUser, hasPermission } from '@/lib/auth';
+import { resolveAdminTenant, runWithTenant } from '@/lib/tenant-context';
 import { v4 as uuidv4 } from 'uuid';
 
 /* ══════════════════════════════════════════════════════════════
@@ -192,9 +193,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Accès interdit' }, { status: 403 });
     }
 
-    const formData = await request.formData();
-    const file = formData.get('file') as File | null;
-    const mergeMode = (formData.get('mergeMode') as string) || 'merge'; // 'merge' or 'replace'
+    const { context, error: tenantError } = await resolveAdminTenant(request, user);
+    if (tenantError || !context) {
+      return NextResponse.json({ error: tenantError?.message }, { status: tenantError?.status ?? 500 });
+    }
+
+    return runWithTenant(context, async () => {
+      const formData = await request.formData();
+      const file = formData.get('file') as File | null;
+      const mergeMode = (formData.get('mergeMode') as string) || 'merge'; // 'merge' or 'replace'
 
     if (!file) {
       return NextResponse.json(
@@ -256,29 +263,28 @@ export async function POST(request: NextRequest) {
       details: [],
     };
 
-    // If replace mode, delete all existing guests and tables
+    // If replace mode, delete all existing guests and tables (scoped to current tenant)
     if (mergeMode === 'replace') {
       try {
-        await db.guest.deleteMany({});
-        await db.table.deleteMany({});
+        await tenantDb.guest.deleteMany({}); // extension injects weddingId
+        await tenantDb.table.deleteMany({});
       } catch (err) {
         console.error('Replace mode cleanup error:', err);
         result.errors.push('Erreur lors du nettoyage des données existantes');
       }
     }
 
-    // Process each table
+    // Process each table — tenantDb auto-injects weddingId
     for (const parsedTable of parsedTables) {
       try {
-        // Find or create the table
-        let table = await db.table.findFirst({
+        // Find or create the table (scoped to current tenant by extension)
+        let table = await tenantDb.table.findFirst({
           where: { number: parsedTable.number },
         });
 
         if (table) {
-          // Update existing table name if different
           if (table.name !== parsedTable.name) {
-            table = await db.table.update({
+            table = await tenantDb.table.update({
               where: { id: table.id },
               data: {
                 name: parsedTable.name,
@@ -288,8 +294,7 @@ export async function POST(request: NextRequest) {
             result.tablesUpdated++;
           }
         } else {
-          // Create new table
-          table = await db.table.create({
+          table = await tenantDb.table.create({
             data: {
               number: parsedTable.number,
               name: parsedTable.name,
@@ -308,8 +313,8 @@ export async function POST(request: NextRequest) {
         // Process each guest in the table
         for (const parsedGuest of parsedTable.guests) {
           try {
-            // Check for duplicates: same first name + last name combination
-            const existingGuest = await db.guest.findFirst({
+            // Check for duplicates (scoped to current tenant by extension)
+            const existingGuest = await tenantDb.guest.findFirst({
               where: {
                 firstName: parsedGuest.firstName,
                 lastName: parsedGuest.lastName,
@@ -328,13 +333,14 @@ export async function POST(request: NextRequest) {
               continue;
             }
 
-            // Generate unique invitation code
+            // Generate unique invitation code (scoped unique [weddingId, invitationCode])
             let invitationCode: string;
             let codeAttempts = 0;
             do {
               invitationCode = `JH-${uuidv4().substring(0, 6).toUpperCase()}`;
               codeAttempts++;
-              const existing = await db.guest.findUnique({
+              // Use findFirst so the extension can scope by weddingId
+              const existing = await tenantDb.guest.findFirst({
                 where: { invitationCode },
               });
               if (!existing) break;
@@ -350,7 +356,8 @@ export async function POST(request: NextRequest) {
               ? `Couple ${parsedGuest.lastName}`
               : `${parsedGuest.firstName} ${parsedGuest.lastName}`;
 
-            await db.guest.create({
+            // tenantDb.guest.create auto-injects weddingId from context
+            await tenantDb.guest.create({
               data: {
                 firstName: parsedGuest.firstName,
                 lastName: parsedGuest.lastName,
@@ -384,6 +391,7 @@ export async function POST(request: NextRequest) {
     // Log the import action
     await db.auditLog.create({
       data: {
+        weddingId: context.weddingId,
         userId: user.id,
         action: 'IMPORT_DOCX_GUESTS',
         details: `Import DOCX: ${result.guestsCreated} invités créés, ${result.guestsSkipped} doublons ignorés, ${result.tablesCreated} tables créées, mode: ${mergeMode}`,
@@ -391,6 +399,7 @@ export async function POST(request: NextRequest) {
     });
 
     return NextResponse.json(result);
+    }); // end runWithTenant
   } catch (error) {
     console.error('DOCX import error:', error);
     return NextResponse.json(

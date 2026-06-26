@@ -1,85 +1,71 @@
 export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from 'next/server';
-import { db } from '@/lib/db';
+import { db, tenantDb } from '@/lib/db';
 import { getAuthUser, hasPermission } from '@/lib/auth';
+import { withPublicTenant, withAdminTenantHandler } from '@/lib/tenant-context';
 
-export async function GET() {
+// GET /api/settings — public, returns all settings for the resolved wedding
+export const GET = withPublicTenant(async (_req, ctx) => {
   try {
-    const settings = await db.settings.findMany({
+    const settings = await tenantDb.settings.findMany({
       orderBy: { key: 'asc' },
+      // weddingId is auto-injected by the tenant-scoped extension
     });
 
-    // Convert to key-value object for easier consumption
     const settingsMap: Record<string, string> = {};
-    for (const s of settings) {
-      settingsMap[s.key] = s.value;
-    }
+    for (const s of settings) settingsMap[s.key] = s.value;
 
-    return NextResponse.json({ settings: settingsMap });
+    return NextResponse.json({ settings: settingsMap, wedding: { slug: ctx.slug, isDefault: ctx.isDefault, status: ctx.status, plan: ctx.plan } });
   } catch (error) {
     console.error('Get settings error:', error);
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
-}
+});
 
+// PUT /api/settings — admin only, updates settings for the resolved wedding
 export async function PUT(request: NextRequest) {
   try {
     const user = await getAuthUser(request);
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
-    if (!hasPermission(user.role, ['SUPER_ADMIN'])) {
+    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    if (!hasPermission(user.role, ['SUPER_ADMIN', 'ORGANIZER'])) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
-    const body = await request.json();
-    const { settings } = body as { settings: Record<string, string> };
+    return withAdminTenantHandler(request, user, async (_req, ctx) => {
+      const body = await request.json();
+      const { settings } = body as { settings: Record<string, string> };
 
-    if (!settings || typeof settings !== 'object') {
-      return NextResponse.json(
-        { error: 'Settings object is required' },
-        { status: 400 }
+      if (!settings || typeof settings !== 'object') {
+        return NextResponse.json({ error: 'Settings object is required' }, { status: 400 });
+      }
+
+      // Upsert each setting using the composite unique key [weddingId, key]
+      const upsertPromises = Object.entries(settings).map(([key, value]) =>
+        tenantDb.settings.upsert({
+          where: { weddingId_key: { weddingId: ctx.weddingId, key } },
+          update: { value },
+          create: { weddingId: ctx.weddingId, key, value },
+        })
       );
-    }
+      await Promise.all(upsertPromises);
 
-    // Upsert each setting
-    const upsertPromises = Object.entries(settings).map(([key, value]) =>
-      db.settings.upsert({
-        where: { key },
-        update: { value },
-        create: { key, value },
-      })
-    );
+      await db.auditLog.create({
+        data: {
+          weddingId: ctx.weddingId,
+          userId: user.id,
+          action: 'UPDATE_SETTINGS',
+          details: `Updated ${Object.keys(settings).length} settings`,
+        },
+      });
 
-    await Promise.all(upsertPromises);
+      const updatedSettings = await tenantDb.settings.findMany({ orderBy: { key: 'asc' } });
+      const settingsMap: Record<string, string> = {};
+      for (const s of updatedSettings) settingsMap[s.key] = s.value;
 
-    await db.auditLog.create({
-      data: {
-        userId: user.id,
-        action: 'UPDATE_SETTINGS',
-        details: `Updated ${Object.keys(settings).length} settings`,
-      },
+      return NextResponse.json({ settings: settingsMap });
     });
-
-    // Return updated settings
-    const updatedSettings = await db.settings.findMany({
-      orderBy: { key: 'asc' },
-    });
-    const settingsMap: Record<string, string> = {};
-    for (const s of updatedSettings) {
-      settingsMap[s.key] = s.value;
-    }
-
-    return NextResponse.json({ settings: settingsMap });
   } catch (error) {
     console.error('Update settings error:', error);
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
