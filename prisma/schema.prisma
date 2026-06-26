@@ -7,85 +7,221 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-model AdminUser {
-  id        String   @id @default(cuid())
-  email     String   @unique
-  password  String
-  name      String
-  role      String   @default("CONTROLLER") // SUPER_ADMIN, ORGANIZER, CONTROLLER, RECEPTION
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  auditLogs AuditLog[]
+// ══════════════════════════════════════════════════════════════════════════════
+// TENANT — A Wedding is the top-level tenant entity.
+// Each wedding owns its guests, tables, settings, media, timeline, etc.
+// ══════════════════════════════════════════════════════════════════════════════
+
+model Wedding {
+  id              String        @id @default(cuid())
+  slug            String        @unique // e.g. "josue-hornella" — used in /w/{slug} routing
+  brideName       String        @default("")
+  groomName       String        @default("")
+  coupleLabel     String        @default("") // computed display: "Josué & Hornella"
+  weddingDate     DateTime?
+  timezone        String        @default("Africa/Kinshasa")
+  venueName       String?
+  venueAddress    String?
+  venueCity       String?
+  venueLat        String?
+  venueLng        String?
+  venueReference  String?
+  status          String        @default("DRAFT") // DRAFT, PUBLISHED, ARCHIVED, SUSPENDED
+  plan            String        @default("TRIAL") // TRIAL, ESSENTIEL, PREMIUM, ELITE
+  customDomain    String?       @unique // e.g. "mariage-sophie.fr" (Premium/Élite only)
+  isDefault       Boolean       @default(false) // marks the legacy wedding served at "/"
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  publishedAt     DateTime?
+
+  // Relations — every tenant-scoped entity points back to its Wedding
+  admins          AdminUser[]
+  guests          Guest[]
+  tables          Table[]
+  media           Media[]
+  timeline        EventTimeline[]
+  stories         CoupleStory[]
+  settings        Settings[]
+  theme           Theme?
+  music           MusicTrack?
+  auditLogs       AuditLog[]
+  guestSessions   GuestSession[]
+  guestAccessLogs GuestAccessLog[]
+  subscription    Subscription?
+  usageCounters   UsageCounter[]
+  invitations     Invitation[]
 }
 
+// ══════════════════════════════════════════════════════════════════════════════
+// AUTH — AdminUser (kept name for backward compat; Phase 3 will alias to User)
+// Roles: SUPER_ADMIN (platform owner, weddingId=null), ORGANIZER (per-wedding owner),
+//        CONTROLLER / RECEPTION (per-wedding staff)
+// ══════════════════════════════════════════════════════════════════════════════
+
+model AdminUser {
+  id           String     @id @default(cuid())
+  email        String     @unique
+  password     String
+  name         String
+  role         String     @default("CONTROLLER") // SUPER_ADMIN, ORGANIZER, CONTROLLER, RECEPTION
+  weddingId    String?    // null for SUPER_ADMIN (platform-wide); set for ORGANIZER/STAFF
+  lastLoginAt  DateTime?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  wedding      Wedding?   @relation(fields: [weddingId], references: [id], onDelete: Cascade)
+  auditLogs    AuditLog[]
+
+  @@index([weddingId])
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// BILLING — Stripe integration (Phase 6)
+// ══════════════════════════════════════════════════════════════════════════════
+
+model Subscription {
+  id                     String    @id @default(cuid())
+  weddingId              String    @unique
+  wedding                Wedding   @relation(fields: [weddingId], references: [id], onDelete: Cascade)
+  stripeCustomerId       String    @unique
+  stripeSubscriptionId   String?   @unique
+  plan                   String    @default("TRIAL")
+  status                 String    @default("TRIALING") // TRIALING, ACTIVE, PAST_DUE, CANCELED, EXPIRED
+  currentPeriodStart     DateTime?
+  currentPeriodEnd       DateTime?
+  cancelAt               DateTime?
+  trialEndsAt            DateTime?
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+  invoices               Invoice[]
+}
+
+model Invoice {
+  id               String       @id @default(cuid())
+  subscriptionId   String
+  subscription     Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  stripeInvoiceId  String       @unique
+  amountDue        Int          // in cents
+  amountPaid       Int
+  currency         String       @default("eur")
+  status           String       // DRAFT, OPEN, PAID, UNCOLLECTIBLE, VOID
+  pdfUrl           String?
+  hostedInvoiceUrl String?
+  paidAt           DateTime?
+  createdAt        DateTime     @default(now())
+}
+
+model UsageCounter {
+  id          String   @id @default(cuid())
+  weddingId   String
+  wedding     Wedding  @relation(fields: [weddingId], references: [id], onDelete: Cascade)
+  metric      String   // GUESTS, MEDIA_BYTES, ADMINS, QR_SCANS
+  value       Int      @default(0)
+  period      String   // "2026-06" for monthly metered
+  updatedAt   DateTime @updatedAt
+
+  @@unique([weddingId, metric, period])
+  @@index([weddingId, metric])
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// TENANT-SCOPED CONTENT
+// ══════════════════════════════════════════════════════════════════════════════
+
 model Guest {
-  id                String           @id @default(cuid())
-  firstName         String
-  lastName          String
-  displayName       String?          // Exact display name as shown on invitation (no transformation)
-  invitationType    String           @default("individuel") // couple, individuel
-  phone             String?
-  email             String?
-  tableId           String?
-  seats             Int              @default(1)
-  category          String           @default("AMIS") // VIP, FAMILLE, AMIS, SPONSORS, COLLEGUES
-  status            String           @default("PENDING") // CONFIRMED, PENDING, DECLINED
-  invitationCode    String           @unique
-  personalMessage   String?
-  checkedIn         Boolean          @default(false)
-  checkedInAt       DateTime?
-  invitationViewed  Boolean          @default(false)
-  invitationViewedAt DateTime?
+  id                  String         @id @default(cuid())
+  weddingId           String?        // nullable in Phase 1 (backfilled by migrate-phase1.ts); NOT NULL in Phase 2
+  wedding             Wedding?       @relation(fields: [weddingId], references: [id], onDelete: Cascade)
+  firstName           String
+  lastName            String
+  displayName         String?        // Exact display name as shown on invitation (no transformation)
+  invitationType      String         @default("individuel") // couple, individuel
+  phone               String?
+  email               String?
+  tableId             String?
+  seats               Int            @default(1)
+  category            String         @default("AMIS") // VIP, FAMILLE, AMIS, SPONSORS, COLLEGUES
+  status              String         @default("PENDING") // CONFIRMED, PENDING, DECLINED
+  invitationCode      String         // uniqueness now scoped by wedding (see @@unique below)
+  personalMessage     String?
+  checkedIn           Boolean        @default(false)
+  checkedInAt         DateTime?
+  invitationViewed    Boolean        @default(false)
+  invitationViewedAt  DateTime?
   invitationViewCount Int            @default(0)
-  lastAccessAt      DateTime?
+  lastAccessAt        DateTime?
   // ─── RSVP Fields ───
-  rsvpAt            DateTime?        // When guest confirmed/declined
-  rsvpMessage       String?          // Optional message from guest
-  rsvpPlusOne       Boolean          @default(false) // Bringing additional guest
-  createdAt         DateTime         @default(now())
-  updatedAt         DateTime         @updatedAt
-  table             Table?           @relation(fields: [tableId], references: [id])
-  sessions          GuestSession[]
-  accessLogs        GuestAccessLog[]
+  rsvpAt              DateTime?
+  rsvpMessage         String?
+  rsvpPlusOne         Boolean        @default(false)
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+  table               Table?         @relation(fields: [tableId], references: [id])
+  sessions            GuestSession[]
+  accessLogs          GuestAccessLog[]
+
+  @@unique([weddingId, invitationCode]) // uniqueness within wedding only
+  @@index([weddingId, status])
+  @@index([weddingId, category])
+  @@index([weddingId, tableId])
 }
 
 model Table {
-  id       String   @id @default(cuid())
-  name     String
-  number   Int      @unique
-  capacity Int      @default(8)
-  location String?  // JSON string for position: {"x": 0, "y": 0}
-  guests   Guest[]
+  id        String   @id @default(cuid())
+  weddingId String?  // nullable in Phase 1; NOT NULL in Phase 2
+  wedding   Wedding? @relation(fields: [weddingId], references: [id], onDelete: Cascade)
+  name      String
+  number    Int      // not globally unique anymore — scoped by wedding
+  capacity  Int      @default(8)
+  location  String?  // JSON string for position: {"x": 0, "y": 0}
+  guests    Guest[]
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@unique([weddingId, number])
+  @@index([weddingId])
 }
 
 model Media {
-  id          String   @id @default(cuid())
-  type        String   // PHOTO, VIDEO, LOGO, DOCUMENT
-  url         String
-  title       String?
-  description String?
-  category    String?  // GALLERY, COUPLE_STORY, DOCUMENT, OTHER
-  order       Int      @default(0)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id              String   @id @default(cuid())
+  weddingId       String?  // nullable in Phase 1; NOT NULL in Phase 2
+  wedding         Wedding? @relation(fields: [weddingId], references: [id], onDelete: Cascade)
+  type            String   // PHOTO, VIDEO, LOGO, DOCUMENT
+  storageProvider String   @default("LOCAL") // LOCAL, R2 (Phase 9)
+  storageKey      String?  // path or R2 key
+  url             String
+  title           String?
+  description     String?
+  category        String?  // GALLERY, COUPLE_STORY, DOCUMENT, OTHER
+  sizeBytes       Int      @default(0)
+  mime            String?
+  order           Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([weddingId, category])
+  @@index([weddingId, type])
 }
 
 model EventTimeline {
   id          String   @id @default(cuid())
+  weddingId   String?  // nullable in Phase 1; NOT NULL in Phase 2
+  wedding     Wedding? @relation(fields: [weddingId], references: [id], onDelete: Cascade)
   time        String
   activity    String
   location    String?
   description String?
-  icon        String?   // Emoji or icon identifier for the event
+  icon        String?  // Emoji or icon identifier
   order       Int      @default(0)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+
+  @@index([weddingId])
 }
 
 model CoupleStory {
   id          String   @id @default(cuid())
+  weddingId   String?  // nullable in Phase 1; NOT NULL in Phase 2
+  wedding     Wedding? @relation(fields: [weddingId], references: [id], onDelete: Cascade)
   title       String
   description String
   date        String?
@@ -93,52 +229,126 @@ model CoupleStory {
   order       Int      @default(0)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+
+  @@index([weddingId])
 }
 
-model AuditLog {
-  id        String   @id @default(cuid())
-  userId    String?
-  action    String
-  details   String?
-  createdAt DateTime @default(now())
-  user      AdminUser? @relation(fields: [userId], references: [id])
-}
+// ══════════════════════════════════════════════════════════════════════════════
+// PER-WEDDING CONFIG
+// ══════════════════════════════════════════════════════════════════════════════
 
 model Settings {
-  id          String   @id @default(cuid())
-  key         String   @unique
-  value       String
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id        String   @id @default(cuid())
+  weddingId String?  // nullable in Phase 1; NOT NULL in Phase 2
+  wedding   Wedding? @relation(fields: [weddingId], references: [id], onDelete: Cascade)
+  key       String   // not globally unique anymore — scoped by wedding
+  value     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([weddingId, key])
+  @@index([weddingId])
 }
 
-// ─── Guest Session Management ───
+model Theme {
+  id              String   @id @default(cuid())
+  weddingId       String   @unique
+  wedding         Wedding  @relation(fields: [weddingId], references: [id], onDelete: Cascade)
+  primaryColor    String   @default("#D4A853")
+  accentColor     String   @default("#C8785A")
+  fontDisplay     String   @default("Cormorant Garamond")
+  fontBody        String   @default("Inter")
+  layout          String   @default("classic") // classic, modern, minimalist, royal
+  customizations  String?  // JSON: { heroStyle, animationIntensity, ... }
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model MusicTrack {
+  id              String   @id @default(cuid())
+  weddingId       String   @unique
+  wedding         Wedding  @relation(fields: [weddingId], references: [id], onDelete: Cascade)
+  storageProvider String   @default("LOCAL")
+  storageKey      String?
+  url             String
+  title           String?
+  volume          Float    @default(0.25)
+  enabled         Boolean  @default(false)
+  autoplay        Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// GUEST SESSIONS & LOGGING (tenant-scoped)
+// ══════════════════════════════════════════════════════════════════════════════
+
 model GuestSession {
-  id            String   @id @default(cuid())
-  guestId       String
-  token         String   @unique
-  userAgent     String?
-  ipAddress     String?
-  fingerprint   String?  // Device fingerprint hash
-  deviceInfo    String?  // JSON: { browser, os, device, isMobile }
-  isActive      Boolean  @default(true)
-  createdAt     DateTime @default(now())
-  expiresAt     DateTime
+  id             String   @id @default(cuid())
+  weddingId      String?  // nullable in Phase 1; NOT NULL in Phase 2
+  wedding        Wedding? @relation(fields: [weddingId], references: [id], onDelete: Cascade)
+  guestId        String
+  guest          Guest    @relation(fields: [guestId], references: [id], onDelete: Cascade)
+  token          String   @unique
+  userAgent      String?
+  ipAddress      String?
+  fingerprint    String?  // Device fingerprint hash
+  deviceInfo     String?  // JSON: { browser, os, device, isMobile }
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  expiresAt      DateTime
   lastAccessedAt DateTime @default(now())
-  guest         Guest    @relation(fields: [guestId], references: [id], onDelete: Cascade)
+
+  @@index([weddingId, guestId])
 }
 
-// ─── Guest Access Logging ───
 model GuestAccessLog {
   id          String   @id @default(cuid())
+  weddingId   String?  // nullable in Phase 1; NOT NULL in Phase 2
+  wedding     Wedding? @relation(fields: [weddingId], references: [id], onDelete: Cascade)
   guestId     String?
+  guest       Guest?   @relation(fields: [guestId], references: [id], onDelete: SetNull)
   action      String   // LOGIN, VIEW_INVITATION, ACCESS_DENIED, LOGOUT, QR_SCAN, LINK_VISIT, SEARCH_BLOCKED
   details     String?
   userAgent   String?
   ipAddress   String?
   referrer    String?
-  fingerprint String?  // Device fingerprint hash
-  deviceInfo  String?  // JSON: { browser, os, device, isMobile }
+  fingerprint String?
+  deviceInfo  String?
   createdAt   DateTime @default(now())
-  guest       Guest?   @relation(fields: [guestId], references: [id], onDelete: SetNull)
+
+  @@index([weddingId, createdAt])
+  @@index([weddingId, guestId])
+}
+
+model AuditLog {
+  id        String    @id @default(cuid())
+  weddingId String?   // null = platform-level event
+  wedding   Wedding?  @relation(fields: [weddingId], references: [id], onDelete: Cascade)
+  userId    String?
+  user      AdminUser? @relation(fields: [userId], references: [id], onDelete: SetNull)
+  action    String
+  details   String?
+  createdAt DateTime  @default(now())
+
+  @@index([weddingId, createdAt])
+  @@index([userId])
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ONBOARDING — Invitations sent via SMS/EMAIL/WHATSAPP (Phase 7)
+// ══════════════════════════════════════════════════════════════════════════════
+
+model Invitation {
+  id          String   @id @default(cuid())
+  weddingId   String
+  wedding     Wedding  @relation(fields: [weddingId], references: [id], onDelete: Cascade)
+  channel     String   // SMS, EMAIL, WHATSAPP, QR
+  recipient   String   // phone or email
+  guestId     String?
+  status      String   @default("PENDING") // PENDING, SENT, DELIVERED, FAILED, OPENED
+  sentAt      DateTime?
+  createdAt   DateTime @default(now())
+
+  @@index([weddingId, status])
 }
