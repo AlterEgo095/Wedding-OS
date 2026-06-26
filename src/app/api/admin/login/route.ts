@@ -6,7 +6,6 @@ import { getRateLimitKey, checkRateLimit, withSecurityHeaders } from '@/lib/rate
 
 export async function POST(request: NextRequest) {
   try {
-    // Rate limiting - stricter for login
     const rateLimitKey = getRateLimitKey(request);
     if (!checkRateLimit(`login-${rateLimitKey}`, 10, 15 * 60 * 1000)) {
       return NextResponse.json(
@@ -25,7 +24,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Application-level rate limiting per email
     if (!checkLoginRateLimit(email.toLowerCase())) {
       return NextResponse.json(
         { error: 'Too many login attempts. Please try again later.' },
@@ -38,33 +36,28 @@ export async function POST(request: NextRequest) {
     });
 
     if (!user) {
-      return NextResponse.json(
-        { error: 'Invalid email or password' },
-        { status: 401 }
-      );
+      return NextResponse.json({ error: 'Invalid email or password' }, { status: 401 });
     }
 
     const isValid = await verifyPassword(password, user.password);
     if (!isValid) {
-      return NextResponse.json(
-        { error: 'Invalid email or password' },
-        { status: 401 }
-      );
+      return NextResponse.json({ error: 'Invalid email or password' }, { status: 401 });
     }
 
-    // Reset rate limit on successful login
     resetLoginRateLimit(email.toLowerCase());
 
+    // Token now includes weddingId claim (set in auth.ts generateToken)
     const token = generateToken({
       id: user.id,
       email: user.email,
       name: user.name,
       role: user.role,
+      weddingId: user.weddingId,
     });
 
-    // Log the login in AuditLog
     await db.auditLog.create({
       data: {
+        weddingId: user.weddingId, // null for SUPER_ADMIN
         userId: user.id,
         action: 'LOGIN',
         details: `User ${user.email} logged in`,
@@ -78,15 +71,13 @@ export async function POST(request: NextRequest) {
         email: user.email,
         name: user.name,
         role: user.role,
+        weddingId: user.weddingId,
       },
     });
 
     return withSecurityHeaders(response);
   } catch (error) {
     console.error('Login error:', error);
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

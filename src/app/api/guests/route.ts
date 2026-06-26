@@ -1,293 +1,234 @@
 export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from 'next/server';
-import { db } from '@/lib/db';
+import { db, tenantDb } from '@/lib/db';
 import { getAuthUser, hasPermission } from '@/lib/auth';
 import { v4 as uuidv4 } from 'uuid';
+import { resolveAdminTenant, runWithTenant } from '@/lib/tenant-context';
 
 export async function GET(request: NextRequest) {
   try {
     const user = await getAuthUser(request);
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+    const { context, error: tenantError } = await resolveAdminTenant(request, user);
+    if (tenantError || !context) {
+      return NextResponse.json({ error: tenantError?.message }, { status: tenantError?.status ?? 500 });
     }
 
-    const { searchParams } = new URL(request.url);
-    const page = parseInt(searchParams.get('page') || '1', 10);
-    const limit = parseInt(searchParams.get('limit') || '20', 10);
-    const status = searchParams.get('status');
-    const category = searchParams.get('category');
-    const tableId = searchParams.get('tableId');
-    const search = searchParams.get('search');
+    return runWithTenant(context, async () => {
+      const { searchParams } = new URL(request.url);
+      const page = parseInt(searchParams.get('page') || '1', 10);
+      const limit = parseInt(searchParams.get('limit') || '20', 10);
+      const status = searchParams.get('status');
+      const category = searchParams.get('category');
+      const tableId = searchParams.get('tableId');
+      const search = searchParams.get('search');
 
-    const skip = (page - 1) * limit;
+      const skip = (page - 1) * limit;
 
-    const where: Record<string, unknown> = {};
-    if (status) where.status = status;
-    if (category) where.category = category;
-    if (tableId) where.tableId = tableId;
-    if (search) {
-      where.OR = [
-        { firstName: { contains: search } },
-        { lastName: { contains: search } },
-        { email: { contains: search } },
-        { invitationCode: { contains: search } },
-      ];
-    }
+      const where: Record<string, unknown> = {};
+      if (status) where.status = status;
+      if (category) where.category = category;
+      if (tableId) where.tableId = tableId;
+      if (search) {
+        where.OR = [
+          { firstName: { contains: search } },
+          { lastName: { contains: search } },
+          { email: { contains: search } },
+          { invitationCode: { contains: search } },
+        ];
+      }
+      // weddingId auto-injected by extension
 
-    const [guests, total] = await Promise.all([
-      db.guest.findMany({
-        where,
-        include: {
-          table: {
-            select: {
-              id: true,
-              name: true,
-              number: true,
-            },
-          },
-        },
-        skip,
-        take: limit,
-        orderBy: { createdAt: 'desc' },
-      }),
-      db.guest.count({ where }),
-    ]);
+      const [guests, total] = await Promise.all([
+        tenantDb.guest.findMany({
+          where,
+          include: { table: { select: { id: true, name: true, number: true } } },
+          skip, take: limit,
+          orderBy: { createdAt: 'desc' },
+        }),
+        tenantDb.guest.count({ where }),
+      ]);
 
-    return NextResponse.json({
-      guests,
-      pagination: {
-        page,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit),
-      },
+      return NextResponse.json({
+        guests,
+        pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
+      });
     });
   } catch (error) {
     console.error('List guests error:', error);
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
 
 export async function POST(request: NextRequest) {
   try {
     const user = await getAuthUser(request);
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
+    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     if (!hasPermission(user.role, ['ORGANIZER'])) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
-    const body = await request.json();
-    const {
-      firstName,
-      lastName,
-      displayName: explicitDisplayName,
-      invitationType,
-      phone,
-      email,
-      tableId,
-      seats,
-      category,
-      status,
-      personalMessage,
-    } = body;
-
-    if (!firstName || !lastName) {
-      return NextResponse.json(
-        { error: 'First name and last name are required' },
-        { status: 400 }
-      );
+    const { context, error: tenantError } = await resolveAdminTenant(request, user);
+    if (tenantError || !context) {
+      return NextResponse.json({ error: tenantError?.message }, { status: tenantError?.status ?? 500 });
     }
 
-    const invitationCode = uuidv4().substring(0, 8).toUpperCase();
+    return runWithTenant(context, async () => {
+      const body = await request.json();
+      const { firstName, lastName, displayName: explicitDisplayName, invitationType, phone, email, tableId, seats, category, status, personalMessage } = body;
 
-    // Auto-generate displayName if not explicitly provided
-    const invType = invitationType || 'individuel';
-    const displayName = explicitDisplayName || (
-      invType === 'couple' ? `Couple ${lastName}` : `${firstName} ${lastName}`
-    );
+      if (!firstName || !lastName) {
+        return NextResponse.json({ error: 'First name and last name are required' }, { status: 400 });
+      }
 
-    const guest = await db.guest.create({
-      data: {
-        firstName,
-        lastName,
-        displayName,
-        invitationType: invType,
-        phone: phone || null,
-        email: email || null,
-        tableId: tableId || null,
-        seats: seats || 1,
-        category: category || 'AMIS',
-        status: status || 'PENDING',
-        personalMessage: personalMessage || null,
-        invitationCode,
-      },
-      include: {
-        table: {
-          select: {
-            id: true,
-            name: true,
-            number: true,
-          },
+      const invitationCode = uuidv4().substring(0, 8).toUpperCase();
+      const invType = invitationType || 'individuel';
+      const displayName = explicitDisplayName || (
+        invType === 'couple' ? `Couple ${lastName}` : `${firstName} ${lastName}`
+      );
+
+      const guest = await tenantDb.guest.create({
+        data: {
+          weddingId: context.weddingId, // explicit for clarity
+          firstName, lastName, displayName,
+          invitationType: invType,
+          phone: phone || null, email: email || null,
+          tableId: tableId || null,
+          seats: seats || 1, category: category || 'AMIS',
+          status: status || 'PENDING',
+          personalMessage: personalMessage || null,
+          invitationCode,
         },
-      },
-    });
+        include: { table: { select: { id: true, name: true, number: true } } },
+      });
 
-    await db.auditLog.create({
-      data: {
-        userId: user.id,
-        action: 'CREATE_GUEST',
-        details: `Created guest ${firstName} ${lastName}`,
-      },
-    });
+      await db.auditLog.create({
+        data: {
+          weddingId: context.weddingId, userId: user.id,
+          action: 'CREATE_GUEST',
+          details: `Created guest ${firstName} ${lastName}`,
+        },
+      });
 
-    return NextResponse.json({ guest }, { status: 201 });
+      return NextResponse.json({ guest }, { status: 201 });
+    });
   } catch (error) {
     console.error('Create guest error:', error);
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
 
 export async function PUT(request: NextRequest) {
   try {
     const user = await getAuthUser(request);
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
+    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     if (!hasPermission(user.role, ['ORGANIZER'])) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
-    const body = await request.json();
-    const { id, firstName, lastName, displayName, invitationType, phone, email, tableId, seats, category, status, personalMessage, checkedIn } = body;
-
-    if (!id) {
-      return NextResponse.json(
-        { error: 'Guest ID is required' },
-        { status: 400 }
-      );
+    const { context, error: tenantError } = await resolveAdminTenant(request, user);
+    if (tenantError || !context) {
+      return NextResponse.json({ error: tenantError?.message }, { status: tenantError?.status ?? 500 });
     }
 
-    const existing = await db.guest.findUnique({ where: { id } });
-    if (!existing) {
-      return NextResponse.json({ error: 'Guest not found' }, { status: 404 });
-    }
+    return runWithTenant(context, async () => {
+      const body = await request.json();
+      const { id, firstName, lastName, displayName, invitationType, phone, email, tableId, seats, category, status, personalMessage, checkedIn } = body;
 
-    const updateData: Record<string, unknown> = {};
-    if (firstName !== undefined) updateData.firstName = firstName;
-    if (lastName !== undefined) updateData.lastName = lastName;
-    if (displayName !== undefined) updateData.displayName = displayName;
-    if (invitationType !== undefined) updateData.invitationType = invitationType;
-    if (phone !== undefined) updateData.phone = phone;
-    if (email !== undefined) updateData.email = email;
-    if (tableId !== undefined) updateData.tableId = tableId || null;
-    if (seats !== undefined) updateData.seats = seats;
-    if (category !== undefined) updateData.category = category;
-    if (status !== undefined) updateData.status = status;
-    if (personalMessage !== undefined) updateData.personalMessage = personalMessage;
-    if (checkedIn !== undefined) {
-      updateData.checkedIn = checkedIn;
-      updateData.checkedInAt = checkedIn ? new Date() : null;
-    }
+      if (!id) return NextResponse.json({ error: 'Guest ID is required' }, { status: 400 });
 
-    // Auto-sync displayName when firstName/lastName change and no explicit displayName provided
-    if ((firstName !== undefined || lastName !== undefined) && displayName === undefined) {
-      const newFirst = (updateData.firstName as string) ?? existing.firstName;
-      const newLast = (updateData.lastName as string) ?? existing.lastName;
-      const newInvType = (updateData.invitationType as string) ?? existing.invitationType;
-      // Regenerate displayName based on invitation type
-      if (newInvType === 'couple') {
-        updateData.displayName = `Couple ${newLast}`;
-      } else if (newFirst && newLast) {
-        updateData.displayName = `${newFirst} ${newLast}`;
-      } else {
-        updateData.displayName = newFirst || newLast || existing.displayName;
+      // findFirst — auto-scoped by extension
+      const existing = await tenantDb.guest.findFirst({ where: { id } });
+      if (!existing) return NextResponse.json({ error: 'Guest not found' }, { status: 404 });
+
+      const updateData: Record<string, unknown> = {};
+      if (firstName !== undefined) updateData.firstName = firstName;
+      if (lastName !== undefined) updateData.lastName = lastName;
+      if (displayName !== undefined) updateData.displayName = displayName;
+      if (invitationType !== undefined) updateData.invitationType = invitationType;
+      if (phone !== undefined) updateData.phone = phone;
+      if (email !== undefined) updateData.email = email;
+      if (tableId !== undefined) updateData.tableId = tableId || null;
+      if (seats !== undefined) updateData.seats = seats;
+      if (category !== undefined) updateData.category = category;
+      if (status !== undefined) updateData.status = status;
+      if (personalMessage !== undefined) updateData.personalMessage = personalMessage;
+      if (checkedIn !== undefined) {
+        updateData.checkedIn = checkedIn;
+        updateData.checkedInAt = checkedIn ? new Date() : null;
       }
-    }
 
-    const guest = await db.guest.update({
-      where: { id },
-      data: updateData,
-      include: {
-        table: {
-          select: {
-            id: true,
-            name: true,
-            number: true,
-          },
+      // Auto-sync displayName when firstName/lastName change and no explicit displayName provided
+      if ((firstName !== undefined || lastName !== undefined) && displayName === undefined) {
+        const newFirst = (updateData.firstName as string) ?? existing.firstName;
+        const newLast = (updateData.lastName as string) ?? existing.lastName;
+        const newInvType = (updateData.invitationType as string) ?? existing.invitationType;
+        if (newInvType === 'couple') {
+          updateData.displayName = `Couple ${newLast}`;
+        } else if (newFirst && newLast) {
+          updateData.displayName = `${newFirst} ${newLast}`;
+        } else {
+          updateData.displayName = newFirst || newLast || existing.displayName;
+        }
+      }
+
+      const guest = await tenantDb.guest.update({
+        where: { id }, data: updateData,
+        include: { table: { select: { id: true, name: true, number: true } } },
+      });
+
+      await db.auditLog.create({
+        data: {
+          weddingId: context.weddingId, userId: user.id,
+          action: 'UPDATE_GUEST',
+          details: `Updated guest ${existing.firstName} ${existing.lastName}`,
         },
-      },
-    });
+      });
 
-    await db.auditLog.create({
-      data: {
-        userId: user.id,
-        action: 'UPDATE_GUEST',
-        details: `Updated guest ${existing.firstName} ${existing.lastName}`,
-      },
+      return NextResponse.json({ guest });
     });
-
-    return NextResponse.json({ guest });
   } catch (error) {
     console.error('Update guest error:', error);
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
 
 export async function DELETE(request: NextRequest) {
   try {
     const user = await getAuthUser(request);
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
+    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     if (!hasPermission(user.role, ['ORGANIZER'])) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
-    const { searchParams } = new URL(request.url);
-    const id = searchParams.get('id');
-
-    if (!id) {
-      return NextResponse.json(
-        { error: 'Guest ID is required' },
-        { status: 400 }
-      );
+    const { context, error: tenantError } = await resolveAdminTenant(request, user);
+    if (tenantError || !context) {
+      return NextResponse.json({ error: tenantError?.message }, { status: tenantError?.status ?? 500 });
     }
 
-    const existing = await db.guest.findUnique({ where: { id } });
-    if (!existing) {
-      return NextResponse.json({ error: 'Guest not found' }, { status: 404 });
-    }
+    return runWithTenant(context, async () => {
+      const { searchParams } = new URL(request.url);
+      const id = searchParams.get('id');
+      if (!id) return NextResponse.json({ error: 'Guest ID is required' }, { status: 400 });
 
-    await db.guest.delete({ where: { id } });
+      const existing = await tenantDb.guest.findFirst({ where: { id } });
+      if (!existing) return NextResponse.json({ error: 'Guest not found' }, { status: 404 });
 
-    await db.auditLog.create({
-      data: {
-        userId: user.id,
-        action: 'DELETE_GUEST',
-        details: `Deleted guest ${existing.firstName} ${existing.lastName}`,
-      },
+      await tenantDb.guest.delete({ where: { id } });
+
+      await db.auditLog.create({
+        data: {
+          weddingId: context.weddingId, userId: user.id,
+          action: 'DELETE_GUEST',
+          details: `Deleted guest ${existing.firstName} ${existing.lastName}`,
+        },
+      });
+
+      return NextResponse.json({ message: 'Guest deleted successfully' });
     });
-
-    return NextResponse.json({ message: 'Guest deleted successfully' });
   } catch (error) {
     console.error('Delete guest error:', error);
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
