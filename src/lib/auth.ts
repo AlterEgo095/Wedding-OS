@@ -33,6 +33,8 @@ export interface AuthUser {
   email: string;
   name: string;
   role: string;
+  /** ID of the wedding this user belongs to. null for SUPER_ADMIN (platform-wide). */
+  weddingId?: string | null;
 }
 
 export async function hashPassword(password: string): Promise<string> {
@@ -45,7 +47,7 @@ export async function verifyPassword(password: string, hashedPassword: string): 
 
 export function generateToken(user: AuthUser): string {
   return jwt.sign(
-    { id: user.id, email: user.email, name: user.name, role: user.role },
+    { id: user.id, email: user.email, name: user.name, role: user.role, weddingId: user.weddingId ?? null },
     getJwtSecret(),
     { expiresIn: '8h' }
   );
@@ -76,7 +78,11 @@ export async function getAuthUser(request: NextRequest): Promise<AuthUser | null
   // Verify user still exists
   const dbUser = await db.adminUser.findUnique({ where: { id: user.id } });
   if (!dbUser) return null;
-  return user;
+  // Refresh weddingId from DB in case it changed since token was issued
+  return {
+    ...user,
+    weddingId: dbUser.weddingId,
+  };
 }
 
 export function hasPermission(role: string, requiredRoles: string[]): boolean {
