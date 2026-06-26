@@ -99,3 +99,80 @@ Stage Summary:
 - ⚠️ CODE CHANGES (auto-sync displayName logic) NOT YET DEPLOYED — would require Docker rebuild which is risky on this VPS (slow CPU caused timeouts). The DB is in correct state so user-visible problem is FIXED. The auto-sync code prevents FUTURE regressions when admin edits names — can be deployed in a scheduled maintenance window.
 - 📁 Deploy scripts saved at /home/z/my-project/scripts/deploy-vps-*.cjs for future use
 - 📋 Recommended next step for code deploy: use `docker compose build app --no-cache` with longer timeout (15+ min) OR build image locally and push to VPS via `docker save | ssh ... docker load`
+
+---
+Task ID: 4-PHASE1
+Agent: Main Agent (Phase 1 Implementation)
+Task: Phase 1 — Multi-Tenant Foundation: introduce Wedding entity + zero-data-loss migration + keep app fully working
+
+Work Log:
+- Backed up local DB to db/custom.db.pre-phase1-20260626-222317 before any changes
+- Rewrote prisma/schema.prisma (additive approach, zero breaking changes):
+  - Added Wedding model (slug, brideName, groomName, coupleLabel, status, plan, customDomain, isDefault, etc.)
+  - Added billing models: Subscription, Invoice, UsageCounter (for Phase 6)
+  - Added per-wedding config: Theme, MusicTrack (1:1 with Wedding)
+  - Added Invitation model (for Phase 7 onboarding)
+  - Added nullable `weddingId` column to all tenant-scoped tables: AdminUser, Guest, Table, Media, EventTimeline, CoupleStory, Settings, GuestSession, GuestAccessLog, AuditLog
+  - Changed unique constraints from global to composite: Settings [weddingId, key], Table [weddingId, number], Guest [weddingId, invitationCode]
+  - Added composite indexes @@index([weddingId, ...]) on all tenant tables for fast scoping in Phase 2
+  - Kept AdminUser name (not renamed to User) for backward compat — Phase 3 will alias
+- Created src/lib/types.ts:
+  - Plan type + PLAN_LIMITS + PLAN_METADATA (TRIAL/ESSENTIEL/PREMIUM/ELITE)
+  - WeddingStatus type (DRAFT/PUBLISHED/ARCHIVED/SUSPENDED)
+  - Role type + ROLE_HIERARCHY + hasRole helper
+  - SLUG_REGEX + RESERVED_SLUGS + isValidSlug + generateSlug + buildCoupleLabel
+  - DEFAULT_WEDDING_SLUG = 'josue-hornella'
+- Updated src/lib/auth.ts:
+  - Added `weddingId?: string | null` to AuthUser interface
+  - Added `weddingId` claim to JWT payload in generateToken()
+  - getAuthUser() now refreshes weddingId from DB (in case it changed since token was issued)
+- Created scripts/migrate-phase1.ts:
+  - Idempotent migration script — safe to run multiple times
+  - Creates default Wedding (slug: josue-hornella, plan: ELITE, status: PUBLISHED, isDefault: true)
+  - Backfills weddingId on ALL existing rows: AdminUser, Guest, Table, Media, EventTimeline, CoupleStory, Settings, GuestSession, GuestAccessLog, AuditLog
+  - Seeds Theme (from existing primary_color/accent_color settings)
+  - Seeds MusicTrack (from existing music_file/music_enabled/music_volume settings)
+  - Seeds Subscription (complimentary Élite for legacy client)
+  - Prints verification report at the end
+- Updated prisma/seed.ts:
+  - Creates default wedding before any other seed data
+  - All seed operations now scoped with weddingId
+  - Settings upsert rewritten to use composite [weddingId, key] (findFirst + update/create pattern since upsert needs full unique key)
+- Ran `bun run db:push` — schema applied successfully, Prisma Client regenerated (v6.19.2)
+- Ran `bun run scripts/migrate-phase1.ts` — ALL CHECKS PASSED:
+  - Default wedding created (id=cmqvi4exn0000shoqvdvwaf0w)
+  - 243/243 Guests backfilled with weddingId ✓
+  - 31/31 Tables backfilled ✓
+  - 32/32 Settings backfilled ✓
+  - 12/12 EventTimeline backfilled ✓
+  - 4/4 CoupleStory backfilled ✓
+  - 4/4 Media backfilled ✓
+  - 4/4 GuestSession backfilled ✓
+  - 32/32 GuestAccessLog backfilled ✓
+  - 15/15 AuditLog backfilled (NULL allowed for platform-level) ✓
+  - Theme seeded ✓ / MusicTrack seeded ✓ / Subscription seeded ✓
+  - 0 Guests with NULL weddingId ✓
+- Lint check: 0 errors on Phase 1 files (pre-existing errors in .cjs deploy scripts + AmbientMusicPlayer.tsx are unrelated)
+- Started dev server via .zscripts/dev.sh — boots in 1.2s, GET / returns 200 in 86ms
+- API verification:
+  - GET /api/settings → 32 settings, venue_time=21H30, wedding_time=21:30 ✓
+  - GET /api/timeline → 12 events ✓
+  - POST /api/admin/login → returns token + user, JWT contains weddingId: null (SUPER_ADMIN) ✓
+  - GET /api/admin/dashboard → 243 guests, 31 tables, 349 seats ✓
+  - GET /api/guests → 20 guests (paginated), each with weddingId=cmqvi4exn0000shoqvdvwaf0w ✓
+- Browser verification (agent-browser):
+  - Page renders all sections: Hero, Notre Histoire, Galerie, Programme (12 events), Le Lieu (with map), Trouver Mon Invitation, Footer ✓
+  - "21H30" appears once (in Le Lieu section) ✓
+  - Zero "14H00" or "14:00" on the page ✓
+  - No console errors, no hydration warnings
+
+Stage Summary:
+- ✅ Phase 1 COMPLETE with ZERO REGRESSIONS
+- Default wedding (josue-hornella) created and all 243+ existing records backfilled
+- App boots in 1.2s, all APIs respond correctly, JWT auth includes weddingId claim
+- Backward compatibility preserved: root "/" continues to serve the default wedding unchanged
+- weddingId columns are nullable for now (Phase 2 will enforce NOT NULL once all routes are wedding-scoped)
+- New models (Wedding, Subscription, Invoice, UsageCounter, Theme, MusicTrack, Invitation) are ready for Phases 2-10
+- Production NOT touched (local dev only) — Phase 1 deploys to VPS in a dedicated maintenance window after Phase 2
+- Files produced: prisma/schema.prisma (rewrite), src/lib/types.ts (new), src/lib/auth.ts (modified), scripts/migrate-phase1.ts (new), prisma/seed.ts (modified)
+- DB backup at db/custom.db.pre-phase1-20260626-222317 (rollback path)
