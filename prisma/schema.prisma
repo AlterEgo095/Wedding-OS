@@ -129,8 +129,8 @@ model UsageCounter {
 
 model Guest {
   id                  String         @id @default(cuid())
-  weddingId           String?        // nullable in Phase 1 (backfilled by migrate-phase1.ts); NOT NULL in Phase 2
-  wedding             Wedding?       @relation(fields: [weddingId], references: [id], onDelete: Cascade)
+  weddingId           String         // NOT NULL since Phase 2 — every guest belongs to exactly one wedding
+  wedding             Wedding        @relation(fields: [weddingId], references: [id], onDelete: Cascade)
   firstName           String
   lastName            String
   displayName         String?        // Exact display name as shown on invitation (no transformation)
@@ -167,8 +167,8 @@ model Guest {
 
 model Table {
   id        String   @id @default(cuid())
-  weddingId String?  // nullable in Phase 1; NOT NULL in Phase 2
-  wedding   Wedding? @relation(fields: [weddingId], references: [id], onDelete: Cascade)
+  weddingId String   // NOT NULL since Phase 2
+  wedding   Wedding  @relation(fields: [weddingId], references: [id], onDelete: Cascade)
   name      String
   number    Int      // not globally unique anymore — scoped by wedding
   capacity  Int      @default(8)
@@ -183,8 +183,8 @@ model Table {
 
 model Media {
   id              String   @id @default(cuid())
-  weddingId       String?  // nullable in Phase 1; NOT NULL in Phase 2
-  wedding         Wedding? @relation(fields: [weddingId], references: [id], onDelete: Cascade)
+  weddingId       String   // NOT NULL since Phase 2
+  wedding         Wedding  @relation(fields: [weddingId], references: [id], onDelete: Cascade)
   type            String   // PHOTO, VIDEO, LOGO, DOCUMENT
   storageProvider String   @default("LOCAL") // LOCAL, R2 (Phase 9)
   storageKey      String?  // path or R2 key
@@ -204,8 +204,8 @@ model Media {
 
 model EventTimeline {
   id          String   @id @default(cuid())
-  weddingId   String?  // nullable in Phase 1; NOT NULL in Phase 2
-  wedding     Wedding? @relation(fields: [weddingId], references: [id], onDelete: Cascade)
+  weddingId   String   // NOT NULL since Phase 2
+  wedding     Wedding  @relation(fields: [weddingId], references: [id], onDelete: Cascade)
   time        String
   activity    String
   location    String?
@@ -220,8 +220,8 @@ model EventTimeline {
 
 model CoupleStory {
   id          String   @id @default(cuid())
-  weddingId   String?  // nullable in Phase 1; NOT NULL in Phase 2
-  wedding     Wedding? @relation(fields: [weddingId], references: [id], onDelete: Cascade)
+  weddingId   String   // NOT NULL since Phase 2
+  wedding     Wedding  @relation(fields: [weddingId], references: [id], onDelete: Cascade)
   title       String
   description String
   date        String?
@@ -239,8 +239,8 @@ model CoupleStory {
 
 model Settings {
   id        String   @id @default(cuid())
-  weddingId String?  // nullable in Phase 1; NOT NULL in Phase 2
-  wedding   Wedding? @relation(fields: [weddingId], references: [id], onDelete: Cascade)
+  weddingId String   // NOT NULL since Phase 2
+  wedding   Wedding  @relation(fields: [weddingId], references: [id], onDelete: Cascade)
   key       String   // not globally unique anymore — scoped by wedding
   value     String
   createdAt DateTime @default(now())
@@ -285,8 +285,8 @@ model MusicTrack {
 
 model GuestSession {
   id             String   @id @default(cuid())
-  weddingId      String?  // nullable in Phase 1; NOT NULL in Phase 2
-  wedding        Wedding? @relation(fields: [weddingId], references: [id], onDelete: Cascade)
+  weddingId      String   // NOT NULL since Phase 2
+  wedding        Wedding  @relation(fields: [weddingId], references: [id], onDelete: Cascade)
   guestId        String
   guest          Guest    @relation(fields: [guestId], references: [id], onDelete: Cascade)
   token          String   @unique
@@ -304,8 +304,8 @@ model GuestSession {
 
 model GuestAccessLog {
   id          String   @id @default(cuid())
-  weddingId   String?  // nullable in Phase 1; NOT NULL in Phase 2
-  wedding     Wedding? @relation(fields: [weddingId], references: [id], onDelete: Cascade)
+  weddingId   String   // NOT NULL since Phase 2
+  wedding     Wedding  @relation(fields: [weddingId], references: [id], onDelete: Cascade)
   guestId     String?
   guest       Guest?   @relation(fields: [guestId], references: [id], onDelete: SetNull)
   action      String   // LOGIN, VIEW_INVITATION, ACCESS_DENIED, LOGOUT, QR_SCAN, LINK_VISIT, SEARCH_BLOCKED

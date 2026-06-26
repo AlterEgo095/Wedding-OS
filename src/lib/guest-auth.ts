@@ -1,6 +1,6 @@
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
-import { db } from './db';
+import { db, tenantDb } from './db';
 
 // ─── Configuration ───
 const GUEST_JWT_SECRET = (process.env.JWT_SECRET || 'dev-only-secret') + '-guest-session';
@@ -166,14 +166,18 @@ export function verifyGuestToken(token: string): GuestTokenPayload | null {
 }
 
 // ─── Session Management ───
+// All session operations use tenantDb which auto-injects weddingId when a
+// tenant context is active (set by the calling route via runWithTenant).
+// The calling route is responsible for setting the context — typically by
+// wrapping the handler in withPublicTenant() or withAdminTenantHandler().
 export async function createGuestSession(
   guestId: string,
   invitationCode: string,
   userAgent?: string,
   ipAddress?: string
 ) {
-  // Deactivate all existing sessions for this guest
-  await db.guestSession.updateMany({
+  // Deactivate all existing sessions for this guest (scoped to current tenant)
+  await tenantDb.guestSession.updateMany({
     where: { guestId, isActive: true },
     data: { isActive: false },
   });
@@ -194,7 +198,8 @@ export async function createGuestSession(
   const expiresAt = new Date();
   expiresAt.setDate(expiresAt.getDate() + SESSION_EXPIRY_DAYS);
 
-  const session = await db.guestSession.create({
+  // weddingId is auto-injected by tenant extension when context is active
+  const session = await tenantDb.guestSession.create({
     data: {
       guestId,
       token,
@@ -215,13 +220,13 @@ export async function createGuestSession(
     fingerprint,
   });
 
-  await db.guestSession.update({
+  await tenantDb.guestSession.update({
     where: { id: session.id },
     data: { token: finalToken },
   });
 
-  // Update guest access info
-  await db.guest.update({
+  // Update guest access info (scoped to current tenant)
+  await tenantDb.guest.update({
     where: { id: guestId },
     data: {
       invitationViewed: true,
@@ -235,6 +240,9 @@ export async function createGuestSession(
 }
 
 // ─── Session Validation (with fingerprint verification) ───
+// Uses tenantDb so sessions are validated against the current tenant context.
+// A session token issued in Wedding A will NOT validate when the request is
+// scoped to Wedding B — preventing cross-tenant session hijacking.
 export async function validateGuestSession(
   token: string,
   userAgent?: string,
@@ -248,14 +256,16 @@ export async function validateGuestSession(
   const payload = verifyGuestToken(token);
   if (!payload) return { valid: false };
 
-  const session = await db.guestSession.findUnique({
+  // findFirst (not findUnique) so the tenant extension can auto-inject weddingId.
+  // Without the extension, this would be a global token lookup (cross-tenant risk).
+  const session = await tenantDb.guestSession.findFirst({
     where: { id: payload.sessionId, token, isActive: true },
   });
 
   if (!session) return { valid: false };
 
   if (new Date() > session.expiresAt) {
-    await db.guestSession.update({
+    await tenantDb.guestSession.update({
       where: { id: session.id },
       data: { isActive: false },
     });
@@ -280,13 +290,13 @@ export async function validateGuestSession(
   }
 
   // Update last accessed
-  await db.guestSession.update({
+  await tenantDb.guestSession.update({
     where: { id: session.id },
     data: { lastAccessedAt: new Date() },
   });
 
-  // Update guest lastAccessAt
-  await db.guest.update({
+  // Update guest lastAccessAt (scoped to current tenant)
+  await tenantDb.guest.update({
     where: { id: payload.guestId },
     data: { lastAccessAt: new Date() },
   });
@@ -295,6 +305,8 @@ export async function validateGuestSession(
 }
 
 // ─── Access Logging ───
+// Uses tenantDb so access logs are scoped to the current wedding.
+// The weddingId is auto-injected by the extension when context is active.
 export async function logGuestAccess(params: {
   guestId?: string;
   action: string;
@@ -308,7 +320,7 @@ export async function logGuestAccess(params: {
   const deviceInfoJson = JSON.stringify(parsedDevice);
   const fingerprint = generateFingerprint(params.userAgent || 'unknown', params.ipAddress || 'unknown');
 
-  await db.guestAccessLog.create({
+  await tenantDb.guestAccessLog.create({
     data: {
       guestId: params.guestId || null,
       action: params.action,
@@ -323,8 +335,11 @@ export async function logGuestAccess(params: {
 }
 
 // ─── Get Guest Data (Secure - only own data) ───
+// Uses tenantDb.findFirst so the lookup is scoped to the current wedding.
+// Even if a malicious caller knows a guest ID from another wedding, the
+// extension will add weddingId to the where clause and return null.
 export async function getAuthenticatedGuest(guestId: string) {
-  const guest = await db.guest.findUnique({
+  const guest = await tenantDb.guest.findFirst({
     where: { id: guestId },
     include: {
       table: {
