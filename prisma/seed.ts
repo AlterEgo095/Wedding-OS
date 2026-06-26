@@ -1,12 +1,43 @@
 import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
+import { DEFAULT_WEDDING_SLUG, buildCoupleLabel } from '../src/lib/types';
 
 const prisma = new PrismaClient();
 
 async function main() {
   console.log('🌱 Seeding database...');
 
-  // Create Super Admin user
+  // ─── Create or update the default wedding (Phase 1 multi-tenant) ────────
+  const coupleLabel = buildCoupleLabel('Hornella', 'Josué');
+  let wedding = await prisma.wedding.findFirst({
+    where: { slug: DEFAULT_WEDDING_SLUG },
+  });
+  if (!wedding) {
+    wedding = await prisma.wedding.create({
+      data: {
+        slug: DEFAULT_WEDDING_SLUG,
+        brideName: 'Hornella',
+        groomName: 'Josué',
+        coupleLabel,
+        weddingDate: new Date('2026-06-26T21:30:00+01:00'),
+        timezone: 'Africa/Kinshasa',
+        venueName: 'Salle Polyvalente – Grand Palais Kinshasa',
+        venueAddress: '21 / 22 Avenue Bobozo',
+        venueCity: 'Kinshasa',
+        venueReference: 'Réf. Hôpital AKRAM, à la diagonale du Centre TELEMA',
+        status: 'PUBLISHED',
+        plan: 'ELITE',
+        isDefault: true,
+        publishedAt: new Date(),
+      },
+    });
+    console.log('✅ Created default wedding (slug=%s, id=%s)', wedding.slug, wedding.id);
+  } else {
+    console.log('⏭️  Default wedding already exists (id=%s)', wedding.id);
+  }
+  const weddingId = wedding.id;
+
+  // ─── Create Super Admin user (platform-wide, no weddingId) ──────────────
   const existingAdmin = await prisma.adminUser.findUnique({
     where: { email: 'admin@josue-hornella.wedding' },
   });
@@ -19,6 +50,7 @@ async function main() {
         password: hashedPassword,
         name: 'Super Admin',
         role: 'SUPER_ADMIN',
+        weddingId: null, // platform-wide
       },
     });
     console.log('✅ Created Super Admin user (admin@josue-hornella.wedding / admin2026)');
@@ -26,7 +58,7 @@ async function main() {
     console.log('⏭️  Super Admin user already exists');
   }
 
-  // Create default settings
+  // Create default settings (scoped to default wedding)
   const defaultSettings = [
     { key: 'groom_name', value: 'Josué' },
     { key: 'bride_name', value: 'Hornella' },
@@ -51,16 +83,25 @@ async function main() {
   ];
 
   for (const setting of defaultSettings) {
-    await prisma.settings.upsert({
-      where: { key: setting.key },
-      update: { value: setting.value },
-      create: { key: setting.key, value: setting.value },
+    // Use composite unique [weddingId, key] — upsert needs the full unique key
+    const existing = await prisma.settings.findFirst({
+      where: { weddingId, key: setting.key },
     });
+    if (existing) {
+      await prisma.settings.update({
+        where: { id: existing.id },
+        data: { value: setting.value },
+      });
+    } else {
+      await prisma.settings.create({
+        data: { ...setting, weddingId },
+      });
+    }
   }
   console.log(`✅ Created/updated ${defaultSettings.length} settings`);
 
-  // Create sample tables
-  const existingTables = await prisma.table.count();
+  // Create sample tables (scoped to default wedding)
+  const existingTables = await prisma.table.count({ where: { weddingId } });
   if (existingTables === 0) {
     const tables = [
       { name: 'Table Honneur', number: 1, capacity: 10 },
@@ -76,15 +117,15 @@ async function main() {
     ];
 
     for (const table of tables) {
-      await prisma.table.create({ data: table });
+      await prisma.table.create({ data: { ...table, weddingId } });
     }
     console.log(`✅ Created ${tables.length} tables`);
   } else {
     console.log(`⏭️  Tables already exist (${existingTables})`);
   }
 
-  // Create sample guests
-  const existingGuests = await prisma.guest.count();
+  // Create sample guests (scoped to default wedding)
+  const existingGuests = await prisma.guest.count({ where: { weddingId } });
   if (existingGuests === 0) {
     const guests = [
       { firstName: 'Jean', lastName: 'Mukendi', category: 'FAMILLE', seats: 2, tableNumber: 1, personalMessage: 'Bienvenue cher oncle, votre présence nous touche profondément.' },
@@ -102,10 +143,11 @@ async function main() {
     ];
 
     for (const guest of guests) {
-      const table = await prisma.table.findFirst({ where: { number: guest.tableNumber } });
+      const table = await prisma.table.findFirst({ where: { weddingId, number: guest.tableNumber } });
       const invitationCode = Math.random().toString(36).substring(2, 10).toUpperCase();
       await prisma.guest.create({
         data: {
+          weddingId,
           firstName: guest.firstName,
           lastName: guest.lastName,
           category: guest.category,
@@ -122,8 +164,8 @@ async function main() {
     console.log(`⏭️  Guests already exist (${existingGuests})`);
   }
 
-  // Create sample timeline events
-  const existingTimeline = await prisma.eventTimeline.count();
+  // Create sample timeline events (scoped to default wedding)
+  const existingTimeline = await prisma.eventTimeline.count({ where: { weddingId } });
   if (existingTimeline === 0) {
     const events = [
       { time: '13:30', activity: 'Accueil des invités', location: 'Hall d\'entrée', description: 'Accueil et installation des invités avec cocktail de bienvenue', order: 1 },
@@ -137,15 +179,15 @@ async function main() {
     ];
 
     for (const event of events) {
-      await prisma.eventTimeline.create({ data: event });
+      await prisma.eventTimeline.create({ data: { ...event, weddingId } });
     }
     console.log(`✅ Created ${events.length} timeline events`);
   } else {
     console.log(`⏭️  Timeline events already exist (${existingTimeline})`);
   }
 
-  // Create couple stories
-  const existingStories = await prisma.coupleStory.count();
+  // Create couple stories (scoped to default wedding)
+  const existingStories = await prisma.coupleStory.count({ where: { weddingId } });
   if (existingStories === 0) {
     const stories = [
       {
@@ -172,7 +214,7 @@ async function main() {
     ];
 
     for (const story of stories) {
-      await prisma.coupleStory.create({ data: story });
+      await prisma.coupleStory.create({ data: { ...story, weddingId } });
     }
     console.log(`✅ Created ${stories.length} couple stories`);
   } else {
