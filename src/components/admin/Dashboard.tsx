@@ -63,22 +63,44 @@ const STATUS_LABELS: Record<string, string> = {
 
 export default function Dashboard({ token, onSessionExpired }: DashboardProps) {
   const [data, setData] = useState<DashboardData | null>(null)
+  const [settings, setSettings] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(true)
+
+  // Couple display info — falls back to legacy defaults only if settings haven't
+  // loaded yet (avoids a flash of "Josué & Hornella" on non-default weddings).
+  const siteTitle = settings.site_title || 'Mariage'
+  const siteSubtitle = settings.site_subtitle || ''
+  const brideName = settings.bride_name || ''
+  const groomName = settings.groom_name || ''
+  const couplePhoto1 = settings.couple_photo_1 || '/uploads/couple-photo-1.jpeg'
+  const couplePhoto2 = settings.couple_photo_2 || '/uploads/couple-photo-2.jpeg'
 
   const fetchDashboard = async () => {
     try {
-      const res = await fetch('/api/admin/dashboard', {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-      if (res.status === 401) {
+      const [dashRes, settingsRes] = await Promise.all([
+        fetch('/api/admin/dashboard', {
+          headers: { Authorization: `Bearer ${token}` },
+        }),
+        fetch('/api/settings').then((r) => (r.ok ? r.json() : null)).catch(() => null),
+      ])
+      if (dashRes.status === 401) {
         onSessionExpired()
         return
       }
-      const json = await res.json()
-      if (res.ok) {
+      const json = await dashRes.json()
+      if (dashRes.ok) {
         setData(json)
       } else {
         toast.error(json.error || 'Erreur de chargement')
+      }
+      if (settingsRes?.settings && typeof settingsRes.settings === 'object') {
+        const obj: Record<string, string> = {}
+        if (Array.isArray(settingsRes.settings)) {
+          for (const s of settingsRes.settings) obj[s.key] = s.value
+        } else {
+          Object.assign(obj, settingsRes.settings)
+        }
+        setSettings(obj)
       }
     } catch {
       toast.error('Erreur de connexion')
@@ -153,11 +175,12 @@ export default function Dashboard({ token, onSessionExpired }: DashboardProps) {
           <div className="relative shrink-0">
             <div className="w-16 h-16 md:w-20 md:h-20 rounded-full gold-border p-[2px] overflow-hidden">
               <Image
-                src="/uploads/couple-photo-1.jpeg"
-                alt="Josué"
+                src={couplePhoto1}
+                alt={groomName || 'Mari'}
                 width={80}
                 height={80}
                 className="w-full h-full rounded-full object-cover"
+                onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
               />
             </div>
             <div className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-gradient-gold flex items-center justify-center">
@@ -173,26 +196,29 @@ export default function Dashboard({ token, onSessionExpired }: DashboardProps) {
               <span className="hidden sm:block h-px flex-1 max-w-16 bg-gradient-to-l from-transparent to-gold/50" />
             </div>
             <h2 className="font-display text-xl md:text-2xl lg:text-3xl gold-gradient font-semibold tracking-wide">
-              Mariage Josué & Hornella
+              {siteTitle}
             </h2>
-            <div className="flex items-center justify-center gap-2 mt-1.5">
-              <span className="h-px w-8 bg-gradient-to-r from-transparent to-gold/40" />
-              <p className="text-xs md:text-sm text-gold-light/80 font-serif tracking-widest uppercase">
-                Vendredi 26 Juin 2026
-              </p>
-              <span className="h-px w-8 bg-gradient-to-l from-transparent to-gold/40" />
-            </div>
+            {siteSubtitle && (
+              <div className="flex items-center justify-center gap-2 mt-1.5">
+                <span className="h-px w-8 bg-gradient-to-r from-transparent to-gold/40" />
+                <p className="text-xs md:text-sm text-gold-light/80 font-serif tracking-widest uppercase">
+                  {siteSubtitle}
+                </p>
+                <span className="h-px w-8 bg-gradient-to-l from-transparent to-gold/40" />
+              </div>
+            )}
           </div>
 
           {/* Right Photo */}
           <div className="relative shrink-0">
             <div className="w-16 h-16 md:w-20 md:h-20 rounded-full gold-border p-[2px] overflow-hidden">
               <Image
-                src="/uploads/couple-photo-2.jpeg"
-                alt="Hornella"
+                src={couplePhoto2}
+                alt={brideName || 'Mariée'}
                 width={80}
                 height={80}
                 className="w-full h-full rounded-full object-cover"
+                onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
               />
             </div>
           </div>

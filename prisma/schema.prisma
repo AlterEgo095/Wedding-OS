@@ -400,3 +400,32 @@ model Invitation {
 
   @@index([weddingId, status])
 }
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ONBOARDING — Public lead capture (Phase 7)
+// A Lead is submitted by a prospective couple via the public /onboarding form.
+// The platform admin reviews leads in the admin dashboard and converts them
+// into a published Wedding via the onboarding wizard (transactional create).
+// ══════════════════════════════════════════════════════════════════════════════
+
+model Lead {
+  id                 String    @id @default(cuid())
+  brideName          String
+  groomName          String
+  coupleLabel        String    // computed via buildCoupleLabel at insert time
+  weddingDate        DateTime?
+  venueCity          String?
+  email              String
+  phone              String?
+  plan               String    @default("TRIAL") // desired plan: TRIAL, ESSENTIEL, PREMIUM, ELITE
+  message            String?   // freeform note from the couple
+  status             String    @default("NEW") // NEW, CONTACTED, CONVERTED, REJECTED
+  notes              String?   // admin private notes
+  convertedWeddingId String?   // linked Wedding.id once converted (denormalized, no FK to avoid cascade complexity)
+  convertedAt        DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  @@index([status])
+  @@index([createdAt])
+}

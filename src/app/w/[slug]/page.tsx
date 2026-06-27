@@ -26,7 +26,7 @@
 
 'use client';
 
-import { useState, useEffect, useCallback, Suspense, useRef, useSyncExternalStore } from 'react';
+import { useState, useEffect, useLayoutEffect, useCallback, Suspense, useRef, useSyncExternalStore } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import Navigation from '@/components/Navigation';
 import HeroSection from '@/components/HeroSection';
@@ -118,9 +118,17 @@ function WeddingPageContent() {
   // — they call fetch('/api/...') and the interceptor transparently scopes them
   // to the current wedding.
   //
+  // IMPORTANT: useLayoutEffect (not useEffect) so the interceptor is installed
+  // SYNCHRONOUSLY before any child component's useEffect runs. React runs
+  // useLayoutEffect in mount order (children before parents) but ALL
+  // useLayoutEffects run before ANY useEffect. This guarantees that when
+  // HeroSection's useEffect fires fetch('/api/settings'), the X-Wedding-Slug
+  // header is already in place — otherwise the first fetch would silently fall
+  // back to the default wedding (josue-hornella) and show wrong couple names.
+  //
   // Same pattern as /w/[slug]/admin/page.tsx (Task 3-D), proven to work for all
   // 10 admin components. Cleanup restores window.fetch on unmount.
-  useEffect(() => {
+  useLayoutEffect(() => {
     const originalFetch = window.fetch;
     const slug = wedding.slug;
 
