@@ -21,7 +21,7 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { NextRequest } from 'next/server';
 import { db } from './db';
-import { DEFAULT_WEDDING_SLUG } from './types';
+import { DEFAULT_WEDDING_SLUG, isPlatformAdmin } from './types';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -255,11 +255,13 @@ export async function resolvePublicTenant(
  * Resolve the tenant context for an admin/authenticated request.
  *
  * Priority:
- *   1. If user is SUPER_ADMIN: use the X-Wedding-Slug header (or default)
- *      so platform admins can operate on any wedding.
- *   2. If user has a weddingId: use that wedding's slug (ignore header —
- *      prevents cross-tenant access by non-platform admins).
- *   3. Fallback: default wedding (legacy compat for SUPER_ADMIN without header).
+ *   1. If user is a platform admin (PLATFORM_ADMIN or legacy SUPER_ADMIN):
+ *      use the X-Wedding-Slug header (or default) so platform admins can
+ *      operate on any wedding. weddingId is expected to be null.
+ *   2. Otherwise (ORGANIZER/RECEPTION/CONTROLLER): lock to their own wedding
+ *      via user.weddingId — the X-Wedding-Slug header is IGNORED to prevent
+ *      cross-tenant access by non-platform admins.
+ *   3. Fallback: default wedding (legacy compat for platform admin without header).
  *
  * @returns { context, wedding, error }
  */
@@ -271,8 +273,10 @@ export async function resolveAdminTenant(
   wedding: CachedWedding | null;
   error: { status: number; message: string } | null;
 }> {
-  // Non-platform admin: lock to their own wedding
-  if (user.role !== 'SUPER_ADMIN' && user.weddingId) {
+  // Non-platform admin: lock to their own wedding (ignore X-Wedding-Slug header
+  // to prevent cross-tenant access). Uses isPlatformAdmin() so BOTH PLATFORM_ADMIN
+  // and legacy SUPER_ADMIN are treated as platform-wide.
+  if (!isPlatformAdmin(user.role) && user.weddingId) {
     // Need slug for context — fetch wedding by ID
     const wedding = await db.wedding.findUnique({
       where: { id: user.weddingId },
@@ -293,7 +297,8 @@ export async function resolveAdminTenant(
     return { context: buildTenantContext(cached), wedding: cached, error: null };
   }
 
-  // SUPER_ADMIN: respect X-Wedding-Slug header or default
+  // Platform admin (PLATFORM_ADMIN or SUPER_ADMIN): respect X-Wedding-Slug
+  // header or fall back to the default wedding.
   const slug = extractSlugFromRequest(request) ?? DEFAULT_WEDDING_SLUG;
   const wedding = await resolveWeddingBySlug(slug);
   if (!wedding) {

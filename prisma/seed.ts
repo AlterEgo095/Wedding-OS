@@ -48,14 +48,23 @@ async function main() {
       data: {
         email: 'admin@josue-hornella.wedding',
         password: hashedPassword,
-        name: 'Super Admin',
-        role: 'SUPER_ADMIN',
+        name: 'Platform Admin',
+        role: 'PLATFORM_ADMIN', // canonical Phase 3 name (SUPER_ADMIN is a legacy alias)
         weddingId: null, // platform-wide
       },
     });
-    console.log('✅ Created Super Admin user (admin@josue-hornella.wedding / admin2026)');
+    console.log('✅ Created Platform Admin user (admin@josue-hornella.wedding / admin2026)');
   } else {
-    console.log('⏭️  Super Admin user already exists');
+    // Normalize any legacy SUPER_ADMIN → PLATFORM_ADMIN on seed re-run
+    if (existingAdmin.role === 'SUPER_ADMIN') {
+      await prisma.adminUser.update({
+        where: { id: existingAdmin.id },
+        data: { role: 'PLATFORM_ADMIN', name: 'Platform Admin' },
+      });
+      console.log('✅ Normalized existing admin: SUPER_ADMIN → PLATFORM_ADMIN');
+    } else {
+      console.log('⏭️  Platform Admin user already exists');
+    }
   }
 
   // Create default settings (scoped to default wedding)

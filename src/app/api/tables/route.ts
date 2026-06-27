@@ -9,6 +9,9 @@ export async function GET(request: NextRequest) {
   try {
     const user = await getAuthUser(request);
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    if (!hasPermission(user.role, ['CONTROLLER'])) {
+      return NextResponse.json({ error: 'Forbidden — insufficient permissions' }, { status: 403 });
+    }
 
     return withAdminTenantHandler(request, user, async (_req, _ctx) => {
       const tables = await tenantDb.table.findMany({
