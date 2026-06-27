@@ -14,8 +14,8 @@ export async function GET(request: NextRequest) {
         { status: 401 }
       );
     }
-    if (!hasPermission(user.role, ['ORGANIZER'])) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    if (!hasPermission(user.role, ['CONTROLLER'])) {
+      return NextResponse.json({ error: 'Forbidden — insufficient permissions' }, { status: 403 });
     }
 
     const { context, error: tenantError } = await resolveAdminTenant(request, user);

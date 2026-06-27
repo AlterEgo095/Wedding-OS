@@ -15,7 +15,7 @@ export async function GET(
 
     // Check admin auth first
     const adminUser = await getAuthUser(request);
-    if (adminUser && hasPermission(adminUser.role, ['ORGANIZER'])) {
+    if (adminUser && hasPermission(adminUser.role, ['CONTROLLER'])) {
       const { context, error: tenantError } = await resolveAdminTenant(request, adminUser);
       if (tenantError || !context) {
         return NextResponse.json({ error: tenantError?.message }, { status: tenantError?.status ?? 500 });
