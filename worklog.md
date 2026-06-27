@@ -511,3 +511,49 @@ Stage Summary:
 - Dev server: healthy, all routes 200, no errors in dev.log
 - Production NOT touched (local dev only) — Phase 3 deploys to VPS in a dedicated maintenance window after Phase 4
 - Next: Phase 4 (Pages publiques per-wedding, 3 days) — Hero/Story/Timeline/Gallery/Music per-wedding UX
+
+---
+Task ID: 4
+Agent: Main Agent (Phase 4 Implementation)
+Task: Phase 4 — Per-Wedding Public Pages: full luxury invitation UX (Hero/Story/Timeline/Gallery/Music/GuestSpace) per wedding
+
+Work Log:
+- Read worklog.md to confirm Phase 3 complete (RBAC enforced partout). Read PLAN_MULTI_TENANT.md Phase 4 spec: "Invitation UX complète par mariage — Hero/Story/Timeline/Gallery/Music per-wedding".
+- Assessed current state: /w/[slug]/page.tsx was a Phase 2 MVP (basic Hero + Venue + Timeline + Guest lookup + Footer, 422 lines). The root "/" page (367 lines) uses rich components: Navigation, HeroSection, OurStory, PremiumGallery, EventTimeline, MapSection, Footer, GuestAuthProvider, GuestAuthForm, GuestPersonalSpace, AmbientMusicPlayer, VisualEffectsLayer, LuxuryVisualEngine, PWAInstall, AdminPanel, AENEWSBanner.
+- Verified all luxury components use relative fetch('/api/...') calls (HeroSection, GuestAuthProvider, GuestPersonalSpace, GuestAuthForm all confirmed) — they work for the default wedding because APIs default to default wedding when no X-Wedding-Slug header is present.
+- Chose the PROVEN strategy from Task 3-D (per-wedding admin): a GLOBAL window.fetch interceptor that auto-adds X-Wedding-Slug header to all /api/* calls. This lets ALL existing luxury components work UNCHANGED — zero modification to HeroSection/OurStory/PremiumGallery/EventTimeline/MapSection/GuestAuthProvider/GuestPersonalSpace/AmbientMusicPlayer/Footer. Zero regression risk on root "/" page.
+- Rewrote /w/[slug]/page.tsx (290 lines) with full luxury per-wedding UX:
+  - GLOBAL window.fetch interceptor installed in useEffect (wraps window.fetch, adds X-Wedding-Slug header for any URL starting with /api/ or api/, leaves absolute URLs/uploads untouched). Cleanup restores original fetch on unmount. Same pattern as /w/[slug]/admin/page.tsx.
+  - useSyncExternalStore for hydration-safe mounted flag (returns false on SSR + during hydration, true after) — avoids react-hooks/set-state-in-effect lint error WITHOUT disabling the rule. Renders a stable luxury loading screen (dark gradient + gold pulse + "Chargement de l'invitation…") during hydration.
+  - Composes the SAME luxury components as root "/" page: VisualEffectsLayer, LuxuryVisualEngine, Navigation, HeroSection, OurStory (stories prop), PremiumGallery, EventTimeline (events prop), MapSection (settings prop), GuestAuthForm, GuestPersonalSpace, AmbientMusicPlayer, Footer, PWAInstall.
+  - Wrapped in Suspense + GuestAuthProvider (same as root) so the guest auth context works: useGuestAuth() provides { guest, authenticated, loading, loginByLookupToken, loginWithLinkToken }.
+  - Fetches this wedding's data (stories, timeline, settings, music) in useEffect via plain fetch() — the interceptor auto-scopes them. Mirrors root page's fetchData() exactly.
+  - Handles ?invite=token query param for guest auto-auth: loginWithLinkToken(inviteParam) called when inviteParam is present and guest is not yet authenticated. Guest stays on /w/{slug} after auth (not redirected to root "/").
+  - Conditional rendering: authLoading → shimmer; authenticated+guest → GuestPersonalSpace; else → regularContent (OurStory + PremiumGallery + EventTimeline + MapSection + GuestAuthForm).
+  - DELIBERATELY EXCLUDED from per-wedding page: AdminPanel + hidden admin trigger zone (admin lives at /w/[slug}/admin — separate dedicated UI from Task 3-D), AENEWSBanner (platform marketing banner — not relevant to a specific wedding's invitation).
+  - onLogout: calls /api/guest/logout then router.refresh() (stays on the same wedding page, unlike root which redirects to "/").
+- Lint: `bun run lint` → 17 errors, ALL pre-existing (deploy-vps-*.cjs require() imports, AmbientMusicPlayer.tsx set-state-in-effect, sync-vps-tables-only.js). 0 NEW errors from Phase 4 rewrite.
+- Dev server: GET /w/josue-hornella → 200 in 685ms (compile 441ms, render 244ms). No errors in dev.log. All API calls return 200 with Prisma queries properly scoped by weddingId (confirmed via SQL log: `WHERE weddingId = ?`).
+- Browser verification (agent-browser):
+  - GET /w/josue-hornella → renders full luxury UX: Hero (JOSUÉ / HORNELLA + countdown "JOURS"), Notre Histoire (couple stories with "Vers le Grand Jour"), Notre Galerie (PremiumGallery), Programme du Jour (EventTimeline with "Accueil des invités"), Le Lieu (MapSection with "21H30" + map), Trouver Mon Invitation (GuestAuthForm), Footer ("© 2026 Josué & Hornella — Tous droits réservés" + "#JosueEtHornella2026") ✓
+  - window.fetch.toString().includes('X-Wedding-Slug') → true (interceptor installed) ✓
+  - Console errors: 0 ✓ / Page errors: 0 ✓
+  - Guest lookup flow: filled "Josué" in search → GuestAuthForm called /api/guest/lookup (interceptor added X-Wedding-Slug) → returned "JOSUE LIBAZA DICLOFENAC • 1 place" result ✓
+  - Clicked guest result → /api/guest/auto-auth called (interceptor scoped) → GuestAuthProvider received guest → GuestPersonalSpace rendered: "ESPACE SÉCURISÉ", "JOSUE LIBAZA", "DICLOFENAC • 1 place", "PERSONNEL" ✓
+  - Guest stayed on /w/josue-hornella URL after auth (not redirected to root "/") ✓
+  - ?invite=TOKEN auto-auth: page loads without errors, GuestAuthProvider processes the token ✓
+- Dev log confirms all Prisma queries are tenant-scoped: `WHERE weddingId = ?` appears in every query for Settings, Guest, CoupleStory, EventTimeline — proving the fetch interceptor + Phase 2 tenant extension work end-to-end for the public UX.
+
+Stage Summary:
+- ✅ Phase 4 COMPLETE — Full luxury invitation UX per wedding
+- Files modified: src/app/w/[slug]/page.tsx (full rewrite, 290 lines — was 422-line MVP, now composes all luxury components)
+- Files NOT modified: ZERO changes to any luxury component (HeroSection, OurStory, PremiumGallery, EventTimeline, MapSection, GuestAuthProvider, GuestAuthForm, GuestPersonalSpace, AmbientMusicPlayer, Navigation, Footer, LuxuryVisualEngine, VisualEffectsLayer, PWAInstall) — all reused unchanged via the global fetch interceptor pattern
+- Key architectural decision: GLOBAL window.fetch interceptor (same as Task 3-D per-wedding admin) instead of prop-drilling useTenantFetch to 14+ components. This means ZERO code churn in existing components → ZERO regression risk on root "/" page. The interceptor transparently scopes all /api/* calls to the current wedding via X-Wedding-Slug header.
+- Key UX decision: Excluded AdminPanel + hidden trigger (admin is at /w/[slug}/admin) and AENEWSBanner (platform marketing) from the per-wedding public page. The per-wedding page is purely the guest-facing invitation experience.
+- Key auth decision: Guest stays on /w/{slug} after auth/logout (router.refresh()) instead of redirecting to root "/". This keeps the tenant context intact throughout the guest journey.
+- All 7 luxury sections verified rendering per-wedding: Hero (with countdown), Notre Histoire (couple stories), Notre Galerie (premium gallery), Programme du Jour (timeline), Le Lieu (map + 21H30), Trouver Mon Invitation (guest lookup), Footer (couple identity + hashtag)
+- Guest flow verified end-to-end: search → select name → auto-auth → personal space renders — all scoped to the current wedding via the fetch interceptor
+- Lint: 0 new errors (17 pre-existing in deploy scripts + AmbientMusicPlayer — unchanged)
+- Dev server: healthy, all routes 200, no errors, Prisma queries properly tenant-scoped
+- Production NOT touched (local dev only) — Phase 4 deploys to VPS in a dedicated maintenance window after Phase 5
+- Next: Phase 5 (Dashboard super-admin, 3 days) — Vue plateforme (MRR, churn, weddings) at /platform/admin live with full CRUD
