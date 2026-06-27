@@ -819,3 +819,94 @@ Stage Summary:
 - Browser-verified: all CRUD operations work end-to-end, self-delete guard blocks correctly, 0 errors
 - Production NOT touched (local dev only) — Phase 5 deploys to VPS in a dedicated maintenance window after Phase 6
 - Next: Phase 6 (Stripe billing, 4 days) — Paiements + metering + Customer Portal + Upgrades self-service
+
+---
+Task ID: 6
+Agent: Main Agent (Phase 6 — Manual WhatsApp Billing)
+Task: Phase 6 (revised) — Replace Stripe billing with a manual WhatsApp-driven billing workflow: admin picks a plan/price based on services included, generates a prefilled WhatsApp message for the couple, and manually confirms invoice as PAID once payment is received outside the platform (mobile money, bank transfer, cash).
+
+Work Log:
+- Read worklog.md to confirm Phases 1-5 complete (RBAC enforced, dashboard charts + Users CRUD live). Read PLAN_MULTI_TENANT.md Phase 6 spec — originally "Stripe billing (4 days)".
+- User explicitly redirected Phase 6: "Pas besoin de stripe actuellement, on va controller la vente sur whatsapp par l'admin directement apres avoor choisi le prix en rapport avec les services inclus oour le mariage" → skip Stripe, build manual WhatsApp billing workflow instead.
+- Backed up local DB to db/custom.db.pre-phase6-20260627-012516 before schema changes.
+- Schema migration (prisma/schema.prisma):
+  - Subscription model: made stripeCustomerId + stripeSubscriptionId nullable (was @unique required), added amountAgreed Int? (custom negotiated price in USD cents), currency String @default("usd"), billingCycle String @default("MONTHLY") (MONTHLY/ANNUAL/ONE_TIME), paymentMethod String? (MOBILE_MONEY/BANK_TRANSFER/CASH/OTHER), whatsappPhone String?, notes String?, paidAt DateTime?, activatedAt DateTime?. Updated status comment to include PENDING_PAYMENT.
+  - Invoice model: made stripeInvoiceId nullable, added weddingId String (denormalized for direct platform-wide queries) + relation, billingCycle String @default("MONTHLY"), paymentMethod String?, whatsappSentAt DateTime?, whatsappPhone String?, confirmedBy String? (AdminUser.id who marked paid), notes String?. Added @@index([weddingId, status]) + @@index([subscriptionId]).
+  - Wedding model: added `invoices Invoice[]` relation.
+  - Ran `bun run db:push` — applied cleanly, Prisma client v6.19.2 regenerated.
+- Created src/lib/billing.ts (245 lines):
+  - Types: SubscriptionStatus, InvoiceStatus, BillingCycle, PaymentMethod
+  - Display metadata: SUBSCRIPTION_STATUS_LABELS, INVOICE_STATUS_LABELS, BILLING_CYCLE_LABELS, PAYMENT_METHOD_LABELS (all FR)
+  - resolveAmountUsdCents(plan, amountAgreed, billingCycle) — returns USD cents; uses amountAgreed if set, else PLAN_METADATA[plan].priceUsd × 100 (× 10 for annual)
+  - usdCentsToFcfa() — fixed rate 1 USD = 600 FCFA for display
+  - formatPrice(), getPlanServices() — bullet list of services per plan (guests, media, staff, custom domain)
+  - buildWhatsAppMessage() — full FR message: greeting + couple label, plan + price summary, services included, payment instructions (env-configurable: BILLING_MOBILE_MONEY_PHONE, BILLING_BANK_IBAN, BILLING_CASH_ADDRESS), wedding public link, closing + optional notes
+  - buildWhatsAppDeeplink(phone, message) — wa.me/<digits>?text=<encoded>; auto-prepends 243 country code for 9-digit DRC local numbers; falls back to wa.me/?text=... if no phone
+  - Validation helpers: isValidPlan, isValidBillingCycle, isValidPaymentMethod, isValidSubscriptionStatus
+- Created 6 API route files (all platform-admin only via requirePlatformAdmin):
+  - src/app/api/platform/weddings/[id]/subscription/route.ts (GET + PUT) — fetch + upsert subscription; on status=ACTIVE sets paidAt + activatedAt (first time) + syncs Wedding.plan to subscription.plan + invalidateWeddingCache
+  - src/app/api/platform/weddings/[id]/subscription/whatsapp/route.ts (POST) — generates WhatsApp deeplink; body overrides saved subscription values; stamps whatsappSentAt + audit log BILLING_WHATSAPP_SENT
+  - src/app/api/platform/weddings/[id]/invoices/route.ts (GET + POST) — list + create invoice; POST auto-creates subscription if none exists (db.$transaction); sets subscription.status=PENDING_PAYMENT
+  - src/app/api/platform/invoices/route.ts (GET) — platform-wide invoice list with filters (status, weddingId, search) + summary (open/paid/void counts, totalUsd, paidUsd)
+  - src/app/api/platform/invoices/[id]/route.ts (PUT) — mark PAID (sets paidAt + confirmedBy + amountPaid, side-effect: subscription ACTIVE + Wedding.plan sync), mark VOID, reopen VOID→OPEN (PAID→OPEN blocked with 400)
+  - src/app/api/platform/billing/weddings/route.ts (GET) — billing overview: every wedding with subscription + effectivePriceUsdCents + invoicesCount + openInvoicesCount + summary (total/active/pending/trial/mrrUsd/pendingUsd)
+- Created src/app/platform/admin/BillingTab.tsx (700 lines):
+  - Summary cards: Total mariages, Actifs, En attendant, MRR (USD), À recouvrer
+  - Filters: search (couple/slug), status filter, plan filter
+  - Wedding table: Couple | Plan | Statut | Prix (USD + FCFA) | Cycle | Factures count | Gérer button
+  - Subscription editor dialog: 4 plan cards with services preview (clickable), form fields (status, billing cycle, custom price in USD cents with live USD/FCFA preview, payment method, WhatsApp phone, notes), 3 action buttons (Enregistrer, Générer WhatsApp, Créer une facture), invoice list with status badges + mark-as-paid + void buttons
+  - WhatsApp message modal: recipient display, full message preview (readonly textarea), Plan + Montant summary cards, Copier (clipboard) + Ouvrir WhatsApp (anchor to wa.me deeplink, target=_blank)
+- Wired BillingTab into src/app/platform/admin/page.tsx:
+  - Added 'billing' to TabId union type
+  - Added { id: 'billing', label: 'Facturation', icon: Wallet } to NAV_ITEMS
+  - Added `import { BillingTab } from './BillingTab'`
+  - Added Wallet to lucide-react imports
+  - Added `case 'billing': return <BillingTab fetchWithAuth={fetchWithAuth} />` to renderContent switch
+- Backend API verification (curl with platform admin cookie):
+  - GET /api/platform/billing/weddings → 200 (1 wedding, summary: total=1, active=1, mrrUsd=99, pendingUsd=0)
+  - GET /api/platform/weddings/{id}/subscription → 200 (existing subscription: ELITE/ACTIVE from seed)
+  - PUT /api/platform/weddings/{id}/subscription → 200 (set plan=PREMIUM, status=PENDING_PAYMENT, billingCycle=MONTHLY, paymentMethod=MOBILE_MONEY, whatsappPhone=+243970000000, notes)
+  - POST /api/platform/weddings/{id}/subscription/whatsapp → 200 (returned wa.me/243970000000?text=... with full FR message)
+  - POST /api/platform/weddings/{id}/invoices → 201 (created OPEN invoice, amountDue=9900, $99)
+  - PUT /api/platform/invoices/{id} (status=PAID) → 200 (invoice.status=PAID, amountPaid=9900, paidAt set, confirmedBy=admin; side-effect: subscription.status=ACTIVE + Wedding.plan ELITE→PREMIUM)
+  - GET /api/platform/invoices → 200 (1 invoice PAID, summary: open=0, paid=1, totalUsd=9900, paidUsd=9900)
+- Fixed unit bug in resolveAmountUsdCents: was returning USD dollars instead of cents (PLAN_METADATA.priceUsd is in dollars, not cents). Now multiplies by 100. MRR went from $1.99 → $99 after fix.
+- Lint check: `bun run lint` → 17 errors, ALL pre-existing (deploy-vps-*.cjs require() imports, AmbientMusicPlayer.tsx set-state-in-effect, sync-vps-tables-only.js). 0 NEW errors from Phase 6.
+- Browser verification with Agent Browser (end-to-end):
+  - Logged in as admin@josue-hornella.wedding → redirected to /platform/admin
+  - Clicked "Facturation" tab → summary cards rendered (Total=1, Actifs=1, En attente=0, MRR=$99, À recouvrer=$0), wedding table rendered (Josué & Hornella, Premium, Actif, $99.00/59 400 FCFA, Mensuel, 2 factures)
+  - Clicked "Gérer" → editor dialog opened with 4 plan cards (Essai Libre/Essentiel/Premium/Élite with services preview), form populated (status=Actif, cycle=Mensuel, prix=9900, paiement=Mobile Money, phone=+243970000000, notes="First month")
+  - Clicked "Générer WhatsApp" → modal opened with full FR prefilled message (greeting, plan, price $99/59 400 FCFA, services, payment instructions, wedding link, note), "Ouvrir WhatsApp" link → https://wa.me/243970000000?text=... (verified URL-encoded message content)
+  - Clicked "Créer une facture" → toast "Facture créée", invoice count 1→2, new "Payée" button appeared
+  - Clicked "Payée" → toast "Facture marquée comme payée", both invoices now show "Payée" with timestamps
+  - Closed dialog, verified billing overview updated (2 factures)
+  - Navigated to "Vue d'ensemble" dashboard → ARPU $99 · 1 actif, MRR chart rendered, audit log shows: "Created invoice $99.00", "Generated WhatsApp billing message", "invoice marked paid"
+  - Screenshots saved: phase6-billing-tab.png, phase6-billing-editor.png, phase6-whatsapp-modal.png, phase6-invoice-created.png, phase6-billing-after.png, phase6-dashboard-final.png
+  - Dev log: 0 errors during entire browser test, all API calls returned 200
+- Created scripts/dev-watchdog.sh (auto-restart dev server if it dies — sandbox was killing the process between bash tool calls)
+- DB state after testing: 1 wedding (Josué & Hornella, plan=PREMIUM, status=PUBLISHED), 1 subscription (PREMIUM/ACTIVE, amountAgreed=9900, paymentMethod=MOBILE_MONEY, whatsappPhone=+243970000000), 2 invoices (both PAID, $99 each)
+
+Stage Summary:
+- ✅ Phase 6 (revised — Manual WhatsApp Billing) COMPLETE — replaces Stripe with admin-driven WhatsApp sales workflow
+- User intent satisfied: admin picks plan/price based on services included → generates prefilled WhatsApp message → manually marks invoice PAID after receiving payment outside the platform
+- Key files produced:
+  - prisma/schema.prisma (modified — Subscription + Invoice models re-purposed for manual billing, Stripe fields kept nullable for future opt-in)
+  - src/lib/billing.ts (245 lines — new, WhatsApp message template + plan services + deeplink generation + validation)
+  - src/app/api/platform/weddings/[id]/subscription/route.ts (GET + PUT — new)
+  - src/app/api/platform/weddings/[id]/subscription/whatsapp/route.ts (POST — new)
+  - src/app/api/platform/weddings/[id]/invoices/route.ts (GET + POST — new)
+  - src/app/api/platform/invoices/route.ts (GET — new, platform-wide list + summary)
+  - src/app/api/platform/invoices/[id]/route.ts (PUT — new, mark PAID/VOID)
+  - src/app/api/platform/billing/weddings/route.ts (GET — new, billing overview)
+  - src/app/platform/admin/BillingTab.tsx (700 lines — new, full billing UI)
+  - src/app/platform/admin/page.tsx (modified — added 'billing' tab + import + Wallet icon)
+  - scripts/dev-watchdog.sh (new — keeps dev server alive in sandbox)
+- Architecture decisions:
+  - No payment gateway — admin manually confirms payments received via mobile money/bank/cash
+  - WhatsApp deeplink (wa.me) instead of WhatsApp Business API — zero cost, no API key needed, admin clicks "Ouvrir WhatsApp" to open chat with prefilled message
+  - Payment instructions are env-configurable (BILLING_MOBILE_MONEY_PHONE, BILLING_BANK_IBAN, BILLING_CASH_ADDRESS) so each deployment can customise
+  - Subscription.plan syncs to Wedding.plan on first PAID invoice → dashboard MRR auto-updates (existing dashboard reads Wedding.plan)
+  - Invoice model denormalized weddingId for direct platform-wide queries without JOIN
+  - Stripe columns kept nullable on Subscription/Invoice for future opt-in migration (zero breaking changes when Stripe is added later)
+- Production NOT touched (local dev only) — Phase 6 deploys to VPS in a dedicated maintenance window after Phase 7
+- Next: Phase 7 (Onboarding wizard, 4 days) — Signup → création wedding → publish < 10 min, with the billing flow integrated so new couples can be billed via WhatsApp immediately after onboarding
