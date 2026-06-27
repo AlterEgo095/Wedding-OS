@@ -50,6 +50,7 @@ model Wedding {
   subscription    Subscription?
   usageCounters   UsageCounter[]
   invitations     Invitation[]
+  invoices        Invoice[]
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -75,21 +76,48 @@ model AdminUser {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// BILLING — Stripe integration (Phase 6)
+// BILLING — Manual WhatsApp-driven billing (Phase 6, revised)
+//
+// Originally designed for Stripe (Phase 6 spec). Re-purposed for a manual
+// sales workflow: the platform admin negotiates a price with the couple
+// (based on the services included in the chosen plan), sends a prefilled
+// WhatsApp message with the offer + payment instructions, and manually
+// confirms the invoice as PAID once payment is received outside the
+// platform (mobile money, bank transfer, cash).
+//
+// Stripe columns are kept (nullable) for a future opt-in migration; they
+// are not used by the current billing flow.
 // ══════════════════════════════════════════════════════════════════════════════
 
 model Subscription {
   id                     String    @id @default(cuid())
   weddingId              String    @unique
   wedding                Wedding   @relation(fields: [weddingId], references: [id], onDelete: Cascade)
-  stripeCustomerId       String    @unique
-  stripeSubscriptionId   String?   @unique
-  plan                   String    @default("TRIAL")
-  status                 String    @default("TRIALING") // TRIALING, ACTIVE, PAST_DUE, CANCELED, EXPIRED
+
+  // ── Plan & pricing ──
+  plan                   String    @default("TRIAL") // TRIAL, ESSENTIEL, PREMIUM, ELITE
+  status                 String    @default("TRIALING") // TRIALING, PENDING_PAYMENT, ACTIVE, PAST_DUE, SUSPENDED, CANCELED, EXPIRED
+  amountAgreed           Int?      // negotiated price in minor units (cents). null = use plan default.
+  currency               String    @default("usd") // usd, eur, fcfa
+  billingCycle           String    @default("MONTHLY") // MONTHLY, ANNUAL, ONE_TIME
+
+  // ── Period ──
   currentPeriodStart     DateTime?
   currentPeriodEnd       DateTime?
   cancelAt               DateTime?
   trialEndsAt            DateTime?
+  activatedAt            DateTime? // first time marked ACTIVE (i.e. first payment received)
+  paidAt                 DateTime? // last payment received timestamp
+
+  // ── Manual billing metadata ──
+  paymentMethod          String?   // MOBILE_MONEY, BANK_TRANSFER, CASH, OTHER
+  whatsappPhone          String?   // client's WhatsApp number (E.164 or local format)
+  notes                  String?   // admin freeform notes about the negotiation
+
+  // ── Stripe (reserved for future opt-in, currently unused) ──
+  stripeCustomerId       String?   @unique
+  stripeSubscriptionId   String?   @unique
+
   createdAt              DateTime  @default(now())
   updatedAt              DateTime  @updatedAt
   invoices               Invoice[]
@@ -99,15 +127,35 @@ model Invoice {
   id               String       @id @default(cuid())
   subscriptionId   String
   subscription     Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
-  stripeInvoiceId  String       @unique
-  amountDue        Int          // in cents
-  amountPaid       Int
-  currency         String       @default("eur")
-  status           String       // DRAFT, OPEN, PAID, UNCOLLECTIBLE, VOID
+  weddingId        String       // denormalized for direct platform-wide queries
+  wedding          Wedding      @relation(fields: [weddingId], references: [id], onDelete: Cascade)
+
+  // ── Amounts ──
+  amountDue        Int          // in minor units (cents)
+  amountPaid       Int          @default(0)
+  currency         String       @default("usd")
+  billingCycle     String       @default("MONTHLY") // echoed from subscription at creation time
+
+  // ── Status ──
+  status           String       @default("OPEN") // DRAFT, OPEN, PAID, VOID
+  paymentMethod    String?      // MOBILE_MONEY, BANK_TRANSFER, CASH, OTHER
+
+  // ── Manual billing workflow ──
+  whatsappSentAt   DateTime?   // last time a WhatsApp message was sent for this invoice
+  whatsappPhone    String?     // phone the WhatsApp message was sent to
+  confirmedBy      String?     // AdminUser.id who marked the invoice PAID
+  notes            String?     // admin freeform notes
+
+  // ── Stripe (reserved for future opt-in, currently unused) ──
+  stripeInvoiceId  String?   @unique
   pdfUrl           String?
   hostedInvoiceUrl String?
+
   paidAt           DateTime?
   createdAt        DateTime     @default(now())
+
+  @@index([weddingId, status])
+  @@index([subscriptionId])
 }
 
 model UsageCounter {
