@@ -1,0 +1,2002 @@
+     1→'use client'
+     2→
+     3→import { useState, useEffect, useCallback, useRef, type ReactNode } from 'react'
+     4→import { useRouter } from 'next/navigation'
+     5→import Link from 'next/link'
+     6→import { AnimatePresence, motion } from 'framer-motion'
+     7→import { toast } from 'sonner'
+     8→
+     9→import { Button } from '@/components/ui/button'
+    10→import { Input } from '@/components/ui/input'
+    11→import { Label } from '@/components/ui/label'
+    12→import { Badge } from '@/components/ui/badge'
+    13→import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+    14→import { Skeleton } from '@/components/ui/skeleton'
+    15→import { Separator } from '@/components/ui/separator'
+    16→import {
+    17→  Dialog,
+    18→  DialogContent,
+    19→  DialogHeader,
+    20→  DialogTitle,
+    21→  DialogFooter,
+    22→} from '@/components/ui/dialog'
+    23→import {
+    24→  Select,
+    25→  SelectContent,
+    26→  SelectItem,
+    27→  SelectTrigger,
+    28→  SelectValue,
+    29→} from '@/components/ui/select'
+    30→import {
+    31→  Table,
+    32→  TableBody,
+    33→  TableCell,
+    34→  TableHead,
+    35→  TableHeader,
+    36→  TableRow,
+    37→} from '@/components/ui/table'
+    38→import {
+    39→  DropdownMenu,
+    40→  DropdownMenuContent,
+    41→  DropdownMenuItem,
+    42→  DropdownMenuSeparator,
+    43→  DropdownMenuTrigger,
+    44→} from '@/components/ui/dropdown-menu'
+    45→import {
+    46→  LayoutDashboard,
+    47→  Heart,
+    48→  Users as UsersIcon,
+    49→  ScrollText,
+    50→  Crown,
+    51→  LogOut,
+    52→  Menu as MenuIcon,
+    53→  X,
+    54→  Plus,
+    55→  Search,
+    56→  Pencil,
+    57→  Trash2,
+    58→  MoreHorizontal,
+    59→  Loader2,
+    60→  ChevronLeft,
+    61→  ChevronRight,
+    62→  Activity,
+    63→  TrendingDown,
+    64→  UserPlus,
+    65→  KeyRound,
+    66→  ExternalLink,
+    67→  Wallet,
+    68→} from 'lucide-react'
+    69→
+    70→import {
+    71→  ResponsiveContainer,
+    72→  AreaChart,
+    73→  Area,
+    74→  PieChart,
+    75→  Pie,
+    76→  Cell,
+    77→  XAxis,
+    78→  YAxis,
+    79→  CartesianGrid,
+    80→  Tooltip,
+    81→} from 'recharts'
+    82→
+    83→import { PLAN_METADATA, type Plan, type WeddingStatus } from '@/lib/types'
+    84→import { BillingTab } from './BillingTab'
+    85→
+    86→// Local role labels — we can't import from @/lib/auth because that module
+    87→// imports `next/headers` + Prisma (server-only). Same pattern as
+    88→// /components/admin/UserManager.tsx.
+    89→const ROLE_LABELS: Record<string, string> = {
+    90→  PLATFORM_ADMIN: 'Administrateur Plateforme',
+    91→  SUPER_ADMIN: 'Super Admin',
+    92→  ORGANIZER: 'Organisateur',
+    93→  RECEPTION: 'Réception',
+    94→  CONTROLLER: 'Contrôleur',
+    95→}
+    96→
+    97→function getRoleLabel(role: string): string {
+    98→  return ROLE_LABELS[role] || role
+    99→}
+   100→
+   101→// ════════════════════════════════════════════════════════════════════════════
+   102→// Types
+   103→// ════════════════════════════════════════════════════════════════════════════
+   104→
+   105→interface AuthUser {
+   106→  id: string
+   107→  email: string
+   108→  name: string
+   109→  role: string
+   110→  weddingId?: string | null
+   111→}
+   112→
+   113→interface Wedding {
+   114→  id: string
+   115→  slug: string
+   116→  brideName: string
+   117→  groomName: string
+   118→  coupleLabel: string
+   119→  status: WeddingStatus
+   120→  plan: Plan
+   121→  weddingDate: string | null
+   122→  venueCity: string | null
+   123→  isDefault: boolean
+   124→  createdAt: string
+   125→  updatedAt: string
+   126→  _count?: { guests: number; admins: number }
+   127→}
+   128→
+   129→interface UserRow {
+   130→  id: string
+   131→  email: string
+   132→  name: string
+   133→  role: string
+   134→  weddingId: string | null
+   135→  wedding?: { slug: string; coupleLabel: string } | null
+   136→  createdAt: string
+   137→}
+   138→
+   139→interface AuditLog {
+   140→  id: string
+   141→  action: string
+   142→  details: string | null
+   143→  createdAt: string
+   144→  weddingId?: string | null
+   145→  user: { name: string; email: string; role?: string } | null
+   146→  wedding?: { slug: string; coupleLabel: string } | null
+   147→}
+   148→
+   149→/**
+   150→ * Dashboard response shape — matches GET /api/platform/dashboard (Task 3-B).
+   151→ *
+   152→ * Note: `weddings`, `users`, `guests` are nested objects (the API groups them
+   153→ * for richer breakdowns), NOT plain numbers. The recentActivity entries do
+   154→ * NOT include the `wedding` relation — only `weddingId` — so the audit tab
+   155→ * shows "Plateforme" or a short weddingId hash instead of a slug.
+   156→ */
+   157→interface DashboardData {
+   158→  weddings: { total: number; byStatus: Record<string, number>; byPlan: Record<string, number> }
+   159→  users: { total: number; byRole: Record<string, number>; platformAdmins: number }
+   160→  guests: { total: number; last7days: number }
+   161→  recentWeddings: Array<{
+   162→    id: string
+   163→    slug: string
+   164→    coupleLabel: string
+   165→    status: WeddingStatus
+   166→    plan: Plan
+   167→    createdAt: string
+   168→  }>
+   169→  recentActivity: AuditLog[]
+   170→  // Phase 5 analytics (optional — older API responses may omit these)
+   171→  revenue?: {
+   172→    mrr: number
+   173→    arpu: number
+   174→    byPlan: Array<{ plan: string; count: number; mrr: number }>
+   175→    mrrSeries: Array<{ month: string; label: string; mrr: number; weddings: number }>
+   176→  }
+   177→  churn?: {
+   178→    suspended30d: number
+   179→    archived30d: number
+   180→    churnRate: number
+   181→  }
+   182→  growth?: {
+   183→    newWeddings30d: number
+   184→    newGuests30d: number
+   185→    newWeddingsSeries: Array<{ month: string; label: string; count: number }>
+   186→  }
+   187→}
+   188→
+   189→interface PaginatedWeddings {
+   190→  weddings: Wedding[]
+   191→  total: number
+   192→  page: number
+   193→  limit: number
+   194→}
+   195→
+   196→interface PaginatedUsers {
+   197→  users: UserRow[]
+   198→  total: number
+   199→  page: number
+   200→  limit: number
+   201→}
+   202→
+   203→type TabId = 'dashboard' | 'weddings' | 'users' | 'audit' | 'billing'
+   204→
+   205→interface NavItem {
+   206→  id: TabId
+   207→  label: string
+   208→  icon: React.ComponentType<{ className?: string }>
+   209→}
+   210→
+   211→const NAV_ITEMS: NavItem[] = [
+   212→  { id: 'dashboard', label: "Vue d'ensemble", icon: LayoutDashboard },
+   213→  { id: 'weddings', label: 'Mariages', icon: Heart },
+   214→  { id: 'billing', label: 'Facturation', icon: Wallet },
+   215→  { id: 'users', label: 'Utilisateurs', icon: UsersIcon },
+   216→  { id: 'audit', label: "Journal d'audit", icon: ScrollText },
+   217→]
+   218→
+   219→const WEDDING_STATUSES: WeddingStatus[] = ['DRAFT', 'PUBLISHED', 'ARCHIVED', 'SUSPENDED']
+   220→const PLANS: Plan[] = ['TRIAL', 'ESSENTIEL', 'PREMIUM', 'ELITE']
+   221→
+   222→const STATUS_LABELS: Record<WeddingStatus, string> = {
+   223→  DRAFT: 'Brouillon',
+   224→  PUBLISHED: 'Publié',
+   225→  ARCHIVED: 'Archivé',
+   226→  SUSPENDED: 'Suspendu',
+   227→}
+   228→
+   229→const STATUS_BADGE_CLASS: Record<WeddingStatus, string> = {
+   230→  PUBLISHED: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30',
+   231→  DRAFT: 'bg-amber-500/15 text-amber-400 border-amber-500/30',
+   232→  ARCHIVED: 'bg-zinc-500/15 text-zinc-400 border-zinc-500/30',
+   233→  SUSPENDED: 'bg-red-500/15 text-red-400 border-red-500/30',
+   234→}
+   235→
+   236→const PLAN_BADGE_CLASS: Record<Plan, string> = {
+   237→  ELITE: 'bg-gold/15 text-gold border-gold/40',
+   238→  PREMIUM: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30',
+   239→  ESSENTIEL: 'bg-violet-500/15 text-violet-400 border-violet-500/30',
+   240→  TRIAL: 'bg-zinc-500/15 text-zinc-400 border-zinc-500/30',
+   241→}
+   242→
+   243→const ROLE_BADGE_CLASS: Record<string, string> = {
+   244→  PLATFORM_ADMIN: 'bg-gold/15 text-gold border-gold/40',
+   245→  SUPER_ADMIN: 'bg-gold/15 text-gold border-gold/40',
+   246→  ORGANIZER: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30',
+   247→  RECEPTION: 'bg-zinc-500/15 text-zinc-400 border-zinc-500/30',
+   248→  CONTROLLER: 'bg-zinc-500/15 text-zinc-400 border-zinc-500/30',
+   249→}
+   250→
+   251→// Chart colors per plan — used by the plan-distribution donut chart
+   252→const PLAN_CHART_COLORS: Record<string, string> = {
+   253→  ELITE: '#D4A853',
+   254→  PREMIUM: '#10b981',
+   255→  ESSENTIEL: '#8b5cf6',
+   256→  TRIAL: '#71717a',
+   257→}
+   258→
+   259→// Shared tooltip styling for Recharts (dark luxury theme)
+   260→const CHART_TOOLTIP_STYLE = {
+   261→  background: 'oklch(0.16 0.02 270)',
+   262→  border: '1px solid rgba(212, 168, 83, 0.3)',
+   263→  borderRadius: '8px',
+   264→  fontSize: '12px',
+   265→  color: '#fff',
+   266→} as const
+   267→
+   268→// ════════════════════════════════════════════════════════════════════════════
+   269→// usePlatformFetch — wraps fetch with Bearer token + session-expiry handling
+   270→// ════════════════════════════════════════════════════════════════════════════
+   271→
+   272→function usePlatformFetch() {
+   273→  const router = useRouter()
+   274→  const sessionExpiredRef = useRef(false)
+   275→
+   276→  const onSessionExpired = useCallback(() => {
+   277→    if (sessionExpiredRef.current) return
+   278→    sessionExpiredRef.current = true
+   279→    try {
+   280→      localStorage.removeItem('admin_token')
+   281→      localStorage.removeItem('admin_user')
+   282→    } catch {
+   283→      /* ignore */
+   284→    }
+   285→    toast.error('Session expirée, veuillez vous reconnecter')
+   286→    router.replace('/platform/login')
+   287→  }, [router])
+   288→
+   289→  const getToken = useCallback(() => {
+   290→    if (typeof window === 'undefined') return null
+   291→    return localStorage.getItem('admin_token')
+   292→  }, [])
+   293→
+   294→  const fetchWithAuth = useCallback(
+   295→    async (url: string, init?: RequestInit): Promise<Response | null> => {
+   296→      const token = getToken()
+   297→      if (!token) {
+   298→        onSessionExpired()
+   299→        return null
+   300→      }
+   301→      let res: Response
+   302→      try {
+   303→        res = await fetch(url, {
+   304→          ...init,
+   305→          headers: {
+   306→            ...(init?.headers || {}),
+   307→            Authorization: `Bearer ${token}`,
+   308→          },
+   309→        })
+   310→      } catch {
+   311→        toast.error('Erreur de connexion au serveur')
+   312→        return null
+   313→      }
+   314→      if (res.status === 401) {
+   315→        onSessionExpired()
+   316→        return null
+   317→      }
+   318→      if (res.status === 403) {
+   319→        toast.error('Accès refusé')
+   320→        return null
+   321→      }
+   322→      return res
+   323→    },
+   324→    [getToken, onSessionExpired]
+   325→  )
+   326→
+   327→  return { fetchWithAuth, onSessionExpired, getToken }
+   328→}
+   329→
+   330→// ════════════════════════════════════════════════════════════════════════════
+   331→// Small shared UI helpers
+   332→// ════════════════════════════════════════════════════════════════════════════
+   333→
+   334→function StatusBadge({ status }: { status: WeddingStatus }) {
+   335→  return (
+   336→    <Badge variant="outline" className={`text-[10px] uppercase tracking-wide ${STATUS_BADGE_CLASS[status]}`}>
+   337→      {STATUS_LABELS[status]}
+   338→    </Badge>
+   339→  )
+   340→}
+   341→
+   342→function PlanBadge({ plan }: { plan: Plan }) {
+   343→  return (
+   344→    <Badge variant="outline" className={`text-[10px] uppercase tracking-wide ${PLAN_BADGE_CLASS[plan]}`}>
+   345→      {PLAN_METADATA[plan]?.label || plan}
+   346→    </Badge>
+   347→  )
+   348→}
+   349→
+   350→function RoleBadge({ role }: { role: string }) {
+   351→  return (
+   352→    <Badge variant="outline" className={`text-[10px] uppercase tracking-wide ${ROLE_BADGE_CLASS[role] || ''}`}>
+   353→      {getRoleLabel(role)}
+   354→    </Badge>
+   355→  )
+   356→}
+   357→
+   358→function formatDate(iso: string | null): string {
+   359→  if (!iso) return '—'
+   360→  try {
+   361→    return new Date(iso).toLocaleDateString('fr-FR', {
+   362→      day: '2-digit',
+   363→      month: 'short',
+   364→      year: 'numeric',
+   365→    })
+   366→  } catch {
+   367→    return '—'
+   368→  }
+   369→}
+   370→
+   371→function formatDateTime(iso: string | null): string {
+   372→  if (!iso) return '—'
+   373→  try {
+   374→    return new Date(iso).toLocaleString('fr-FR', {
+   375→      day: '2-digit',
+   376→      month: '2-digit',
+   377→      year: 'numeric',
+   378→      hour: '2-digit',
+   379→      minute: '2-digit',
+   380→    })
+   381→  } catch {
+   382→    return '—'
+   383→  }
+   384→}
+   385→
+   386→function toDateInput(iso: string | null): string {
+   387→  if (!iso) return ''
+   388→  try {
+   389→    return new Date(iso).toISOString().slice(0, 10)
+   390→  } catch {
+   391→    return ''
+   392→  }
+   393→}
+   394→
+   395→// ════════════════════════════════════════════════════════════════════════════
+   396→// Dashboard tab
+   397→// ════════════════════════════════════════════════════════════════════════════
+   398→
+   399→function DashboardTab({ fetchWithAuth }: { fetchWithAuth: (url: string, init?: RequestInit) => Promise<Response | null> }) {
+   400→  const [data, setData] = useState<DashboardData | null>(null)
+   401→  const [loading, setLoading] = useState(true)
+   402→
+   403→  const load = useCallback(async () => {
+   404→    setLoading(true)
+   405→    const res = await fetchWithAuth('/api/platform/dashboard')
+   406→    if (!res) {
+   407→      setLoading(false)
+   408→      return
+   409→    }
+   410→    try {
+   411→      const json = (await res.json()) as DashboardData
+   412→      setData(json)
+   413→    } catch {
+   414→      toast.error('Réponse invalide du serveur')
+   415→    } finally {
+   416→      setLoading(false)
+   417→    }
+   418→  }, [fetchWithAuth])
+   419→
+   420→  useEffect(() => {
+   421→    load()
+   422→  }, [load])
+   423→
+   424→  if (loading) {
+   425→    return (
+   426→      <div className="space-y-6 p-4 md:p-6">
+   427→        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+   428→          {Array.from({ length: 4 }).map((_, i) => (
+   429→            <Skeleton key={i} className="h-28 rounded-xl" />
+   430→          ))}
+   431→        </div>
+   432→        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+   433→          <Skeleton className="h-96 rounded-xl" />
+   434→          <Skeleton className="h-96 rounded-xl" />
+   435→        </div>
+   436→      </div>
+   437→    )
+   438→  }
+   439→
+   440→  if (!data) return null
+   441→
+   442→  // Phase 5 server-computed analytics — accurate across all PUBLISHED weddings.
+   443→  // Falls back gracefully if the revenue/churn/growth sections are absent.
+   444→  const mrr = data.revenue?.mrr ?? 0
+   445→  const arpu = data.revenue?.arpu ?? 0
+   446→  const activeCount = data.weddings.byStatus?.PUBLISHED ?? 0
+   447→  const churnRate = data.churn?.churnRate ?? 0
+   448→  const suspended30d = data.churn?.suspended30d ?? 0
+   449→  const archived30d = data.churn?.archived30d ?? 0
+   450→  const newWeddings30d = data.growth?.newWeddings30d ?? 0
+   451→  const newGuests30d = data.growth?.newGuests30d ?? 0
+   452→
+   453→  // Chart datasets — MRR over 6 months + plan distribution donut
+   454→  const mrrSeries = data.revenue?.mrrSeries ?? []
+   455→  const planBreakdown =
+   456→    (data.revenue?.byPlan ?? []).length > 0
+   457→      ? data.revenue!.byPlan
+   458→      : Object.entries(data.weddings.byPlan ?? {}).map(([plan, count]) => ({
+   459→          plan,
+   460→          count,
+   461→          mrr: count * (PLAN_METADATA[plan as Plan]?.priceUsd ?? 0),
+   462→        }))
+   463→
+   464→  const kpiCards = [
+   465→    {
+   466→      title: 'Total Mariages',
+   467→      value: data.weddings.total,
+   468→      subtitle: `${activeCount} publiés · ${newWeddings30d} nouveaux 30j`,
+   469→      icon: Heart,
+   470→      gradient: 'from-gold/20 to-gold-light/10',
+   471→      iconClass: 'text-gold',
+   472→    },
+   473→    {
+   474→      title: 'MRR',
+   475→      value: `$${mrr}`,
+   476→      subtitle: `ARPU $${arpu} · ${activeCount} actif${activeCount > 1 ? 's' : ''}`,
+   477→      icon: Crown,
+   478→      gradient: 'from-amber-500/20 to-amber-600/10',
+   479→      iconClass: 'text-amber-400',
+   480→    },
+   481→    {
+   482→      title: 'Invités',
+   483→      value: data.guests.total,
+   484→      subtitle: `${data.guests.last7days ?? 0} 7j · ${newGuests30d} 30j`,
+   485→      icon: UsersIcon,
+   486→      gradient: 'from-violet-500/20 to-violet-600/10',
+   487→      iconClass: 'text-violet-400',
+   488→    },
+   489→    {
+   490→      title: "Taux d'attrition",
+   491→      value: `${churnRate}%`,
+   492→      subtitle: `${suspended30d} suspendus · ${archived30d} archivés 30j`,
+   493→      icon: TrendingDown,
+   494→      gradient: 'from-red-500/20 to-red-600/10',
+   495→      iconClass: 'text-red-400',
+   496→    },
+   497→  ]
+   498→
+   499→  return (
+   500→    <div className="space-y-6 p-4 md:p-6">
+   501→      {/* KPI grid */}
+   502→      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
+   503→        {kpiCards.map((card, i) => (
+   504→          <motion.div
+   505→            key={card.title}
+   506→            initial={{ opacity: 0, y: 20 }}
+   507→            animate={{ opacity: 1, y: 0 }}
+   508→            transition={{ delay: i * 0.05, duration: 0.3 }}
+   509→          >
+   510→            <Card className="glass-card gold-border border-0 overflow-hidden">
+   511→              <CardContent className="p-4">
+   512→                <div className={`w-10 h-10 rounded-lg bg-gradient-to-br ${card.gradient} flex items-center justify-center mb-3`}>
+   513→                  <card.icon className={`w-5 h-5 ${card.iconClass}`} />
+   514→                </div>
+   515→                <p className="text-2xl font-bold">{card.value}</p>
+   516→                <p className="text-xs text-muted-foreground mt-1">{card.title}</p>
+   517→                <p className="text-[10px] text-muted-foreground/70 mt-0.5">{card.subtitle}</p>
+   518→              </CardContent>
+   519→            </Card>
+   520→          </motion.div>
+   521→        ))}
+   522→      </div>
+   523→
+   524→      {/* Charts row — MRR evolution + plan distribution */}
+   525→      <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
+   526→        {/* MRR area chart (6-month series) */}
+   527→        <motion.div
+   528→          initial={{ opacity: 0, y: 20 }}
+   529→          animate={{ opacity: 1, y: 0 }}
+   530→          transition={{ delay: 0.15, duration: 0.3 }}
+   531→          className="lg:col-span-3"
+   532→        >
+   533→          <Card className="glass-card gold-border border-0 h-full">
+   534→            <CardHeader className="pb-2">
+   535→              <CardTitle className="text-base font-semibold flex items-center gap-2">
+   536→                <Crown className="w-4 h-4 text-gold" />
+   537→                Évolution du MRR
+   538→                <span className="ml-auto text-sm font-bold text-gold">${mrr}/mois</span>
+   539→              </CardTitle>
+   540→            </CardHeader>
+   541→            <CardContent>
+   542→              {mrrSeries.length > 0 ? (
+   543→                <ResponsiveContainer width="100%" height={200}>
+   544→                  <AreaChart data={mrrSeries} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
+   545→                    <defs>
+   546→                      <linearGradient id="mrrGradient" x1="0" y1="0" x2="0" y2="1">
+   547→                        <stop offset="5%" stopColor="#D4A853" stopOpacity={0.45} />
+   548→                        <stop offset="95%" stopColor="#D4A853" stopOpacity={0} />
+   549→                      </linearGradient>
+   550→                    </defs>
+   551→                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" vertical={false} />
+   552→                    <XAxis dataKey="label" stroke="rgba(255,255,255,0.4)" fontSize={11} tickLine={false} axisLine={false} />
+   553→                    <YAxis stroke="rgba(255,255,255,0.4)" fontSize={11} tickLine={false} axisLine={false} width={36} />
+   554→                    <Tooltip
+   555→                      contentStyle={CHART_TOOLTIP_STYLE}
+   556→                      labelStyle={{ color: '#D4A853', fontWeight: 600 }}
+   557→                      formatter={(value: number) => [`$${value}`, 'MRR']}
+   558→                    />
+   559→                    <Area type="monotone" dataKey="mrr" stroke="#D4A853" strokeWidth={2} fill="url(#mrrGradient)" />
+   560→                  </AreaChart>
+   561→                </ResponsiveContainer>
+   562→              ) : (
+   563→                <div className="h-[200px] flex items-center justify-center text-sm text-muted-foreground">
+   564→                  Aucune donnée de revenu
+   565→                </div>
+   566→              )}
+   567→            </CardContent>
+   568→          </Card>
+   569→        </motion.div>
+   570→
+   571→        {/* Plan distribution donut */}
+   572→        <motion.div
+   573→          initial={{ opacity: 0, y: 20 }}
+   574→          animate={{ opacity: 1, y: 0 }}
+   575→          transition={{ delay: 0.25, duration: 0.3 }}
+   576→          className="lg:col-span-2"
+   577→        >
+   578→          <Card className="glass-card gold-border border-0 h-full">
+   579→            <CardHeader className="pb-2">
+   580→              <CardTitle className="text-base font-semibold flex items-center gap-2">
+   581→                <Heart className="w-4 h-4 text-gold" />
+   582→                Répartition par plan
+   583→              </CardTitle>
+   584→            </CardHeader>
+   585→            <CardContent>
+   586→              {planBreakdown.length > 0 ? (
+   587→                <div className="flex flex-col items-center">
+   588→                  <ResponsiveContainer width="100%" height={160}>
+   589→                    <PieChart>
+   590→                      <Pie
+   591→                        data={planBreakdown}
+   592→                        dataKey="count"
+   593→                        nameKey="plan"
+   594→                        cx="50%"
+   595→                        cy="50%"
+   596→                        innerRadius={45}
+   597→                        outerRadius={70}
+   598→                        paddingAngle={2}
+   599→                        stroke="none"
+   600→                      >
+   601→                        {planBreakdown.map((entry) => (
+   602→                          <Cell key={entry.plan} fill={PLAN_CHART_COLORS[entry.plan] ?? '#71717a'} />
+   603→                        ))}
+   604→                      </Pie>
+   605→                      <Tooltip
+   606→                        contentStyle={CHART_TOOLTIP_STYLE}
+   607→                        formatter={(value: number, name: string) => [
+   608→                          `${value} mariage${value > 1 ? 's' : ''}`,
+   609→                          PLAN_METADATA[name as Plan]?.label ?? name,
+   610→                        ]}
+   611→                      />
+   612→                    </PieChart>
+   613→                  </ResponsiveContainer>
+   614→                  <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 mt-3 w-full">
+   615→                    {planBreakdown.map((entry) => (
+   616→                      <div key={entry.plan} className="flex items-center gap-2 text-xs">
+   617→                        <span
+   618→                          className="w-2.5 h-2.5 rounded-full shrink-0"
+   619→                          style={{ background: PLAN_CHART_COLORS[entry.plan] ?? '#71717a' }}
+   620→                        />
+   621→                        <span className="text-muted-foreground flex-1 truncate">
+   622→                          {PLAN_METADATA[entry.plan as Plan]?.label ?? entry.plan}
+   623→                        </span>
+   624→                        <span className="font-medium">{entry.count}</span>
+   625→                        <span className="text-gold text-[10px] tabular-nums">${entry.mrr}</span>
+   626→                      </div>
+   627→                    ))}
+   628→                  </div>
+   629→                </div>
+   630→              ) : (
+   631→                <div className="h-[200px] flex items-center justify-center text-sm text-muted-foreground">
+   632→                  Aucun mariage
+   633→                </div>
+   634→              )}
+   635→            </CardContent>
+   636→          </Card>
+   637→        </motion.div>
+   638→      </div>
+   639→
+   640→      {/* Two-column lists */}
+   641→      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+   642→        {/* Recent weddings */}
+   643→        <motion.div
+   644→          initial={{ opacity: 0, x: -20 }}
+   645→          animate={{ opacity: 1, x: 0 }}
+   646→          transition={{ delay: 0.3, duration: 0.3 }}
+   647→        >
+   648→          <Card className="glass-card gold-border border-0 h-full">
+   649→            <CardHeader className="pb-3">
+   650→              <CardTitle className="text-base font-semibold flex items-center gap-2">
+   651→                <Heart className="w-4 h-4 text-gold" />
+   652→                Mariages récents
+   653→              </CardTitle>
+   654→            </CardHeader>
+   655→            <CardContent>
+   656→              {data.recentWeddings && data.recentWeddings.length > 0 ? (
+   657→                <div className="space-y-2 max-h-[60vh] overflow-y-auto custom-scrollbar pr-1">
+   658→                  {data.recentWeddings.slice(0, 5).map((w, i) => (
+   659→                    <motion.div
+   660→                      key={w.id}
+   661→                      initial={{ opacity: 0, y: 10 }}
+   662→                      animate={{ opacity: 1, y: 0 }}
+   663→                      transition={{ delay: 0.4 + i * 0.05 }}
+   664→                      className="flex items-center gap-3 p-3 rounded-lg hover:bg-white/5 transition-colors border border-white/5"
+   665→                    >
+   666→                      <div className="w-9 h-9 rounded-lg bg-gradient-gold flex items-center justify-center text-white shrink-0">
+   667→                        <Heart className="w-4 h-4" />
+   668→                      </div>
+   669→                      <div className="flex-1 min-w-0">
+   670→                        <p className="text-sm font-medium truncate">{w.coupleLabel}</p>
+   671→                        <p className="text-xs text-muted-foreground truncate">/w/{w.slug}</p>
+   672→                      </div>
+   673→                      <div className="flex flex-col items-end gap-1 shrink-0">
+   674→                        <StatusBadge status={w.status} />
+   675→                        <PlanBadge plan={w.plan} />
+   676→                      </div>
+   677→                    </motion.div>
+   678→                  ))}
+   679→                </div>
+   680→              ) : (
+   681→                <div className="py-8 text-center text-muted-foreground text-sm">
+   682→                  Aucun mariage récent
+   683→                </div>
+   684→              )}
+   685→            </CardContent>
+   686→          </Card>
+   687→        </motion.div>
+   688→
+   689→        {/* Recent activity */}
+   690→        <motion.div
+   691→          initial={{ opacity: 0, x: 20 }}
+   692→          animate={{ opacity: 1, x: 0 }}
+   693→          transition={{ delay: 0.4, duration: 0.3 }}
+   694→        >
+   695→          <Card className="glass-card gold-border border-0 h-full">
+   696→            <CardHeader className="pb-3">
+   697→              <CardTitle className="text-base font-semibold flex items-center gap-2">
+   698→                <Activity className="w-4 h-4 text-gold" />
+   699→                Activité récente
+   700→              </CardTitle>
+   701→            </CardHeader>
+   702→            <CardContent>
+   703→              {data.recentActivity && data.recentActivity.length > 0 ? (
+   704→                <div className="space-y-2 max-h-[60vh] overflow-y-auto custom-scrollbar pr-1">
+   705→                  {data.recentActivity.slice(0, 20).map((log, i) => (
+   706→                    <motion.div
+   707→                      key={log.id}
+   708→                      initial={{ opacity: 0, y: 10 }}
+   709→                      animate={{ opacity: 1, y: 0 }}
+   710→                      transition={{ delay: 0.4 + i * 0.03 }}
+   711→                      className="flex items-start gap-3 p-2 rounded-lg hover:bg-white/5 transition-colors"
+   712→                    >
+   713→                      <div className="w-2 h-2 rounded-full bg-gold mt-1.5 shrink-0" />
+   714→                      <div className="flex-1 min-w-0">
+   715→                        <p className="text-sm">
+   716→                          <span className="font-medium text-gold">{log.user?.name || 'Système'}</span>
+   717→                          {' — '}
+   718→                          <span className="text-muted-foreground">{log.action.replace(/_/g, ' ').toLowerCase()}</span>
+   719→                        </p>
+   720→                        {log.details && (
+   721→                          <p className="text-xs text-muted-foreground truncate">{log.details}</p>
+   722→                        )}
+   723→                      </div>
+   724→                      <span className="text-[10px] text-muted-foreground whitespace-nowrap shrink-0">
+   725→                        {formatDateTime(log.createdAt)}
+   726→                      </span>
+   727→                    </motion.div>
+   728→                  ))}
+   729→                </div>
+   730→              ) : (
+   731→                <div className="py-8 text-center text-muted-foreground text-sm">
+   732→                  Aucune activité récente
+   733→                </div>
+   734→              )}
+   735→            </CardContent>
+   736→          </Card>
+   737→        </motion.div>
+   738→      </div>
+   739→    </div>
+   740→  )
+   741→}
+   742→
+   743→// ════════════════════════════════════════════════════════════════════════════
+   744→// Weddings tab
+   745→// ════════════════════════════════════════════════════════════════════════════
+   746→
+   747→interface WeddingFormState {
+   748→  slug: string
+   749→  brideName: string
+   750→  groomName: string
+   751→  weddingDate: string
+   752→  venueCity: string
+   753→  status: WeddingStatus
+   754→  plan: Plan
+   755→}
+   756→
+   757→const EMPTY_WEDDING_FORM: WeddingFormState = {
+   758→  slug: '',
+   759→  brideName: '',
+   760→  groomName: '',
+   761→  weddingDate: '',
+   762→  venueCity: '',
+   763→  status: 'DRAFT',
+   764→  plan: 'TRIAL',
+   765→}
+   766→
+   767→function WeddingsTab({ fetchWithAuth }: { fetchWithAuth: (url: string, init?: RequestInit) => Promise<Response | null> }) {
+   768→  const [weddings, setWeddings] = useState<Wedding[]>([])
+   769→  const [total, setTotal] = useState(0)
+   770→  const [totalPages, setTotalPages] = useState(1)
+   771→  const [page, setPage] = useState(1)
+   772→  const [loading, setLoading] = useState(true)
+   773→  const [search, setSearch] = useState('')
+   774→  const [statusFilter, setStatusFilter] = useState<string>('ALL')
+   775→  const [planFilter, setPlanFilter] = useState<string>('ALL')
+   776→
+   777→  // Dialog state
+   778→  const [showFormDialog, setShowFormDialog] = useState(false)
+   779→  const [showDeleteDialog, setShowDeleteDialog] = useState(false)
+   780→  const [editing, setEditing] = useState<Wedding | null>(null)
+   781→  const [deleting, setDeleting] = useState<Wedding | null>(null)
+   782→  const [form, setForm] = useState<WeddingFormState>(EMPTY_WEDDING_FORM)
+   783→  const [saving, setSaving] = useState(false)
+   784→
+   785→  const LIMIT = 20
+   786→  const searchRef = useRef(search)
+   787→  searchRef.current = search
+   788→
+   789→  const load = useCallback(
+   790→    async (targetPage: number) => {
+   791→      setLoading(true)
+   792→      const params = new URLSearchParams({
+   793→        page: String(targetPage),
+   794→        limit: String(LIMIT),
+   795→      })
+   796→      if (searchRef.current) params.set('search', searchRef.current)
+   797→      if (statusFilter !== 'ALL') params.set('status', statusFilter)
+   798→      if (planFilter !== 'ALL') params.set('plan', planFilter)
+   799→
+   800→      const res = await fetchWithAuth(`/api/platform/weddings?${params.toString()}`)
+   801→      if (!res) {
+   802→        setLoading(false)
+   803→        return
+   804→      }
+   805→      try {
+   806→        const json = (await res.json()) as PaginatedWeddings
+   807→        setWeddings(json.weddings || [])
+   808→        setTotal(json.total || 0)
+   809→        // API returns { total, page, limit } — compute totalPages client-side.
+   810→        setTotalPages(Math.max(1, Math.ceil((json.total || 0) / (json.limit || LIMIT))))
+   811→        setPage(json.page || targetPage)
+   812→      } catch {
+   813→        toast.error('Réponse invalide du serveur')
+   814→      } finally {
+   815→        setLoading(false)
+   816→      }
+   817→    },
+   818→    [fetchWithAuth, statusFilter, planFilter]
+   819→  )
+   820→
+   821→  useEffect(() => {
+   822→    load(1)
+   823→  }, [statusFilter, planFilter, load])
+   824→
+   825→  // Debounced search trigger
+   826→  useEffect(() => {
+   827→    const t = setTimeout(() => {
+   828→      load(1)
+   829→    }, 350)
+   830→    return () => clearTimeout(t)
+   831→  }, [search, load])
+   832→
+   833→  const openCreate = () => {
+   834→    setEditing(null)
+   835→    setForm(EMPTY_WEDDING_FORM)
+   836→    setShowFormDialog(true)
+   837→  }
+   838→
+   839→  const openEdit = (w: Wedding) => {
+   840→    setEditing(w)
+   841→    setForm({
+   842→      slug: w.slug,
+   843→      brideName: w.brideName,
+   844→      groomName: w.groomName,
+   845→      weddingDate: toDateInput(w.weddingDate),
+   846→      venueCity: w.venueCity || '',
+   847→      status: w.status,
+   848→      plan: w.plan,
+   849→    })
+   850→    setShowFormDialog(true)
+   851→  }
+   852→
+   853→  const handleSave = async () => {
+   854→    if (!form.slug || !form.brideName || !form.groomName) {
+   855→      toast.error('Slug, mariée et marié sont requis')
+   856→      return
+   857→    }
+   858→    setSaving(true)
+   859→    const payload: Record<string, unknown> = {
+   860→      slug: form.slug.trim().toLowerCase(),
+   861→      brideName: form.brideName.trim(),
+   862→      groomName: form.groomName.trim(),
+   863→      weddingDate: form.weddingDate ? new Date(form.weddingDate).toISOString() : null,
+   864→      venueCity: form.venueCity.trim() || null,
+   865→      status: form.status,
+   866→      plan: form.plan,
+   867→    }
+   868→    try {
+   869→      const url = editing
+   870→        ? `/api/platform/weddings/${editing.id}`
+   871→        : '/api/platform/weddings'
+   872→      const method = editing ? 'PUT' : 'POST'
+   873→      const res = await fetchWithAuth(url, {
+   874→        method,
+   875→        headers: { 'Content-Type': 'application/json' },
+   876→        body: JSON.stringify(payload),
+   877→      })
+   878→      if (!res) {
+   879→        setSaving(false)
+   880→        return
+   881→      }
+   882→      const json = await res.json().catch(() => ({}))
+   883→      if (res.ok) {
+   884→        toast.success(editing ? 'Mariage mis à jour' : 'Mariage créé')
+   885→        setShowFormDialog(false)
+   886→        setEditing(null)
+   887→        setForm(EMPTY_WEDDING_FORM)
+   888→        load(page)
+   889→      } else {
+   890→        toast.error(json.error || 'Erreur lors de la sauvegarde')
+   891→      }
+   892→    } catch {
+   893→      toast.error('Erreur de connexion')
+   894→    } finally {
+   895→      setSaving(false)
+   896→    }
+   897→  }
+   898→
+   899→  const handleDelete = async () => {
+   900→    if (!deleting) return
+   901→    setSaving(true)
+   902→    try {
+   903→      const res = await fetchWithAuth(`/api/platform/weddings/${deleting.id}`, {
+   904→        method: 'DELETE',
+   905→      })
+   906→      if (!res) {
+   907→        setSaving(false)
+   908→        return
+   909→      }
+   910→      const json = await res.json().catch(() => ({}))
+   911→      if (res.ok) {
+   912→        toast.success('Mariage supprimé')
+   913→        setShowDeleteDialog(false)
+   914→        setDeleting(null)
+   915→        load(1)
+   916→      } else {
+   917→        toast.error(json.error || 'Erreur lors de la suppression')
+   918→      }
+   919→    } catch {
+   920→      toast.error('Erreur de connexion')
+   921→    } finally {
+   922→      setSaving(false)
+   923→    }
+   924→  }
+   925→
+   926→  return (
+   927→    <div className="space-y-4 p-4 md:p-6">
+   928→      {/* Header + filters */}
+   929→      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+   930→        <div>
+   931→          <h2 className="text-xl font-bold">Mariages</h2>
+   932→          <p className="text-sm text-muted-foreground">{total} mariage{total > 1 ? 's' : ''}</p>
+   933→        </div>
+   934→        <Button onClick={openCreate} size="sm" className="bg-gradient-gold text-white shrink-0">
+   935→          <Plus className="w-4 h-4 mr-1" /> Créer un mariage
+   936→        </Button>
+   937→      </div>
+   938→
+   939→      <div className="flex flex-col sm:flex-row gap-2">
+   940→        <div className="relative flex-1">
+   941→          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+   942→          <Input
+   943→            placeholder="Rechercher par slug, nom du couple…"
+   944→            value={search}
+   945→            onChange={(e) => setSearch(e.target.value)}
+   946→            className="pl-10 bg-white/5 border-white/10"
+   947→          />
+   948→        </div>
+   949→        <Select value={statusFilter} onValueChange={setStatusFilter}>
+   950→          <SelectTrigger className="w-full sm:w-40 bg-white/5 border-white/10">
+   951→            <SelectValue placeholder="Statut" />
+   952→          </SelectTrigger>
+   953→          <SelectContent>
+   954→            <SelectItem value="ALL">Tous les statuts</SelectItem>
+   955→            {WEDDING_STATUSES.map((s) => (
+   956→              <SelectItem key={s} value={s}>
+   957→                {STATUS_LABELS[s]}
+   958→              </SelectItem>
+   959→            ))}
+   960→          </SelectContent>
+   961→        </Select>
+   962→        <Select value={planFilter} onValueChange={setPlanFilter}>
+   963→          <SelectTrigger className="w-full sm:w-40 bg-white/5 border-white/10">
+   964→            <SelectValue placeholder="Plan" />
+   965→          </SelectTrigger>
+   966→          <SelectContent>
+   967→            <SelectItem value="ALL">Tous les plans</SelectItem>
+   968→            {PLANS.map((p) => (
+   969→              <SelectItem key={p} value={p}>
+   970→                {PLAN_METADATA[p].label}
+   971→              </SelectItem>
+   972→            ))}
+   973→          </SelectContent>
+   974→        </Select>
+   975→      </div>
+   976→
+   977→      {/* Table */}
+   978→      <Card className="glass-card gold-border border-0">
+   979→        <CardContent className="p-0">
+   980→          <div className="max-h-[60vh] overflow-y-auto custom-scrollbar">
+   981→            <Table>
+   982→              <TableHeader className="sticky top-0 bg-background/95 backdrop-blur z-10">
+   983→                <TableRow className="border-white/10 hover:bg-transparent">
+   984→                  <TableHead className="text-xs">Couple</TableHead>
+   985→                  <TableHead className="text-xs">Statut</TableHead>
+   986→                  <TableHead className="text-xs hidden md:table-cell">Plan</TableHead>
+   987→                  <TableHead className="text-xs hidden md:table-cell">Date</TableHead>
+   988→                  <TableHead className="text-xs hidden lg:table-cell">Invités</TableHead>
+   989→                  <TableHead className="text-xs hidden lg:table-cell">Créé le</TableHead>
+   990→                  <TableHead className="text-xs w-10"></TableHead>
+   991→                </TableRow>
+   992→              </TableHeader>
+   993→              <TableBody>
+   994→                {loading ? (
+   995→                  Array.from({ length: 6 }).map((_, i) => (
+   996→                    <TableRow key={`sk-${i}`} className="border-white/5">
+   997→                      <TableCell colSpan={7}>
+   998→                        <Skeleton className="h-8 w-full rounded" />
+   999→                      </TableCell>
+  1000→                    </TableRow>
+  1001→                  ))
+  1002→                ) : weddings.length === 0 ? (
+  1003→                  <TableRow className="border-white/5 hover:bg-transparent">
+  1004→                    <TableCell colSpan={7} className="py-12 text-center text-muted-foreground">
+  1005→                      <Heart className="w-10 h-10 mx-auto mb-2 opacity-30" />
+  1006→                      <p className="text-sm">Aucun mariage trouvé</p>
+  1007→                    </TableCell>
+  1008→                  </TableRow>
+  1009→                ) : (
+  1010→                  weddings.map((w) => (
+  1011→                    <TableRow
+  1012→                      key={w.id}
+  1013→                      className="border-white/5 hover:bg-white/5 transition-colors"
+  1014→                    >
+  1015→                      <TableCell>
+  1016→                        <div className="flex flex-col">
+  1017→                          <span className="font-medium text-sm">{w.coupleLabel || `${w.brideName} & ${w.groomName}`}</span>
+  1018→                          <span className="text-xs text-muted-foreground">/w/{w.slug}</span>
+  1019→                          {w.isDefault && (
+  1020→                            <Badge variant="outline" className="mt-1 text-[10px] w-fit bg-gold/10 text-gold border-gold/30">
+  1021→                              défaut
+  1022→                            </Badge>
+  1023→                          )}
+  1024→                        </div>
+  1025→                      </TableCell>
+  1026→                      <TableCell>
+  1027→                        <StatusBadge status={w.status} />
+  1028→                      </TableCell>
+  1029→                      <TableCell className="hidden md:table-cell">
+  1030→                        <PlanBadge plan={w.plan} />
+  1031→                      </TableCell>
+  1032→                      <TableCell className="hidden md:table-cell text-sm text-muted-foreground">
+  1033→                        {formatDate(w.weddingDate)}
+  1034→                      </TableCell>
+  1035→                      <TableCell className="hidden lg:table-cell text-sm text-muted-foreground">
+  1036→                        {w._count?.guests ?? 0}
+  1037→                      </TableCell>
+  1038→                      <TableCell className="hidden lg:table-cell text-sm text-muted-foreground">
+  1039→                        {formatDate(w.createdAt)}
+  1040→                      </TableCell>
+  1041→                      <TableCell>
+  1042→                        <DropdownMenu>
+  1043→                          <DropdownMenuTrigger asChild>
+  1044→                            <Button variant="ghost" size="icon" className="h-8 w-8">
+  1045→                              <MoreHorizontal className="w-4 h-4" />
+  1046→                            </Button>
+  1047→                          </DropdownMenuTrigger>
+  1048→                          <DropdownMenuContent align="end">
+  1049→                            <DropdownMenuItem onClick={() => openEdit(w)}>
+  1050→                              <Pencil className="w-3.5 h-3.5 mr-2" />
+  1051→                              Modifier
+  1052→                            </DropdownMenuItem>
+  1053→                            <DropdownMenuItem asChild>
+  1054→                              <Link href={`/w/${w.slug}`} target="_blank" className="flex items-center cursor-pointer">
+  1055→                                <ExternalLink className="w-3.5 h-3.5 mr-2" />
+  1056→                                Voir le site
+  1057→                              </Link>
+  1058→                            </DropdownMenuItem>
+  1059→                            <DropdownMenuSeparator />
+  1060→                            <DropdownMenuItem
+  1061→                              className="text-red-400 focus:text-red-300"
+  1062→                              onClick={() => {
+  1063→                                setDeleting(w)
+  1064→                                setShowDeleteDialog(true)
+  1065→                              }}
+  1066→                              disabled={w.isDefault}
+  1067→                            >
+  1068→                              <Trash2 className="w-3.5 h-3.5 mr-2" />
+  1069→                              Supprimer
+  1070→                            </DropdownMenuItem>
+  1071→                          </DropdownMenuContent>
+  1072→                        </DropdownMenu>
+  1073→                      </TableCell>
+  1074→                    </TableRow>
+  1075→                  ))
+  1076→                )}
+  1077→              </TableBody>
+  1078→            </Table>
+  1079→          </div>
+  1080→        </CardContent>
+  1081→      </Card>
+  1082→
+  1083→      {/* Pagination */}
+  1084→      <div className="flex items-center justify-between">
+  1085→        <p className="text-xs text-muted-foreground">
+  1086→          Page {page} / {Math.max(totalPages, 1)}
+  1087→        </p>
+  1088→        <div className="flex gap-2">
+  1089→          <Button
+  1090→            variant="outline"
+  1091→            size="sm"
+  1092→            disabled={page <= 1 || loading}
+  1093→            onClick={() => load(page - 1)}
+  1094→          >
+  1095→            <ChevronLeft className="w-4 h-4 mr-1" /> Précédent
+  1096→          </Button>
+  1097→          <Button
+  1098→            variant="outline"
+  1099→            size="sm"
+  1100→            disabled={page >= totalPages || loading}
+  1101→            onClick={() => load(page + 1)}
+  1102→          >
+  1103→            Suivant <ChevronRight className="w-4 h-4 ml-1" />
+  1104→          </Button>
+  1105→        </div>
+  1106→      </div>
+  1107→
+  1108→      {/* Create / Edit dialog */}
+  1109→      <Dialog open={showFormDialog} onOpenChange={setShowFormDialog}>
+  1110→        <DialogContent className="glass-card gold-border max-w-lg">
+  1111→          <DialogHeader>
+  1112→            <DialogTitle className="gold-gradient">
+  1113→              {editing ? 'Modifier le mariage' : 'Créer un mariage'}
+  1114→            </DialogTitle>
+  1115→          </DialogHeader>
+  1116→          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+  1117→            <div className="space-y-2 sm:col-span-2">
+  1118→              <Label>Slug *</Label>
+  1119→              <Input
+  1120→                value={form.slug}
+  1121→                onChange={(e) => setForm({ ...form, slug: e.target.value })}
+  1122→                placeholder="josue-hornella"
+  1123→                className="bg-white/5 border-white/10"
+  1124→              />
+  1125→              <p className="text-[10px] text-muted-foreground">
+  1126→                URL publique : /w/&lt;slug&gt;
+  1127→              </p>
+  1128→            </div>
+  1129→            <div className="space-y-2">
+  1130→              <Label>Mariée *</Label>
+  1131→              <Input
+  1132→                value={form.brideName}
+  1133→                onChange={(e) => setForm({ ...form, brideName: e.target.value })}
+  1134→                className="bg-white/5 border-white/10"
+  1135→              />
+  1136→            </div>
+  1137→            <div className="space-y-2">
+  1138→              <Label>Marié *</Label>
+  1139→              <Input
+  1140→                value={form.groomName}
+  1141→                onChange={(e) => setForm({ ...form, groomName: e.target.value })}
+  1142→                className="bg-white/5 border-white/10"
+  1143→              />
+  1144→            </div>
+  1145→            <div className="space-y-2">
+  1146→              <Label>Date du mariage</Label>
+  1147→              <Input
+  1148→                type="date"
+  1149→                value={form.weddingDate}
+  1150→                onChange={(e) => setForm({ ...form, weddingDate: e.target.value })}
+  1151→                className="bg-white/5 border-white/10"
+  1152→              />
+  1153→            </div>
+  1154→            <div className="space-y-2">
+  1155→              <Label>Ville du lieu</Label>
+  1156→              <Input
+  1157→                value={form.venueCity}
+  1158→                onChange={(e) => setForm({ ...form, venueCity: e.target.value })}
+  1159→                placeholder="Kinshasa"
+  1160→                className="bg-white/5 border-white/10"
+  1161→              />
+  1162→            </div>
+  1163→            <div className="space-y-2">
+  1164→              <Label>Statut</Label>
+  1165→              <Select
+  1166→                value={form.status}
+  1167→                onValueChange={(v) => setForm({ ...form, status: v as WeddingStatus })}
+  1168→              >
+  1169→                <SelectTrigger className="bg-white/5 border-white/10">
+  1170→                  <SelectValue />
+  1171→                </SelectTrigger>
+  1172→                <SelectContent>
+  1173→                  {WEDDING_STATUSES.map((s) => (
+  1174→                    <SelectItem key={s} value={s}>
+  1175→                      {STATUS_LABELS[s]}
+  1176→                    </SelectItem>
+  1177→                  ))}
+  1178→                </SelectContent>
+  1179→              </Select>
+  1180→            </div>
+  1181→            <div className="space-y-2">
+  1182→              <Label>Plan</Label>
+  1183→              <Select
+  1184→                value={form.plan}
+  1185→                onValueChange={(v) => setForm({ ...form, plan: v as Plan })}
+  1186→              >
+  1187→                <SelectTrigger className="bg-white/5 border-white/10">
+  1188→                  <SelectValue />
+  1189→                </SelectTrigger>
+  1190→                <SelectContent>
+  1191→                  {PLANS.map((p) => (
+  1192→                    <SelectItem key={p} value={p}>
+  1193→                      {PLAN_METADATA[p].label} — ${PLAN_METADATA[p].priceUsd}/mois
+  1194→                    </SelectItem>
+  1195→                  ))}
+  1196→                </SelectContent>
+  1197→              </Select>
+  1198→            </div>
+  1199→          </div>
+  1200→          <DialogFooter className="gap-2">
+  1201→            <Button
+  1202→              variant="ghost"
+  1203→              onClick={() => {
+  1204→                setShowFormDialog(false)
+  1205→                setEditing(null)
+  1206→              }}
+  1207→            >
+  1208→              Annuler
+  1209→            </Button>
+  1210→            <Button
+  1211→              onClick={handleSave}
+  1212→              disabled={saving || !form.slug || !form.brideName || !form.groomName}
+  1213→              className="bg-gradient-gold text-white"
+  1214→            >
+  1215→              {saving && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
+  1216→              {editing ? 'Enregistrer' : 'Créer'}
+  1217→            </Button>
+  1218→          </DialogFooter>
+  1219→        </DialogContent>
+  1220→      </Dialog>
+  1221→
+  1222→      {/* Delete confirmation */}
+  1223→      <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+  1224→        <DialogContent className="glass-card gold-border max-w-sm">
+  1225→          <DialogHeader>
+  1226→            <DialogTitle>Confirmer la suppression</DialogTitle>
+  1227→          </DialogHeader>
+  1228→          <p className="text-sm text-muted-foreground">
+  1229→            Êtes-vous sûr de vouloir supprimer le mariage{' '}
+  1230→            <strong className="text-foreground">{deleting?.coupleLabel}</strong> ? Cette action
+  1231→            supprimera également tous les invités, tables, médias et paramètres associés.
+  1232→          </p>
+  1233→          <DialogFooter className="gap-2">
+  1234→            <Button variant="ghost" onClick={() => setShowDeleteDialog(false)}>Annuler</Button>
+  1235→            <Button
+  1236→              variant="destructive"
+  1237→              onClick={handleDelete}
+  1238→              disabled={saving}
+  1239→            >
+  1240→              {saving && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
+  1241→              Supprimer définitivement
+  1242→            </Button>
+  1243→          </DialogFooter>
+  1244→        </DialogContent>
+  1245→      </Dialog>
+  1246→    </div>
+  1247→  )
+  1248→}
+  1249→
+  1250→// ════════════════════════════════════════════════════════════════════════════
+  1251→// Users tab
+  1252→// ════════════════════════════════════════════════════════════════════════════
+  1253→
+  1254→interface UserFormState {
+  1255→  name: string
+  1256→  email: string
+  1257→  password: string
+  1258→  role: string
+  1259→  weddingId: string
+  1260→}
+  1261→
+  1262→const EMPTY_USER_FORM: UserFormState = {
+  1263→  name: '',
+  1264→  email: '',
+  1265→  password: '',
+  1266→  role: 'ORGANIZER',
+  1267→  weddingId: '',
+  1268→}
+  1269→
+  1270→const USER_ROLES = [
+  1271→  { value: 'PLATFORM_ADMIN', label: 'Administrateur Plateforme', needsWedding: false },
+  1272→  { value: 'ORGANIZER', label: 'Organisateur', needsWedding: true },
+  1273→  { value: 'RECEPTION', label: 'Réception', needsWedding: true },
+  1274→  { value: 'CONTROLLER', label: 'Contrôleur', needsWedding: true },
+  1275→]
+  1276→
+  1277→function UsersTab({ fetchWithAuth }: { fetchWithAuth: (url: string, init?: RequestInit) => Promise<Response | null> }) {
+  1278→  const [users, setUsers] = useState<UserRow[]>([])
+  1279→  const [total, setTotal] = useState(0)
+  1280→  const [totalPages, setTotalPages] = useState(1)
+  1281→  const [page, setPage] = useState(1)
+  1282→  const [loading, setLoading] = useState(true)
+  1283→  const [search, setSearch] = useState('')
+  1284→  const [roleFilter, setRoleFilter] = useState<string>('ALL')
+  1285→
+  1286→  // Dialog state
+  1287→  const [showFormDialog, setShowFormDialog] = useState(false)
+  1288→  const [showDeleteDialog, setShowDeleteDialog] = useState(false)
+  1289→  const [editing, setEditing] = useState<UserRow | null>(null)
+  1290→  const [deleting, setDeleting] = useState<UserRow | null>(null)
+  1291→  const [form, setForm] = useState<UserFormState>(EMPTY_USER_FORM)
+  1292→  const [saving, setSaving] = useState(false)
+  1293→  const [weddingOptions, setWeddingOptions] = useState<Array<{ id: string; slug: string; coupleLabel: string }>>([])
+  1294→
+  1295→  const LIMIT = 20
+  1296→  const searchRef = useRef(search)
+  1297→  searchRef.current = search
+  1298→
+  1299→  const load = useCallback(
+  1300→    async (targetPage: number) => {
+  1301→      setLoading(true)
+  1302→      const params = new URLSearchParams({
+  1303→        page: String(targetPage),
+  1304→        limit: String(LIMIT),
+  1305→      })
+  1306→      if (searchRef.current) params.set('search', searchRef.current)
+  1307→      if (roleFilter !== 'ALL') params.set('role', roleFilter)
+  1308→
+  1309→      const res = await fetchWithAuth(`/api/platform/users?${params.toString()}`)
+  1310→      if (!res) {
+  1311→        setLoading(false)
+  1312→        return
+  1313→      }
+  1314→      try {
+  1315→        const json = (await res.json()) as PaginatedUsers
+  1316→        setUsers(json.users || [])
+  1317→        setTotal(json.total || 0)
+  1318→        setTotalPages(Math.max(1, Math.ceil((json.total || 0) / (json.limit || LIMIT))))
+  1319→        setPage(json.page || targetPage)
+  1320→      } catch {
+  1321→        toast.error('Réponse invalide du serveur')
+  1322→      } finally {
+  1323→        setLoading(false)
+  1324→      }
+  1325→    },
+  1326→    [fetchWithAuth, roleFilter]
+  1327→  )
+  1328→
+  1329→  useEffect(() => {
+  1330→    load(1)
+  1331→  }, [roleFilter, load])
+  1332→
+  1333→  useEffect(() => {
+  1334→    const t = setTimeout(() => {
+  1335→      load(1)
+  1336→    }, 350)
+  1337→    return () => clearTimeout(t)
+  1338→  }, [search, load])
+  1339→
+  1340→  // Fetch weddings for the role↔wedding select (only when opening the form)
+  1341→  const fetchWeddings = useCallback(async () => {
+  1342→    if (weddingOptions.length > 0) return
+  1343→    const res = await fetchWithAuth('/api/platform/weddings?limit=100')
+  1344→    if (!res) return
+  1345→    try {
+  1346→      const json = (await res.json()) as PaginatedWeddings
+  1347→      setWeddingOptions(
+  1348→        (json.weddings || []).map((w) => ({ id: w.id, slug: w.slug, coupleLabel: w.coupleLabel }))
+  1349→      )
+  1350→    } catch {
+  1351→      /* ignore — wedding select will just be empty */
+  1352→    }
+  1353→  }, [fetchWithAuth, weddingOptions.length])
+  1354→
+  1355→  const openCreate = useCallback(async () => {
+  1356→    setEditing(null)
+  1357→    setForm(EMPTY_USER_FORM)
+  1358→    setShowFormDialog(true)
+  1359→    await fetchWeddings()
+  1360→  }, [fetchWeddings])
+  1361→
+  1362→  const openEdit = useCallback(
+  1363→    async (u: UserRow) => {
+  1364→      setEditing(u)
+  1365→      setForm({
+  1366→        name: u.name,
+  1367→        email: u.email,
+  1368→        password: '', // blank = keep current
+  1369→        role: u.role === 'SUPER_ADMIN' ? 'PLATFORM_ADMIN' : u.role,
+  1370→        weddingId: u.weddingId || '',
+  1371→      })
+  1372→      setShowFormDialog(true)
+  1373→      await fetchWeddings()
+  1374→    },
+  1375→    [fetchWeddings]
+  1376→  )
+  1377→
+  1378→  const handleSave = async () => {
+  1379→    const roleConfig = USER_ROLES.find((r) => r.value === form.role)
+  1380→    if (!form.name.trim() || !form.email.trim()) {
+  1381→      toast.error('Nom et email sont requis')
+  1382→      return
+  1383→    }
+  1384→    if (!editing && form.password.length < 8) {
+  1385→      toast.error('Le mot de passe doit faire au moins 8 caractères')
+  1386→      return
+  1387→    }
+  1388→    if (editing && form.password && form.password.length < 8) {
+  1389→      toast.error('Le mot de passe doit faire au moins 8 caractères')
+  1390→      return
+  1391→    }
+  1392→    if (roleConfig?.needsWedding && !form.weddingId) {
+  1393→      toast.error('Un mariage est requis pour ce rôle')
+  1394→      return
+  1395→    }
+  1396→
+  1397→    setSaving(true)
+  1398→    const payload: Record<string, unknown> = {
+  1399→      name: form.name.trim(),
+  1400→      email: form.email.trim().toLowerCase(),
+  1401→      role: form.role,
+  1402→      weddingId: roleConfig?.needsWedding ? form.weddingId : null,
+  1403→    }
+  1404→    if (form.password) {
+  1405→      payload.password = form.password
+  1406→    }
+  1407→
+  1408→    try {
+  1409→      const url = editing
+  1410→        ? `/api/platform/users/${editing.id}`
+  1411→        : '/api/platform/users'
+  1412→      const method = editing ? 'PUT' : 'POST'
+  1413→      const res = await fetchWithAuth(url, {
+  1414→        method,
+  1415→        headers: { 'Content-Type': 'application/json' },
+  1416→        body: JSON.stringify(payload),
+  1417→      })
+  1418→      if (!res) {
+  1419→        setSaving(false)
+  1420→        return
+  1421→      }
+  1422→      const json = await res.json().catch(() => ({}))
+  1423→      if (res.ok) {
+  1424→        toast.success(editing ? 'Utilisateur mis à jour' : 'Utilisateur créé')
+  1425→        setShowFormDialog(false)
+  1426→        setEditing(null)
+  1427→        setForm(EMPTY_USER_FORM)
+  1428→        load(page)
+  1429→      } else {
+  1430→        toast.error(json.error || 'Erreur lors de la sauvegarde')
+  1431→      }
+  1432→    } catch {
+  1433→      toast.error('Erreur de connexion')
+  1434→    } finally {
+  1435→      setSaving(false)
+  1436→    }
+  1437→  }
+  1438→
+  1439→  const handleDelete = async () => {
+  1440→    if (!deleting) return
+  1441→    setSaving(true)
+  1442→    try {
+  1443→      const res = await fetchWithAuth(`/api/platform/users/${deleting.id}`, {
+  1444→        method: 'DELETE',
+  1445→      })
+  1446→      if (!res) {
+  1447→        setSaving(false)
+  1448→        return
+  1449→      }
+  1450→      const json = await res.json().catch(() => ({}))
+  1451→      if (res.ok) {
+  1452→        toast.success('Utilisateur supprimé')
+  1453→        setShowDeleteDialog(false)
+  1454→        setDeleting(null)
+  1455→        load(1)
+  1456→      } else {
+  1457→        toast.error(json.error || 'Erreur lors de la suppression')
+  1458→      }
+  1459→    } catch {
+  1460→      toast.error('Erreur de connexion')
+  1461→    } finally {
+  1462→      setSaving(false)
+  1463→    }
+  1464→  }
+  1465→
+  1466→  const selectedRoleConfig = USER_ROLES.find((r) => r.value === form.role)
+  1467→
+  1468→  return (
+  1469→    <div className="space-y-4 p-4 md:p-6">
+  1470→      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+  1471→        <div>
+  1472→          <h2 className="text-xl font-bold">Utilisateurs</h2>
+  1473→          <p className="text-sm text-muted-foreground">{total} utilisateur{total > 1 ? 's' : ''}</p>
+  1474→        </div>
+  1475→        <Button onClick={openCreate} size="sm" className="bg-gradient-gold text-white shrink-0">
+  1476→          <UserPlus className="w-4 h-4 mr-1" /> Créer un utilisateur
+  1477→        </Button>
+  1478→      </div>
+  1479→
+  1480→      <div className="flex flex-col sm:flex-row gap-2">
+  1481→        <div className="relative flex-1">
+  1482→          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+  1483→          <Input
+  1484→            placeholder="Rechercher par nom ou email…"
+  1485→            value={search}
+  1486→            onChange={(e) => setSearch(e.target.value)}
+  1487→            className="pl-10 bg-white/5 border-white/10"
+  1488→          />
+  1489→        </div>
+  1490→        <Select value={roleFilter} onValueChange={setRoleFilter}>
+  1491→          <SelectTrigger className="w-full sm:w-48 bg-white/5 border-white/10">
+  1492→            <SelectValue placeholder="Rôle" />
+  1493→          </SelectTrigger>
+  1494→          <SelectContent>
+  1495→            <SelectItem value="ALL">Tous les rôles</SelectItem>
+  1496→            <SelectItem value="PLATFORM_ADMIN">Administrateur Plateforme</SelectItem>
+  1497→            <SelectItem value="ORGANIZER">Organisateur</SelectItem>
+  1498→            <SelectItem value="RECEPTION">Réception</SelectItem>
+  1499→            <SelectItem value="CONTROLLER">Contrôleur</SelectItem>
+  1500→          </SelectContent>
+  1501→        </Select>
+  1502→      </div>
+  1503→
+  1504→      <Card className="glass-card gold-border border-0">
+  1505→        <CardContent className="p-0">
+  1506→          <div className="max-h-[60vh] overflow-y-auto custom-scrollbar">
+  1507→            <Table>
+  1508→              <TableHeader className="sticky top-0 bg-background/95 backdrop-blur z-10">
+  1509→                <TableRow className="border-white/10 hover:bg-transparent">
+  1510→                  <TableHead className="text-xs">Nom</TableHead>
+  1511→                  <TableHead className="text-xs hidden md:table-cell">Email</TableHead>
+  1512→                  <TableHead className="text-xs">Rôle</TableHead>
+  1513→                  <TableHead className="text-xs hidden lg:table-cell">Mariage</TableHead>
+  1514→                  <TableHead className="text-xs hidden md:table-cell">Créé le</TableHead>
+  1515→                  <TableHead className="text-xs w-10"></TableHead>
+  1516→                </TableRow>
+  1517→              </TableHeader>
+  1518→              <TableBody>
+  1519→                {loading ? (
+  1520→                  Array.from({ length: 6 }).map((_, i) => (
+  1521→                    <TableRow key={`sk-${i}`} className="border-white/5">
+  1522→                      <TableCell colSpan={6}>
+  1523→                        <Skeleton className="h-8 w-full rounded" />
+  1524→                      </TableCell>
+  1525→                    </TableRow>
+  1526→                  ))
+  1527→                ) : users.length === 0 ? (
+  1528→                  <TableRow className="border-white/5 hover:bg-transparent">
+  1529→                    <TableCell colSpan={6} className="py-12 text-center text-muted-foreground">
+  1530→                      <UsersIcon className="w-10 h-10 mx-auto mb-2 opacity-30" />
+  1531→                      <p className="text-sm">Aucun utilisateur trouvé</p>
+  1532→                    </TableCell>
+  1533→                  </TableRow>
+  1534→                ) : (
+  1535→                  users.map((u) => (
+  1536→                    <TableRow key={u.id} className="border-white/5 hover:bg-white/5 transition-colors">
+  1537→                      <TableCell>
+  1538→                        <div className="flex items-center gap-2">
+  1539→                          <div className="w-8 h-8 rounded-full bg-gradient-gold flex items-center justify-center text-white text-xs font-bold shrink-0">
+  1540→                            {u.name.charAt(0).toUpperCase()}
+  1541→                          </div>
+  1542→                          <span className="font-medium text-sm">{u.name}</span>
+  1543→                        </div>
+  1544→                      </TableCell>
+  1545→                      <TableCell className="hidden md:table-cell text-sm text-muted-foreground">
+  1546→                        {u.email}
+  1547→                      </TableCell>
+  1548→                      <TableCell>
+  1549→                        <RoleBadge role={u.role} />
+  1550→                      </TableCell>
+  1551→                      <TableCell className="hidden lg:table-cell text-sm text-muted-foreground">
+  1552→                        {u.wedding ? (
+  1553→                          <Link
+  1554→                            href={`/w/${u.wedding.slug}`}
+  1555→                            target="_blank"
+  1556→                            className="hover:text-gold transition-colors"
+  1557→                          >
+  1558→                            {u.wedding.coupleLabel}
+  1559→                          </Link>
+  1560→                        ) : (
+  1561→                          <span className="text-muted-foreground/50">—</span>
+  1562→                        )}
+  1563→                      </TableCell>
+  1564→                      <TableCell className="hidden md:table-cell text-sm text-muted-foreground">
+  1565→                        {formatDate(u.createdAt)}
+  1566→                      </TableCell>
+  1567→                      <TableCell>
+  1568→                        <DropdownMenu>
+  1569→                          <DropdownMenuTrigger asChild>
+  1570→                            <Button variant="ghost" size="icon" className="h-8 w-8">
+  1571→                              <MoreHorizontal className="w-4 h-4" />
+  1572→                            </Button>
+  1573→                          </DropdownMenuTrigger>
+  1574→                          <DropdownMenuContent align="end">
+  1575→                            <DropdownMenuItem onClick={() => openEdit(u)}>
+  1576→                              <Pencil className="w-3.5 h-3.5 mr-2" />
+  1577→                              Modifier
+  1578→                            </DropdownMenuItem>
+  1579→                            <DropdownMenuSeparator />
+  1580→                            <DropdownMenuItem
+  1581→                              className="text-red-400 focus:text-red-300"
+  1582→                              onClick={() => {
+  1583→                                setDeleting(u)
+  1584→                                setShowDeleteDialog(true)
+  1585→                              }}
+  1586→                            >
+  1587→                              <Trash2 className="w-3.5 h-3.5 mr-2" />
+  1588→                              Supprimer
+  1589→                            </DropdownMenuItem>
+  1590→                          </DropdownMenuContent>
+  1591→                        </DropdownMenu>
+  1592→                      </TableCell>
+  1593→                    </TableRow>
+  1594→                  ))
+  1595→                )}
+  1596→              </TableBody>
+  1597→            </Table>
+  1598→          </div>
+  1599→        </CardContent>
+  1600→      </Card>
+  1601→
+  1602→      <div className="flex items-center justify-between">
+  1603→        <p className="text-xs text-muted-foreground">
+  1604→          Page {page} / {Math.max(totalPages, 1)}
+  1605→        </p>
+  1606→        <div className="flex gap-2">
+  1607→          <Button variant="outline" size="sm" disabled={page <= 1 || loading} onClick={() => load(page - 1)}>
+  1608→            <ChevronLeft className="w-4 h-4 mr-1" /> Précédent
+  1609→          </Button>
+  1610→          <Button variant="outline" size="sm" disabled={page >= totalPages || loading} onClick={() => load(page + 1)}>
+  1611→            Suivant <ChevronRight className="w-4 h-4 ml-1" />
+  1612→          </Button>
+  1613→        </div>
+  1614→      </div>
+  1615→
+  1616→      {/* Create / Edit dialog */}
+  1617→      <Dialog open={showFormDialog} onOpenChange={setShowFormDialog}>
+  1618→        <DialogContent className="glass-card gold-border max-w-lg">
+  1619→          <DialogHeader>
+  1620→            <DialogTitle className="gold-gradient flex items-center gap-2">
+  1621→              <UserPlus className="w-4 h-4" />
+  1622→              {editing ? "Modifier l'utilisateur" : 'Créer un utilisateur'}
+  1623→            </DialogTitle>
+  1624→          </DialogHeader>
+  1625→          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+  1626→            <div className="space-y-2 sm:col-span-2">
+  1627→              <Label>Nom complet *</Label>
+  1628→              <Input
+  1629→                value={form.name}
+  1630→                onChange={(e) => setForm({ ...form, name: e.target.value })}
+  1631→                placeholder="Jean Dupont"
+  1632→                className="bg-white/5 border-white/10"
+  1633→              />
+  1634→            </div>
+  1635→            <div className="space-y-2 sm:col-span-2">
+  1636→              <Label>Email *</Label>
+  1637→              <Input
+  1638→                type="email"
+  1639→                value={form.email}
+  1640→                onChange={(e) => setForm({ ...form, email: e.target.value })}
+  1641→                placeholder="jean@exemple.com"
+  1642→                className="bg-white/5 border-white/10"
+  1643→              />
+  1644→            </div>
+  1645→            <div className="space-y-2">
+  1646→              <Label>Rôle *</Label>
+  1647→              <Select
+  1648→                value={form.role}
+  1649→                onValueChange={(v) => setForm({ ...form, role: v, weddingId: v === 'PLATFORM_ADMIN' ? '' : form.weddingId })}
+  1650→              >
+  1651→                <SelectTrigger className="bg-white/5 border-white/10">
+  1652→                  <SelectValue />
+  1653→                </SelectTrigger>
+  1654→                <SelectContent>
+  1655→                  {USER_ROLES.map((r) => (
+  1656→                    <SelectItem key={r.value} value={r.value}>
+  1657→                      {r.label}
+  1658→                    </SelectItem>
+  1659→                  ))}
+  1660→                </SelectContent>
+  1661→              </Select>
+  1662→            </div>
+  1663→            <div className="space-y-2">
+  1664→              <Label>Mariage {selectedRoleConfig?.needsWedding ? '*' : '(non requis)'}</Label>
+  1665→              <Select
+  1666→                value={form.weddingId}
+  1667→                onValueChange={(v) => setForm({ ...form, weddingId: v })}
+  1668→                disabled={!selectedRoleConfig?.needsWedding}
+  1669→              >
+  1670→                <SelectTrigger className="bg-white/5 border-white/10">
+  1671→                  <SelectValue placeholder="Sélectionner…" />
+  1672→                </SelectTrigger>
+  1673→                <SelectContent>
+  1674→                  {weddingOptions.map((w) => (
+  1675→                    <SelectItem key={w.id} value={w.id}>
+  1676→                      {w.coupleLabel} <span className="text-muted-foreground">/w/{w.slug}</span>
+  1677→                    </SelectItem>
+  1678→                  ))}
+  1679→                </SelectContent>
+  1680→              </Select>
+  1681→            </div>
+  1682→            <div className="space-y-2 sm:col-span-2">
+  1683→              <Label className="flex items-center gap-1.5">
+  1684→                <KeyRound className="w-3.5 h-3.5 text-muted-foreground" />
+  1685→                {editing ? 'Mot de passe (laisser vide pour conserver)' : 'Mot de passe *'}
+  1686→              </Label>
+  1687→              <Input
+  1688→                type="password"
+  1689→                value={form.password}
+  1690→                onChange={(e) => setForm({ ...form, password: e.target.value })}
+  1691→                placeholder={editing ? '••••••••' : 'Minimum 8 caractères'}
+  1692→                className="bg-white/5 border-white/10"
+  1693→              />
+  1694→            </div>
+  1695→          </div>
+  1696→          <DialogFooter className="gap-2">
+  1697→            <Button
+  1698→              variant="ghost"
+  1699→              onClick={() => {
+  1700→                setShowFormDialog(false)
+  1701→                setEditing(null)
+  1702→              }}
+  1703→            >
+  1704→              Annuler
+  1705→            </Button>
+  1706→            <Button
+  1707→              onClick={handleSave}
+  1708→              disabled={saving || !form.name || !form.email || (!editing && !form.password)}
+  1709→              className="bg-gradient-gold text-white"
+  1710→            >
+  1711→              {saving && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
+  1712→              {editing ? 'Enregistrer' : 'Créer'}
+  1713→            </Button>
+  1714→          </DialogFooter>
+  1715→        </DialogContent>
+  1716→      </Dialog>
+  1717→
+  1718→      {/* Delete confirmation */}
+  1719→      <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+  1720→        <DialogContent className="glass-card gold-border max-w-sm">
+  1721→          <DialogHeader>
+  1722→            <DialogTitle>Confirmer la suppression</DialogTitle>
+  1723→          </DialogHeader>
+  1724→          <p className="text-sm text-muted-foreground">
+  1725→            Êtes-vous sûr de vouloir supprimer l&apos;utilisateur{' '}
+  1726→            <strong className="text-foreground">{deleting?.name}</strong> ({deleting?.email}) ? Cette action est
+  1727→            irréversible.
+  1728→          </p>
+  1729→          <DialogFooter className="gap-2">
+  1730→            <Button variant="ghost" onClick={() => setShowDeleteDialog(false)}>Annuler</Button>
+  1731→            <Button
+  1732→              variant="destructive"
+  1733→              onClick={handleDelete}
+  1734→              disabled={saving}
+  1735→            >
+  1736→              {saving && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
+  1737→              Supprimer définitivement
+  1738→            </Button>
+  1739→          </DialogFooter>
+  1740→        </DialogContent>
+  1741→      </Dialog>
+  1742→    </div>
+  1743→  )
+  1744→}
+  1745→
+  1746→// ════════════════════════════════════════════════════════════════════════════
+  1747→// Audit tab — reuses /api/platform/dashboard's recentActivity field
+  1748→// ════════════════════════════════════════════════════════════════════════════
+  1749→
+  1750→const ACTION_BADGE_CLASS: Record<string, string> = {
+  1751→  CREATE: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30',
+  1752→  UPDATE: 'bg-amber-500/15 text-amber-400 border-amber-500/30',
+  1753→  DELETE: 'bg-red-500/15 text-red-400 border-red-500/30',
+  1754→  LOGIN: 'bg-sky-500/15 text-sky-400 border-sky-500/30',
+  1755→  LOGOUT: 'bg-zinc-500/15 text-zinc-400 border-zinc-500/30',
+  1756→  DEFAULT: 'bg-violet-500/15 text-violet-400 border-violet-500/30',
+  1757→}
+  1758→
+  1759→function actionBadgeClass(action: string): string {
+  1760→  const prefix = action.split('_')[0]
+  1761→  return ACTION_BADGE_CLASS[prefix] || ACTION_BADGE_CLASS.DEFAULT
+  1762→}
+  1763→
+  1764→function AuditTab({ fetchWithAuth }: { fetchWithAuth: (url: string, init?: RequestInit) => Promise<Response | null> }) {
+  1765→  const [logs, setLogs] = useState<AuditLog[]>([])
+  1766→  const [loading, setLoading] = useState(true)
+  1767→
+  1768→  const load = useCallback(async () => {
+  1769→    setLoading(true)
+  1770→    const res = await fetchWithAuth('/api/platform/dashboard')
+  1771→    if (!res) {
+  1772→      setLoading(false)
+  1773→      return
+  1774→    }
+  1775→    try {
+  1776→      const json = (await res.json()) as DashboardData
+  1777→      setLogs(json.recentActivity || [])
+  1778→    } catch {
+  1779→      toast.error('Réponse invalide du serveur')
+  1780→    } finally {
+  1781→      setLoading(false)
+  1782→    }
+  1783→  }, [fetchWithAuth])
+  1784→
+  1785→  useEffect(() => {
+  1786→    load()
+  1787→  }, [load])
+  1788→
+  1789→  return (
+  1790→    <div className="space-y-4 p-4 md:p-6">
+  1791→      <div>
+  1792→        <h2 className="text-xl font-bold flex items-center gap-2">
+  1793→          <ScrollText className="w-5 h-5 text-gold" />
+  1794→          Journal d&apos;audit
+  1795→        </h2>
+  1796→        <p className="text-sm text-muted-foreground">
+  1797→          Les 20 actions les plus récentes sur la plateforme
+  1798→        </p>
+  1799→      </div>
+  1800→
+  1801→      <Card className="glass-card gold-border border-0">
+  1802→        <CardContent className="p-0">
+  1803→          <div className="max-h-[60vh] overflow-y-auto custom-scrollbar">
+  1804→            <Table>
+  1805→              <TableHeader className="sticky top-0 bg-background/95 backdrop-blur z-10">
+  1806→                <TableRow className="border-white/10 hover:bg-transparent">
+  1807→                  <TableHead className="text-xs">Horodatage</TableHead>
+  1808→                  <TableHead className="text-xs">Action</TableHead>
+  1809→                  <TableHead className="text-xs hidden md:table-cell">Utilisateur</TableHead>
+  1810→                  <TableHead className="text-xs hidden lg:table-cell">Mariage</TableHead>
+  1811→                  <TableHead className="text-xs">Détails</TableHead>
+  1812→                </TableRow>
+  1813→              </TableHeader>
+  1814→              <TableBody>
+  1815→                {loading ? (
+  1816→                  Array.from({ length: 6 }).map((_, i) => (
+  1817→                    <TableRow key={`sk-${i}`} className="border-white/5">
+  1818→                      <TableCell colSpan={5}>
+  1819→                        <Skeleton className="h-8 w-full rounded" />
+  1820→                      </TableCell>
+  1821→                    </TableRow>
+  1822→                  ))
+  1823→                ) : logs.length === 0 ? (
+  1824→                  <TableRow className="border-white/5 hover:bg-transparent">
+  1825→                    <TableCell colSpan={5} className="py-12 text-center text-muted-foreground">
+  1826→                      <ScrollText className="w-10 h-10 mx-auto mb-2 opacity-30" />
+  1827→                      <p className="text-sm">Aucune entrée d&apos;audit</p>
+  1828→                    </TableCell>
+  1829→                  </TableRow>
+  1830→                ) : (
+  1831→                  logs.map((log) => (
+  1832→                    <TableRow key={log.id} className="border-white/5 hover:bg-white/5 transition-colors align-top">
+  1833→                      <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
+  1834→                        {formatDateTime(log.createdAt)}
+  1835→                      </TableCell>
+  1836→                      <TableCell>
+  1837→                        <Badge
+  1838→                          variant="outline"
+  1839→                          className={`text-[10px] uppercase tracking-wide ${actionBadgeClass(log.action)}`}
+  1840→                        >
+  1841→                          {log.action.replace(/_/g, ' ')}
+  1842→                        </Badge>
+  1843→                      </TableCell>
+  1844→                      <TableCell className="hidden md:table-cell">
+  1845→                        {log.user ? (
+  1846→                          <div className="flex flex-col">
+  1847→                            <span className="text-sm font-medium">{log.user.name}</span>
+  1848→                            <span className="text-xs text-muted-foreground">{log.user.email}</span>
+  1849→                          </div>
+  1850→                        ) : (
+  1851→                          <span className="text-xs text-muted-foreground">Système</span>
+  1852→                        )}
+  1853→                      </TableCell>
+  1854→                      <TableCell className="hidden lg:table-cell text-sm text-muted-foreground">
+  1855→                        {log.wedding ? (
+  1856→                          <Link
+  1857→                            href={`/w/${log.wedding.slug}`}
+  1858→                            target="_blank"
+  1859→                            className="hover:text-gold transition-colors"
+  1860→                          >
+  1861→                            {log.wedding.coupleLabel}
+  1862→                          </Link>
+  1863→                        ) : log.weddingId ? (
+  1864→                          // Dashboard endpoint doesn't include the wedding relation —
+  1865→                          // surface a short id hash so the operator can still tell which
+  1866→                          // tenant the audit entry belongs to.
+  1867→                          <span className="font-mono text-[10px] text-muted-foreground/70">
+  1868→                            #{log.weddingId.slice(-6)}
+  1869→                          </span>
+  1870→                        ) : (
+  1871→                          <span className="text-gold/70">Plateforme</span>
+  1872→                        )}
+  1873→                      </TableCell>
+  1874→                      <TableCell className="text-xs text-muted-foreground max-w-xs">
+  1875→                        {log.details || '—'}
+  1876→                      </TableCell>
+  1877→                    </TableRow>
+  1878→                  ))
+  1879→                )}
+  1880→              </TableBody>
+  1881→            </Table>
+  1882→          </div>
+  1883→        </CardContent>
+  1884→      </Card>
+  1885→    </div>
+  1886→  )
+  1887→}
+  1888→
+  1889→// ════════════════════════════════════════════════════════════════════════════
+  1890→// Main page — sidebar + top bar + tab content
+  1891→// ════════════════════════════════════════════════════════════════════════════
+  1892→
+  1893→export default function PlatformAdminPage() {
+  1894→  const router = useRouter()
+  1895→  const { fetchWithAuth } = usePlatformFetch()
+  1896→  // Initialize user from localStorage on the client (null on SSR).
+  1897→  // This mirrors the pattern used by /admin/page.tsx — the SSR pass produces a
+  1898→  // neutral loading skeleton, and the first client render hydrates with the
+  1899→  // actual user (or stays null and the effect below redirects to /platform/login).
+  1900→  const [user, setUser] = useState<AuthUser | null>(() => {
+  1901→    if (typeof window === 'undefined') return null
+  1902→    try {
+  1903→      const token = localStorage.getItem('admin_token')
+  1904→      const rawUser = localStorage.getItem('admin_user')
+  1905→      if (!token || !rawUser) return null
+  1906→      return JSON.parse(rawUser) as AuthUser
+  1907→    } catch {
+  1908→      return null
+  1909→    }
+  1910→  })
+  1911→  const [activeTab, setActiveTab] = useState<TabId>('dashboard')
+  1912→  const [sidebarOpen, setSidebarOpen] = useState(false)
+  1913→
+  1914→  // Auth gate — redirect to /platform/login if not authenticated or not a
+  1915→  // platform admin. Runs once on mount. No setState here (avoids the
+  1916→  // `react-hooks/set-state-in-effect` warning) — the redirect is a side effect.
+  1917→  useEffect(() => {
+  1918→    if (!user) {
+  1919→      toast.error('Veuillez vous connecter')
+  1920→      router.replace('/platform/login')
+  1921→      return
+  1922→    }
+  1923→    if (user.role !== 'PLATFORM_ADMIN' && user.role !== 'SUPER_ADMIN') {
+  1924→      toast.error('Accès refusé')
+  1925→      router.replace('/platform/login')
+  1926→    }
+  1927→  }, [user, router])
+  1928→
+  1929→  const handleLogout = useCallback(async () => {
+  1930→    // Best-effort server-side logout (clears the httpOnly cookie)
+  1931→    try {
+  1932→      await fetch('/api/platform/logout', { method: 'POST' })
+  1933→    } catch {
+  1934→      /* ignore — clear local anyway */
+  1935→    }
+  1936→    try {
+  1937→      localStorage.removeItem('admin_token')
+  1938→      localStorage.removeItem('admin_user')
+  1939→    } catch {
+  1940→      /* ignore */
+  1941→    }
+  1942→    setUser(null)
+  1943→    toast.success('Déconnexion réussie')
+  1944→    router.replace('/platform/login')
+  1945→  }, [router])
+  1946→
+  1947→  const handleTabChange = useCallback((tabId: TabId) => {
+  1948→    setActiveTab(tabId)
+  1949→    setSidebarOpen(false)
+  1950→  }, [])
+  1951→
+  1952→  const activeNavItem = NAV_ITEMS.find((item) => item.id === activeTab)
+  1953→
+  1954→  const renderContent = (): ReactNode => {
+  1955→    switch (activeTab) {
+  1956→      case 'dashboard':
+  1957→        return <DashboardTab fetchWithAuth={fetchWithAuth} />
+  1958→      case 'weddings':
+  1959→        return <WeddingsTab fetchWithAuth={fetchWithAuth} />
+  1960→      case 'billing':
+  1961→        return <BillingTab fetchWithAuth={fetchWithAuth} />
+  1962→      case 'users':
+  1963→        return <UsersTab fetchWithAuth={fetchWithAuth} />
+  1964→      case 'audit':
+  1965→        return <AuditTab fetchWithAuth={fetchWithAuth} />
+  1966→      default:
+  1967→        return <DashboardTab fetchWithAuth={fetchWithAuth} />
+  1968→    }
+  1969→  }
+  1970→
+  1971→  // Render a neutral loading skeleton if not authenticated or not a platform
+  1972→  // admin (the effect above will redirect to /platform/login).
+  1973→  if (!user || (user.role !== 'PLATFORM_ADMIN' && user.role !== 'SUPER_ADMIN')) {
+  1974→    return (
+  1975→      <div className="h-screen flex items-center justify-center">
+  1976→        <div className="flex flex-col items-center gap-3">
+  1977→          <Loader2 className="w-6 h-6 animate-spin text-gold" />
+  1978→          <p className="text-xs text-muted-foreground">Chargement de la plateforme…</p>
+  1979→        </div>
+  1980→      </div>
+  1981→    )
+  1982→  }
+  1983→
+  1984→  const SidebarHeader = (
+  1985→    <div className="p-4 flex items-center gap-3">
+  1986→      <div className="w-10 h-10 rounded-full bg-gradient-gold flex items-center justify-center shrink-0 shadow-lg">
+  1987→        <Crown className="w-5 h-5 text-white" />
+  1988→      </div>
+  1989→      <div className="flex-1 min-w-0">
+  1990→        <h2 className="font-bold text-sm gold-gradient font-display tracking-wide truncate">
+  1991→          Heureux Mariage
+  1992→        </h2>
+  1993→        <p className="text-[10px] text-muted-foreground uppercase tracking-widest">
+  1994→          Plateforme Admin
+  1995→        </p>
+  1996→      </div>
+  1997→    </div>
+  1998→  )
+  1999→
+  2000→  const SidebarNav = (
+
+[showing lines 1-2000 of 2207; use offset=2001 with limit to continue reading]

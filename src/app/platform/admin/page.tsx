@@ -65,6 +65,7 @@ import {
   KeyRound,
   ExternalLink,
   Wallet,
+  Rocket,
 } from 'lucide-react'
 
 import {
@@ -82,6 +83,7 @@ import {
 
 import { PLAN_METADATA, type Plan, type WeddingStatus } from '@/lib/types'
 import { BillingTab } from './BillingTab'
+import { OnboardingTab } from './OnboardingTab'
 
 // Local role labels — we can't import from @/lib/auth because that module
 // imports `next/headers` + Prisma (server-only). Same pattern as
@@ -200,7 +202,7 @@ interface PaginatedUsers {
   limit: number
 }
 
-type TabId = 'dashboard' | 'weddings' | 'users' | 'audit' | 'billing'
+type TabId = 'dashboard' | 'weddings' | 'users' | 'audit' | 'billing' | 'onboarding'
 
 interface NavItem {
   id: TabId
@@ -212,6 +214,7 @@ const NAV_ITEMS: NavItem[] = [
   { id: 'dashboard', label: "Vue d'ensemble", icon: LayoutDashboard },
   { id: 'weddings', label: 'Mariages', icon: Heart },
   { id: 'billing', label: 'Facturation', icon: Wallet },
+  { id: 'onboarding', label: 'Onboarding', icon: Rocket },
   { id: 'users', label: 'Utilisateurs', icon: UsersIcon },
   { id: 'audit', label: "Journal d'audit", icon: ScrollText },
 ]
@@ -1959,6 +1962,8 @@ export default function PlatformAdminPage() {
         return <WeddingsTab fetchWithAuth={fetchWithAuth} />
       case 'billing':
         return <BillingTab fetchWithAuth={fetchWithAuth} />
+      case 'onboarding':
+        return <OnboardingTab fetchWithAuth={fetchWithAuth} />
       case 'users':
         return <UsersTab fetchWithAuth={fetchWithAuth} />
       case 'audit':
