@@ -1,7 +1,7 @@
 export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from 'next/server';
 import { db, tenantDb } from '@/lib/db';
-import { getAuthUser } from '@/lib/auth';
+import { getAuthUser, hasPermission } from '@/lib/auth';
 import { withPublicTenant, withAdminTenantHandler, TenantContext } from '@/lib/tenant-context';
 import { writeFile, unlink, mkdir } from 'fs/promises';
 import path from 'path';
@@ -63,6 +63,9 @@ export async function POST(request: NextRequest) {
   try {
     const user = await getAuthUser(request);
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    if (!hasPermission(user.role, ['ORGANIZER'])) {
+      return NextResponse.json({ error: 'Forbidden — insufficient permissions' }, { status: 403 });
+    }
 
     return withAdminTenantHandler(request, user, async (_req, ctx) => {
       const formData = await request.formData();
@@ -136,6 +139,9 @@ export async function PUT(request: NextRequest) {
   try {
     const user = await getAuthUser(request);
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    if (!hasPermission(user.role, ['ORGANIZER'])) {
+      return NextResponse.json({ error: 'Forbidden — insufficient permissions' }, { status: 403 });
+    }
 
     return withAdminTenantHandler(request, user, async (_req, ctx) => {
       const body = await request.json();
@@ -181,6 +187,9 @@ export async function DELETE(request: NextRequest) {
   try {
     const user = await getAuthUser(request);
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    if (!hasPermission(user.role, ['ORGANIZER'])) {
+      return NextResponse.json({ error: 'Forbidden — insufficient permissions' }, { status: 403 });
+    }
 
     return withAdminTenantHandler(request, user, async (_req, ctx) => {
       const currentFile = await getMusicSetting(ctx, 'music_file');

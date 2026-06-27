@@ -93,6 +93,9 @@ export async function GET(request: NextRequest) {
   try {
     const user = await getAuthUser(request);
     if (!user) return NextResponse.json({ error: 'Accès non autorisé' }, { status: 401 });
+    if (!hasPermission(user.role, ['CONTROLLER'])) {
+      return NextResponse.json({ error: 'Forbidden — insufficient permissions' }, { status: 403 });
+    }
 
     const { context, error: tenantError } = await resolveAdminTenant(request, user);
     if (tenantError || !context) {
