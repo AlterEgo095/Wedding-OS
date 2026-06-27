@@ -557,3 +557,265 @@ Stage Summary:
 - Dev server: healthy, all routes 200, no errors, Prisma queries properly tenant-scoped
 - Production NOT touched (local dev only) — Phase 4 deploys to VPS in a dedicated maintenance window after Phase 5
 - Next: Phase 5 (Dashboard super-admin, 3 days) — Vue plateforme (MRR, churn, weddings) at /platform/admin live with full CRUD
+
+---
+Task ID: 5-a
+Agent: Sub Agent (Phase 5-a — Dashboard API revenue/churn/growth)
+Task: Enhance platform dashboard API (`/api/platform/dashboard`) with MRR analytics, churn metrics, and growth trends for the super-admin dashboard
+
+Work Log:
+- Read worklog.md to confirm Phases 1-4 complete (RBAC enforced, luxury per-wedding UX live). Read current `src/app/api/platform/dashboard/route.ts` (137 lines, returns weddings/users/guests/recentWeddings/recentActivity). Read `src/lib/types.ts` to confirm `PLAN_METADATA` export and `Plan` type (TRIAL=$0, ESSENTIEL=$49, PREMIUM=$99, ELITE=$199). Read Prisma schema to confirm Wedding model fields (status, plan, createdAt, updatedAt) + Guest model (createdAt) — all needed fields exist.
+- Confirmed the only consumer of this route is `src/app/platform/admin/page.tsx` (frontend currently computes an MRR estimate client-side from `recentWeddings`; my server-side `revenue.mrr` is a superset and the frontend is untouched — strictly additive).
+- Rewrote `/home/z/my-project/src/app/api/platform/dashboard/route.ts` (137 → 269 lines) — preserved ALL existing fields and behavior (auth via `requirePlatformAdmin`, raw `db`, `force-dynamic`, try/catch, existing Promise.all of 10 queries, existing section comments). Added:
+  - Import of `PLAN_METADATA` + `type Plan` from `@/lib/types`.
+  - `PLAN_TIER_ORDER` const = `['ELITE','PREMIUM','ESSENTIEL','TRIAL']` for byPlan sort order.
+  - Helper `getMonthSeries()` — builds last 6 calendar months (oldest first, including current partial month), each with `monthStart` (1st 00:00:00.000), `monthEnd` (last day 23:59:59.999 via `new Date(year, month+1, 0, ...)` JS trick), `monthKey` ('YYYY-MM'), and `label` (fr-FR short month via `toLocaleDateString('fr-FR', { month: 'short' })` — keeps trailing period as documented, e.g. "janv.", "févr.").
+  - Extended the existing Promise.all from 10 → 16 parallel queries, adding: `publishedWeddingsForMrr` (findMany PUBLISHED weddings, select createdAt+plan — single fetch used for mrr/arpu/byPlan/mrrSeries), `weddingsCreatedSince6Mo` (findMany createdAt >= 6-months-ago-start, select createdAt — single fetch used for newWeddingsSeries), `suspended30d`, `archived30d` (counts with status + updatedAt>=30d-ago filter), `newWeddings30d`, `newGuests30d` (counts with createdAt>=30d-ago filter).
+  - Computed `planPriceOf(plan)` helper using `PLAN_METADATA[plan as Plan]?.priceUsd ?? 0` (defensive against unexpected plan strings).
+  - Revenue: `mrr` = sum of plan price across all PUBLISHED weddings; `arpu` = `Math.round(mrr/activeCount)` (0 if no active); `byPlan` = group by plan, filter count>0, sort by PLAN_TIER_ORDER, map to {plan, count, mrr=count×priceUsd}; `mrrSeries` = for each of 6 months, filter PUBLISHED weddings with `createdAt <= monthEnd`, sum their current plan price (documented approximation — no historical plan-change tracking), return {month, label, mrr, weddings}.
+  - Churn: `churnRate` = `Math.round(((suspended30d+archived30d)/weddingsTotal)*100*10)/10` (1 decimal, 0 if total=0).
+  - Growth: `newWeddingsSeries` = for each of 6 months, count weddings with createdAt between monthStart and monthEnd (inclusive), return {month, label, count}.
+  - Response object: existing fields untouched, new `revenue` / `churn` / `growth` sections appended after `recentActivity`. Clear section comments added (`// ─── Revenue analytics ...`, `// ─── Churn metrics ...`, `// ─── Growth trends ...`).
+- Performance: only 6 NEW DB round-trips added (4 counts + 2 findMany), all batched in the single existing Promise.all. The 6-month series are computed client-side in JS from a single fetch each (not 6 separate grouped queries) — per the spec's recommended optimization.
+- Lint: `bun run lint` → 17 errors, ALL pre-existing (deploy-vps-*.cjs require() imports × 9, AmbientMusicPlayer.tsx set-state-in-effect × 1 with duplicate listing, sync-vps-tables-only.js require() × 2). 0 NEW errors in `src/app/api/platform/dashboard/route.ts` (grep for "platform/dashboard" in lint output returns nothing).
+- Dev server verification (server already running on :3000, not restarted):
+  - Unauthenticated GET /api/platform/dashboard → 401 in 73ms (compile: 65ms, render: 7ms) — route compiles cleanly, auth gate intact, no 500.
+  - Authenticated test (curl POST /api/platform/login with admin@josue-hornella.wedding/admin2026 → got auth_token cookie → GET /api/platform/dashboard with cookie) → 200 with full JSON payload.
+  - Verified all existing fields preserved: weddings{total:1, byStatus:{PUBLISHED:1}, byPlan:{ELITE:1}}, users{total:11, byRole:{CONTROLLER:2,ORGANIZER:3,PLATFORM_ADMIN:3,RECEPTION:3}, platformAdmins:3}, guests{total:243, last7days:0}, recentWeddings[1], recentActivity[20]. ✓
+  - Verified new fields populated correctly:
+    - revenue.mrr = 199 (1 PUBLISHED × ELITE $199) ✓
+    - revenue.arpu = 199 (199/1 rounded) ✓
+    - revenue.byPlan = [{plan:'ELITE', count:1, mrr:199}] (only count>0 plans, tier order desc) ✓
+    - revenue.mrrSeries = 6 entries oldest-first: [{2026-01,janv.,0,0},{2026-02,févr.,0,0},{2026-03,mars,0,0},{2026-04,avr.,0,0},{2026-05,mai,0,0},{2026-06,juin,199,1}] — June shows the wedding created 2026-06-26, earlier months 0 (wedding didn't exist yet). ✓
+    - churn.suspended30d = 0, churn.archived30d = 0, churnRate = 0 (no suspended/archived weddings; total=1) ✓
+    - growth.newWeddings30d = 1 (wedding created June 26 is within 30d of June 27) ✓
+    - growth.newGuests30d = 243 (all guests created in last 30d) ✓
+    - growth.newWeddingsSeries = 6 entries: [{2026-01,janv.,0},{2026-02,févr.,0},{2026-03,mars,0},{2026-04,avr.,0},{2026-05,mai,0},{2026-06,juin,1}] — same labels as mrrSeries, June shows the 1 new wedding. ✓
+  - No runtime errors in dev.log, no Prisma query warnings, response time 73ms (well within dashboard latency budget).
+
+Stage Summary:
+- ✅ Phase 5-a COMPLETE — Platform dashboard API enhanced with MRR/churn/growth analytics
+- File modified: `src/app/api/platform/dashboard/route.ts` (137 → 269 lines, additive only — zero existing fields changed, zero existing behavior changed)
+- New response fields added (all additive):
+  - `revenue.mrr` (number) — current MRR in USD across all PUBLISHED weddings
+  - `revenue.arpu` (number) — MRR / active wedding count, rounded to 0 decimals
+  - `revenue.byPlan` (Array<{plan,count,mrr}>) — per-plan revenue breakdown, only count>0 plans, sorted ELITE→PREMIUM→ESSENTIEL→TRIAL
+  - `revenue.mrrSeries` (Array<{month,label,mrr,weddings}>) — 6-month MRR-as-of-end-of-month series, oldest first
+  - `churn.suspended30d` (number) — weddings SUSPENDED with updatedAt in last 30d
+  - `churn.archived30d` (number) — weddings ARCHIVED with updatedAt in last 30d
+  - `churn.churnRate` (number) — ((suspended+archived)/total)×100, rounded to 1 decimal
+  - `growth.newWeddings30d` (number) — weddings created in last 30d
+  - `growth.newGuests30d` (number) — guests created in last 30d
+  - `growth.newWeddingsSeries` (Array<{month,label,count}>) — 6-month new-weddings-per-month series, oldest first
+- Auth/RBAC intact: still uses `requirePlatformAdmin(user)` (401 unauth, 403 non-platform role, 200 platform admin — verified via curl).
+- Performance: 6 new DB queries added, all batched into the single existing Promise.all (16 queries total, all parallel). 6-month series computed client-side in JS from 2 findMany fetches (not 6 separate grouped queries).
+- Code style: `export const dynamic = "force-dynamic"` kept as first line, try/catch preserved, section comments added in the existing `// ─── ──────` style, helper `getMonthSeries()` extracted for reuse by both mrrSeries and newWeddingsSeries.
+- Lint: 0 new errors (17 pre-existing in deploy scripts + AmbientMusicPlayer — unchanged).
+- Dev server: route compiles in 65ms, returns 200 in 73ms with correct payload, no errors in dev.log.
+- Frontend (`/platform/admin/page.tsx`) intentionally NOT modified — task scope was API-only. Frontend still computes its own `mrrEstimate` client-side from `recentWeddings`; a future task can wire it to the new server-side `revenue.mrr` for a more accurate figure (server-side sums ALL PUBLISHED weddings, not just the 5 most recent).
+- Next: Phase 5 continues — frontend dashboard widgets consuming the new `revenue`/`churn`/`growth` fields, plus wedding CRUD UI at /platform/admin.
+
+---
+Task ID: 5-b
+Agent: Backend Engineer (Phase 5 — Platform Users CRUD)
+Task: Phase 5 — Add full CRUD for platform users (POST create + PUT update + DELETE) at /api/platform/users and /api/platform/users/[id]
+
+Work Log:
+- Read worklog.md (Phases 1–4 complete; Phase 5 in progress) to confirm context and prior patterns. Read the 5 referenced files: existing GET /api/platform/users/route.ts (USER_LIST_SELECT constant), weddings/[id]/route.ts (RouteParams { params: Promise<{ id: string }> } pattern, audit log shape, cache invalidation), lib/auth.ts (hashPassword rounds 12, getAuthUser, requirePlatformAdmin, getRoleLabel), lib/types.ts (Role union, isPlatformAdmin, normalizeRole SUPER_ADMIN→PLATFORM_ADMIN), prisma/schema.prisma (AdminUser fields: id/email/password/name/role/weddingId?/lastLoginAt/timestamps; Wedding.admins relation; AuditLog model with weddingId nullable + userId nullable + action + details).
+- Modified `/home/z/my-project/src/app/api/platform/users/route.ts`:
+  - Added `hashPassword` to the existing auth import; added `normalizeRole, type Role` import from `@/lib/types`.
+  - Kept the existing GET handler and USER_LIST_SELECT constant verbatim.
+  - Expanded the file's JSDoc block to also document the new POST endpoint.
+  - Added `VALID_CREATE_ROLES` constant (PLATFORM_ADMIN, SUPER_ADMIN, ORGANIZER, RECEPTION, CONTROLLER) and `EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/`.
+  - Added `POST(request)` handler:
+    1. `getAuthUser(request)` + `requirePlatformAdmin(user)` (401/403 if denied)
+    2. Parse JSON body, destructure `{ name, email, password, role, weddingId }`
+    3. Validate `name` (trim, 1–100 chars) → 400
+    4. Validate `email` (trim + lowercase, must match EMAIL_REGEX) → 400
+    5. Validate `password` (string, min 8 chars) → 400
+    6. Validate `role` (must be in VALID_CREATE_ROLES) → 400; normalize via `normalizeRole()` (SUPER_ADMIN→PLATFORM_ADMIN)
+    7. Role↔weddingId coupling:
+       - PLATFORM_ADMIN → weddingId must be null/omitted/empty (set finalWeddingId=null); if provided non-empty → 400
+       - ORGANIZER/RECEPTION/CONTROLLER → weddingId required (string, non-empty); verify with `db.wedding.findUnique`; if missing → 400
+    8. Email uniqueness: `db.adminUser.findUnique({ where: { email } })`; if exists → 409 `Email already in use`
+    9. Hash password via `hashPassword(password)` (bcrypt rounds 12)
+    10. `db.adminUser.create({ data: { name, email, password: hashed, role: normalizedRole, weddingId: finalWeddingId }, select: USER_LIST_SELECT })`
+    11. Audit log: `db.auditLog.create({ data: { weddingId: null, userId: user!.id, action: 'CREATE_USER', details: 'Created user ' + email + ' (' + normalizedRole + ')' } })`
+    12. Return `NextResponse.json({ user }, { status: 201 })`
+  - Wrapped in try/catch with `console.error('Create platform user error:', error)` + 500 fallback (matches existing pattern).
+  - Added a small local `isPlatformAdminRole(role: Role)` helper so the POST branch operates on the already-normalized Role enum (avoids subtle double-normalization). The `[id]` route uses the shared `isPlatformAdmin` from `@/lib/types` because it deals with raw DB strings (legacy SUPER_ADMIN values).
+- Created new `/home/z/my-project/src/app/api/platform/users/[id]/route.ts` (PUT + DELETE):
+  - First line: `export const dynamic = "force-dynamic";`
+  - Imports: `NextRequest, NextResponse` from `next/server`; `db` from `@/lib/db`; `getAuthUser, requirePlatformAdmin, hashPassword` from `@/lib/auth`; `normalizeRole, isPlatformAdmin, type Role` from `@/lib/types`.
+  - Local copy of `USER_LIST_SELECT` constant (same shape as the list route — id/email/name/role/weddingId/lastLoginAt/createdAt/updatedAt + wedding{slug,coupleLabel}). Per task instructions: "do NOT import across route files; copy the select object".
+  - `VALID_ROLES` constant + `interface RouteParams { params: Promise<{ id: string }> }`.
+  - `PUT(request, { params }: RouteParams)`:
+    1. Auth gate (platform admin only)
+    2. `const { id } = await params;` then fetch existing user (id, email, role, weddingId) — 404 if not found
+    3. Parse JSON body `{ name?, role?, weddingId?, password? }` (all optional — partial update)
+    4. Validate `name` (if provided: trim + 1–100 chars)
+    5. Validate `role` (if provided: must be in VALID_ROLES; normalize via `normalizeRole()`)
+    6. Validate `password` (if provided: min 8 chars)
+    7. **Self-role guard**: if `user!.id === id` AND `role` provided AND `normalizedRole !== existing.role` → 400 `You cannot change your own role`
+    8. **Last platform admin guard**: if `isPlatformAdmin(existing.role)` AND new role is NOT a platform-admin role → `db.adminUser.count({ where: { OR: [{ role: 'PLATFORM_ADMIN' }, { role: 'SUPER_ADMIN' }] } })`; if `<= 1` → 400 `Cannot demote the last platform admin`
+    9. Role↔weddingId coupling (only if `weddingId` is provided in body): effective role = provided role if present, else existing user's role. PLATFORM_ADMIN → weddingId must be null/empty. Staff role → weddingId required (string, non-empty) + verify with `db.wedding.findUnique`
+    10. Build `updateData` dict only with provided fields; hash password via `hashPassword()` before storing
+    11. `db.adminUser.update({ where: { id }, data: updateData, select: USER_LIST_SELECT })`
+    12. Audit log: `action: 'UPDATE_USER'`, `details: 'Updated user ' + existing.email + ' (fields: ' + Object.keys(updateData).join(', ') + ')'`. Per spec: if password was changed, the audit log includes the literal field name `password` but NEVER the value — `Object.keys()` only yields keys, not values, so this is satisfied automatically.
+    13. Return `NextResponse.json({ user })`
+    14. try/catch + 500 fallback
+  - `DELETE(request, { params }: RouteParams)`:
+    1. Auth gate
+    2. Fetch existing user (id, email, role) — 404 if not found
+    3. **Self-delete guard**: if `user!.id === id` → 400 `You cannot delete your own account`
+    4. **Last platform admin guard**: if `isPlatformAdmin(existing.role)` → count platform admins; if `<= 1` → 400 `Cannot delete the last platform admin`
+    5. `db.adminUser.delete({ where: { id } })`
+    6. Audit log: `action: 'DELETE_USER'`, `details: 'Deleted user ' + existing.email + ' (' + existing.role + ')'`
+    7. Return `NextResponse.json({ success: true })`
+    8. try/catch + 500 fallback
+  - Section dividers throughout: `// ─── Title ──────...` matching the weddings/[id]/route.ts style.
+- Lint: `bun run lint` → 17 errors total, ALL pre-existing (deploy-vps-*.cjs require() imports, AmbientMusicPlayer.tsx set-state-in-effect, sync-vps-tables-only.js). Verified by grepping lint output for `platform/users` → 0 matches. **0 NEW errors in my files.**
+- Smoke tests via curl (logged in as admin@josue-hornella.wedding → JWT token, Authorization: Bearer):
+  - POST `/api/platform/users` (no auth) → 401 `Unauthorized — authentication required` ✓
+  - POST with PLATFORM_ADMIN role + weddingId provided → 400 `Platform admins cannot be assigned to a wedding` ✓
+  - POST with ORGANIZER role + no weddingId → 400 `weddingId is required for non-platform roles` ✓
+  - POST with password=`short` → 400 `Password must be at least 8 characters` ✓
+  - POST with role=`WIZARD` → 400 `Role must be one of: PLATFORM_ADMIN, SUPER_ADMIN, ORGANIZER, RECEPTION, CONTROLLER` ✓
+  - POST valid (name, email, password, role=SUPER_ADMIN) → **201** with full user object (role normalized to PLATFORM_ADMIN, weddingId=null, password NOT in response) ✓
+  - POST same email again → **409** `Email already in use` ✓
+  - GET `/api/platform/users?search=test-crud` → 200, returns the new user (no `password` field) ✓
+  - PUT update name → 200, name updated, `updatedAt` bumped ✓
+  - PUT change password → 200, response still excludes password; audit log shows `fields: password` (name only, no value) ✓
+  - PUT update name+role (multiple fields) → 200, audit log shows `fields: name, role` ✓
+  - PUT self-role-change (admin changing own role to ORGANIZER) → **400** `You cannot change your own role` ✓
+  - PUT demote PLATFORM_ADMIN to ORGANIZER with valid weddingId → 200, role+weddingId both updated, wedding relation populated (slug + coupleLabel) ✓
+  - PUT re-promote ORGANIZER to PLATFORM_ADMIN with weddingId=null → 200, role+weddingId cleared ✓
+  - PUT non-existent user id → **404** `User not found` ✓
+  - DELETE self → **400** `You cannot delete your own account` ✓
+  - DELETE non-existent → **404** `User not found` ✓
+  - DELETE the test user → **200** `{ success: true }` ✓
+  - GET search test-crud after delete → `users: [], total: 0` (cleanup confirmed) ✓
+- Audit log entries verified via Prisma client (db.auditLog.findMany):
+  - `[CREATE_USER] Created user test-crud-admin@example.com (PLATFORM_ADMIN)`
+  - `[UPDATE_USER] Updated user test-crud-admin@example.com (fields: name)`
+  - `[UPDATE_USER] Updated user test-crud-admin@example.com (fields: password)` ← field name only, no value
+  - `[UPDATE_USER] Updated user test-crud-admin@example.com (fields: name, role)`
+  - `[UPDATE_USER] Updated user test-crud-admin@example.com (fields: role, weddingId)`
+  - `[DELETE_USER] Deleted user test-crud-admin@example.com (PLATFORM_ADMIN)`
+- Dev log verified clean: new routes compiled on first request with no errors. Sample lines:
+  - `PUT /api/platform/users/cmqvn7ae7... 400 in 8ms (compile: 1914µs, render: 6ms)`
+  - `PUT /api/platform/users/cmqvn7ae7... 200 in 103ms (compile: 80ms, render: 24ms)`
+  - `DELETE /api/platform/users/cmpto5atd0... 400 in 90ms (compile: 76ms, render: 14ms)`
+  - `DELETE /api/platform/users/cmqvn7ae7... 200 in 14ms (compile: 3ms, render: 11ms)`
+  - No `Error` or 500 lines on any `/api/platform/users*` route.
+- Test data cleanup: deleted the temporary `test-crud-admin@example.com` user created during verification; DB is back to its pre-task state (3 PLATFORM_ADMIN, 3 ORGANIZER, 3 RECEPTION, 2 CONTROLLER per the Phase 3-FINAL entry). The 6 new audit log entries remain (intentional — they document the test run).
+
+Stage Summary:
+- ✅ Task 5-b COMPLETE — Full CRUD for platform users
+- Files modified (1):
+  - `src/app/api/platform/users/route.ts` — kept existing GET + USER_LIST_SELECT; added imports for `hashPassword` + `normalizeRole` + `Role`; added POST handler (~140 lines) with full validation, role↔weddingId coupling, email uniqueness check, bcrypt hashing, audit log, 201 response.
+- Files created (1):
+  - `src/app/api/platform/users/[id]/route.ts` (NEW, ~280 lines) — PUT (partial update with self-role + last-admin guards) + DELETE (with self-delete + last-admin guards).
+- Endpoints implemented:
+  - `POST /api/platform/users` → 201 `{ user }` | 400 (validation) | 401 (no auth) | 403 (non-platform) | 409 (email conflict)
+  - `PUT /api/platform/users/{id}` → 200 `{ user }` | 400 (validation / self-role / last-admin) | 401 | 403 | 404 | 500
+  - `DELETE /api/platform/users/{id}` → 200 `{ success: true }` | 400 (self-delete / last-admin) | 401 | 403 | 404 | 500
+- Guards implemented (5 total):
+  1. POST: role↔weddingId coupling (PLATFORM_ADMIN → null; staff → required + exists)
+  2. PUT: cannot change own role (when role differs from existing)
+  3. PUT: cannot demote last platform admin (count PLATFORM_ADMIN+SUPER_ADMIN ≤ 1 → block)
+  4. DELETE: cannot delete self
+  5. DELETE: cannot delete last platform admin
+- Password handling: hashed with bcrypt rounds 12 via `hashPassword()`. Never returned in any response (USER_LIST_SELECT excludes `password`). Never logged in audit log — only the literal field name `"password"` appears in `Object.keys(updateData)`.
+- Audit log entries: CREATE_USER / UPDATE_USER / DELETE_USER all written with `weddingId: null` (platform-level event) and `userId: <acting admin>`. Verified via direct DB read.
+- Lint status: ✅ 0 NEW errors in files I touched (17 pre-existing errors in unrelated files — deploy-vps-*.cjs require() imports + AmbientMusicPlayer.tsx set-state-in-effect + sync-vps-tables-only.js — unchanged).
+- Dev server: healthy. New routes compile on first hit (PUT 80ms compile, DELETE 76ms compile on first request; subsequent calls <10ms). No 500s, no runtime errors.
+- Production NOT touched (local dev only) — Phase 5 continues with subsequent tasks before VPS deployment.
+- Next: continue with remaining Phase 5 tasks (likely the Users UI panel that consumes this CRUD API at /platform/admin/users).
+
+---
+Task ID: 5-c
+Agent: Main Agent (Phase 5 Frontend — Charts)
+Task: Phase 5 — Add MRR area chart + Plan distribution donut chart + churn/growth KPIs to the platform admin DashboardTab (Recharts)
+
+Work Log:
+- Read worklog.md to confirm 5-a (enhanced dashboard API) + 5-b (users CRUD API) complete. The enhanced dashboard API now returns `revenue` (mrr, arpu, byPlan, mrrSeries), `churn` (suspended30d, archived30d, churnRate), and `growth` (newWeddings30d, newGuests30d, newWeddingsSeries) sections.
+- Added recharts imports (ResponsiveContainer, AreaChart, Area, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip) to /platform/admin/page.tsx.
+- Extended DashboardData interface with optional `revenue`, `churn`, `growth` fields (optional for backward compat with older API responses).
+- Added PLAN_CHART_COLORS constant (ELITE=gold #D4A853, PREMIUM=emerald #10b981, ESSENTIEL=violet #8b5cf6, TRIAL=zinc #71717a) + shared CHART_TOOLTIP_STYLE constant (dark luxury theme).
+- Replaced the client-side mrrEstimate (which only summed the 5 most recent weddings) with the server-computed `data.revenue.mrr` — now accurate across ALL published weddings.
+- Updated the 4 KPI cards: (1) Total Mariages with growth subtitle, (2) MRR with ARPU + active count, (3) Invités with 7d + 30d growth, (4) Taux d'attrition (churn rate) replacing the old "Utilisateurs" card — churn is more business-critical for a super-admin dashboard.
+- Added a charts row (lg:grid-cols-5) between the KPI grid and the two-column lists:
+  - MRR area chart (lg:col-span-3): 6-month MRR evolution with gold gradient fill, CartesianGrid, custom dark tooltip, $/mois header badge.
+  - Plan distribution donut (lg:col-span-2): PieChart with innerRadius=45 (donut), per-plan Cell colors, legend grid showing plan label + count + $MRR contribution.
+- Both charts gracefully handle empty data (show "Aucune donnée" placeholder).
+- planBreakdown falls back to computing from `data.weddings.byPlan` (Record) if `data.revenue.byPlan` (Array) is absent.
+
+Stage Summary:
+- ✅ MRR area chart + Plan distribution donut chart render in the DashboardTab
+- Files modified: src/app/platform/admin/page.tsx (DashboardTab section + imports + types + constants)
+- KPI values verified via agent-browser: "1" mariages, "$199" MRR, "243" invités, "0%" attrition
+- 2 recharts SVG surfaces confirmed present, plan legend shows "Élite · 1 · $199"
+- Lint: 0 new errors (17 pre-existing unchanged)
+- Next: 5-d (Users CRUD UI)
+
+---
+Task ID: 5-d
+Agent: Main Agent (Phase 5 Frontend — Users CRUD UI)
+Task: Phase 5 — Add Users CRUD UI (create/edit/delete dialogs) to the UsersTab
+
+Work Log:
+- Read worklog.md to confirm 5-b (users CRUD API) complete. API supports POST /api/platform/users, PUT/DELETE /api/platform/users/[id] with self-delete + last-admin guards.
+- Added UserPlus + KeyRound icons to lucide imports.
+- Added UserFormState interface, EMPTY_USER_FORM constant, and USER_ROLES array (with needsWedding flag per role) before the UsersTab function.
+- Rewrote UsersTab to add full CRUD:
+  - "Créer un utilisateur" button (gold gradient) in the header.
+  - Actions column (w-10) with DropdownMenu per row: "Modifier" (Pencil icon) + "Supprimer" (Trash2 icon, red).
+  - Create/Edit Dialog: name, email, role select (4 roles), wedding select (auto-disabled for PLATFORM_ADMIN, required for staff roles), password field (required on create, optional on edit with "laisser vide pour conserver" label). Role↔weddingId coupling enforced client-side.
+  - fetchWeddings callback: lazily loads wedding options from /api/platform/weddings?limit=100 when the form dialog first opens (cached in state).
+  - handleSave: validates name/email/password length + role-wedding coupling, builds payload (omits password if blank on edit), calls POST or PUT, refreshes list on success.
+  - Delete confirmation Dialog: shows user name + email, calls DELETE, refreshes list on success.
+  - SUPER_ADMIN role normalized to PLATFORM_ADMIN when opening edit (so the select shows the canonical value).
+  - colSpan updated from 5 → 6 on all skeleton/empty/loading rows to account for the new actions column.
+- The wedding select shows "{coupleLabel} /w/{slug}" so the operator can distinguish weddings.
+
+Stage Summary:
+- ✅ Users CRUD UI complete — create, edit, delete all functional with dialogs
+- Files modified: src/app/platform/admin/page.tsx (UsersTab full rewrite + imports)
+- Browser-verified end-to-end: created "Test Phase5" organizer → appeared in list → edited name to "Test Phase5 Edited" → updated → deleted → removed from list. Self-delete guard verified: DELETE /api/platform/users/{admin-id} returned 400, toast error shown, admin account preserved.
+- Lint: 0 new errors (17 pre-existing unchanged)
+
+---
+Task ID: 5-verify
+Agent: Main Agent (Phase 5 Verification)
+Task: Phase 5 — End-to-end browser verification of dashboard charts + users CRUD
+
+Work Log:
+- Used agent-browser to perform full E2E verification of the /platform/admin dashboard.
+- Logged in via /platform/login (admin@josue-hornella.wedding / admin2026) → redirected to /platform/admin.
+- Dashboard tab verification:
+  - 4 KPI cards render with real values: "1" (Total Mariages), "$199" (MRR), "243" (Invités), "0%" (Taux d'attrition)
+  - KPI subtitles show growth context: "1 publiés · 1 nouveaux 30j", "ARPU $199 · 1 actif", etc.
+  - MRR area chart: 1 recharts SVG, 6-month series with gold gradient, "Évolution du MRR" title + "$199/mois" badge
+  - Plan distribution donut: 1 recharts SVG, "Répartition par plan" title, legend shows "Élite · 1 · $199"
+  - Recent weddings + recent activity two-column lists render unchanged
+  - 0 page errors, 0 console errors (only React DevTools info + smooth-scroll Next.js warning)
+- Users tab CRUD verification:
+  - "Créer un utilisateur" button present
+  - CREATE: filled name "Test Phase5", email "test-phase5@wedding.test", password "test12345", role "Organisateur", wedding "Josué & Hornella" → submit → dialog closed → user appeared in list ✓
+  - EDIT: opened actions dropdown → "Modifier" → dialog pre-filled with user data (name, email, role, wedding all populated; password blank with "laisser vide pour conserver") → changed name to "Test Phase5 Edited" → "Enregistrer" → dialog closed → list updated ✓
+  - DELETE: opened actions dropdown → "Supprimer" → confirmation dialog "Confirmer la suppression" with user name+email → "Supprimer définitivement" → dialog closed → user removed from list ✓
+  - SELF-DELETE GUARD: opened admin row actions → "Supprimer" → confirm → API returned 400 → toast error shown → admin account preserved ✓ (dev.log confirms `DELETE /api/platform/users/{admin-id} 400`)
+- Screenshot saved to /home/z/my-project/phase5-dashboard.png
+- Dev server: healthy, all routes 200, no errors in dev.log
+- Lint: 17 errors (all pre-existing), 0 new errors from Phase 5
+
+Stage Summary:
+- ✅ Phase 5 COMPLETE — Dashboard super-admin live with MRR chart, plan distribution chart, churn metrics, and full Users CRUD
+- All 4 tabs functional: Vue d'ensemble (dashboard with charts), Mariages (CRUD), Utilisateurs (CRUD), Journal d'audit
+- Dashboard API: enhanced with revenue/mrr/arpu/byPlan/mrrSeries + churn/suspended30d/archived30d/churnRate + growth/newWeddings30d/newGuests30d/newWeddingsSeries
+- Users API: full CRUD with 5 guards (role↔weddingId coupling, self-role-change block, last-admin-demote block, self-delete block, last-admin-delete block)
+- Frontend: Recharts area chart + donut chart, 4 business KPIs (mariages/MRR/invités/churn), create/edit/delete dialogs with role-aware wedding select
+- Browser-verified: all CRUD operations work end-to-end, self-delete guard blocks correctly, 0 errors
+- Production NOT touched (local dev only) — Phase 5 deploys to VPS in a dedicated maintenance window after Phase 6
+- Next: Phase 6 (Stripe billing, 4 days) — Paiements + metering + Customer Portal + Upgrades self-service
