@@ -43,6 +43,9 @@ export async function POST(request: NextRequest) {
   try {
     const user = await getAuthUser(request);
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    if (!hasPermission(user.role, ['ORGANIZER'])) {
+      return NextResponse.json({ error: 'Forbidden — insufficient permissions' }, { status: 403 });
+    }
 
     return withAdminTenantHandler(request, user, async (_req, ctx) => {
       const formData = await request.formData();
