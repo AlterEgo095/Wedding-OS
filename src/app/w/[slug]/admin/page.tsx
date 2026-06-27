@@ -18,7 +18,7 @@
 
 'use client';
 
-import { useState, useCallback, useRef, useEffect, useSyncExternalStore } from 'react';
+import { useState, useCallback, useRef, useEffect, useLayoutEffect, useSyncExternalStore } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import Link from 'next/link';
 import { AnimatePresence, motion } from 'framer-motion';
@@ -122,17 +122,12 @@ export default function PerWeddingAdminPage() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const sessionExpiredRef = useRef(false)
 
-  // ─── Mount: redirect if no token + install global fetch interceptor ─────────
-  useEffect(() => {
-    if (!token || !user) {
-      router.replace(`/w/${slug}/admin/login`)
-      return
-    }
-
-    // Install a global window.fetch interceptor that auto-injects the
-    // X-Wedding-Slug header on every /api/* request. This lets all existing
-    // admin components (which call fetch('/api/…') directly) work unchanged
-    // in tenant-scoped mode.
+  // ─── Install global fetch interceptor (useLayoutEffect — runs before any
+  // child useEffect, so the X-Wedding-Slug header is in place by the time
+  // admin components like Dashboard, GuestManager, etc. fire their initial
+  // /api/* requests. Otherwise the first fetch would silently fall back to
+  // the default wedding and show wrong data.)
+  useLayoutEffect(() => {
     const originalFetch = window.fetch
     window.fetch = (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
       const url =
@@ -155,6 +150,15 @@ export default function PerWeddingAdminPage() {
 
     return () => {
       window.fetch = originalFetch
+    }
+  }, [slug])
+
+  // ─── Mount: redirect if no token (separate from interceptor so the
+  // interceptor installs synchronously regardless of auth state)
+  useEffect(() => {
+    if (!token || !user) {
+      router.replace(`/w/${slug}/admin/login`)
+      return
     }
   }, [slug, router, token, user])
 

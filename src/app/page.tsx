@@ -1,8 +1,10 @@
 'use client'
 
 import { useState, useEffect, useCallback, Suspense, useRef } from 'react'
+import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
-import { Crown } from 'lucide-react'
+import { motion, AnimatePresence } from 'framer-motion'
+import { Crown, Heart, X, Sparkles, ArrowRight } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import Navigation from '@/components/Navigation'
 import HeroSection from '@/components/HeroSection'
@@ -66,6 +68,20 @@ function HomeContent() {
   const [settings, setSettings] = useState<VenueSettings | null>(null)
   const [musicSettings, setMusicSettings] = useState<{ file: string; volume: number; enabled: boolean; url: string }>({ file: '', volume: 0.25, enabled: false, url: '' })
   const [loading, setLoading] = useState(true)
+
+  // Floating "Demander mon mariage" CTA dismiss state (persisted across reloads)
+  const [ctaDismissed, setCtaDismissed] = useState(false)
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      setCtaDismissed(localStorage.getItem('onboarding_cta_dismissed') === 'true')
+    }
+  }, [])
+  const dismissCta = useCallback(() => {
+    setCtaDismissed(true)
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('onboarding_cta_dismissed', 'true')
+    }
+  }, [])
 
   // Long-press state
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -299,6 +315,85 @@ function HomeContent() {
           /* ─── NOT AUTHENTICATED / ADMIN VIEWING: Full premium experience ─── */
           regularContent
         )}
+
+        {/* ─── Onboarding CTA section — "Vous vous mariez aussi ?" ─── */}
+        <motion.section
+          initial={{ opacity: 0, y: 40 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true, amount: 0.2 }}
+          transition={{ duration: 0.7, ease: [0.25, 0.46, 0.45, 0.94] }}
+          aria-label="Demande de mariage sur mesure"
+          className="relative py-16 md:py-24 px-4 sm:px-6 lg:px-8 overflow-hidden"
+        >
+          {/* Dark romantic backdrop with golden halos */}
+          <div className="absolute inset-0 -z-10 bg-gradient-to-br from-[oklch(0.18_0.04_290)] via-[oklch(0.22_0.06_270)] to-[oklch(0.16_0.03_300)]" />
+          <div className="absolute inset-0 -z-10 bg-gradient-to-t from-background via-background/30 to-transparent" />
+          <div className="absolute -top-16 -left-16 w-72 h-72 rounded-full bg-gold/10 blur-3xl -z-10" />
+          <div className="absolute -bottom-16 -right-16 w-80 h-80 rounded-full bg-rose-gold/10 blur-3xl -z-10" />
+
+          <div className="max-w-3xl mx-auto text-center">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.8 }}
+              whileInView={{ opacity: 1, scale: 1 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.6, delay: 0.1 }}
+              className="flex justify-center mb-5"
+            >
+              <span className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-white/5 backdrop-blur-sm border border-gold/30 text-gold-light text-xs sm:text-sm font-display tracking-wide">
+                <Sparkles className="size-3.5" />
+                Heureux Mariage
+              </span>
+            </motion.div>
+
+            <motion.h2
+              initial={{ opacity: 0, y: 20 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.7, delay: 0.15 }}
+              className="font-serif text-3xl sm:text-4xl md:text-5xl font-bold leading-tight"
+            >
+              <span className="gold-gradient">Vous vous mariez aussi ?</span>
+            </motion.h2>
+
+            <motion.p
+              initial={{ opacity: 0, y: 20 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.7, delay: 0.25 }}
+              className="mt-4 text-white/75 font-display text-sm sm:text-base md:text-lg max-w-xl mx-auto"
+            >
+              Créez votre propre mariage digital en quelques minutes. Un
+              conseiller vous contacte sur WhatsApp sous 24h pour finaliser
+              votre offre sur mesure.
+            </motion.p>
+
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.7, delay: 0.35 }}
+              className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-3"
+            >
+              <Button
+                asChild
+                size="lg"
+                className="btn-premium bg-gradient-gold text-white shadow-2xl shadow-gold/30 hover:shadow-gold/50 px-7 py-6 text-base w-full sm:w-auto rounded-full"
+              >
+                <Link href="/onboarding">
+                  <Heart className="size-4" />
+                  Demander mon mariage
+                  <ArrowRight className="size-4" />
+                </Link>
+              </Button>
+              <Link
+                href="/onboarding"
+                className="text-white/70 hover:text-white text-sm font-display tracking-wide underline-offset-4 hover:underline transition-colors px-2"
+              >
+                Voir les offres →
+              </Link>
+            </motion.div>
+          </div>
+        </motion.section>
       </main>
 
       <Footer />
@@ -334,6 +429,44 @@ function HomeContent() {
           </Button>
         </div>
       )}
+
+      {/* Floating "Demander mon mariage" CTA — bottom-right, dismissible.
+          Renders only when (a) admin is NOT accessible (so it never overlaps
+          the Crown admin button), and (b) the user hasn't dismissed it.
+          z-30 sits below the admin trigger zone (z-40) so the invisible
+          long-press dot at the very corner still receives pointer events. */}
+      <AnimatePresence>
+        {!adminAccessible && !ctaDismissed && (
+          <motion.div
+            initial={{ opacity: 0, x: 40, y: 0 }}
+            animate={{ opacity: 1, x: 0, y: 0 }}
+            exit={{ opacity: 0, x: 40 }}
+            transition={{ duration: 0.4, ease: 'easeOut', delay: 0.6 }}
+            className="fixed bottom-6 right-6 z-30"
+          >
+            <div className="relative flex items-center">
+              <Link
+                href="/onboarding"
+                aria-label="Demander mon mariage — page d'inscription"
+                className="btn-premium group inline-flex items-center gap-2 bg-gradient-gold text-white shadow-xl shadow-gold/25 hover:shadow-gold/40 rounded-full pl-5 pr-4 py-3 text-sm font-display tracking-wide transition-all hover:-translate-y-0.5"
+              >
+                <Heart className="size-4 fill-white/80" />
+                <span className="hidden sm:inline">Demander mon mariage</span>
+                <span className="sm:hidden">Mon mariage</span>
+                <ArrowRight className="size-4 transition-transform group-hover:translate-x-0.5" />
+              </Link>
+              <button
+                type="button"
+                onClick={dismissCta}
+                aria-label="Masquer ce bouton"
+                className="absolute -top-2 -left-2 w-5 h-5 rounded-full bg-background border border-gold/40 text-gold hover:bg-gold/10 flex items-center justify-center transition-colors shadow-sm"
+              >
+                <X className="size-3" />
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Ambient Music Player */}
       <AmbientMusicPlayer
