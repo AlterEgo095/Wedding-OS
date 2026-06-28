@@ -6,7 +6,34 @@
 
 import { create } from 'zustand'
 
-const LS_KEY = 'wedding_visual_effects'
+/**
+ * Tenant-scoped storage key.
+ *
+ * Since Phase 3 ÉTAPE 4, the localStorage key is namespaced by the current
+ * wedding slug so that toggling effects in wedding A's admin no longer
+ * affects all other weddings on the same browser.
+ *
+ *   - On `/w/[slug]/...` → key = `wedding_visual_effects_<slug>`
+ *   - On root `/`         → key = `wedding_visual_effects_default`
+ *
+ * Backward compatibility: for the default wedding only, on first load, if
+ * the new namespaced key does not exist but the legacy un-namespaced key
+ * (`wedding_visual_effects`) does, the legacy data is copied to the new key
+ * and the legacy key is removed. This preserves the existing settings for
+ * the default wedding (josue-hornella).
+ */
+const LS_KEY_PREFIX = 'wedding_visual_effects'
+const LEGACY_LS_KEY = 'wedding_visual_effects'
+
+function getWeddingSlug(): string {
+  if (typeof window === 'undefined') return 'default'
+  const match = window.location.pathname.match(/^\/w\/([a-z0-9-]+)/i)
+  return match?.[1] || 'default'
+}
+
+function lsKey(): string {
+  return `${LS_KEY_PREFIX}_${getWeddingSlug()}`
+}
 
 export interface VisualEffectsState {
   // Effect toggles
@@ -57,7 +84,18 @@ const defaultState = {
 function loadFromStorage(): Partial<VisualEffectsState> {
   if (typeof window === 'undefined') return {}
   try {
-    const saved = localStorage.getItem(LS_KEY)
+    const key = lsKey()
+    // One-time backward-compat migration for the default wedding: if the
+    // new slug-namespaced key does not exist yet but the legacy
+    // (un-namespaced) key does, copy the data over and remove the legacy key.
+    if (getWeddingSlug() === 'default' && localStorage.getItem(key) === null) {
+      const legacy = localStorage.getItem(LEGACY_LS_KEY)
+      if (legacy) {
+        localStorage.setItem(key, legacy)
+        localStorage.removeItem(LEGACY_LS_KEY)
+      }
+    }
+    const saved = localStorage.getItem(key)
     if (saved) return JSON.parse(saved)
   } catch {}
   return {}
@@ -66,7 +104,7 @@ function loadFromStorage(): Partial<VisualEffectsState> {
 function saveToStorage(state: Partial<VisualEffectsState>) {
   if (typeof window === 'undefined') return
   try {
-    localStorage.setItem(LS_KEY, JSON.stringify(state))
+    localStorage.setItem(lsKey(), JSON.stringify(state))
   } catch {}
 }
 

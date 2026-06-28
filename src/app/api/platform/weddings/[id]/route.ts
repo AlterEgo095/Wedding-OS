@@ -22,8 +22,43 @@ import { invalidateWeddingCache } from '@/lib/tenant-context';
  * next public/admin request re-fetches fresh data from the DB.
  */
 
-const VALID_STATUSES: WeddingStatus[] = ['DRAFT', 'PUBLISHED', 'ARCHIVED', 'SUSPENDED'];
+const VALID_STATUSES: WeddingStatus[] = ['DRAFT', 'PUBLISHED', 'COMPLETED', 'ARCHIVED', 'SUSPENDED'];
 const VALID_PLANS: Plan[] = ['TRIAL', 'ESSENTIEL', 'PREMIUM', 'ELITE'];
+
+/**
+ * Allowed status transitions (Phase 3 ÉTAPE 5 — commercial lifecycle).
+ *
+ * Previously, the PUT handler accepted ANY status → ANY status transition
+ * (only validated that the new value was in VALID_STATUSES). This matrix
+ * enforces the documented lifecycle while remaining a SUPERSET of every
+ * transition the previous code allowed (DRAFT → ARCHIVED, PUBLISHED → ARCHIVED,
+ * SUSPENDED → PUBLISHED, etc. are all preserved) AND adds the new COMPLETED
+ * status transitions.
+ *
+ * Matrix:
+ *   DRAFT      → PUBLISHED, ARCHIVED
+ *   PUBLISHED  → COMPLETED, SUSPENDED, ARCHIVED
+ *   COMPLETED  → ARCHIVED
+ *   SUSPENDED  → PUBLISHED, ARCHIVED
+ *   ARCHIVED   → DRAFT, PUBLISHED   (un-archive)
+ *
+ * Same-status transitions (e.g. PUBLISHED → PUBLISHED) are always allowed —
+ * they are idempotent no-ops, not real transitions.
+ */
+const VALID_TRANSITIONS: Record<string, string[]> = {
+  DRAFT: ['PUBLISHED', 'ARCHIVED'],
+  PUBLISHED: ['COMPLETED', 'SUSPENDED', 'ARCHIVED'],
+  COMPLETED: ['ARCHIVED'],
+  SUSPENDED: ['PUBLISHED', 'ARCHIVED'],
+  ARCHIVED: ['DRAFT', 'PUBLISHED'],
+};
+
+function isValidTransition(from: string, to: string): boolean {
+  if (from === to) return true; // idempotent
+  const allowed = VALID_TRANSITIONS[from];
+  if (!allowed) return false; // unknown source state — deny by default
+  return allowed.includes(to);
+}
 
 const WEDDING_DETAIL_SELECT = {
   id: true,
@@ -147,6 +182,26 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
         { error: `Invalid plan. Must be one of: ${VALID_PLANS.join(', ')}` },
         { status: 400 }
       );
+    }
+
+    // ─── Status transition validation (Phase 3 ÉTAPE 5) ─────────────────────
+    // Enforces the documented lifecycle. Idempotent same-status updates are
+    // always allowed; cross-status transitions must be in VALID_TRANSITIONS.
+    // This is additive — every previously-allowed transition remains allowed.
+    if (status !== undefined && status !== existing.status) {
+      if (!isValidTransition(existing.status, status)) {
+        return NextResponse.json(
+          {
+            error: `Transition de statut invalide : ${existing.status} → ${status}. ` +
+                   `Transitions autorisées depuis ${existing.status} : ` +
+                   `${(VALID_TRANSITIONS[existing.status] || []).join(', ') || 'aucune'}`,
+            from: existing.status,
+            to: status,
+            allowed: VALID_TRANSITIONS[existing.status] || [],
+          },
+          { status: 400 }
+        );
+      }
     }
 
     // customDomain uniqueness check (if changing)

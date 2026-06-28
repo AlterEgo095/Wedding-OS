@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db, tenantDb } from '@/lib/db';
 import { getAuthUser, hasPermission } from '@/lib/auth';
 import { withPublicTenant, withAdminTenantHandler } from '@/lib/tenant-context';
+import { checkMediaLimit } from '@/lib/plan-limits';
 import { writeFile, unlink, mkdir } from 'fs/promises';
 import path from 'path';
 
@@ -79,6 +80,32 @@ export async function POST(request: NextRequest) {
       const bytes = await file.arrayBuffer();
       const buffer = Buffer.from(bytes);
 
+      // ─── Plan limit enforcement (Phase 3 ÉTAPE 5) ─────────────────────────
+      // Block NEW media uploads when the wedding has reached its plan's
+      // storage quota. Existing media above the limit remains visible +
+      // deletable (zero regression). The check uses the actual file size
+      // (buffer.byteLength), not the multipart Content-Length header.
+      try {
+        const limitCheck = await checkMediaLimit(ctx.weddingId, buffer.byteLength);
+        if (!limitCheck.allowed) {
+          return NextResponse.json(
+            {
+              error: 'Limite de stockage média atteinte pour votre plan',
+              limitBytes: limitCheck.limitBytes,
+              currentBytes: limitCheck.currentBytes,
+              requestedBytes: buffer.byteLength,
+              plan: limitCheck.plan,
+              upgradeUrl: '/platform/admin',
+            },
+            { status: 403 }
+          );
+        }
+      } catch (limitError) {
+        // If the limit check itself fails, log and continue — we don't want
+        // to block a legitimate upload because of an internal accounting error.
+        console.error('Media limit check failed:', limitError);
+      }
+
       const uniqueName = `${Date.now()}-${Math.random().toString(36).substring(2, 8)}${ext}`;
       // Per-wedding subdirectory to keep uploads organized (Phase 9 will move to R2)
       const uploadDir = path.join(process.cwd(), 'public', 'uploads', ctx.slug);
@@ -99,6 +126,8 @@ export async function POST(request: NextRequest) {
           description: description || null,
           category: mediaCategory,
           order,
+          sizeBytes: buffer.byteLength, // persisted for plan-limit enforcement (Phase 3 ÉTAPE 5)
+          mime: file.type || null,
         },
       });
 

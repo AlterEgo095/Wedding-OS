@@ -66,6 +66,13 @@ import {
   ExternalLink,
   Wallet,
   Rocket,
+  Palette,
+  Send,
+  CheckCircle,
+  Pause,
+  Play,
+  Archive,
+  Copy,
 } from 'lucide-react'
 
 import {
@@ -84,6 +91,7 @@ import {
 import { PLAN_METADATA, type Plan, type WeddingStatus } from '@/lib/types'
 import { BillingTab } from './BillingTab'
 import { OnboardingTab } from './OnboardingTab'
+import { ThemeCustomizer } from '@/components/admin/ThemeCustomizer'
 
 // Local role labels — we can't import from @/lib/auth because that module
 // imports `next/headers` + Prisma (server-only). Same pattern as
@@ -202,7 +210,7 @@ interface PaginatedUsers {
   limit: number
 }
 
-type TabId = 'dashboard' | 'weddings' | 'users' | 'audit' | 'billing' | 'onboarding'
+type TabId = 'dashboard' | 'weddings' | 'users' | 'audit' | 'billing' | 'onboarding' | 'appearance'
 
 interface NavItem {
   id: TabId
@@ -217,14 +225,16 @@ const NAV_ITEMS: NavItem[] = [
   { id: 'onboarding', label: 'Onboarding', icon: Rocket },
   { id: 'users', label: 'Utilisateurs', icon: UsersIcon },
   { id: 'audit', label: "Journal d'audit", icon: ScrollText },
+  { id: 'appearance', label: 'Apparence', icon: Palette },
 ]
 
-const WEDDING_STATUSES: WeddingStatus[] = ['DRAFT', 'PUBLISHED', 'ARCHIVED', 'SUSPENDED']
+const WEDDING_STATUSES: WeddingStatus[] = ['DRAFT', 'PUBLISHED', 'COMPLETED', 'ARCHIVED', 'SUSPENDED']
 const PLANS: Plan[] = ['TRIAL', 'ESSENTIEL', 'PREMIUM', 'ELITE']
 
 const STATUS_LABELS: Record<WeddingStatus, string> = {
   DRAFT: 'Brouillon',
   PUBLISHED: 'Publié',
+  COMPLETED: 'Terminé',
   ARCHIVED: 'Archivé',
   SUSPENDED: 'Suspendu',
 }
@@ -232,6 +242,7 @@ const STATUS_LABELS: Record<WeddingStatus, string> = {
 const STATUS_BADGE_CLASS: Record<WeddingStatus, string> = {
   PUBLISHED: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30',
   DRAFT: 'bg-amber-500/15 text-amber-400 border-amber-500/30',
+  COMPLETED: 'bg-sky-500/15 text-sky-400 border-sky-500/30',
   ARCHIVED: 'bg-zinc-500/15 text-zinc-400 border-zinc-500/30',
   SUSPENDED: 'bg-red-500/15 text-red-400 border-red-500/30',
 }
@@ -239,7 +250,7 @@ const STATUS_BADGE_CLASS: Record<WeddingStatus, string> = {
 const PLAN_BADGE_CLASS: Record<Plan, string> = {
   ELITE: 'bg-gold/15 text-gold border-gold/40',
   PREMIUM: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30',
-  ESSENTIEL: 'bg-violet-500/15 text-violet-400 border-violet-500/30',
+  ESSENTIEL: 'bg-gold-dark/15 text-gold-dark border-gold-dark/30',
   TRIAL: 'bg-zinc-500/15 text-zinc-400 border-zinc-500/30',
 }
 
@@ -767,6 +778,18 @@ const EMPTY_WEDDING_FORM: WeddingFormState = {
   plan: 'TRIAL',
 }
 
+interface DuplicateFormState {
+  newSlug: string
+  newBrideName: string
+  newGroomName: string
+}
+
+const EMPTY_DUPLICATE_FORM: DuplicateFormState = {
+  newSlug: '',
+  newBrideName: '',
+  newGroomName: '',
+}
+
 function WeddingsTab({ fetchWithAuth }: { fetchWithAuth: (url: string, init?: RequestInit) => Promise<Response | null> }) {
   const [weddings, setWeddings] = useState<Wedding[]>([])
   const [total, setTotal] = useState(0)
@@ -780,10 +803,14 @@ function WeddingsTab({ fetchWithAuth }: { fetchWithAuth: (url: string, init?: Re
   // Dialog state
   const [showFormDialog, setShowFormDialog] = useState(false)
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
+  const [showDuplicateDialog, setShowDuplicateDialog] = useState(false)
   const [editing, setEditing] = useState<Wedding | null>(null)
   const [deleting, setDeleting] = useState<Wedding | null>(null)
+  const [duplicating, setDuplicating] = useState<Wedding | null>(null)
   const [form, setForm] = useState<WeddingFormState>(EMPTY_WEDDING_FORM)
+  const [duplicateForm, setDuplicateForm] = useState<DuplicateFormState>(EMPTY_DUPLICATE_FORM)
   const [saving, setSaving] = useState(false)
+  const [statusChangingId, setStatusChangingId] = useState<string | null>(null)
 
   const LIMIT = 20
   const searchRef = useRef(search)
@@ -926,6 +953,88 @@ function WeddingsTab({ fetchWithAuth }: { fetchWithAuth: (url: string, init?: Re
     }
   }
 
+  // ─── Status quick-action (Phase 3 ÉTAPE 5) ────────────────────────────────
+  // Single-shot status transition via the dropdown menu. The backend enforces
+  // the lifecycle (DRAFT→PUBLISHED, PUBLISHED→COMPLETED, etc.) — invalid
+  // transitions return 400 and we surface the error in a toast.
+  const handleStatusChange = async (w: Wedding, newStatus: WeddingStatus) => {
+    setStatusChangingId(w.id)
+    try {
+      const res = await fetchWithAuth(`/api/platform/weddings/${w.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: newStatus }),
+      })
+      if (!res) {
+        setStatusChangingId(null)
+        return
+      }
+      const json = await res.json().catch(() => ({}))
+      if (res.ok) {
+        toast.success(`Statut mis à jour : ${STATUS_LABELS[newStatus]}`)
+        load(page)
+      } else {
+        toast.error(json.error || 'Transition de statut invalide')
+      }
+    } catch {
+      toast.error('Erreur de connexion')
+    } finally {
+      setStatusChangingId(null)
+    }
+  }
+
+  // ─── Duplicate wedding (Phase 3 ÉTAPE 5) ──────────────────────────────────
+  const openDuplicate = (w: Wedding) => {
+    setDuplicating(w)
+    setDuplicateForm({
+      newSlug: `${w.slug}-copie`,
+      newBrideName: w.brideName,
+      newGroomName: w.groomName,
+    })
+    setShowDuplicateDialog(true)
+  }
+
+  const handleDuplicate = async () => {
+    if (!duplicating) return
+    if (!duplicateForm.newSlug.trim()) {
+      toast.error('Le slug est requis')
+      return
+    }
+    setSaving(true)
+    try {
+      const res = await fetchWithAuth(
+        `/api/platform/weddings/${duplicating.id}/duplicate`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            newSlug: duplicateForm.newSlug.trim().toLowerCase(),
+            newBrideName: duplicateForm.newBrideName.trim() || undefined,
+            newGroomName: duplicateForm.newGroomName.trim() || undefined,
+          }),
+        }
+      )
+      if (!res) {
+        setSaving(false)
+        return
+      }
+      const json = await res.json().catch(() => ({}))
+      if (res.ok) {
+        toast.success(`Mariage dupliqué vers /w/${json.wedding?.slug || duplicateForm.newSlug}`)
+        setShowDuplicateDialog(false)
+        setDuplicating(null)
+        setDuplicateForm(EMPTY_DUPLICATE_FORM)
+        load(1)
+      } else {
+        toast.error(json.error || 'Erreur lors de la duplication')
+      }
+    } catch {
+      toast.error('Erreur de connexion')
+    } finally {
+      setSaving(false)
+    }
+  }
+
   return (
     <div className="space-y-4 p-4 md:p-6">
       {/* Header + filters */}
@@ -1044,8 +1153,12 @@ function WeddingsTab({ fetchWithAuth }: { fetchWithAuth: (url: string, init?: Re
                       <TableCell>
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon" className="h-8 w-8">
-                              <MoreHorizontal className="w-4 h-4" />
+                            <Button variant="ghost" size="icon" className="h-8 w-8" disabled={statusChangingId === w.id}>
+                              {statusChangingId === w.id ? (
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                              ) : (
+                                <MoreHorizontal className="w-4 h-4" />
+                              )}
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
@@ -1059,6 +1172,46 @@ function WeddingsTab({ fetchWithAuth }: { fetchWithAuth: (url: string, init?: Re
                                 Voir le site
                               </Link>
                             </DropdownMenuItem>
+
+                            {/* ─── Status quick-actions (Phase 3 ÉTAPE 5) ─── */}
+                            <DropdownMenuSeparator />
+                            {w.status === 'DRAFT' && (
+                              <DropdownMenuItem onClick={() => handleStatusChange(w, 'PUBLISHED')}>
+                                <Send className="w-3.5 h-3.5 mr-2" />
+                                Publier
+                              </DropdownMenuItem>
+                            )}
+                            {w.status === 'PUBLISHED' && (
+                              <>
+                                <DropdownMenuItem onClick={() => handleStatusChange(w, 'COMPLETED')}>
+                                  <CheckCircle className="w-3.5 h-3.5 mr-2" />
+                                  Marquer comme terminé
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => handleStatusChange(w, 'SUSPENDED')}>
+                                  <Pause className="w-3.5 h-3.5 mr-2" />
+                                  Suspendre
+                                </DropdownMenuItem>
+                              </>
+                            )}
+                            {w.status === 'SUSPENDED' && (
+                              <DropdownMenuItem onClick={() => handleStatusChange(w, 'PUBLISHED')}>
+                                <Play className="w-3.5 h-3.5 mr-2" />
+                                Réactiver
+                              </DropdownMenuItem>
+                            )}
+                            {w.status !== 'ARCHIVED' && (
+                              <DropdownMenuItem onClick={() => handleStatusChange(w, 'ARCHIVED')}>
+                                <Archive className="w-3.5 h-3.5 mr-2" />
+                                Archiver
+                              </DropdownMenuItem>
+                            )}
+
+                            {/* ─── Duplicate (always available) ─── */}
+                            <DropdownMenuItem onClick={() => openDuplicate(w)}>
+                              <Copy className="w-3.5 h-3.5 mr-2" />
+                              Dupliquer
+                            </DropdownMenuItem>
+
                             <DropdownMenuSeparator />
                             <DropdownMenuItem
                               className="text-red-400 focus:text-red-300"
@@ -1242,6 +1395,79 @@ function WeddingsTab({ fetchWithAuth }: { fetchWithAuth: (url: string, init?: Re
             >
               {saving && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
               Supprimer définitivement
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Duplicate dialog (Phase 3 ÉTAPE 5) */}
+      <Dialog open={showDuplicateDialog} onOpenChange={setShowDuplicateDialog}>
+        <DialogContent className="glass-card gold-border max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="gold-gradient flex items-center gap-2">
+              <Copy className="w-4 h-4" />
+              Dupliquer le mariage
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Crée une copie <strong className="text-foreground">Brouillon</strong> de{' '}
+            <strong className="text-foreground">{duplicating?.coupleLabel}</strong> avec le thème,
+            la timeline, l'histoire du couple et les paramètres. Les invités, tables, médias et
+            journaux ne sont pas copiés.
+          </p>
+          <div className="grid grid-cols-1 gap-4">
+            <div className="space-y-2">
+              <Label>Nouveau slug *</Label>
+              <Input
+                value={duplicateForm.newSlug}
+                onChange={(e) => setDuplicateForm({ ...duplicateForm, newSlug: e.target.value })}
+                placeholder="nouveau-mariage"
+                className="bg-white/5 border-white/10"
+              />
+              <p className="text-[10px] text-muted-foreground">
+                URL publique : /w/&lt;slug&gt; — 3 à 32 caractères, minuscules, chiffres ou tirets.
+              </p>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Mariée</Label>
+                <Input
+                  value={duplicateForm.newBrideName}
+                  onChange={(e) => setDuplicateForm({ ...duplicateForm, newBrideName: e.target.value })}
+                  className="bg-white/5 border-white/10"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Marié</Label>
+                <Input
+                  value={duplicateForm.newGroomName}
+                  onChange={(e) => setDuplicateForm({ ...duplicateForm, newGroomName: e.target.value })}
+                  className="bg-white/5 border-white/10"
+                />
+              </div>
+            </div>
+            <p className="text-[10px] text-muted-foreground">
+              Laissez vide pour reprendre les noms du mariage source.
+            </p>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setShowDuplicateDialog(false)
+                setDuplicating(null)
+              }}
+            >
+              Annuler
+            </Button>
+            <Button
+              onClick={handleDuplicate}
+              disabled={saving || !duplicateForm.newSlug.trim()}
+              className="bg-gradient-gold text-white"
+            >
+              {saving && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
+              <Copy className="w-4 h-4 mr-1" />
+              Dupliquer
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1968,6 +2194,8 @@ export default function PlatformAdminPage() {
         return <UsersTab fetchWithAuth={fetchWithAuth} />
       case 'audit':
         return <AuditTab fetchWithAuth={fetchWithAuth} />
+      case 'appearance':
+        return <ThemeCustomizer />
       default:
         return <DashboardTab fetchWithAuth={fetchWithAuth} />
     }

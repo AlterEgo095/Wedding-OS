@@ -12,6 +12,21 @@ interface LoginFormProps {
   onLogin: (token: string, user: { id: string; email: string; name: string; role: string }) => void
 }
 
+/**
+ * Detect the current wedding slug from the URL path.
+ * Returns null on root `/` (legacy /admin SPA served at root, default wedding).
+ * Returns the slug on `/w/[slug]/...` routes (per-wedding admin).
+ *
+ * The slug is sent as `X-Wedding-Slug` header on the login POST so the
+ * backend can scope the login attempt to the correct wedding — this is
+ * important for per-wedding admin logins at `/w/[slug]/admin/login`.
+ */
+function getWeddingSlug(): string | null {
+  if (typeof window === 'undefined') return null
+  const match = window.location.pathname.match(/^\/w\/([a-z0-9-]+)/i)
+  return match?.[1] ?? null
+}
+
 export default function LoginForm({ onLogin }: LoginFormProps) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -24,9 +39,17 @@ export default function LoginForm({ onLogin }: LoginFormProps) {
     setError('')
 
     try {
+      const weddingSlug = getWeddingSlug()
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+      // Scope the login to the per-wedding admin context when on /w/[slug]/admin/login.
+      // On root /admin (legacy SPA), no header is sent — the default wedding is served.
+      if (weddingSlug) {
+        headers['X-Wedding-Slug'] = weddingSlug
+      }
+
       const res = await fetch('/api/admin/login', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({ email, password }),
       })
 

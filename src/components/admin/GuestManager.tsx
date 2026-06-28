@@ -43,6 +43,31 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 
+/**
+ * Detect the current wedding slug from the URL path.
+ * Returns null on root `/admin` (legacy SPA served at root, default wedding).
+ * Returns the slug on `/w/[slug]/...` routes (per-wedding admin).
+ */
+function getWeddingSlug(): string | null {
+  if (typeof window === 'undefined') return null
+  const match = window.location.pathname.match(/^\/w\/([a-z0-9-]+)/i)
+  return match?.[1] ?? null
+}
+
+/**
+ * Build the public invite URL for a guest. On the legacy root `/admin` SPA this
+ * points to `/?invite=…` (default wedding). On per-wedding admin it points to
+ * `/w/<slug>?invite=…` so the invitee lands on the correct tenant site.
+ */
+function buildInviteUrl(suffix: string): string {
+  if (typeof window === 'undefined') return ''
+  const origin = window.location.origin
+  const slug = getWeddingSlug()
+  return slug
+    ? `${origin}/w/${slug}${suffix}`
+    : `${origin}${suffix}`
+}
+
 interface Guest {
   id: string
   firstName: string
@@ -131,6 +156,25 @@ export default function GuestManager({ token, onSessionExpired }: GuestManagerPr
   const [filterCategory, setFilterCategory] = useState<string>('all')
   const [filterTable, setFilterTable] = useState<string>('all')
 
+  // Couple label from settings — used in share/WhatsApp messages so we don't
+  // leak "Josué & Hornella" into other weddings' comms. Generic "Mariage"
+  // fallback until the settings fetch resolves.
+  const [coupleLabel, setCoupleLabel] = useState<string>('Mariage')
+  useEffect(() => {
+    fetch('/api/settings')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        const s = data?.settings
+        if (s && typeof s === 'object') {
+          const bride = (s.bride_name || '').trim()
+          const groom = (s.groom_name || '').trim()
+          if (bride && groom) setCoupleLabel(`${groom} & ${bride}`)
+          else if (bride || groom) setCoupleLabel(bride || groom)
+        }
+      })
+      .catch(() => {})
+  }, [])
+
   // Dialogs
   const [showAddDialog, setShowAddDialog] = useState(false)
   const [showEditDialog, setShowEditDialog] = useState(false)
@@ -157,13 +201,13 @@ export default function GuestManager({ token, onSessionExpired }: GuestManagerPr
       if (res.ok) {
         const data = await res.json()
         if (data.encryptedToken) {
-          return `${window.location.origin}?invite=${data.encryptedToken}`
+          return buildInviteUrl(`?invite=${data.encryptedToken}`)
         }
       }
     } catch {
       // Fallback to simple code link
     }
-    return `${window.location.origin}?code=${guest.invitationCode}`
+    return buildInviteUrl(`?code=${guest.invitationCode}`)
   }
 
   const handleCopyLink = async (guest: Guest) => {
@@ -192,7 +236,7 @@ export default function GuestManager({ token, onSessionExpired }: GuestManagerPr
       try {
         await navigator.share({
           title: `Invitation - ${guest.firstName} ${guest.lastName}`,
-          text: `Voici votre invitation privée pour le mariage de Josué & Hornella`,
+          text: `Voici votre invitation privée pour le mariage de ${coupleLabel}`,
           url: link,
         })
       } catch {
@@ -205,7 +249,7 @@ export default function GuestManager({ token, onSessionExpired }: GuestManagerPr
 
   const handleSendViaWhatsApp = async (guest: Guest) => {
     const link = await getInvitationLink(guest)
-    const message = `Cher(e) ${guest.firstName} ${guest.lastName}, voici votre invitation privée pour le mariage de Josué & Hornella : ${link}`
+    const message = `Cher(e) ${guest.firstName} ${guest.lastName}, voici votre invitation privée pour le mariage de ${coupleLabel} : ${link}`
     const phone = guest.phone?.replace(/\s/g, '').replace(/^\+/, '')
     const url = phone
       ? `https://wa.me/${phone}?text=${encodeURIComponent(message)}`

@@ -42,6 +42,7 @@ import GuestPersonalSpace from '@/components/GuestPersonalSpace';
 import AmbientMusicPlayer from '@/components/AmbientMusicPlayer';
 import VisualEffectsLayer from '@/components/effects/VisualEffectsLayer';
 import LuxuryVisualEngine from '@/components/luxury/LuxuryVisualEngine';
+import { ThemeInjector } from '@/components/wedding/ThemeInjector';
 import { useWedding } from './wedding-context';
 
 // ─── Types (mirrored from root page.tsx) ──────────────────────────────────────
@@ -239,6 +240,9 @@ function WeddingPageContent() {
 
       {/* Luxury cinematic ambiance engine — independent layer */}
       <LuxuryVisualEngine />
+
+      {/* Phase 8: Theme injector — applies wedding colors + fonts */}
+      <ThemeInjector />
 
       <Navigation />
 

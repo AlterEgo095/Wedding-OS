@@ -20,15 +20,48 @@ const navLinks = [
   { href: '#recherche', label: 'Recherche' },
 ]
 
+/**
+ * Derive a short monogram from the couple names (e.g. "Josué" + "Hornella"
+ * → "J & H"). Falls back to "M" (Mariage) when names aren't configured so
+ * we don't leak "J & H" (the default wedding's initials) into other
+ * weddings' navigation.
+ */
+function buildMonogram(groom: string, bride: string): string {
+  const g = groom.trim()
+  const b = bride.trim()
+  if (g && b) return `${g.charAt(0).toUpperCase()} & ${b.charAt(0).toUpperCase()}`
+  if (g) return g.charAt(0).toUpperCase()
+  if (b) return b.charAt(0).toUpperCase()
+  return 'M'
+}
+
 export default function Navigation() {
   const [scrolled, setScrolled] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
+  // Couple-derived monogram + date from settings (avoids hardcoding
+  // "J & H" and "Vendredi 26 Juin 2026"). The default wedding resolves
+  // to "J & H" / "Vendredi 26 Juin 2026" via /api/settings (zero regression).
+  const [monogram, setMonogram] = useState<string>('M')
+  const [dateDisplay, setDateDisplay] = useState<string>('')
   const mounted = useSyncExternalStore(
     () => () => {},
     () => true,
     () => false
   )
   const { theme, setTheme } = useTheme()
+
+  useEffect(() => {
+    fetch('/api/settings')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        const s = data?.settings
+        if (s && typeof s === 'object') {
+          setMonogram(buildMonogram(s.groom_name || '', s.bride_name || ''))
+          if (s.site_subtitle) setDateDisplay(s.site_subtitle)
+        }
+      })
+      .catch(() => {})
+  }, [])
 
   useEffect(() => {
     const handleScroll = () => {
@@ -70,7 +103,7 @@ export default function Navigation() {
               className="flex items-center gap-2"
             >
               <span className="font-serif text-xl md:text-2xl font-bold gold-gradient">
-                J & H
+                {monogram}
               </span>
             </a>
 
@@ -162,7 +195,7 @@ export default function Navigation() {
         <SheetContent side="left" className="w-80 glass-card border-gold/10">
           <SheetHeader>
             <SheetTitle className="font-serif text-2xl gold-gradient text-left">
-              J & H
+              {monogram}
             </SheetTitle>
           </SheetHeader>
           <nav className="flex flex-col gap-2 mt-8">
@@ -184,9 +217,11 @@ export default function Navigation() {
             ))}
           </nav>
           <div className="mt-auto pt-8 border-t border-gold/10">
-            <p className="text-sm text-muted-foreground text-center font-display">
-              Vendredi 26 Juin 2026
-            </p>
+            {dateDisplay && (
+              <p className="text-sm text-muted-foreground text-center font-display">
+                {dateDisplay}
+              </p>
+            )}
           </div>
         </SheetContent>
       </Sheet>

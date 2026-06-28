@@ -74,7 +74,12 @@ const NAV_ITEMS: NavItem[] = [
   { id: 'settings', label: 'Paramètres', icon: Settings, superAdminOnly: true },
 ]
 
-const COUPLE_PHOTO_FALLBACK = '/uploads/couple-photo-1.jpeg'
+// Generic couple-photo fallback (exists in /public for every deployment).
+// Avoids assuming the current wedding owns `/uploads/couple-photo-1.jpeg`
+// (which is the default wedding's asset). The couple label is already
+// derived from the wedding context (`wedding.coupleLabel`), so we never
+// leak the default wedding's couple identity into another tenant's admin.
+const COUPLE_PHOTO_FALLBACK = '/couple-hero.jpeg'
 
 // useSyncExternalStore subscribe placeholder — we only need the getServerSnapshot
 // vs getSnapshot split to detect "are we hydrated yet?" without triggering the

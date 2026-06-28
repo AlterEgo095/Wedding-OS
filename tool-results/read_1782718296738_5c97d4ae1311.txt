@@ -1,0 +1,1203 @@
+     1→'use client'
+     2→
+     3→import { useState, useEffect, useCallback, useRef } from 'react'
+     4→import { toast } from 'sonner'
+     5→
+     6→import { Button } from '@/components/ui/button'
+     7→import { Input } from '@/components/ui/input'
+     8→import { Label } from '@/components/ui/label'
+     9→import { Badge } from '@/components/ui/badge'
+    10→import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+    11→import { Skeleton } from '@/components/ui/skeleton'
+    12→import { Separator } from '@/components/ui/separator'
+    13→import { Textarea } from '@/components/ui/textarea'
+    14→import {
+    15→  Dialog,
+    16→  DialogContent,
+    17→  DialogHeader,
+    18→  DialogTitle,
+    19→  DialogFooter,
+    20→  DialogDescription,
+    21→} from '@/components/ui/dialog'
+    22→import {
+    23→  Select,
+    24→  SelectContent,
+    25→  SelectItem,
+    26→  SelectTrigger,
+    27→  SelectValue,
+    28→} from '@/components/ui/select'
+    29→import {
+    30→  Table,
+    31→  TableBody,
+    32→  TableCell,
+    33→  TableHead,
+    34→  TableHeader,
+    35→  TableRow,
+    36→} from '@/components/ui/table'
+    37→import {
+    38→  Wallet,
+    39→  MessageCircle,
+    40→  CheckCircle2,
+    41→  Plus,
+    42→  Search,
+    43→  ExternalLink,
+    44→  Copy,
+    45→  Loader2,
+    46→  TrendingUp,
+    47→  Clock,
+    48→  XCircle,
+    49→  DollarSign,
+    50→  Receipt,
+    51→} from 'lucide-react'
+    52→
+    53→import { PLAN_METADATA, type Plan } from '@/lib/types'
+    54→import { FCFA_TO_USD_RATE } from '@/lib/billing'
+    55→
+    56→// ══════════════════════════════════════════════════════════════════════════════
+    57→// Types — mirror the API responses
+    58→// ══════════════════════════════════════════════════════════════════════════════
+    59→
+    60→interface SubscriptionSummary {
+    61→  id: string
+    62→  plan: Plan
+    63→  status: string
+    64→  amountAgreed: number | null
+    65→  currency: string
+    66→  billingCycle: string
+    67→  paymentMethod: string | null
+    68→  whatsappPhone: string | null
+    69→  notes: string | null
+    70→  paidAt: string | null
+    71→  activatedAt: string | null
+    72→  createdAt: string
+    73→  currentPeriodEnd: string | null
+    74→}
+    75→
+    76→interface BillingWeddingRow {
+    77→  id: string
+    78→  slug: string
+    79→  coupleLabel: string
+    80→  status: string
+    81→  plan: Plan
+    82→  weddingDate: string | null
+    83→  createdAt: string
+    84→  subscription: SubscriptionSummary | null
+    85→  effectivePriceUsdCents: number
+    86→  planLabel: string
+    87→  invoicesCount: number
+    88→  openInvoicesCount: number
+    89→}
+    90→
+    91→interface BillingOverviewResponse {
+    92→  weddings: BillingWeddingRow[]
+    93→  summary: {
+    94→    total: number
+    95→    active: number
+    96→    pending: number
+    97→    trial: number
+    98→    mrrUsd: number
+    99→    pendingUsd: number
+   100→  }
+   101→}
+   102→
+   103→interface InvoiceRow {
+   104→  id: string
+   105→  subscriptionId: string
+   106→  weddingId: string
+   107→  amountDue: number
+   108→  amountPaid: number
+   109→  currency: string
+   110→  billingCycle: string
+   111→  status: string
+   112→  paymentMethod: string | null
+   113→  whatsappSentAt: string | null
+   114→  whatsappPhone: string | null
+   115→  confirmedBy: string | null
+   116→  notes: string | null
+   117→  paidAt: string | null
+   118→  createdAt: string
+   119→}
+   120→
+   121→interface SubscriptionDetailResponse {
+   122→  wedding: {
+   123→    id: string
+   124→    slug: string
+   125→    coupleLabel: string
+   126→    plan: Plan
+   127→    status: string
+   128→  }
+   129→  subscription: SubscriptionSummary | null
+   130→}
+   131→
+   132→interface InvoicesListResponse {
+   133→  wedding: { id: string; slug: string; coupleLabel: string }
+   134→  invoices: InvoiceRow[]
+   135→}
+   136→
+   137→interface WhatsAppResponse {
+   138→  url: string
+   139→  message: string
+   140→  recipient: string | null
+   141→  plan: Plan
+   142→  amountUsdCents: number
+   143→  billingCycle: string
+   144→  currency: string
+   145→}
+   146→
+   147→// ══════════════════════════════════════════════════════════════════════════════
+   148→// Display constants
+   149→// ══════════════════════════════════════════════════════════════════════════════
+   150→
+   151→const SUB_STATUS_LABELS: Record<string, string> = {
+   152→  TRIALING: 'Essai',
+   153→  PENDING_PAYMENT: 'Paiement en attente',
+   154→  ACTIVE: 'Actif',
+   155→  PAST_DUE: 'En retard',
+   156→  SUSPENDED: 'Suspendu',
+   157→  CANCELED: 'Annulé',
+   158→  EXPIRED: 'Expiré',
+   159→}
+   160→
+   161→const SUB_STATUS_BADGE: Record<string, string> = {
+   162→  TRIALING: 'bg-zinc-500/15 text-zinc-300 border-zinc-500/30',
+   163→  PENDING_PAYMENT: 'bg-amber-500/15 text-amber-400 border-amber-500/30',
+   164→  ACTIVE: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30',
+   165→  PAST_DUE: 'bg-orange-500/15 text-orange-400 border-orange-500/30',
+   166→  SUSPENDED: 'bg-red-500/15 text-red-400 border-red-500/30',
+   167→  CANCELED: 'bg-zinc-500/15 text-zinc-400 border-zinc-500/30',
+   168→  EXPIRED: 'bg-zinc-500/15 text-zinc-400 border-zinc-500/30',
+   169→}
+   170→
+   171→const INVOICE_STATUS_LABELS: Record<string, string> = {
+   172→  DRAFT: 'Brouillon',
+   173→  OPEN: 'À payer',
+   174→  PAID: 'Payée',
+   175→  VOID: 'Annulée',
+   176→}
+   177→
+   178→const INVOICE_STATUS_BADGE: Record<string, string> = {
+   179→  DRAFT: 'bg-zinc-500/15 text-zinc-300 border-zinc-500/30',
+   180→  OPEN: 'bg-amber-500/15 text-amber-400 border-amber-500/30',
+   181→  PAID: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30',
+   182→  VOID: 'bg-red-500/15 text-red-400 border-red-500/30',
+   183→}
+   184→
+   185→const BILLING_CYCLE_LABELS: Record<string, string> = {
+   186→  MONTHLY: 'Mensuel',
+   187→  ANNUAL: 'Annuel',
+   188→  ONE_TIME: 'Unique',
+   189→}
+   190→
+   191→const PAYMENT_METHOD_LABELS: Record<string, string> = {
+   192→  MOBILE_MONEY: 'Mobile Money',
+   193→  BANK_TRANSFER: 'Virement',
+   194→  CASH: 'Espèces',
+   195→  OTHER: 'Autre',
+   196→}
+   197→
+   198→const PLAN_BADGE_CLASS: Record<Plan, string> = {
+   199→  ELITE: 'bg-gold/15 text-gold border-gold/40',
+   200→  PREMIUM: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30',
+   201→  ESSENTIEL: 'bg-gold-dark/15 text-gold-dark border-gold-dark/30',
+   202→  TRIAL: 'bg-zinc-500/15 text-zinc-400 border-zinc-500/30',
+   203→}
+   204→
+   205→const PLANS: Plan[] = ['TRIAL', 'ESSENTIEL', 'PREMIUM', 'ELITE']
+   206→const SUB_STATUSES = ['TRIALING', 'PENDING_PAYMENT', 'ACTIVE', 'PAST_DUE', 'SUSPENDED', 'CANCELED', 'EXPIRED']
+   207→const BILLING_CYCLES = ['MONTHLY', 'ANNUAL', 'ONE_TIME']
+   208→const PAYMENT_METHODS = ['MOBILE_MONEY', 'BANK_TRANSFER', 'CASH', 'OTHER']
+   209→
+   210→// ══════════════════════════════════════════════════════════════════════════════
+   211→// Form state
+   212→// ══════════════════════════════════════════════════════════════════════════════
+   213→
+   214→interface SubscriptionFormState {
+   215→  plan: Plan
+   216→  status: string
+   217→  billingCycle: string
+   218→  amountAgreed: string // USD cents as string for input
+   219→  paymentMethod: string
+   220→  whatsappPhone: string
+   221→  notes: string
+   222→}
+   223→
+   224→const EMPTY_FORM: SubscriptionFormState = {
+   225→  plan: 'TRIAL',
+   226→  status: 'TRIALING',
+   227→  billingCycle: 'MONTHLY',
+   228→  amountAgreed: '',
+   229→  paymentMethod: '',
+   230→  whatsappPhone: '',
+   231→  notes: '',
+   232→}
+   233→
+   234→// ══════════════════════════════════════════════════════════════════════════════
+   235→// Helpers
+   236→// ══════════════════════════════════════════════════════════════════════════════
+   237→
+   238→function formatUsd(cents: number): string {
+   239→  return `$${(cents / 100).toFixed(2)}`
+   240→}
+   241→
+   242→function formatFcfa(cents: number): string {
+   243→  const usd = cents / 100
+   244→  return `${Math.round(usd * FCFA_TO_USD_RATE).toLocaleString('fr-FR')} FCFA`
+   245→}
+   246→
+   247→function formatDate(iso: string | null): string {
+   248→  if (!iso) return '—'
+   249→  return new Date(iso).toLocaleDateString('fr-FR', {
+   250→    day: '2-digit',
+   251→    month: 'short',
+   252→    year: 'numeric',
+   253→    hour: '2-digit',
+   254→    minute: '2-digit',
+   255→  })
+   256→}
+   257→
+   258→// ══════════════════════════════════════════════════════════════════════════════
+   259→// Main BillingTab component
+   260→// ══════════════════════════════════════════════════════════════════════════════
+   261→
+   262→export function BillingTab({
+   263→  fetchWithAuth,
+   264→}: {
+   265→  fetchWithAuth: (url: string, init?: RequestInit) => Promise<Response | null>
+   266→}) {
+   267→  const [data, setData] = useState<BillingOverviewResponse | null>(null)
+   268→  const [loading, setLoading] = useState(true)
+   269→  const [search, setSearch] = useState('')
+   270→  const [statusFilter, setStatusFilter] = useState('ALL')
+   271→  const [planFilter, setPlanFilter] = useState('ALL')
+   272→
+   273→  // Editor dialog state
+   274→  const [editing, setEditing] = useState<BillingWeddingRow | null>(null)
+   275→  const [editorOpen, setEditorOpen] = useState(false)
+   276→  const [subscriptionDetail, setSubscriptionDetail] = useState<SubscriptionSummary | null>(null)
+   277→  const [invoices, setInvoices] = useState<InvoiceRow[]>([])
+   278→  const [form, setForm] = useState<SubscriptionFormState>(EMPTY_FORM)
+   279→  const [saving, setSaving] = useState(false)
+   280→  const [creatingInvoice, setCreatingInvoice] = useState(false)
+   281→  const [actionLoading, setActionLoading] = useState<string | null>(null) // invoice id being acted upon
+   282→
+   283→  // WhatsApp modal state
+   284→  const [whatsappData, setWhatsappData] = useState<WhatsAppResponse | null>(null)
+   285→  const [whatsappOpen, setWhatsappOpen] = useState(false)
+   286→  const [generatingWhatsapp, setGeneratingWhatsapp] = useState(false)
+   287→
+   288→  const searchRef = useRef(search)
+   289→  searchRef.current = search
+   290→
+   291→  const load = useCallback(async () => {
+   292→    setLoading(true)
+   293→    const params = new URLSearchParams()
+   294→    if (searchRef.current) params.set('search', searchRef.current)
+   295→    if (statusFilter !== 'ALL') params.set('status', statusFilter)
+   296→    if (planFilter !== 'ALL') params.set('plan', planFilter)
+   297→    const res = await fetchWithAuth(`/api/platform/billing/weddings?${params.toString()}`)
+   298→    if (!res) {
+   299→      setLoading(false)
+   300→      return
+   301→    }
+   302→    try {
+   303→      const json = (await res.json()) as BillingOverviewResponse
+   304→      setData(json)
+   305→    } catch {
+   306→      toast.error('Réponse invalide du serveur')
+   307→    } finally {
+   308→      setLoading(false)
+   309→    }
+   310→  }, [fetchWithAuth, statusFilter, planFilter])
+   311→
+   312→  useEffect(() => {
+   313→    load()
+   314→  }, [statusFilter, planFilter, load])
+   315→
+   316→  // Debounced search
+   317→  useEffect(() => {
+   318→    const t = setTimeout(() => load(), 350)
+   319→    return () => clearTimeout(t)
+   320→  }, [search, load])
+   321→
+   322→  // ─── Open subscription editor for a wedding ─────────────────────────────
+   323→  const openEditor = async (row: BillingWeddingRow) => {
+   324→    setEditing(row)
+   325→    setEditorOpen(true)
+   326→    setForm(EMPTY_FORM)
+   327→    setSubscriptionDetail(null)
+   328→    setInvoices([])
+   329→
+   330→    // Fetch current subscription detail + invoices in parallel
+   331→    const [subRes, invRes] = await Promise.all([
+   332→      fetchWithAuth(`/api/platform/weddings/${row.id}/subscription`),
+   333→      fetchWithAuth(`/api/platform/weddings/${row.id}/invoices`),
+   334→    ])
+   335→    if (subRes) {
+   336→      try {
+   337→        const json = (await subRes.json()) as SubscriptionDetailResponse
+   338→        if (json.subscription) {
+   339→          setSubscriptionDetail(json.subscription)
+   340→          setForm({
+   341→            plan: json.subscription.plan,
+   342→            status: json.subscription.status,
+   343→            billingCycle: json.subscription.billingCycle,
+   344→            amountAgreed:
+   345→              json.subscription.amountAgreed != null
+   346→                ? String(json.subscription.amountAgreed)
+   347→                : '',
+   348→            paymentMethod: json.subscription.paymentMethod || '',
+   349→            whatsappPhone: json.subscription.whatsappPhone || '',
+   350→            notes: json.subscription.notes || '',
+   351→          })
+   352→        } else {
+   353→          // No subscription yet — default to wedding's current plan
+   354→          setForm({
+   355→            ...EMPTY_FORM,
+   356→            plan: row.plan,
+   357→          })
+   358→        }
+   359→      } catch {
+   360→        /* ignore */
+   361→      }
+   362→    }
+   363→    if (invRes) {
+   364→      try {
+   365→        const json = (await invRes.json()) as InvoicesListResponse
+   366→        setInvoices(json.invoices || [])
+   367→      } catch {
+   368→        /* ignore */
+   369→      }
+   370→    }
+   371→  }
+   372→
+   373→  // ─── Save subscription ──────────────────────────────────────────────────
+   374→  const handleSaveSubscription = async () => {
+   375→    if (!editing) return
+   376→    setSaving(true)
+   377→    const payload: Record<string, unknown> = {
+   378→      plan: form.plan,
+   379→      status: form.status,
+   380→      billingCycle: form.billingCycle,
+   381→      paymentMethod: form.paymentMethod || null,
+   382→      whatsappPhone: form.whatsappPhone.trim() || null,
+   383→      notes: form.notes.trim() || null,
+   384→    }
+   385→    if (form.amountAgreed.trim()) {
+   386→      const n = Number(form.amountAgreed)
+   387→      if (!Number.isFinite(n) || n < 0) {
+   388→        toast.error('Prix personnalisé invalide (entier en centimes USD)')
+   389→        setSaving(false)
+   390→        return
+   391→      }
+   392→      payload.amountAgreed = Math.round(n)
+   393→    } else {
+   394→      payload.amountAgreed = null
+   395→    }
+   396→
+   397→    const res = await fetchWithAuth(
+   398→      `/api/platform/weddings/${editing.id}/subscription`,
+   399→      {
+   400→        method: 'PUT',
+   401→        headers: { 'Content-Type': 'application/json' },
+   402→        body: JSON.stringify(payload),
+   403→      },
+   404→    )
+   405→    setSaving(false)
+   406→    if (!res) return
+   407→    if (res.ok) {
+   408→      toast.success('Abonnement enregistré')
+   409→      const json = (await res.json()) as { subscription: SubscriptionSummary }
+   410→      setSubscriptionDetail(json.subscription)
+   411→      await load() // refresh overview
+   412→    } else {
+   413→      const json = await res.json().catch(() => ({}))
+   414→      toast.error(json.error || 'Erreur lors de la sauvegarde')
+   415→    }
+   416→  }
+   417→
+   418→  // ─── Generate WhatsApp message ──────────────────────────────────────────
+   419→  const handleGenerateWhatsApp = async () => {
+   420→    if (!editing) return
+   421→    setGeneratingWhatsapp(true)
+   422→    const res = await fetchWithAuth(
+   423→      `/api/platform/weddings/${editing.id}/subscription/whatsapp`,
+   424→      {
+   425→        method: 'POST',
+   426→        headers: { 'Content-Type': 'application/json' },
+   427→        body: JSON.stringify({
+   428→          plan: form.plan,
+   429→          billingCycle: form.billingCycle,
+   430→          whatsappPhone: form.whatsappPhone.trim() || null,
+   431→          notes: form.notes.trim() || null,
+   432→        }),
+   433→      },
+   434→    )
+   435→    setGeneratingWhatsapp(false)
+   436→    if (!res) return
+   437→    if (res.ok) {
+   438→      const json = (await res.json()) as WhatsAppResponse
+   439→      setWhatsappData(json)
+   440→      setWhatsappOpen(true)
+   441→    } else {
+   442→      const json = await res.json().catch(() => ({}))
+   443→      toast.error(json.error || 'Erreur lors de la génération du message')
+   444→    }
+   445→  }
+   446→
+   447→  // ─── Create invoice ─────────────────────────────────────────────────────
+   448→  const handleCreateInvoice = async () => {
+   449→    if (!editing) return
+   450→    setCreatingInvoice(true)
+   451→    const res = await fetchWithAuth(
+   452→      `/api/platform/weddings/${editing.id}/invoices`,
+   453→      {
+   454→        method: 'POST',
+   455→        headers: { 'Content-Type': 'application/json' },
+   456→        body: JSON.stringify({
+   457→          plan: form.plan,
+   458→          billingCycle: form.billingCycle,
+   459→          paymentMethod: form.paymentMethod || null,
+   460→          whatsappPhone: form.whatsappPhone.trim() || null,
+   461→          notes: form.notes.trim() || null,
+   462→        }),
+   463→      },
+   464→    )
+   465→    setCreatingInvoice(false)
+   466→    if (!res) return
+   467→    if (res.ok) {
+   468→      toast.success('Facture créée')
+   469→      const json = (await res.json()) as { invoice: InvoiceRow }
+   470→      setInvoices((prev) => [json.invoice, ...prev])
+   471→      await load()
+   472→    } else {
+   473→      const json = await res.json().catch(() => ({}))
+   474→      toast.error(json.error || 'Erreur lors de la création de la facture')
+   475→    }
+   476→  }
+   477→
+   478→  // ─── Mark invoice as paid ───────────────────────────────────────────────
+   479→  const handleMarkPaid = async (invoice: InvoiceRow) => {
+   480→    if (!editing) return
+   481→    setActionLoading(invoice.id)
+   482→    const res = await fetchWithAuth(`/api/platform/invoices/${invoice.id}`, {
+   483→      method: 'PUT',
+   484→      headers: { 'Content-Type': 'application/json' },
+   485→      body: JSON.stringify({
+   486→        status: 'PAID',
+   487→        paymentMethod: invoice.paymentMethod || form.paymentMethod || null,
+   488→      }),
+   489→    })
+   490→    setActionLoading(null)
+   491→    if (!res) return
+   492→    if (res.ok) {
+   493→      toast.success('Facture marquée comme payée')
+   494→      const json = (await res.json()) as { invoice: InvoiceRow }
+   495→      setInvoices((prev) =>
+   496→        prev.map((inv) => (inv.id === invoice.id ? json.invoice : inv)),
+   497→      )
+   498→      await load()
+   499→    } else {
+   500→      const json = await res.json().catch(() => ({}))
+   501→      toast.error(json.error || 'Erreur lors du marquage')
+   502→    }
+   503→  }
+   504→
+   505→  // ─── Void invoice ───────────────────────────────────────────────────────
+   506→  const handleVoidInvoice = async (invoice: InvoiceRow) => {
+   507→    if (!editing) return
+   508→    setActionLoading(invoice.id)
+   509→    const res = await fetchWithAuth(`/api/platform/invoices/${invoice.id}`, {
+   510→      method: 'PUT',
+   511→      headers: { 'Content-Type': 'application/json' },
+   512→      body: JSON.stringify({ status: 'VOID' }),
+   513→    })
+   514→    setActionLoading(null)
+   515→    if (!res) return
+   516→    if (res.ok) {
+   517→      toast.success('Facture annulée')
+   518→      const json = (await res.json()) as { invoice: InvoiceRow }
+   519→      setInvoices((prev) =>
+   520→        prev.map((inv) => (inv.id === invoice.id ? json.invoice : inv)),
+   521→      )
+   522→      await load()
+   523→    } else {
+   524→      const json = await res.json().catch(() => ({}))
+   525→      toast.error(json.error || 'Erreur lors de l\'annulation')
+   526→    }
+   527→  }
+   528→
+   529→  // ─── Copy WhatsApp message to clipboard ─────────────────────────────────
+   530→  const handleCopyMessage = async () => {
+   531→    if (!whatsappData) return
+   532→    try {
+   533→      await navigator.clipboard.writeText(whatsappData.message)
+   534→      toast.success('Message copié dans le presse-papiers')
+   535→    } catch {
+   536→      toast.error('Impossible de copier le message')
+   537→    }
+   538→  }
+   539→
+   540→  // ════════════════════════════════════════════════════════════════════════════
+   541→  // Render
+   542→  // ════════════════════════════════════════════════════════════════════════════
+   543→
+   544→  const summary = data?.summary
+   545→
+   546→  return (
+   547→    <div className="space-y-6">
+   548→      {/* ─── Summary cards ─────────────────────────────────────────────── */}
+   549→      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+   550→        <SummaryCard
+   551→          icon={<Wallet className="w-4 h-4" />}
+   552→          label="Total mariages"
+   553→          value={summary?.total ?? 0}
+   554→          loading={loading}
+   555→        />
+   556→        <SummaryCard
+   557→          icon={<CheckCircle2 className="w-4 h-4" />}
+   558→          label="Actifs"
+   559→          value={summary?.active ?? 0}
+   560→          loading={loading}
+   561→          accent="emerald"
+   562→        />
+   563→        <SummaryCard
+   564→          icon={<Clock className="w-4 h-4" />}
+   565→          label="En attente"
+   566→          value={summary?.pending ?? 0}
+   567→          loading={loading}
+   568→          accent="amber"
+   569→        />
+   570→        <SummaryCard
+   571→          icon={<TrendingUp className="w-4 h-4" />}
+   572→          label="MRR (USD)"
+   573→          value={`$${(summary?.mrrUsd ?? 0).toFixed(2)}`}
+   574→          loading={loading}
+   575→          accent="gold"
+   576→        />
+   577→        <SummaryCard
+   578→          icon={<DollarSign className="w-4 h-4" />}
+   579→          label="À recouvrer"
+   580→          value={`$${(summary?.pendingUsd ?? 0).toFixed(2)}`}
+   581→          loading={loading}
+   582→          accent="orange"
+   583→        />
+   584→      </div>
+   585→
+   586→      {/* ─── Filters ────────────────────────────────────────────────────── */}
+   587→      <div className="flex flex-col sm:flex-row gap-3">
+   588→        <div className="relative flex-1">
+   589→          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+   590→          <Input
+   591→            placeholder="Rechercher un couple ou slug…"
+   592→            value={search}
+   593→            onChange={(e) => setSearch(e.target.value)}
+   594→            className="pl-10 bg-card/50 border-border"
+   595→          />
+   596→        </div>
+   597→        <Select value={statusFilter} onValueChange={setStatusFilter}>
+   598→          <SelectTrigger className="w-full sm:w-48 bg-card/50">
+   599→            <SelectValue placeholder="Tous les statuts" />
+   600→          </SelectTrigger>
+   601→          <SelectContent>
+   602→            <SelectItem value="ALL">Tous les statuts</SelectItem>
+   603→            {SUB_STATUSES.map((s) => (
+   604→              <SelectItem key={s} value={s}>
+   605→                {SUB_STATUS_LABELS[s] || s}
+   606→              </SelectItem>
+   607→            ))}
+   608→          </SelectContent>
+   609→        </Select>
+   610→        <Select value={planFilter} onValueChange={setPlanFilter}>
+   611→          <SelectTrigger className="w-full sm:w-40 bg-card/50">
+   612→            <SelectValue placeholder="Tous les plans" />
+   613→          </SelectTrigger>
+   614→          <SelectContent>
+   615→            <SelectItem value="ALL">Tous les plans</SelectItem>
+   616→            {PLANS.map((p) => (
+   617→              <SelectItem key={p} value={p}>
+   618→                {PLAN_METADATA[p].label}
+   619→              </SelectItem>
+   620→            ))}
+   621→          </SelectContent>
+   622→        </Select>
+   623→      </div>
+   624→
+   625→      {/* ─── Weddings table ─────────────────────────────────────────────── */}
+   626→      <Card className="bg-card/50 border-border">
+   627→        <CardHeader>
+   628→          <CardTitle className="text-base flex items-center gap-2">
+   629→            <Receipt className="w-4 h-4 text-gold" />
+   630→            Abonnements & Facturation
+   631→          </CardTitle>
+   632→        </CardHeader>
+   633→        <CardContent>
+   634→          {loading ? (
+   635→            <div className="space-y-3">
+   636→              {Array.from({ length: 4 }).map((_, i) => (
+   637→                <Skeleton key={i} className="h-12 w-full" />
+   638→              ))}
+   639→            </div>
+   640→          ) : !data || data.weddings.length === 0 ? (
+   641→            <div className="text-center py-12 text-muted-foreground">
+   642→              <Wallet className="w-8 h-8 mx-auto mb-3 opacity-50" />
+   643→              <p className="text-sm">Aucun mariage trouvé</p>
+   644→            </div>
+   645→          ) : (
+   646→            <div className="overflow-x-auto">
+   647→              <Table>
+   648→                <TableHeader>
+   649→                  <TableRow>
+   650→                    <TableHead>Couple</TableHead>
+   651→                    <TableHead>Plan</TableHead>
+   652→                    <TableHead>Statut</TableHead>
+   653→                    <TableHead>Prix</TableHead>
+   654→                    <TableHead>Cycle</TableHead>
+   655→                    <TableHead className="text-center">Factures</TableHead>
+   656→                    <TableHead className="text-right">Actions</TableHead>
+   657→                  </TableRow>
+   658→                </TableHeader>
+   659→                <TableBody>
+   660→                  {data.weddings.map((w) => {
+   661→                    const sub = w.subscription
+   662→                    return (
+   663→                      <TableRow key={w.id}>
+   664→                        <TableCell>
+   665→                          <div className="flex flex-col">
+   666→                            <span className="font-medium text-sm">
+   667→                              {w.coupleLabel}
+   668→                            </span>
+   669→                            <span className="text-xs text-muted-foreground">
+   670→                              /w/{w.slug}
+   671→                            </span>
+   672→                          </div>
+   673→                        </TableCell>
+   674→                        <TableCell>
+   675→                          <Badge
+   676→                            variant="outline"
+   677→                            className={PLAN_BADGE_CLASS[w.plan]}
+   678→                          >
+   679→                            {PLAN_METADATA[w.plan].label}
+   680→                          </Badge>
+   681→                        </TableCell>
+   682→                        <TableCell>
+   683→                          {sub ? (
+   684→                            <Badge
+   685→                              variant="outline"
+   686→                              className={SUB_STATUS_BADGE[sub.status] || ''}
+   687→                            >
+   688→                              {SUB_STATUS_LABELS[sub.status] || sub.status}
+   689→                            </Badge>
+   690→                          ) : (
+   691→                            <span className="text-xs text-muted-foreground">
+   692→                              —
+   693→                            </span>
+   694→                          )}
+   695→                        </TableCell>
+   696→                        <TableCell>
+   697→                          <div className="flex flex-col">
+   698→                            <span className="text-sm font-medium">
+   699→                              {formatUsd(w.effectivePriceUsdCents)}
+   700→                            </span>
+   701→                            <span className="text-xs text-muted-foreground">
+   702→                              {formatFcfa(w.effectivePriceUsdCents)}
+   703→                            </span>
+   704→                          </div>
+   705→                        </TableCell>
+   706→                        <TableCell>
+   707→                          <span className="text-sm">
+   708→                            {sub
+   709→                              ? BILLING_CYCLE_LABELS[sub.billingCycle] || sub.billingCycle
+   710→                              : '—'}
+   711→                          </span>
+   712→                        </TableCell>
+   713→                        <TableCell className="text-center">
+   714→                          <div className="flex flex-col items-center">
+   715→                            <span className="text-sm">{w.invoicesCount}</span>
+   716→                            {w.openInvoicesCount > 0 && (
+   717→                              <span className="text-xs text-amber-400">
+   718→                                {w.openInvoicesCount} en attente
+   719→                              </span>
+   720→                            )}
+   721→                          </div>
+   722→                        </TableCell>
+   723→                        <TableCell className="text-right">
+   724→                          <Button
+   725→                            size="sm"
+   726→                            variant="outline"
+   727→                            onClick={() => openEditor(w)}
+   728→                          >
+   729→                            <Wallet className="w-3.5 h-3.5 mr-1" />
+   730→                            Gérer
+   731→                          </Button>
+   732→                        </TableCell>
+   733→                      </TableRow>
+   734→                    )
+   735→                  })}
+   736→                </TableBody>
+   737→              </Table>
+   738→            </div>
+   739→          )}
+   740→        </CardContent>
+   741→      </Card>
+   742→
+   743→      {/* ─── Subscription editor dialog ─────────────────────────────────── */}
+   744→      <Dialog open={editorOpen} onOpenChange={setEditorOpen}>
+   745→        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto bg-card border-border">
+   746→          <DialogHeader>
+   747→            <DialogTitle className="flex items-center gap-2">
+   748→              <Wallet className="w-5 h-5 text-gold" />
+   749→              {editing?.coupleLabel} — Facturation
+   750→            </DialogTitle>
+   751→            <DialogDescription>
+   752→              Gérez l'abonnement, générez un message WhatsApp pour le couple,
+   753→              et suivez les paiements reçus.
+   754→            </DialogDescription>
+   755→          </DialogHeader>
+   756→
+   757→          {editing && (
+   758→            <div className="space-y-5">
+   759→              {/* ── Plan selector with services preview ───────────────── */}
+   760→              <div>
+   761→                <Label className="text-xs uppercase tracking-wider text-muted-foreground">
+   762→                  Plan & Services inclus
+   763→                </Label>
+   764→                <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-2">
+   765→                  {PLANS.map((p) => {
+   766→                    const selected = form.plan === p
+   767→                    return (
+   768→                      <button
+   769→                        key={p}
+   770→                        type="button"
+   771→                        onClick={() => setForm((f) => ({ ...f, plan: p }))}
+   772→                        className={`text-left p-3 rounded-lg border transition-all ${
+   773→                          selected
+   774→                            ? 'border-gold bg-gold/10 ring-1 ring-gold/30'
+   775→                            : 'border-border bg-card/30 hover:border-gold/40'
+   776→                        }`}
+   777→                      >
+   778→                        <div className="flex items-center justify-between mb-1">
+   779→                          <span className="font-semibold text-sm">
+   780→                            {PLAN_METADATA[p].label}
+   781→                          </span>
+   782→                          {selected && (
+   783→                            <CheckCircle2 className="w-3.5 h-3.5 text-gold" />
+   784→                          )}
+   785→                        </div>
+   786→                        <div className="text-xs text-muted-foreground mb-2">
+   787→                          {PLAN_METADATA[p].priceUsd === 0
+   788→                            ? 'Gratuit'
+   789→                            : `$${PLAN_METADATA[p].priceUsd}/mois`}
+   790→                        </div>
+   791→                        <PlanServicesMini plan={p} />
+   792→                      </button>
+   793→                    )
+   794→                  })}
+   795→                </div>
+   796→              </div>
+   797→
+   798→              {/* ── Form fields ─────────────────────────────────────────── */}
+   799→              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+   800→                <div>
+   801→                  <Label htmlFor="sub-status" className="text-xs">
+   802→                    Statut abonnement
+   803→                  </Label>
+   804→                  <Select
+   805→                    value={form.status}
+   806→                    onValueChange={(v) => setForm((f) => ({ ...f, status: v }))}
+   807→                  >
+   808→                    <SelectTrigger id="sub-status" className="mt-1 bg-background/50">
+   809→                      <SelectValue />
+   810→                    </SelectTrigger>
+   811→                    <SelectContent>
+   812→                      {SUB_STATUSES.map((s) => (
+   813→                        <SelectItem key={s} value={s}>
+   814→                          {SUB_STATUS_LABELS[s] || s}
+   815→                        </SelectItem>
+   816→                      ))}
+   817→                    </SelectContent>
+   818→                  </Select>
+   819→                </div>
+   820→
+   821→                <div>
+   822→                  <Label htmlFor="sub-cycle" className="text-xs">
+   823→                    Cycle de facturation
+   824→                  </Label>
+   825→                  <Select
+   826→                    value={form.billingCycle}
+   827→                    onValueChange={(v) => setForm((f) => ({ ...f, billingCycle: v }))}
+   828→                  >
+   829→                    <SelectTrigger id="sub-cycle" className="mt-1 bg-background/50">
+   830→                      <SelectValue />
+   831→                    </SelectTrigger>
+   832→                    <SelectContent>
+   833→                      {BILLING_CYCLES.map((c) => (
+   834→                        <SelectItem key={c} value={c}>
+   835→                          {BILLING_CYCLE_LABELS[c]}
+   836→                        </SelectItem>
+   837→                      ))}
+   838→                    </SelectContent>
+   839→                  </Select>
+   840→                </div>
+   841→
+   842→                <div>
+   843→                  <Label htmlFor="sub-amount" className="text-xs">
+   844→                    Prix personnalisé (centimes USD){' '}
+   845→                    <span className="text-muted-foreground">
+   846→                      — vide = prix par défaut
+   847→                    </span>
+   848→                  </Label>
+   849→                  <Input
+   850→                    id="sub-amount"
+   851→                    type="number"
+   852→                    min={0}
+   853→                    step={100}
+   854→                    placeholder="ex: 9900 pour $99.00"
+   855→                    value={form.amountAgreed}
+   856→                    onChange={(e) =>
+   857→                      setForm((f) => ({ ...f, amountAgreed: e.target.value }))
+   858→                    }
+   859→                    className="mt-1 bg-background/50"
+   860→                  />
+   861→                  <p className="text-[11px] text-muted-foreground mt-1">
+   862→                    {form.amountAgreed
+   863→                      ? `Soit ${formatUsd(Number(form.amountAgreed) || 0)} (${formatFcfa(Number(form.amountAgreed) || 0)})`
+   864→                      : `Défaut : ${formatUsd(PLAN_METADATA[form.plan].priceUsd * 100)} (${formatFcfa(PLAN_METADATA[form.plan].priceUsd * 100)})`}
+   865→                  </p>
+   866→                </div>
+   867→
+   868→                <div>
+   869→                  <Label htmlFor="sub-payment" className="text-xs">
+   870→                    Mode de paiement
+   871→                  </Label>
+   872→                  <Select
+   873→                    value={form.paymentMethod}
+   874→                    onValueChange={(v) =>
+   875→                      setForm((f) => ({ ...f, paymentMethod: v === 'NONE' ? '' : v }))
+   876→                    }
+   877→                  >
+   878→                    <SelectTrigger id="sub-payment" className="mt-1 bg-background/50">
+   879→                      <SelectValue placeholder="—" />
+   880→                    </SelectTrigger>
+   881→                    <SelectContent>
+   882→                      <SelectItem value="NONE">—</SelectItem>
+   883→                      {PAYMENT_METHODS.map((m) => (
+   884→                        <SelectItem key={m} value={m}>
+   885→                          {PAYMENT_METHOD_LABELS[m]}
+   886→                        </SelectItem>
+   887→                      ))}
+   888→                    </SelectContent>
+   889→                  </Select>
+   890→                </div>
+   891→
+   892→                <div>
+   893→                  <Label htmlFor="sub-phone" className="text-xs">
+   894→                    Téléphone WhatsApp du couple
+   895→                  </Label>
+   896→                  <Input
+   897→                    id="sub-phone"
+   898→                    type="tel"
+   899→                    placeholder="ex: +243 970 000 000"
+   900→                    value={form.whatsappPhone}
+   901→                    onChange={(e) =>
+   902→                      setForm((f) => ({ ...f, whatsappPhone: e.target.value }))
+   903→                    }
+   904→                    className="mt-1 bg-background/50"
+   905→                  />
+   906→                </div>
+   907→
+   908→                <div className="md:col-span-2">
+   909→                  <Label htmlFor="sub-notes" className="text-xs">
+   910→                    Notes de négociation
+   911→                  </Label>
+   912→                  <Textarea
+   913→                    id="sub-notes"
+   914→                    rows={2}
+   915→                    placeholder="ex: Remise de 10% pour paiement anticipé, 2 mois offerts, etc."
+   916→                    value={form.notes}
+   917→                    onChange={(e) =>
+   918→                      setForm((f) => ({ ...f, notes: e.target.value }))
+   919→                    }
+   920→                    className="mt-1 bg-background/50"
+   921→                  />
+   922→                </div>
+   923→              </div>
+   924→
+   925→              {/* ── Action buttons ──────────────────────────────────────── */}
+   926→              <div className="flex flex-wrap gap-2 pt-2">
+   927→                <Button
+   928→                  onClick={handleSaveSubscription}
+   929→                  disabled={saving}
+   930→                  className="bg-gold hover:bg-gold/90 text-white"
+   931→                >
+   932→                  {saving ? (
+   933→                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+   934→                  ) : (
+   935→                    <CheckCircle2 className="w-4 h-4 mr-2" />
+   936→                  )}
+   937→                  Enregistrer
+   938→                </Button>
+   939→                <Button
+   940→                  variant="outline"
+   941→                  onClick={handleGenerateWhatsApp}
+   942→                  disabled={generatingWhatsapp}
+   943→                >
+   944→                  {generatingWhatsapp ? (
+   945→                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+   946→                  ) : (
+   947→                    <MessageCircle className="w-4 h-4 mr-2" />
+   948→                  )}
+   949→                  Générer WhatsApp
+   950→                </Button>
+   951→                <Button
+   952→                  variant="outline"
+   953→                  onClick={handleCreateInvoice}
+   954→                  disabled={creatingInvoice}
+   955→                >
+   956→                  {creatingInvoice ? (
+   957→                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+   958→                  ) : (
+   959→                    <Plus className="w-4 h-4 mr-2" />
+   960→                  )}
+   961→                  Créer une facture
+   962→                </Button>
+   963→              </div>
+   964→
+   965→              <Separator />
+   966→
+   967→              {/* ── Invoice list ────────────────────────────────────────── */}
+   968→              <div>
+   969→                <div className="flex items-center justify-between mb-3">
+   970→                  <h4 className="text-sm font-semibold flex items-center gap-2">
+   971→                    <Receipt className="w-4 h-4 text-gold" />
+   972→                    Factures ({invoices.length})
+   973→                  </h4>
+   974→                </div>
+   975→                {invoices.length === 0 ? (
+   976→                  <div className="text-center py-6 text-sm text-muted-foreground border border-dashed border-border rounded-lg">
+   977→                    Aucune facture. Cliquez « Créer une facture » pour en
+   978→                    émettre une.
+   979→                  </div>
+   980→                ) : (
+   981→                  <div className="space-y-2 max-h-72 overflow-y-auto custom-scrollbar">
+   982→                    {invoices.map((inv) => (
+   983→                      <div
+   984→                        key={inv.id}
+   985→                        className="flex items-center justify-between p-3 rounded-lg border border-border bg-card/30 gap-3"
+   986→                      >
+   987→                        <div className="flex-1 min-w-0">
+   988→                          <div className="flex items-center gap-2 mb-1">
+   989→                            <span className="text-sm font-medium">
+   990→                              {formatUsd(inv.amountDue)}
+   991→                            </span>
+   992→                            <Badge
+   993→                              variant="outline"
+   994→                              className={INVOICE_STATUS_BADGE[inv.status] || ''}
+   995→                            >
+   996→                              {INVOICE_STATUS_LABELS[inv.status] || inv.status}
+   997→                            </Badge>
+   998→                            <span className="text-xs text-muted-foreground">
+   999→                              {BILLING_CYCLE_LABELS[inv.billingCycle] || inv.billingCycle}
+  1000→                            </span>
+  1001→                          </div>
+  1002→                          <div className="text-xs text-muted-foreground">
+  1003→                            {formatDate(inv.createdAt)}
+  1004→                            {inv.paymentMethod && (
+  1005→                              <>
+  1006→                                {' · '}
+  1007→                                {PAYMENT_METHOD_LABELS[inv.paymentMethod] || inv.paymentMethod}
+  1008→                              </>
+  1009→                            )}
+  1010→                            {inv.paidAt && (
+  1011→                              <>
+  1012→                                {' · payée le '}
+  1013→                                {formatDate(inv.paidAt)}
+  1014→                              </>
+  1015→                            )}
+  1016→                          </div>
+  1017→                          {inv.notes && (
+  1018→                            <div className="text-xs text-muted-foreground italic mt-1 truncate">
+  1019→                              « {inv.notes} »
+  1020→                            </div>
+  1021→                          )}
+  1022→                        </div>
+  1023→                        <div className="flex gap-1 shrink-0">
+  1024→                          {inv.status === 'OPEN' && (
+  1025→                            <Button
+  1026→                              size="sm"
+  1027→                              variant="outline"
+  1028→                              onClick={() => handleMarkPaid(inv)}
+  1029→                              disabled={actionLoading === inv.id}
+  1030→                              className="text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/10"
+  1031→                            >
+  1032→                              {actionLoading === inv.id ? (
+  1033→                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+  1034→                              ) : (
+  1035→                                <CheckCircle2 className="w-3.5 h-3.5 mr-1" />
+  1036→                              )}
+  1037→                              Payée
+  1038→                            </Button>
+  1039→                          )}
+  1040→                          {(inv.status === 'OPEN' || inv.status === 'DRAFT') && (
+  1041→                            <Button
+  1042→                              size="sm"
+  1043→                              variant="ghost"
+  1044→                              onClick={() => handleVoidInvoice(inv)}
+  1045→                              disabled={actionLoading === inv.id}
+  1046→                              className="text-red-400 hover:bg-red-500/10"
+  1047→                            >
+  1048→                              {actionLoading === inv.id ? (
+  1049→                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+  1050→                              ) : (
+  1051→                                <XCircle className="w-3.5 h-3.5" />
+  1052→                              )}
+  1053→                            </Button>
+  1054→                          )}
+  1055→                        </div>
+  1056→                      </div>
+  1057→                    ))}
+  1058→                  </div>
+  1059→                )}
+  1060→              </div>
+  1061→            </div>
+  1062→          )}
+  1063→        </DialogContent>
+  1064→      </Dialog>
+  1065→
+  1066→      {/* ─── WhatsApp message modal ─────────────────────────────────────── */}
+  1067→      <Dialog open={whatsappOpen} onOpenChange={setWhatsappOpen}>
+  1068→        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto bg-card border-border">
+  1069→          <DialogHeader>
+  1070→            <DialogTitle className="flex items-center gap-2">
+  1071→              <MessageCircle className="w-5 h-5 text-emerald-400" />
+  1072→              Message WhatsApp
+  1073→            </DialogTitle>
+  1074→            <DialogDescription>
+  1075→              {whatsappData?.recipient
+  1076→                ? `Destinataire : ${whatsappData.recipient}`
+  1077→                : 'Aucun numéro — l\'utilisateur choisira le destinataire dans WhatsApp'}
+  1078→            </DialogDescription>
+  1079→          </DialogHeader>
+  1080→
+  1081→          {whatsappData && (
+  1082→            <div className="space-y-4">
+  1083→              <div>
+  1084→                <Label className="text-xs uppercase tracking-wider text-muted-foreground">
+  1085→                  Aperçu du message
+  1086→                </Label>
+  1087→                <Textarea
+  1088→                  readOnly
+  1089→                  value={whatsappData.message}
+  1090→                  rows={16}
+  1091→                  className="mt-2 font-mono text-xs bg-background/50"
+  1092→                />
+  1093→              </div>
+  1094→
+  1095→              <div className="grid grid-cols-2 gap-2 text-xs">
+  1096→                <div className="p-2 rounded border border-border bg-card/30">
+  1097→                  <div className="text-muted-foreground">Plan</div>
+  1098→                  <div className="font-medium">
+  1099→                    {PLAN_METADATA[whatsappData.plan].label}
+  1100→                  </div>
+  1101→                </div>
+  1102→                <div className="p-2 rounded border border-border bg-card/30">
+  1103→                  <div className="text-muted-foreground">Montant</div>
+  1104→                  <div className="font-medium">
+  1105→                    {formatUsd(whatsappData.amountUsdCents)} ({formatFcfa(whatsappData.amountUsdCents)})
+  1106→                  </div>
+  1107→                </div>
+  1108→              </div>
+  1109→
+  1110→              <DialogFooter>
+  1111→                <Button
+  1112→                  variant="outline"
+  1113→                  onClick={handleCopyMessage}
+  1114→                >
+  1115→                  <Copy className="w-4 h-4 mr-2" />
+  1116→                  Copier
+  1117→                </Button>
+  1118→                <Button
+  1119→                  asChild
+  1120→                  className="bg-emerald-600 hover:bg-emerald-700 text-white"
+  1121→                >
+  1122→                  <a
+  1123→                    href={whatsappData.url}
+  1124→                    target="_blank"
+  1125→                    rel="noopener noreferrer"
+  1126→                  >
+  1127→                    <ExternalLink className="w-4 h-4 mr-2" />
+  1128→                    Ouvrir WhatsApp
+  1129→                  </a>
+  1130→                </Button>
+  1131→              </DialogFooter>
+  1132→            </div>
+  1133→          )}
+  1134→        </DialogContent>
+  1135→      </Dialog>
+  1136→    </div>
+  1137→  )
+  1138→}
+  1139→
+  1140→// ══════════════════════════════════════════════════════════════════════════════
+  1141→// Sub-components
+  1142→// ══════════════════════════════════════════════════════════════════════════════
+  1143→
+  1144→function SummaryCard({
+  1145→  icon,
+  1146→  label,
+  1147→  value,
+  1148→  loading,
+  1149→  accent,
+  1150→}: {
+  1151→  icon: React.ReactNode
+  1152→  label: string
+  1153→  value: number | string
+  1154→  loading?: boolean
+  1155→  accent?: 'gold' | 'emerald' | 'amber' | 'orange'
+  1156→}) {
+  1157→  const accentClass =
+  1158→    accent === 'gold'
+  1159→      ? 'text-gold'
+  1160→      : accent === 'emerald'
+  1161→        ? 'text-emerald-400'
+  1162→        : accent === 'amber'
+  1163→          ? 'text-amber-400'
+  1164→          : accent === 'orange'
+  1165→            ? 'text-orange-400'
+  1166→            : 'text-foreground'
+  1167→
+  1168→  return (
+  1169→    <Card className="bg-card/50 border-border">
+  1170→      <CardContent className="p-4">
+  1171→        <div className="flex items-center gap-2 mb-1">
+  1172→          <span className={`${accentClass}`}>{icon}</span>
+  1173→          <span className="text-xs text-muted-foreground uppercase tracking-wider">
+  1174→            {label}
+  1175→          </span>
+  1176→        </div>
+  1177→        {loading ? (
+  1178→          <Skeleton className="h-7 w-16" />
+  1179→        ) : (
+  1180→          <div className={`text-2xl font-bold ${accentClass}`}>{value}</div>
+  1181→        )}
+  1182→      </CardContent>
+  1183→    </Card>
+  1184→  )
+  1185→}
+  1186→
+  1187→function PlanServicesMini({ plan }: { plan: Plan }) {
+  1188→  const limits: Record<Plan, { guests: string; media: string; staff: string }> = {
+  1189→    TRIAL: { guests: '20 invités', media: '100 Mo', staff: '1 compte' },
+  1190→    ESSENTIEL: { guests: '200 invités', media: '1 Go', staff: '2 comptes' },
+  1191→    PREMIUM: { guests: '500 invités', media: '5 Go', staff: '5 comptes' },
+  1192→    ELITE: { guests: 'Illimités', media: '20 Go', staff: '10 comptes' },
+  1193→  }
+  1194→  const l = limits[plan]
+  1195→  return (
+  1196→    <ul className="text-[11px] text-muted-foreground space-y-0.5">
+  1197→      <li>· {l.guests}</li>
+  1198→      <li>· {l.media}</li>
+  1199→      <li>· {l.staff}</li>
+  1200→    </ul>
+  1201→  )
+  1202→}
+  1203→

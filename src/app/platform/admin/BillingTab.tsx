@@ -51,6 +51,7 @@ import {
 } from 'lucide-react'
 
 import { PLAN_METADATA, type Plan } from '@/lib/types'
+import { FCFA_TO_USD_RATE } from '@/lib/billing'
 
 // ══════════════════════════════════════════════════════════════════════════════
 // Types — mirror the API responses
@@ -197,7 +198,7 @@ const PAYMENT_METHOD_LABELS: Record<string, string> = {
 const PLAN_BADGE_CLASS: Record<Plan, string> = {
   ELITE: 'bg-gold/15 text-gold border-gold/40',
   PREMIUM: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30',
-  ESSENTIEL: 'bg-violet-500/15 text-violet-400 border-violet-500/30',
+  ESSENTIEL: 'bg-gold-dark/15 text-gold-dark border-gold-dark/30',
   TRIAL: 'bg-zinc-500/15 text-zinc-400 border-zinc-500/30',
 }
 
@@ -240,7 +241,7 @@ function formatUsd(cents: number): string {
 
 function formatFcfa(cents: number): string {
   const usd = cents / 100
-  return `${Math.round(usd * 600).toLocaleString('fr-FR')} FCFA`
+  return `${Math.round(usd * FCFA_TO_USD_RATE).toLocaleString('fr-FR')} FCFA`
 }
 
 function formatDate(iso: string | null): string {
