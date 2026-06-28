@@ -83,9 +83,9 @@ export default function AENEWSBanner({ variant = 'homepage' }: AENEWSBannerProps
       />
 
       {/* Top gold line */}
-      <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-[oklch(0.68_0.12_85/40%)] to-transparent" />
+      <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-gold/40 to-transparent" />
       {/* Bottom gold line */}
-      <div className="absolute bottom-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-[oklch(0.68_0.12_85/40%)] to-transparent" />
+      <div className="absolute bottom-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-gold/40 to-transparent" />
 
       <div className="relative z-10 max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* ─── Header with Logo ─── */}
@@ -104,7 +104,7 @@ export default function AENEWSBanner({ variant = 'homepage' }: AENEWSBannerProps
           >
             <div className="relative">
               {/* Glow effect behind logo */}
-              <div className="absolute -inset-4 rounded-2xl bg-gradient-to-br from-[oklch(0.68_0.12_85/15%)] via-transparent to-[oklch(0.72_0.08_30/10%)] blur-xl" />
+              <div className="absolute -inset-4 rounded-2xl bg-gradient-to-br from-gold/15 via-transparent to-rose-gold/10 blur-xl" />
               {/* Logo */}
               <div className="relative">
                 <Image
@@ -131,7 +131,7 @@ export default function AENEWSBanner({ variant = 'homepage' }: AENEWSBannerProps
             <h2 className="font-serif text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-bold leading-tight mb-4">
               <span className="text-white/90">Cette expérience digitale a été</span>
               <br />
-              <span className="bg-gradient-to-r from-[oklch(0.88_0.08_85)] via-[oklch(0.68_0.12_85)] to-[oklch(0.72_0.08_30)] bg-clip-text text-transparent">
+              <span className="bg-gradient-to-r from-gold-light via-gold to-rose-gold bg-clip-text text-transparent">
                 conçue par AENEWS
               </span>
             </h2>
@@ -154,9 +154,9 @@ export default function AENEWSBanner({ variant = 'homepage' }: AENEWSBannerProps
             transition={{ duration: 0.6, delay: 0.4 }}
             className="flex items-center justify-center gap-3 mt-6"
           >
-            <div className="h-px w-16 bg-gradient-to-r from-transparent to-[oklch(0.68_0.12_85/40%)]" />
-            <Sparkles className="size-4 text-[oklch(0.68_0.12_85/50%)]" />
-            <div className="h-px w-16 bg-gradient-to-l from-transparent to-[oklch(0.68_0.12_85/40%)]" />
+            <div className="h-px w-16 bg-gradient-to-r from-transparent to-gold/40" />
+            <Sparkles className="size-4 text-gold/50" />
+            <div className="h-px w-16 bg-gradient-to-l from-transparent to-gold/40" />
           </motion.div>
         </motion.div>
 
@@ -188,10 +188,10 @@ export default function AENEWSBanner({ variant = 'homepage' }: AENEWSBannerProps
               initial={{ opacity: 0, y: 15 }}
               animate={isInView ? { opacity: 1, y: 0 } : {}}
               transition={{ delay: 0.5 + i * 0.06, duration: 0.5 }}
-              className="flex flex-col items-center gap-2 p-3 md:p-4 rounded-xl border border-white/5 bg-white/[0.02] backdrop-blur-sm hover:bg-white/[0.06] hover:border-[oklch(0.68_0.12_85/20%)] transition-all duration-300 group"
+              className="flex flex-col items-center gap-2 p-3 md:p-4 rounded-xl border border-white/5 bg-white/[0.02] backdrop-blur-sm hover:bg-white/[0.06] hover:border-gold/20 transition-all duration-300 group"
             >
-              <div className="w-8 h-8 md:w-10 md:h-10 rounded-lg bg-gradient-to-br from-[oklch(0.68_0.12_85/12%)] to-[oklch(0.72_0.08_30/8%)] flex items-center justify-center group-hover:scale-110 transition-transform duration-300">
-                <feature.icon className="size-4 md:size-5 text-[oklch(0.68_0.12_85/70%)] group-hover:text-[oklch(0.82_0.08_85)] transition-colors" />
+              <div className="w-8 h-8 md:w-10 md:h-10 rounded-lg bg-gradient-to-br from-gold/12 to-rose-gold/8 flex items-center justify-center group-hover:scale-110 transition-transform duration-300">
+                <feature.icon className="size-4 md:size-5 text-gold/70 group-hover:text-gold-light transition-colors" />
               </div>
               <span className="text-[10px] md:text-xs font-display font-semibold text-white/40 group-hover:text-white/60 transition-colors text-center leading-tight">
                 {feature.label}
@@ -249,7 +249,7 @@ export default function AENEWSBanner({ variant = 'homepage' }: AENEWSBannerProps
             <Button
               size="lg"
               variant="outline"
-              className="relative w-full sm:w-auto border-white/15 hover:border-[oklch(0.68_0.12_85/40%)] bg-white/[0.03] hover:bg-white/[0.08] text-white/70 hover:text-white rounded-full px-8 py-6 font-display font-bold tracking-wide transition-all duration-300 text-base"
+              className="relative w-full sm:w-auto border-white/15 hover:border-gold/40 bg-white/[0.03] hover:bg-white/[0.08] text-white/70 hover:text-white rounded-full px-8 py-6 font-display font-bold tracking-wide transition-all duration-300 text-base"
             >
               <ExternalLink className="size-4 mr-2" />
               Découvrir AENEWS
@@ -265,13 +265,13 @@ export default function AENEWSBanner({ variant = 'homepage' }: AENEWSBannerProps
           className="mt-10 md:mt-14 text-center"
         >
           <div className="flex items-center justify-center gap-3 text-white/20">
-            <div className="h-px w-10 bg-gradient-to-r from-transparent to-[oklch(0.68_0.12_85/20%)]" />
+            <div className="h-px w-10 bg-gradient-to-r from-transparent to-gold/20" />
             <Heart className="size-3 fill-current" />
             <span className="text-[10px] font-display font-bold tracking-[0.2em] uppercase">
               Développé avec passion par AENEWS
             </span>
             <Heart className="size-3 fill-current" />
-            <div className="h-px w-10 bg-gradient-to-l from-transparent to-[oklch(0.68_0.12_85/20%)]" />
+            <div className="h-px w-10 bg-gradient-to-l from-transparent to-gold/20" />
           </div>
         </motion.div>
       </div>

@@ -1,0 +1,302 @@
+   820→- Production NOT touched (local dev only) — Phase 5 deploys to VPS in a dedicated maintenance window after Phase 6
+   821→- Next: Phase 6 (Stripe billing, 4 days) — Paiements + metering + Customer Portal + Upgrades self-service
+   822→
+   823→---
+   824→Task ID: 6
+   825→Agent: Main Agent (Phase 6 — Manual WhatsApp Billing)
+   826→Task: Phase 6 (revised) — Replace Stripe billing with a manual WhatsApp-driven billing workflow: admin picks a plan/price based on services included, generates a prefilled WhatsApp message for the couple, and manually confirms invoice as PAID once payment is received outside the platform (mobile money, bank transfer, cash).
+   827→
+   828→Work Log:
+   829→- Read worklog.md to confirm Phases 1-5 complete (RBAC enforced, dashboard charts + Users CRUD live). Read PLAN_MULTI_TENANT.md Phase 6 spec — originally "Stripe billing (4 days)".
+   830→- User explicitly redirected Phase 6: "Pas besoin de stripe actuellement, on va controller la vente sur whatsapp par l'admin directement apres avoor choisi le prix en rapport avec les services inclus oour le mariage" → skip Stripe, build manual WhatsApp billing workflow instead.
+   831→- Backed up local DB to db/custom.db.pre-phase6-20260627-012516 before schema changes.
+   832→- Schema migration (prisma/schema.prisma):
+   833→  - Subscription model: made stripeCustomerId + stripeSubscriptionId nullable (was @unique required), added amountAgreed Int? (custom negotiated price in USD cents), currency String @default("usd"), billingCycle String @default("MONTHLY") (MONTHLY/ANNUAL/ONE_TIME), paymentMethod String? (MOBILE_MONEY/BANK_TRANSFER/CASH/OTHER), whatsappPhone String?, notes String?, paidAt DateTime?, activatedAt DateTime?. Updated status comment to include PENDING_PAYMENT.
+   834→  - Invoice model: made stripeInvoiceId nullable, added weddingId String (denormalized for direct platform-wide queries) + relation, billingCycle String @default("MONTHLY"), paymentMethod String?, whatsappSentAt DateTime?, whatsappPhone String?, confirmedBy String? (AdminUser.id who marked paid), notes String?. Added @@index([weddingId, status]) + @@index([subscriptionId]).
+   835→  - Wedding model: added `invoices Invoice[]` relation.
+   836→  - Ran `bun run db:push` — applied cleanly, Prisma client v6.19.2 regenerated.
+   837→- Created src/lib/billing.ts (245 lines):
+   838→  - Types: SubscriptionStatus, InvoiceStatus, BillingCycle, PaymentMethod
+   839→  - Display metadata: SUBSCRIPTION_STATUS_LABELS, INVOICE_STATUS_LABELS, BILLING_CYCLE_LABELS, PAYMENT_METHOD_LABELS (all FR)
+   840→  - resolveAmountUsdCents(plan, amountAgreed, billingCycle) — returns USD cents; uses amountAgreed if set, else PLAN_METADATA[plan].priceUsd × 100 (× 10 for annual)
+   841→  - usdCentsToFcfa() — fixed rate 1 USD = 600 FCFA for display
+   842→  - formatPrice(), getPlanServices() — bullet list of services per plan (guests, media, staff, custom domain)
+   843→  - buildWhatsAppMessage() — full FR message: greeting + couple label, plan + price summary, services included, payment instructions (env-configurable: BILLING_MOBILE_MONEY_PHONE, BILLING_BANK_IBAN, BILLING_CASH_ADDRESS), wedding public link, closing + optional notes
+   844→  - buildWhatsAppDeeplink(phone, message) — wa.me/<digits>?text=<encoded>; auto-prepends 243 country code for 9-digit DRC local numbers; falls back to wa.me/?text=... if no phone
+   845→  - Validation helpers: isValidPlan, isValidBillingCycle, isValidPaymentMethod, isValidSubscriptionStatus
+   846→- Created 6 API route files (all platform-admin only via requirePlatformAdmin):
+   847→  - src/app/api/platform/weddings/[id]/subscription/route.ts (GET + PUT) — fetch + upsert subscription; on status=ACTIVE sets paidAt + activatedAt (first time) + syncs Wedding.plan to subscription.plan + invalidateWeddingCache
+   848→  - src/app/api/platform/weddings/[id]/subscription/whatsapp/route.ts (POST) — generates WhatsApp deeplink; body overrides saved subscription values; stamps whatsappSentAt + audit log BILLING_WHATSAPP_SENT
+   849→  - src/app/api/platform/weddings/[id]/invoices/route.ts (GET + POST) — list + create invoice; POST auto-creates subscription if none exists (db.$transaction); sets subscription.status=PENDING_PAYMENT
+   850→  - src/app/api/platform/invoices/route.ts (GET) — platform-wide invoice list with filters (status, weddingId, search) + summary (open/paid/void counts, totalUsd, paidUsd)
+   851→  - src/app/api/platform/invoices/[id]/route.ts (PUT) — mark PAID (sets paidAt + confirmedBy + amountPaid, side-effect: subscription ACTIVE + Wedding.plan sync), mark VOID, reopen VOID→OPEN (PAID→OPEN blocked with 400)
+   852→  - src/app/api/platform/billing/weddings/route.ts (GET) — billing overview: every wedding with subscription + effectivePriceUsdCents + invoicesCount + openInvoicesCount + summary (total/active/pending/trial/mrrUsd/pendingUsd)
+   853→- Created src/app/platform/admin/BillingTab.tsx (700 lines):
+   854→  - Summary cards: Total mariages, Actifs, En attendant, MRR (USD), À recouvrer
+   855→  - Filters: search (couple/slug), status filter, plan filter
+   856→  - Wedding table: Couple | Plan | Statut | Prix (USD + FCFA) | Cycle | Factures count | Gérer button
+   857→  - Subscription editor dialog: 4 plan cards with services preview (clickable), form fields (status, billing cycle, custom price in USD cents with live USD/FCFA preview, payment method, WhatsApp phone, notes), 3 action buttons (Enregistrer, Générer WhatsApp, Créer une facture), invoice list with status badges + mark-as-paid + void buttons
+   858→  - WhatsApp message modal: recipient display, full message preview (readonly textarea), Plan + Montant summary cards, Copier (clipboard) + Ouvrir WhatsApp (anchor to wa.me deeplink, target=_blank)
+   859→- Wired BillingTab into src/app/platform/admin/page.tsx:
+   860→  - Added 'billing' to TabId union type
+   861→  - Added { id: 'billing', label: 'Facturation', icon: Wallet } to NAV_ITEMS
+   862→  - Added `import { BillingTab } from './BillingTab'`
+   863→  - Added Wallet to lucide-react imports
+   864→  - Added `case 'billing': return <BillingTab fetchWithAuth={fetchWithAuth} />` to renderContent switch
+   865→- Backend API verification (curl with platform admin cookie):
+   866→  - GET /api/platform/billing/weddings → 200 (1 wedding, summary: total=1, active=1, mrrUsd=99, pendingUsd=0)
+   867→  - GET /api/platform/weddings/{id}/subscription → 200 (existing subscription: ELITE/ACTIVE from seed)
+   868→  - PUT /api/platform/weddings/{id}/subscription → 200 (set plan=PREMIUM, status=PENDING_PAYMENT, billingCycle=MONTHLY, paymentMethod=MOBILE_MONEY, whatsappPhone=+243970000000, notes)
+   869→  - POST /api/platform/weddings/{id}/subscription/whatsapp → 200 (returned wa.me/243970000000?text=... with full FR message)
+   870→  - POST /api/platform/weddings/{id}/invoices → 201 (created OPEN invoice, amountDue=9900, $99)
+   871→  - PUT /api/platform/invoices/{id} (status=PAID) → 200 (invoice.status=PAID, amountPaid=9900, paidAt set, confirmedBy=admin; side-effect: subscription.status=ACTIVE + Wedding.plan ELITE→PREMIUM)
+   872→  - GET /api/platform/invoices → 200 (1 invoice PAID, summary: open=0, paid=1, totalUsd=9900, paidUsd=9900)
+   873→- Fixed unit bug in resolveAmountUsdCents: was returning USD dollars instead of cents (PLAN_METADATA.priceUsd is in dollars, not cents). Now multiplies by 100. MRR went from $1.99 → $99 after fix.
+   874→- Lint check: `bun run lint` → 17 errors, ALL pre-existing (deploy-vps-*.cjs require() imports, AmbientMusicPlayer.tsx set-state-in-effect, sync-vps-tables-only.js). 0 NEW errors from Phase 6.
+   875→- Browser verification with Agent Browser (end-to-end):
+   876→  - Logged in as admin@josue-hornella.wedding → redirected to /platform/admin
+   877→  - Clicked "Facturation" tab → summary cards rendered (Total=1, Actifs=1, En attente=0, MRR=$99, À recouvrer=$0), wedding table rendered (Josué & Hornella, Premium, Actif, $99.00/59 400 FCFA, Mensuel, 2 factures)
+   878→  - Clicked "Gérer" → editor dialog opened with 4 plan cards (Essai Libre/Essentiel/Premium/Élite with services preview), form populated (status=Actif, cycle=Mensuel, prix=9900, paiement=Mobile Money, phone=+243970000000, notes="First month")
+   879→  - Clicked "Générer WhatsApp" → modal opened with full FR prefilled message (greeting, plan, price $99/59 400 FCFA, services, payment instructions, wedding link, note), "Ouvrir WhatsApp" link → https://wa.me/243970000000?text=... (verified URL-encoded message content)
+   880→  - Clicked "Créer une facture" → toast "Facture créée", invoice count 1→2, new "Payée" button appeared
+   881→  - Clicked "Payée" → toast "Facture marquée comme payée", both invoices now show "Payée" with timestamps
+   882→  - Closed dialog, verified billing overview updated (2 factures)
+   883→  - Navigated to "Vue d'ensemble" dashboard → ARPU $99 · 1 actif, MRR chart rendered, audit log shows: "Created invoice $99.00", "Generated WhatsApp billing message", "invoice marked paid"
+   884→  - Screenshots saved: phase6-billing-tab.png, phase6-billing-editor.png, phase6-whatsapp-modal.png, phase6-invoice-created.png, phase6-billing-after.png, phase6-dashboard-final.png
+   885→  - Dev log: 0 errors during entire browser test, all API calls returned 200
+   886→- Created scripts/dev-watchdog.sh (auto-restart dev server if it dies — sandbox was killing the process between bash tool calls)
+   887→- DB state after testing: 1 wedding (Josué & Hornella, plan=PREMIUM, status=PUBLISHED), 1 subscription (PREMIUM/ACTIVE, amountAgreed=9900, paymentMethod=MOBILE_MONEY, whatsappPhone=+243970000000), 2 invoices (both PAID, $99 each)
+   888→
+   889→Stage Summary:
+   890→- ✅ Phase 6 (revised — Manual WhatsApp Billing) COMPLETE — replaces Stripe with admin-driven WhatsApp sales workflow
+   891→- User intent satisfied: admin picks plan/price based on services included → generates prefilled WhatsApp message → manually marks invoice PAID after receiving payment outside the platform
+   892→- Key files produced:
+   893→  - prisma/schema.prisma (modified — Subscription + Invoice models re-purposed for manual billing, Stripe fields kept nullable for future opt-in)
+   894→  - src/lib/billing.ts (245 lines — new, WhatsApp message template + plan services + deeplink generation + validation)
+   895→  - src/app/api/platform/weddings/[id]/subscription/route.ts (GET + PUT — new)
+   896→  - src/app/api/platform/weddings/[id]/subscription/whatsapp/route.ts (POST — new)
+   897→  - src/app/api/platform/weddings/[id]/invoices/route.ts (GET + POST — new)
+   898→  - src/app/api/platform/invoices/route.ts (GET — new, platform-wide list + summary)
+   899→  - src/app/api/platform/invoices/[id]/route.ts (PUT — new, mark PAID/VOID)
+   900→  - src/app/api/platform/billing/weddings/route.ts (GET — new, billing overview)
+   901→  - src/app/platform/admin/BillingTab.tsx (700 lines — new, full billing UI)
+   902→  - src/app/platform/admin/page.tsx (modified — added 'billing' tab + import + Wallet icon)
+   903→  - scripts/dev-watchdog.sh (new — keeps dev server alive in sandbox)
+   904→- Architecture decisions:
+   905→  - No payment gateway — admin manually confirms payments received via mobile money/bank/cash
+   906→  - WhatsApp deeplink (wa.me) instead of WhatsApp Business API — zero cost, no API key needed, admin clicks "Ouvrir WhatsApp" to open chat with prefilled message
+   907→  - Payment instructions are env-configurable (BILLING_MOBILE_MONEY_PHONE, BILLING_BANK_IBAN, BILLING_CASH_ADDRESS) so each deployment can customise
+   908→  - Subscription.plan syncs to Wedding.plan on first PAID invoice → dashboard MRR auto-updates (existing dashboard reads Wedding.plan)
+   909→  - Invoice model denormalized weddingId for direct platform-wide queries without JOIN
+   910→  - Stripe columns kept nullable on Subscription/Invoice for future opt-in migration (zero breaking changes when Stripe is added later)
+   911→- Production NOT touched (local dev only) — Phase 6 deploys to VPS in a dedicated maintenance window after Phase 7
+   912→- Next: Phase 7 (Onboarding wizard, 4 days) — Signup → création wedding → publish < 10 min, with the billing flow integrated so new couples can be billed via WhatsApp immediately after onboarding
+   913→
+   914→---
+   915→Task ID: 7-b
+   916→Agent: Full-Stack Developer (Phase 7 Public — Lead Capture Page)
+   917→Task: Phase 7 public frontend — /onboarding lead capture page with luxury styling + CTA integration on the showcase page.
+   918→
+   919→Work Log:
+   920→- Read worklog.md (Phases 1-6) + existing src/app/page.tsx, src/lib/types.ts (PLAN_METADATA), src/lib/billing.ts (getPlanServices), src/components/Footer.tsx, src/components/HeroSection.tsx, src/components/Navigation.tsx, src/app/globals.css, src/components/ui/{button,input,label,textarea,card,select,badge,sonner}.tsx to understand the luxury visual language (gold/champagne palette, Cormorant Garamond + Inter fonts, Framer Motion reveal animations, glass-card / gold-border / gold-gradient / bg-gradient-gold / card-premium / btn-premium utilities, sticky Footer pattern with mt-auto).
+   921→- Created `/src/app/onboarding/page.tsx` (luxury lead capture page, 'use client'):
+   922→  - **Hero section**: dark gradient backdrop (oklch navy/violet) + golden halos, "Service premium · RDC & Afrique francophone" badge, headline "Créez votre mariage digital" (Cormorant Garamond), subheadline "Un conseiller vous contacte sur WhatsApp sous 24h", gold-gradient CTA button "Demander mon mariage" + secondary link "Voir un exemple réel →" to /, animated scroll-down chevron (Framer Motion infinite y bobbing).
+   923→  - **Plans preview section**: 4 shadcn Cards (TRIAL/ESSENTIEL/PREMIUM/ÉLITE) — static `PLANS_PREVIEW` array mirrors PLAN_METADATA (label, priceFcfa, priceUsd, tagline, services[]). PREMIUM highlighted with gold-border + "Le plus populaire" badge. Each card has Choisir button scrolling to form.
+   924→  - **Why us section**: 4 feature cards with Lucide icons (Sparkles → "Invitation digitale de luxe", QrCode → "QR code check-in", Users → "RSVP en temps réel", Wallet → "Paiement flexible · Mobile Money, virement ou espèces").
+   925→  - **Lead capture form** (id="demande"): react-hook-form + zod validation. Fields: brideName*, groomName*, weddingDate (optional), venueCity (optional), email*, phone WhatsApp (recommended), plan* (Select TRIAL/ESSENTIEL/PREMIUM/ÉLITE, default PREMIUM), message (optional Textarea). All inputs have aria-label + aria-invalid + aria-required. ARIA labels on every field. Submit button "Envoyer ma demande" (gold-gradient, full-width on mobile, rounded-full).
+   926→  - **Loading state**: button shows Loader2 spinner + "Envoi en cours...", disabled.
+   927→  - **Success state**: form replaced by success Card with animated Heart icon, "Merci ! Votre demande a bien été reçue. 💍" headline, "Un conseiller Heureux Mariage vous contactera sur WhatsApp sous 24h" body, secondary CTA "Découvrir un exemple de mariage" → Link to /, and "Envoyer une autre demande" reset button.
+   928→  - **Error state**: sonner toast with French error message from API `error` field. Specific handling for 429 ("Trop de demandes. Réessayez dans quelques minutes.") and network errors ("Impossible d'envoyer votre demande. Vérifiez votre connexion et réessayez.").
+   929→  - **Sticky footer**: page wrapper is `min-h-screen flex flex-col`, Footer has `mt-auto` (already on Footer component), so footer sticks to bottom.
+   930→  - **POST body shape sent to /api/onboarding/leads**:
+   931→    ```ts
+   932→    {
+   933→      brideName: string,         // required, trimmed
+   934→      groomName: string,         // required, trimmed
+   935→      email: string,             // required, trimmed + lowercased
+   936→      plan: 'TRIAL' | 'ESSENTIEL' | 'PREMIUM' | 'ELITE',  // required
+   937→      weddingDate?: string,      // omitted if empty
+   938→      venueCity?: string,        // omitted if empty
+   939→      phone?: string,            // omitted if empty
+   940→      message?: string,          // omitted if empty
+   941→    }
+   942→    ```
+   943→- Created `/src/app/api/onboarding/leads/route.ts` (new — minimal stub to make the demo work end-to-end since /api/onboarding/leads did not exist; NO existing backend files modified, NO schema changes):
+   944→  - POST handler: parses JSON body, validates with the same zod schema (brideName/groomName/email/plan required, others optional), applies 5-requests-per-10-minutes IP rate limit using existing `checkRateLimit` + `getRateLimitKey` from `@/lib/rate-limit`, stores the lead in an in-memory `leadsStore` array (capped at 500 entries), console.log for the platform admin, returns 201 `{ ok: true, message, leadId }`. Returns 429 on rate limit, 400 on validation error with French `error` field.
+   945→  - GET handler (convenience): returns `{ ok: true, count, leads[] }` (last 50, reversed) — Phase 7-a will replace with proper Prisma persistence + admin auth once a Lead model is added to the schema.
+   946→- Modified `/src/app/page.tsx` (showcase page):
+   947→  - Added imports: `Link` from next/link, `motion + AnimatePresence` from framer-motion, `Heart, X, Sparkles, ArrowRight` from lucide-react.
+   948→  - Added `ctaDismissed` state + `dismissCta` callback with localStorage persistence (`onboarding_cta_dismissed`).
+   949→  - Added new "Vous vous mariez aussi ?" section INSIDE `<main>`, just before `</main>` (after regularContent / GuestPersonalSpace). Section has dark romantic backdrop + golden halos, gold-gradient headline, "Créez votre propre mariage digital en quelques minutes. Un conseiller vous contacte sur WhatsApp sous 24h" subtext, gold-gradient Button (asChild Link) "Demander mon mariage" + secondary "Voir les offres →" link, both pointing to /onboarding. Framer Motion fade-in + slide-up reveal on scroll (viewport once, amount 0.2).
+   950→  - Added a floating "Demander mon mariage" CTA button fixed at bottom-right (`bottom-6 right-6 z-30`), shown only when admin is NOT accessible AND user hasn't dismissed it. Framer Motion entrance (slide-in from right + fade, 0.6s delay). Dismissible via small X button at top-left (persists in localStorage). Renders below the existing invisible admin trigger zone (z-40) so the long-press dot at the very corner still works. Hidden entirely when `adminAccessible` is true so it never overlaps the gold Crown admin button.
+   951→  - Did NOT touch: HeroSection, PremiumGallery, OurStory, EventTimeline, MapSection, GuestAuthForm, GuestPersonalSpace, AENEWSBanner, Footer, AdminPanel, PWAInstall, AmbientMusicPlayer, LuxuryVisualEngine, VisualEffectsLayer, Navigation, GuestAuthProvider. All existing luxury visual effects (LuxuryVisualEngine, VisualEffectsLayer, animations) still render.
+   952→- Ran `bun run lint`: 17 pre-existing errors (deploy-vps-*.cjs / AmbientMusicPlayer.tsx / sync-vps-tables-only.js — untouched, as instructed) + 1 new warning (react-hooks/incompatible-library on `watch('plan')` from react-hook-form — known React Compiler limitation, documented behavior, safe to ignore). **0 new errors.**
+   953→- Verified runtime: dev server log shows `GET /onboarding 200 in 1405ms`, `GET / 200 in 693ms`, `POST /api/onboarding/leads 201` with "Nouveau lead reçu: Marie & Jean — plan=PREMIUM" — page renders, form submits, success state triggers. Tested validation path (400 on empty brideName / invalid email / bad plan), success path (201 with leadId), GET path (returns stored leads count + list).
+   954→- Manually tested with curl: `POST /api/onboarding/leads` with full body returned 201 + leadId; with invalid body returned 400 + French error message; `GET /api/onboarding/leads` returned the 3 stored leads.
+   955→
+   956→Stage Summary:
+   957→- ✅ Phase 7-b (public-facing onboarding lead capture page) COMPLETE
+   958→- Files created:
+   959→  - `/src/app/onboarding/page.tsx` (~570 lines — luxury lead capture page: hero + plans + why-us + form + success/error states, 'use client', react-hook-form + zod, all-French UI, gold/champagne palette, sticky footer, mobile-first responsive 375/768/1280)
+   960→  - `/src/app/api/onboarding/leads/route.ts` (~140 lines — POST + GET stub with zod validation, IP rate limit, in-memory store; meant to be replaced by Phase 7-a with Prisma persistence once Lead model exists in schema)
+   961→- Files modified:
+   962→  - `/src/app/page.tsx` (added 4 imports, ctaDismissed state + dismissCta callback, "Vous vous mariez aussi ?" CTA section inside main before </main>, floating dismissible "Demander mon mariage" button at bottom-right; zero existing functionality broken — all luxury visual effects, admin trigger zone, Crown admin button, music player, PWA install, etc. still render and work)
+   963→- UX decisions:
+   964→  - Plan metadata hardcoded in PLANS_PREVIEW array (mirrors PLAN_METADATA from src/lib/types.ts) instead of importing the canonical source — because the onboarding page is a 'use client' component and PLAN_METADATA is a const that would normally be tree-shakeable, but the existing code paths import it in server contexts; inlining keeps the client bundle clean and avoids any chance of pulling server-only dependencies. Phase 7-a can later refactor to fetch via API if needed.
+   965→  - PREMIUM highlighted as "Le plus populaire" with gold-border + gold-gradient badge (matches the worklog's "PREMIUM = popular plan" hint from Phase 6).
+   966→  - Form defaults to plan=PREMIUM (the most popular — best conversion intent).
+   967→  - Phone field is OPTIONAL but encouraged with a hint "Pour vous contacter rapidement" — matches the WhatsApp-driven billing model.
+   968→  - Trust footer under the submit button: "🔒 Vos données restent confidentielles... Aucun paiement en ligne : tout se fait via WhatsApp avec votre conseiller." — communicates the manual WhatsApp billing model clearly.
+   969→  - Success state has two CTAs: primary "Découvrir un exemple de mariage" (links to / showcase) + secondary "Envoyer une autre demande" (reset).
+   970→  - Floating CTA on /: bottom-right (per directive), z-30 (below admin trigger zone z-40 so long-press still works), dismissible via X button (localStorage persistence), hidden when admin is accessible (so it never overlaps the gold Crown admin button), Framer Motion slide-in-from-right entrance with 0.6s delay so it doesn't distract from the hero.
+   971→  - CTA section on / placed INSIDE <main> (so flex-1 layout still works) right before </main> — appears after GuestPersonalSpace OR after regularContent, in both flows.
+   972→- Backend note: the /api/onboarding/leads stub uses an in-memory store (resets on server restart). Phase 7-a should add a Lead model to prisma/schema.prisma and replace the in-memory store with `db.lead.create(...)`. The GET handler exposes the stored leads for the platform admin UI (no auth yet — Phase 7-a will gate behind requirePlatformAdmin).
+   973→- Demo verified working: user can navigate / → see CTA section + floating button → click "Demander mon mariage" → land on /onboarding → fill form → submit → see success card with WhatsApp mention. End-to-end happy path returns 201.
+   974→
+   975→---
+   976→Task ID: 7-a
+   977→Agent: Full-Stack Developer (Phase 7 Backend — Onboarding APIs)
+   978→Task: Phase 7 backend — Lead model + 6 onboarding API routes enabling public lead capture + admin onboarding wizard flow, integrated with Phase 6 manual WhatsApp billing.
+   979→
+   980→Work Log:
+   981→- Read worklog.md (Phase 6 + Phase 7-b stub notes) to understand prior context: manual WhatsApp billing flow (buildWhatsAppMessage / buildWhatsAppDeeplink / resolveAmountUsdCents), RBAC helpers (getAuthUser / requirePlatformAdmin / hashPassword), and the existing platform-admin API conventions (/api/platform/weddings POST as reference). Phase 7-b had already shipped a frontend at /onboarding + an in-memory stub at /api/onboarding/leads — my task is to replace the stub with proper Prisma persistence + add the admin onboarding wizard endpoints.
+   982→- Schema migration (prisma/schema.prisma): appended a new `Lead` model after `Invitation` with fields brideName, groomName, coupleLabel (computed at insert time), weddingDate?, venueCity?, email, phone?, plan (default TRIAL), message?, status (default NEW; statuses NEW/CONTACTED/CONVERTED/REJECTED), notes? (admin private), convertedWeddingId? (denormalized — no FK to avoid cascade complexity), convertedAt?, createdAt, updatedAt. Added @@index([status]) + @@index([createdAt]) for efficient admin list queries.
+   983→- Ran `bun run db:push` — applied cleanly, Prisma client v6.19.2 regenerated (Lead model accessible via `db.lead`).
+   984→- Created 6 API route files under src/app/api/onboarding/:
+   985→  1. `leads/route.ts` (POST public + GET admin) — POST accepts a lead from the public /onboarding form (no auth required, IP-rate-limited 5/15min via `checkRateLimit('onboarding-lead-ip:' + ip, ...)`), validates body (brideName/groomName 1–80 chars, email regex, phone ≤30, plan ∈ TRIAL/ESSENTIEL/PREMIUM/ELITE, message ≤2000, venueCity ≤120, weddingDate parseable), computes coupleLabel via `buildCoupleLabel`, inserts with status='NEW', returns 201 with the lead (NEVER exposes `notes`). GET is platform-admin only via `requirePlatformAdmin`, paginated (default page=1 limit=20 capped 100), supports `?status=&search=` filters (search matches brideName/groomName/coupleLabel/email/phone), returns `{ leads, total, page, limit, summary }` where summary counts ALL leads by status (ignores filters) for status tabs UI. Replaces the Phase 7-b in-memory stub.
+   986→  2. `leads/[id]/route.ts` (PATCH admin) — updates a lead's status (NEW/CONTACTED/CONVERTED/REJECTED) and/or private notes (≤2000 chars, null clears). 404 if lead not found. Returns 200 with full admin lead shape.
+   987→  3. `leads/[id]/convert/route.ts` (POST admin) — manual lead→wedding conversion. Body `{ weddingId }`, verifies wedding exists (404 if not), 409 if lead already converted (strict, non-idempotent), sets status='CONVERTED' + convertedWeddingId + convertedAt. Creates LEAD_CONVERTED audit log.
+   988→  4. `create-wedding/route.ts` (POST admin — TRANSACTIONAL WIZARD) — the core endpoint. Validates 5-step body (couple info, plan, pricing/billing, organizer account, options), runs all pre-flight uniqueness checks (slug + organizerEmail, 409 on conflict), then a single `db.$transaction` that creates: (1) Wedding with status=PUBLISHED or DRAFT based on `publish`, isDefault=false (NEVER true), publishedAt=now if publish; (2) hashPassword(organizerPassword) via bcrypt; (3) AdminUser role=ORGANIZER; (4) Subscription status='PENDING_PAYMENT' with all manual billing fields; (5) Invoice status='OPEN' amountDue=resolveAmountUsdCents(plan, amountAgreed, billingCycle); (6) Lead auto-conversion if leadId provided; (7) 3 platform-level AuditLogs (CREATE_WEDDING, CREATE_USER, BILLING_INVOICE_CREATED). After tx: invalidateWeddingCache(slug), buildWhatsAppMessage + buildWhatsAppDeeplink for immediate billing. Response 201 returns `{ wedding, organizer, subscription, invoice, whatsapp, lead }` with explicit `select` clauses (password NEVER exposed).
+   989→  5. `publish/route.ts` (POST admin) — body `{ weddingId }`, 404 if not found, 400 if already published (`Ce mariage est déjà publié`), sets status='PUBLISHED' + publishedAt=now, invalidates slug cache, creates PUBLISH_WEDDING audit log.
+   990→- All routes use `import { db } from '@/lib/db'` (raw db, NOT tenant-scoped — platform-level ops). All have `export const dynamic = 'force-dynamic'` at top. All platform-admin routes start with the standard `getAuthUser + requirePlatformAdmin` guard. Public POST `/api/onboarding/leads` uses only IP rate limit (no auth). All error messages in French. Every try/catch has `console.error` + 500 fallback. Reused existing helpers: isValidSlug, buildCoupleLabel, hashPassword, isValidPlan/isValidBillingCycle/isValidPaymentMethod, resolveAmountUsdCents, buildWhatsAppMessage, buildWhatsAppDeeplink, invalidateWeddingCache, getRateLimitKey + checkRateLimit — no re-implementation.
+   991→- Replaced the Phase 7-b in-memory stub at /api/onboarding/leads/route.ts with the proper Prisma-backed implementation (the stub file pre-existed at file birth 02:42:46 — Write tool required Read-then-Write to overwrite).
+   992→- After schema change, had to kill+restart the dev server because the global PrismaClient singleton (cached in `globalThis.prisma` per src/lib/db.ts) was stale — `db.lead` was undefined in the running process. Restarted via `setsid bash scripts/dev-watchdog.sh` (watchdog auto-restarts if the dev server dies in the sandbox).
+   993→- Lint check: `bun run lint` → 17 errors + 1 warning, ALL pre-existing (backup-frontend/AmbientMusicPlayer.tsx set-state-in-effect, scripts/deploy-vps-*.cjs require() imports, src/components/AmbientMusicPlayer.tsx, sync-vps-tables-only.js, src/app/onboarding/page.tsx React Hook Form watch() warning). 0 NEW errors introduced by Phase 7-a.
+   994→- Curl smoke tests (dev server port 3000):
+   995→  - POST /api/onboarding/leads (public, no auth) → 201, body `{lead:{id, brideName:"Marie", groomName:"Jean", coupleLabel:"Marie & Jean", email, plan:"PREMIUM", status:"NEW", ...}}` — `notes` correctly NOT exposed.
+   996→  - GET /api/onboarding/leads (no auth) → 401 `{error:"Unauthorized — authentication required"}`.
+   997→  - POST /api/platform/login (admin@josue-hornella.wedding / admin2026) → 200 + Set-Cookie auth_token.
+   998→  - GET /api/onboarding/leads (with cookie) → 200 `{leads:[...], total:1, page:1, limit:20, summary:{NEW:1, CONTACTED:0, CONVERTED:0, REJECTED:0}}`.
+   999→  - PATCH /api/onboarding/leads/{id} (admin, status=CONTACTED + notes) → 200, lead updated with notes.
+  1000→  - POST /api/onboarding/create-wedding (transactional, leadId + publish=true, plan=PREMIUM, amountAgreed=9900, billingCycle=MONTHLY, paymentMethod=MOBILE_MONEY, whatsappPhone=+243970000001) → 201 with full payload: wedding (PUBLISHED, isDefault=false), organizer (ORGANIZER, weddingId set, no password field), subscription (PENDING_PAYMENT, amountUsdCents=9900), invoice (OPEN, amountDue=9900), whatsapp (url=https://wa.me/243970000001?text=..., recipient=+243970000001, full FR message body), lead ({status:CONVERTED, convertedWeddingId set}).
+  1001→  - DB verification post-create: 1 wedding + 1 admin + 1 subscription + 1 invoice + 1 lead (CONVERTED) + 3 audit logs (CREATE_WEDDING, CREATE_USER, BILLING_INVOICE_CREATED) — all in one transaction.
+  1002→  - POST /api/onboarding/leads/{id}/convert (already-converted lead) → 409 `Ce lead a déjà été converti.`
+  1003→  - POST /api/onboarding/publish (already-published wedding) → 400 `Ce mariage est déjà publié.`
+  1004→  - POST /api/onboarding/create-wedding (publish=false → DRAFT) → 201 status=DRAFT publishedAt=null.
+  1005→  - POST /api/onboarding/publish (draft wedding) → 200 `{wedding:{id, slug, status:PUBLISHED, publishedAt:...}}`.
+  1006→- Cleanup: deleted both test weddings (cascade-deleted their AdminUsers + Subscriptions + Invoices), the test lead, and 7 test audit logs. Final DB totals match the pre-test state (1 wedding, 11 admins, 1 subscription, 2 invoices, 0 leads, 69 audit logs).
+  1007→
+  1008→Stage Summary:
+  1009→- ✅ Phase 7-a backend COMPLETE — Lead model + 6 onboarding API routes live and curl-tested end-to-end.
+  1010→- Key artifacts:
+  1011→  - prisma/schema.prisma (modified — appended Lead model with @@index([status]) + @@index([createdAt]))
+  1012→  - src/app/api/onboarding/leads/route.ts (POST public + GET admin — new, replaces Phase 7-b stub)
+  1013→  - src/app/api/onboarding/leads/[id]/route.ts (PATCH admin — new)
+  1014→  - src/app/api/onboarding/leads/[id]/convert/route.ts (POST admin — new)
+  1015→  - src/app/api/onboarding/create-wedding/route.ts (POST admin — new, transactional wizard)
+  1016→  - src/app/api/onboarding/publish/route.ts (POST admin — new)
+  1017→- API contracts (consumed verbatim by Task 7-c frontend wizard):
+  1018→  - POST /api/onboarding/leads (public) → 201 `{lead:{id, brideName, groomName, coupleLabel, weddingDate, venueCity, email, phone, plan, message, status, createdAt}}` (notes NOT exposed)
+  1019→  - GET /api/onboarding/leads (admin, ?status=&page=&limit=&search=) → 200 `{leads:Lead[], total, page, limit, summary:{NEW,CONTACTED,CONVERTED,REJECTED}}` (each lead includes notes + convertedWeddingId + convertedAt + updatedAt)
+  1020→  - PATCH /api/onboarding/leads/{id} (admin, `{status?, notes?}`) → 200 `{lead:Lead}` (404 if not found)
+  1021→  - POST /api/onboarding/leads/{id}/convert (admin, `{weddingId}`) → 200 `{lead:Lead}` (404 lead/wedding missing, 409 already converted)
+  1022→  - POST /api/onboarding/create-wedding (admin) → 201 `{wedding, organizer, subscription+amountUsdCents, invoice, whatsapp:{url,recipient,message}, lead|null}` — see file JSDoc for full body shape
+  1023→  - POST /api/onboarding/publish (admin, `{weddingId}`) → 200 `{wedding:{id,slug,status,publishedAt}}` (404 missing, 400 already published)
+  1024→- Architecture decisions:
+  1025→  - Lead ↔ Wedding link is denormalized (Lead.convertedWeddingId String?, no FK) so deleting a wedding doesn't cascade-delete the lead history — the admin can still see "this lead was converted on X" even after the wedding is deleted.
+  1026→  - Onboarding wizard is fully transactional — if any step fails (e.g. duplicate email detected mid-tx), the whole wedding+organizer+subscription+invoice+audit-log creation rolls back, preventing orphan records.
+  1027→  - Invoice is created in OPEN status with status='PENDING_PAYMENT' on the subscription — admin can immediately send the WhatsApp deeplink (returned in the response) and manually mark the invoice PAID via the existing Phase 6 PUT /api/platform/invoices/{id} endpoint. No new billing code was needed.
+  1028→  - The 3 audit logs created inside the transaction are platform-level (weddingId=null) for easy filtering in the admin dashboard.
+  1029→  - `publish` flag lets the admin choose between DRAFT (continue editing before going live) and PUBLISHED (couple can immediately access /w/{slug}). Either way, the wedding is billable from t=0 because the subscription + invoice are already created.
+  1030→- Next: Phase 7-c (frontend onboarding wizard) — should consume the 6 routes above. The /onboarding public page already exists (Phase 7-b) and now hits the real Prisma-backed POST /api/onboarding/leads endpoint. The admin wizard UI (in /platform/admin) needs to be built to call GET /api/onboarding/leads + POST /api/onboarding/create-wedding + POST /api/onboarding/publish.
+  1031→
+  1032→---
+  1033→Task ID: 7-c
+  1034→Agent: Full-Stack Developer (Phase 7 Admin — Onboarding Wizard)
+  1035→Task: Phase 7 admin frontend — OnboardingTab + 5-step wizard (Couple → Plan → Pricing → Organizer → Review & Publish) consuming the 7-a APIs.
+  1036→
+  1037→Work Log:
+  1038→- Read worklog.md (Task 7-a API contracts + Task 6 BillingTab pattern + Task 5-c/5-d dashboard/Users CRUD UI patterns). Confirmed the 4 onboarding endpoints to consume: GET /api/onboarding/leads (paginated + summary), PATCH /api/onboarding/leads/{id} (status/notes), POST /api/onboarding/create-wedding (transactional wizard), POST /api/onboarding/publish.
+  1039→- Read /src/app/platform/admin/BillingTab.tsx (~1200 lines) as the closest reference template — copied its component structure (summary cards + filters bar + table + editor Dialog + WhatsApp modal), its fetchWithAuth prop pattern, its debounced-search useEffect (350ms → tightened to 300ms per spec), and its success-state toast + load() refresh pattern.
+  1040→- Read /src/lib/billing.ts (buildWhatsAppMessage, resolveAmountUsdCents, usdCentsToFcfa, BILLING_CYCLE_LABELS, PAYMENT_METHOD_LABELS, type BillingCycle, type PaymentMethod — all isomorphic, safe to import on client). Confirmed env-var fallbacks in PAYMENT_INSTRUCTIONS work client-side (process.env.BILLING_MOBILE_MONEY_PHONE is undefined on client → falls back to "+243 970 000 000" — no "undefined" leak).
+  1041→- Read /src/lib/types.ts (PLAN_METADATA, generateSlug, isValidSlug, buildCoupleLabel, type Plan — all pure consts/functions, safe for client).
+  1042→- Created /src/app/platform/admin/OnboardingTab.tsx (~2150 lines — main component ~1020 lines + 5 step sub-components + helper sub-components):
+  1043→  - **Types**: Lead, LeadsListResponse, CreateWeddingResponse (mirrors the 7-a contract verbatim including `subscription.amountUsdCents`, `whatsapp.{url,recipient,message}`, `lead` nullable).
+  1044→  - **Display constants**: LEAD_STATUS_LABELS, LEAD_STATUS_BADGE (NEW=amber, CONTACTED=teal [NOT blue per spec], CONVERTED=emerald, REJECTED=zinc), PLANS catalog (4 entries with priceUsd, priceFcfa, guests, media, staff, customDomain, popular flag on PREMIUM), TIMEZONES (8 African timezones, default Africa/Kinshasa), WIZARD_STEPS (5 labels).
+  1045→  - **WizardFormState**: 16-field object (brideName, groomName, weddingDate, timezone, venueName, venueCity, slug, slugTouched, plan, billingCycle, amountAgreed, paymentMethod, whatsappPhone, notes, organizerName, organizerEmail, organizerPassword, showPassword, publish).
+  1046→  - **Main OnboardingTab component**:
+  1047→    - State: leads list, loading, pagination (page/totalPages), filters (search/statusFilter), summary counts, wizard state (open/step/form/leadId/sourceLead/submitting/success), slug check state (checking/status), notes dialog state, reject confirmation state.
+  1048→    - `load(targetPage)`: useCallback — fetches /api/onboarding/leads?page=&limit=20&search=&status=, sets leads + total + totalPages + page + summary.
+  1049→    - useEffect on [statusFilter, load] → load(1) on filter change.
+  1050→    - useEffect on [search, load] → 300ms debounce → load(1).
+  1051→    - `patchLead(lead, patch)`: PATCH /api/onboarding/leads/{id} with {status?, notes?}, refreshes both leads list and summary counts.
+  1052→    - `openWizardCreate()`: opens wizard with EMPTY_FORM, no leadId.
+  1053→    - `openWizardFromLead(lead)`: opens wizard pre-filled with lead.brideName, groomName, weddingDate (toDateInput), venueCity, plan, whatsappPhone (from lead.phone), organizerEmail (from lead.email), slug (auto-generated from lead names), sets leadId + sourceLead for banner display.
+  1054→    - **Slug auto-suggest**: useEffect on [form.brideName, form.groomName, form.slugTouched] — if slug not manually edited, regenerate via generateSlug(bride, groom). When user types in slug field, set slugTouched=true to prevent override.
+  1055→    - `checkSlugAvailability()`: GET /api/platform/weddings?search={slug}&limit=50, filter client-side for exact slug match, set slugStatus to 'available' / 'taken' / 'invalid' (via isValidSlug).
+  1056→    - `validateStep(step)`: light validation for steps 1 (bride/groom/slug required + isValidSlug) and 4 (organizerName/email regex/password ≥8). Steps 2/3/5 always pass.
+  1057→    - `handleNext/handleBack`: step navigation with validation gate.
+  1058→    - `handleSubmit()`: validates steps 1+4, assembles the EXACT body shape from the 7-a contract (brideName, groomName, weddingDate ISO, timezone, venueName, venueCity, slug lowercased, plan, billingCycle, amountAgreed if set, paymentMethod if set, whatsappPhone if set, notes if set, organizerName, organizerEmail lowercased, organizerPassword, publish, leadId if set), POST /api/onboarding/create-wedding. On 201: close wizard, open success dialog with full response, refresh leads. On 400/409: toast French error from JSON. Else: toast generic error.
+  1059→    - **Live preview** (useMemo): `liveAmountUsdCents` uses custom amountAgreed if set, else resolveAmountUsdCents(plan, null, billingCycle). `liveWhatsAppPreview` calls buildWhatsAppMessage with current form values for live step-3 + step-5 preview.
+  1060→  - **Render structure**: 4 summary cards (gold/teal/emerald/muted accents) → filters bar (search + status Select + Refresh + gold "Créer un mariage" button) → leads table (7 columns: Couple | Contact | Plan souhaité | Date | Statut | Créé le | Actions dropdown) → pagination (ChevronLeft/Right + page indicator) → wizard Dialog (max-w-4xl, max-h-92vh, overflow-y-auto) → notes Dialog → reject AlertDialog → success Dialog.
+  1061→  - **Wizard dialog**: DialogHeader with Rocket icon + dynamic title ("Créer un mariage" or "Convertir un lead en mariage"), optional gold banner for lead source, Progress bar (value = step/5*100) + 5 step labels with checkmark for completed steps, AnimatePresence motion.div for step content (fade + slide-x), DialogFooter with Back / Annuler / Next-or-Submit buttons.
+  1062→  - **CoupleStep**: 6-input grid (bride, groom, date, timezone Select, venueName, venueCity) + slug input with Link2 icon + "Vérifier" button + slug status indicator (emerald for available, red for taken, amber for invalid) + URL hint.
+  1063→  - **PlanStep**: 2x2 grid of plan cards with "Populaire" badge on PREMIUM (gold gradient), price display (USD + FCFA), tagline, services checklist (guests, media, staff, customDomain, whiteLabel) with CheckCircle2/XCircle icons, gold ring on selected.
+  1064→  - **PricingStep**: billing cycle Select, custom amount Input (USD cents), payment method Select (with NONE placeholder for empty), whatsappPhone tel Input, notes Textarea, gold-tinted live price preview card, live WhatsApp message readonly Textarea.
+  1065→  - **OrganizerStep**: organizerName, organizerEmail, password Input with Eye/EyeOff toggle + Wand2 "Générer" button (calls generateRandomPassword(12) using crypto.getRandomValues — 12-char alphanumeric, no ambiguous chars like 0/O/l/1), password length validation hint, link hint to /w/{slug}/admin.
+  1066→  - **ReviewStep**: lead source banner (if leadId), 3 review sections (Couple, Plan & Tarification, Compte organisateur) with 2-col field grid, final WhatsApp preview Textarea, Switch for "Publier immédiatement" (default ON) with dynamic hint text.
+  1067→  - **Success dialog**: 4 SuccessCard sections (Mariage, Compte organisateur, Abonnement, Facture) with field grids, "Lead converti" emerald banner if lead was converted, WhatsApp readonly Textarea + "Copier le message" button (clipboard + toast) + "Ouvrir WhatsApp" real `<a href={url} target="_blank">` (NOT window.open — avoids popup blockers), "Voir le mariage" Link to /w/{slug}, "Fermer" button. Password is NOT shown in plaintext — displays "Communiqué au couple" with Lock icon (admin retains the password from step 4 entry).
+  1068→  - **Notes dialog**: Textarea (6 rows) + character counter (max 2000) + Save/Cancel buttons.
+  1069→  - **Reject AlertDialog**: confirmation with lead name, red "Rejeter le lead" action button.
+  1070→  - All text in French. Gold/champagne palette throughout (no blue/indigo — used amber/gold/emerald/teal/zinc/violet for accents). Mobile-responsive (grids collapse to 1-col on small screens, dialogs scroll vertically). Framer Motion for step transitions. ARIA labels on every form input.
+  1071→- Modified /src/app/platform/admin/page.tsx (3 surgical edits):
+  1072→  1. Added `Rocket` to lucide-react imports (chosen because: not in NAV_ITEMS, evokes "launching" a new wedding/subscription, distinct from existing LayoutDashboard/Heart/Wallet/UsersIcon/ScrollText — Sparkles was reserved for use inside OnboardingTab's summary cards).
+  1073→  2. Added `import { OnboardingTab } from './OnboardingTab'` after BillingTab import.
+  1074→  3. Added `'onboarding'` to TabId union type.
+  1075→  4. Added `{ id: 'onboarding', label: 'Onboarding', icon: Rocket }` to NAV_ITEMS (positioned after 'billing' and before 'users' — logical grouping with revenue-adjacent tabs).
+  1076→  5. Added `case 'onboarding': return <OnboardingTab fetchWithAuth={fetchWithAuth} />` to renderContent switch.
+  1077→- Lint check: `bun run lint` → 17 errors + 1 warning, ALL pre-existing (deploy-vps-*.cjs require() imports, AmbientMusicPlayer.tsx set-state-in-effect, sync-vps-tables-only.js, src/app/onboarding/page.tsx react-hook-form watch() warning). 0 NEW errors from Phase 7-c. OnboardingTab.tsx and page.tsx both lint-clean.
+  1078→- Browser verification with agent-browser (end-to-end happy path):
+  1079→  - Logged in via /platform/login (admin@josue-hornella.wedding / admin2026) → redirected to /platform/admin.
+  1080→  - Sidebar shows 6 tabs in order: Vue d'ensemble, Mariages, Facturation, **Onboarding** (NEW), Utilisateurs, Journal d'audit. Onboarding tab has Rocket icon.
+  1081→  - Clicked "Onboarding" → heading "Onboarding" appears, 4 summary cards render (Nouveaux leads=0, À contacter=0, Convertis=0, Rejetés=0 — DB is clean post-7-a cleanup), filters bar renders (search input + status Select + Rafraîchir button + gold "Créer un mariage" button), empty state shows "Aucun lead pour ce filtre." with "Créer un mariage directement" CTA.
+  1082→  - Clicked "Créer un mariage" → wizard Dialog opens with title "Créer un mariage", Progress bar at 20%, step 1 (Couple) active.
+  1083→  - Filled brideName="Marie", groomName="Jean" → slug auto-suggests "marie-jean" (verified via `agent-browser get value`).
+  1084→  - Manually edited slug to "mon-mariage-custom" then changed brideName → slug STAYED as "mon-mariage-custom" (slugTouched flag works correctly).
+  1085→  - Reset slug to "marie-jean", clicked "Suivant" → step 2 (Plan) renders 4 plan cards: Essai Libre, Essentiel, Premium (with "Populaire" badge), Élite.
+  1086→  - Selected Premium → gold ring appears on card. Clicked "Suivant" → step 3 (Pricing) renders billing cycle Select (default Mensuel), custom amount Input, payment method Select (default —), whatsappPhone Input, notes Textarea, gold-tinted price preview card showing "$99.00 / mensuel · ≈ 59 400 FCFA", live WhatsApp message Textarea with full prefilled message (greeting "Bonjour Marie & Jean ! 💍", plan Premium, price $99.00/59 400 FCFA, services list, payment instructions with fallback phone +243 970 000 000, wedding link https://heureuxmariage.aenews.net/w/marie-jean).
+  1087→  - Clicked "Suivant" → step 4 (Organizer) renders name, email, password inputs + Eye toggle + "Générer" button. Clicked "Générer" → password "ErhKceshZDGf" (12-char) auto-fills, showPassword toggles on so admin can read it.
+  1088→  - Filled organizerName="Marie Dupont", organizerEmail="marie-jean-test@example.com". Clicked "Suivant" → step 5 (Review) renders 3 review sections (Couple, Plan & Tarification, Compte organisateur) with all entered values, final WhatsApp message preview, "Publier immédiatement" Switch (default ON), "Créer et publier" gold button.
+  1089→  - Clicked "Annuler" → wizard closes cleanly. No errors thrown.
+  1090→  - Saved screenshots: phase7c-onboarding-empty.png (empty state with summary cards + empty leads table + CTA), phase7c-wizard-step5.png (full review step with all sections + WhatsApp preview + publish toggle).
+  1091→  - Dev log: 0 new errors during entire browser test. All compile cycles succeeded (465ms, 486ms, etc.).
+  1092→  - Note: The 5 pre-existing "Hydration failed" errors visible in `agent-browser errors` are from the existing PlatformAdminPage auth gate pattern (server renders loading skeleton because `typeof window === 'undefined'`, client renders full sidebar because localStorage has the admin token). This pattern predates Phase 7-c (introduced in Phase 3-B per worklog) and is NOT caused by my changes — OnboardingTab.tsx has no Date.now()/Math.random()/window-check in render.
+  1093→
+  1094→Stage Summary:
+  1095→- ✅ Phase 7-c (admin onboarding wizard) COMPLETE — 5-step wizard + leads table + success dialog wired into platform admin nav.
+  1096→- Files created:
+  1097→  - `/src/app/platform/admin/OnboardingTab.tsx` (~2150 lines — main component + 5 step components + helper sub-components, 'use client', all-French UI, gold/champagne palette, mobile-responsive, sonner toasts, Framer Motion step transitions, ARIA labels throughout)
+  1098→- Files modified:
+  1099→  - `/src/app/platform/admin/page.tsx` (5 surgical edits: added Rocket icon import, OnboardingTab import, 'onboarding' to TabId union, NAV_ITEMS entry between 'billing' and 'users', renderContent switch case)
+  1100→- API contracts consumed verbatim from Task 7-a:
+  1101→  - GET /api/onboarding/leads?status=&page=&limit=&search= → {leads, total, page, limit, summary:{NEW,CONTACTED,CONVERTED,REJECTED}}
+  1102→  - PATCH /api/onboarding/leads/{id} with {status?, notes?} → {lead}
+  1103→  - POST /api/onboarding/create-wedding with the exact 16-field body → 201 {wedding, organizer, subscription.amountUsdCents, invoice, whatsapp.{url,recipient,message}, lead|null}
+  1104→  - GET /api/platform/weddings?search={slug} (existing endpoint, reused for client-side slug availability check)
+  1105→- UX decisions:
+  1106→  - **Icon choice**: `Rocket` for the NAV item (evokes "launching" a new wedding — distinct from existing icons; Sparkles reserved for internal use as the gold accent on the "Nouveaux leads" summary card). `Heart` for the success dialog title (celebratory — "Mariage créé avec succès ! 💍").
+  1107→  - **Slug auto-suggest**: useEffect watches [brideName, groomName, slugTouched]. When admin hasn't manually edited the slug, regenerates it via `generateSlug()` from `@/lib/types` (strips accents, lowercases, joins with hyphens). Once admin types in the slug field, `slugTouched=true` permanently disables auto-suggest for that wizard session (prevents the admin's custom slug from being overwritten when they go back to fix a typo in the names).
+  1108→  - **Slug availability check**: Uses the existing GET /api/platform/weddings?search= endpoint (which does a `contains` query) and filters client-side for exact slug match. Shows 3 states: available (emerald check), taken (red X with "déjà utilisé"), invalid (amber alert with format requirements). Also re-validated server-side on submit (the 7-a endpoint returns 409 on conflict, which my submit handler toasts as the French error message).
+  1109→  - **Password visibility**: Eye/EyeOff toggle in step 4 + Wand2 "Générer" button (12-char alphanumeric, no ambiguous chars like 0/O/l/1, uses crypto.getRandomValues for proper entropy). The success dialog does NOT show the password in plaintext — instead shows a Lock icon + "Communiqué au couple" hint (the admin retains the password from step 4 entry; showing it again in the success dialog would be a security risk if the admin walks away from the screen).
+  1110→  - **WhatsApp link**: Real `<a href={url} target="_blank" rel="noopener noreferrer">` wrapped in a `Button asChild` (NOT window.open) so popup blockers don't block it. The URL is the wa.me deeplink returned by the 7-a response (already encoded with the prefilled message).
+  1111→  - **Live WhatsApp preview**: Computed client-side via `buildWhatsAppMessage` from `@/lib/billing` (isomorphic — only uses `process.env.NEXT_PUBLIC_APP_URL` which is exposed to client, and the `?? '+243 970 000 000'` fallbacks for the non-NEXT_PUBLIC env vars). Shows in both step 3 (during negotiation) and step 5 (final review). The success dialog shows the canonical server-generated message from the API response (not the client-computed one) to guarantee fidelity.
+  1112→  - **Lead conversion flow**: Clicking "Ouvrir le wizard" on a lead pre-fills step 1 (bride, groom, date, venueCity), step 2 (plan), step 3 (whatsappPhone from lead.phone), step 4 (organizerEmail from lead.email), and auto-generates the slug. A gold banner at the top of the wizard shows "Conversion du lead : {coupleLabel} ({email})" so the admin never loses track of which lead they're converting. The leadId is included in the POST body, so the 7-a endpoint auto-marks the lead as CONVERTED + links convertedWeddingId in the same transaction.
+  1113→  - **Stepper UI**: Progress bar (shadcn Progress, value = step/5*100) + 5 step labels with circular badges. Completed steps show emerald checkmark, active step shows gold filled badge, future steps show muted outline. Framer Motion `mode="wait"` AnimatePresence for step content (fade + slide-x, 180ms) — smooth transition without layout jank.
+  1114→  - **Status colors**: NEW=amber (attention needed), CONTACTED=teal (in progress — used teal instead of blue per spec's "no blue" rule), CONVERTED=emerald (success), REJECTED=zinc (muted/dismissed). Plan badges reuse the existing platform-admin palette (ELITE=gold, PREMIUM=emerald, ESSENTIEL=violet, TRIAL=zinc).
+  1115→  - **Empty state**: "Aucun lead pour ce filtre." with a "Créer un mariage directement" CTA — encourages the admin to bypass the lead flow when there are no leads to convert (e.g. walk-in customer).
+  1116→  - **Loading state**: Skeleton rows in the table (4 rows of h-12 w-full) + Skeleton h-7 w-12 in each summary card.
+  1117→  - **Reject confirmation**: AlertDialog (not a toast) — irreversible action deserves a modal confirmation. Action button is red, matches the XCircle icon on the dropdown item.
+  1118→- Production NOT touched (local dev only) — Phase 7-c deploys to VPS in a dedicated maintenance window after Phase 7 verification.
+  1119→- Next: Phase 7-verify (end-to-end browser test of the full signup → wedding creation → publish < 10 min flow) — should walk through the public /onboarding lead form, then the admin Onboarding tab wizard, then verify the wedding appears in the Mariages tab + billing appears in the Facturation tab.
+
+[showing lines 820-1119 of 1244; use offset=1120 with limit to continue reading]

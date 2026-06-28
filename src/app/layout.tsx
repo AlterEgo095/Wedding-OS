@@ -38,48 +38,51 @@ export const viewport: Viewport = {
   ],
 };
 
+// Platform-level metadata — GENERIC (not wedding-specific).
+// Per-wedding SEO is generated dynamically by generateMetadata() in
+// src/app/w/[slug]/layout.tsx so each tenant's title/description/openGraph
+// reflects their own couple. The root layout serves as the platform default
+// (e.g. for the homepage, 404, platform/admin routes) and must NEVER leak a
+// specific couple's identity into another wedding's social shares.
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.NEXT_PUBLIC_BASE_URL || "https://x16kp4ft4d40-d.space-z.ai"),
-  title: "Mariage Josué & Hornella",
+  title: "Heureux Mariage — Votre invitation digitale",
   description:
-    "Rejoignez-nous pour célébrer l'union de Josué et Hornella. Découvrez les détails de notre mariage, trouvez votre table et partagez ce moment unique avec nous.",
+    "Découvrez les détails du mariage, trouvez votre table et partagez ce moment unique.",
   keywords: [
     "mariage",
-    "wedding",
-    "Josué",
-    "Hornella",
     "invitation",
-    "Kinshasa",
-    "celebration",
+    "wedding",
+    "table",
+    "RSVP",
+    "heureux mariage",
   ],
-  authors: [{ name: "Josué & Hornella" }],
+  authors: [{ name: "Heureux Mariage" }],
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
-    title: "J & H 2026",
+    title: "Heureux Mariage",
   },
   openGraph: {
-    title: "Mariage Josué & Hornella",
-    description:
-      "Rejoignez-nous pour célébrer l'union de Josué et Hornella.",
+    title: "Heureux Mariage",
+    description: "Votre invitation digitale de mariage.",
     type: "website",
     locale: "fr_FR",
-    siteName: "Mariage Josué & Hornella",
+    siteName: "Heureux Mariage",
     images: [
       {
         url: "/icons/icon-512x512.png",
         width: 512,
         height: 512,
-        alt: "Mariage Josué & Hornella",
+        alt: "Heureux Mariage",
       },
     ],
   },
   twitter: {
     card: "summary_large_image",
-    title: "Mariage Josué & Hornella",
-    description:
-      "Rejoignez-nous pour célébrer l'union de Josué et Hornella.",
+    title: "Heureux Mariage",
+    description: "Votre invitation digitale de mariage.",
     images: ["/icons/icon-512x512.png"],
   },
 };

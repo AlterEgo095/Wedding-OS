@@ -20,12 +20,17 @@ export default function MapSection({ settings }: { settings: VenueSettings | nul
   const sectionRef = useRef<HTMLDivElement>(null)
   const isInView = useInView(sectionRef, { once: true, margin: '-100px' })
 
-  const venueName = settings?.venue_name || 'Salle Polyvalente – Grand Palais Kinshasa'
-  const venueAddress = settings?.venue_address || '21 / 22 Avenue Bobozo'
+  // Venue display strings use empty fallbacks so other weddings don't render
+  // the default wedding's venue ("Salle Polyvalente – Grand Palais Kinshasa").
+  // The default wedding resolves its values via /api/settings (zero regression).
+  // Latitude/longitude keep their fallback coordinates so the OSM iframe still
+  // renders a valid map when a tenant hasn't configured coordinates yet.
+  const venueName = settings?.venue_name || ''
+  const venueAddress = settings?.venue_address || ''
   const lat = settings?.venue_lat || '-4.3479'
   const lng = settings?.venue_lng || '15.3395'
-  const parking = settings?.venue_parking || 'Parking disponible sur place'
-  const venueTime = settings?.venue_time || '21H30'
+  const parking = settings?.venue_parking || ''
+  const venueTime = settings?.venue_time || ''
 
   const googleMapsUrl = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`
   const osmEmbedUrl = `https://www.openstreetmap.org/export/embed.html?bbox=${parseFloat(lng) - 0.005}%2C${parseFloat(lat) - 0.003}%2C${parseFloat(lng) + 0.005}%2C${parseFloat(lat) + 0.003}&layer=mapnik&marker=${lat}%2C${lng}`
@@ -62,17 +67,21 @@ export default function MapSection({ settings }: { settings: VenueSettings | nul
           >
             <div className="glass-card gold-border p-8 rounded-2xl h-full flex flex-col justify-center">
               {/* Venue Name */}
-              <h3 className="font-serif text-2xl md:text-3xl font-bold mb-3 gold-gradient">
-                {venueName}
-              </h3>
+              {venueName && (
+                <h3 className="font-serif text-2xl md:text-3xl font-bold mb-3 gold-gradient">
+                  {venueName}
+                </h3>
+              )}
 
               {/* Address */}
-              <div className="flex items-start gap-3 mb-4">
-                <MapPin className="size-5 text-gold shrink-0 mt-0.5" />
-                <p className="font-display text-foreground/80 leading-relaxed">
-                  {venueAddress}
-                </p>
-              </div>
+              {venueAddress && (
+                <div className="flex items-start gap-3 mb-4">
+                  <MapPin className="size-5 text-gold shrink-0 mt-0.5" />
+                  <p className="font-display text-foreground/80 leading-relaxed">
+                    {venueAddress}
+                  </p>
+                </div>
+              )}
 
               {/* Reference */}
               {(settings as Record<string, string>)?.venue_reference && (
@@ -84,20 +93,24 @@ export default function MapSection({ settings }: { settings: VenueSettings | nul
               )}
 
               {/* Time */}
-              <div className="flex items-center gap-3 mb-6">
-                <Clock className="size-5 text-gold shrink-0" />
-                <p className="font-display text-foreground/80">
-                  {venueTime}
-                </p>
-              </div>
+              {venueTime && (
+                <div className="flex items-center gap-3 mb-6">
+                  <Clock className="size-5 text-gold shrink-0" />
+                  <p className="font-display text-foreground/80">
+                    {venueTime}
+                  </p>
+                </div>
+              )}
 
               {/* Parking */}
-              <div className="flex items-start gap-3 mb-8">
-                <Car className="size-5 text-gold shrink-0 mt-0.5" />
-                <p className="font-display text-foreground/80 leading-relaxed">
-                  {parking}
-                </p>
-              </div>
+              {parking && (
+                <div className="flex items-start gap-3 mb-8">
+                  <Car className="size-5 text-gold shrink-0 mt-0.5" />
+                  <p className="font-display text-foreground/80 leading-relaxed">
+                    {parking}
+                  </p>
+                </div>
+              )}
 
               {/* Navigation Button */}
               <Button

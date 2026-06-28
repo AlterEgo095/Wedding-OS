@@ -12,6 +12,11 @@
 
 import { PLAN_METADATA, PLAN_LIMITS, type Plan } from './types';
 
+// ─── Conversion constants ─────────────────────────────────────────────────────
+
+/** Conversion rate: 1 USD = 600 FCFA (configurable per deployment). */
+export const FCFA_TO_USD_RATE = 600;
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export type SubscriptionStatus =
@@ -101,12 +106,12 @@ export function resolveAmountUsdCents(
 }
 
 /**
- * Convert USD cents to FCFA (approximate fixed rate: 1 USD ≈ 600 FCFA).
+ * Convert USD cents to FCFA (approximate fixed rate: 1 USD ≈ FCFA_TO_USD_RATE FCFA).
  * Used only for display in the WhatsApp message.
  */
 export function usdCentsToFcfa(usdCents: number): number {
   const usd = usdCents / 100;
-  return Math.round(usd * 600);
+  return Math.round(usd * FCFA_TO_USD_RATE);
 }
 
 /**

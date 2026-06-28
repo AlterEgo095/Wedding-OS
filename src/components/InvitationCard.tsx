@@ -124,13 +124,27 @@ export default function InvitationCard({
       .catch(() => {})
   }, [])
 
-  const venueName = settings.venue_name || 'Salle Polyvalente – Grand Palais Kinshasa'
-  const venueAddress = settings.venue_address || '21 / 22 Avenue Bobozo'
-  const venueReference = settings.venue_reference || 'Réf. Hôpital AKRAM, à la diagonale du Centre TELEMA'
-  const weddingDateDisplay = settings.site_subtitle || 'Vendredi 26 Juin 2026'
-  const groomName = settings.groom_name || 'Josué'
-  const brideName = settings.bride_name || 'Hornella'
-  const invitationMessage = settings.invitation_message || `${groomName} & ${brideName} ont l'honneur de vous inviter à leur célébration de mariage.`
+  // All venue/date/couple display strings use empty fallbacks so other
+  // weddings don't render the default wedding's couple ("Josué" / "Hornella")
+  // or venue ("Salle Polyvalente – Grand Palais Kinshasa"). The default
+  // wedding resolves its configured values via /api/settings (zero regression).
+  // Couple label + monogram derived from the names so empty cases render a
+  // generic "Mariage" / "M" instead of an awkward "& " placeholder.
+  const venueName = settings.venue_name || ''
+  const venueAddress = settings.venue_address || ''
+  const venueReference = settings.venue_reference || ''
+  const weddingDateDisplay = settings.site_subtitle || ''
+  const groomName = settings.groom_name || ''
+  const brideName = settings.bride_name || ''
+  const coupleLabel = (groomName && brideName)
+    ? `${groomName} & ${brideName}`
+    : (groomName || brideName || 'Mariage')
+  const invitationMessage = settings.invitation_message || `${coupleLabel} ont l'honneur de vous inviter à leur célébration de mariage.`
+  // Couple photo paths — settings-driven, empty fallback. <Image> tags below
+  // conditionally render so we never emit a broken src on tenants that
+  // haven't configured a couple photo.
+  const couplePhoto1Path = settings.couple_photo_1 || ''
+  const couplePhoto2Path = settings.couple_photo_2 || ''
 
   return (
     <motion.div
@@ -268,7 +282,7 @@ export default function InvitationCard({
             transition={{ delay: 0.5, duration: 0.8 }}
             className="font-display text-sm md:text-base tracking-[0.25em] uppercase text-muted-foreground mt-3"
           >
-            {groomName} & {brideName} ont l&apos;honneur
+            {coupleLabel} ont l&apos;honneur
           </motion.p>
           <motion.p
             initial={{ opacity: 0, y: 10 }}
@@ -293,13 +307,15 @@ export default function InvitationCard({
               className="relative z-[1] -mr-5"
             >
               <div className="w-16 h-16 md:w-20 md:h-20 rounded-full overflow-hidden ring-2 ring-gold/40 shadow-lg shadow-gold/10">
-                <Image
-                  src="/uploads/couple-photo-1.jpeg"
-                  alt="Josué"
-                  width={80}
-                  height={80}
-                  className="w-full h-full object-cover"
-                />
+                {couplePhoto1Path ? (
+                  <Image
+                    src={couplePhoto1Path}
+                    alt={groomName || 'Mari'}
+                    width={80}
+                    height={80}
+                    className="w-full h-full object-cover"
+                  />
+                ) : null}
               </div>
             </motion.div>
             {/* Photo 2 (right, slightly in front) */}
@@ -309,13 +325,15 @@ export default function InvitationCard({
               className="relative z-[2]"
             >
               <div className="w-16 h-16 md:w-20 md:h-20 rounded-full overflow-hidden ring-2 ring-rose-gold/40 shadow-lg shadow-rose-gold/10">
-                <Image
-                  src="/uploads/couple-photo-2.jpeg"
-                  alt="Hornella"
-                  width={80}
-                  height={80}
-                  className="w-full h-full object-cover"
-                />
+                {couplePhoto2Path ? (
+                  <Image
+                    src={couplePhoto2Path}
+                    alt={brideName || 'Mariée'}
+                    width={80}
+                    height={80}
+                    className="w-full h-full object-cover"
+                  />
+                ) : null}
               </div>
             </motion.div>
           </motion.div>
@@ -326,13 +344,19 @@ export default function InvitationCard({
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.9, duration: 0.8 }}
           >
-            <h2 className="font-serif text-2xl md:text-3xl font-bold">
-              <span className="gold-gradient">{groomName}</span>
-              <span className="block my-0.5 font-display text-lg font-light text-gold/50 tracking-[0.15em]">
-                &amp;
-              </span>
-              <span className="gold-gradient">{brideName}</span>
-            </h2>
+            {groomName && brideName ? (
+              <h2 className="font-serif text-2xl md:text-3xl font-bold">
+                <span className="gold-gradient">{groomName}</span>
+                <span className="block my-0.5 font-display text-lg font-light text-gold/50 tracking-[0.15em]">
+                  &amp;
+                </span>
+                <span className="gold-gradient">{brideName}</span>
+              </h2>
+            ) : (
+              <h2 className="font-serif text-2xl md:text-3xl font-bold">
+                <span className="gold-gradient">{coupleLabel}</span>
+              </h2>
+            )}
           </motion.div>
 
           {/* ─── ORNAMENTAL DIVIDER ─── */}
@@ -472,22 +496,24 @@ export default function InvitationCard({
             </div>
 
             {/* Couple photo watermark/accent */}
-            <motion.div
-              animate={{ y: [0, -2, 0] }}
-              transition={{ duration: 5, repeat: Infinity, ease: 'easeInOut' }}
-              className="relative opacity-30 dark:opacity-20"
-            >
-              <div className="w-10 h-10 rounded-full overflow-hidden ring-1 ring-gold/20">
-                <Image
-                  src="/uploads/couple-photo-1.jpeg"
-                  alt=""
-                  width={40}
-                  height={40}
-                  className="w-full h-full object-cover"
-                  aria-hidden="true"
-                />
-              </div>
-            </motion.div>
+            {couplePhoto1Path && (
+              <motion.div
+                animate={{ y: [0, -2, 0] }}
+                transition={{ duration: 5, repeat: Infinity, ease: 'easeInOut' }}
+                className="relative opacity-30 dark:opacity-20"
+              >
+                <div className="w-10 h-10 rounded-full overflow-hidden ring-1 ring-gold/20">
+                  <Image
+                    src={couplePhoto1Path}
+                    alt=""
+                    width={40}
+                    height={40}
+                    className="w-full h-full object-cover"
+                    aria-hidden="true"
+                  />
+                </div>
+              </motion.div>
+            )}
           </motion.div>
         </div>
       </div>
