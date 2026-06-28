@@ -31,8 +31,18 @@ export const PLAN_METADATA: Record<Plan, { label: string; priceFcfa: number; pri
 
 /**
  * Wedding status lifecycle.
+ *
+ * Flow:
+ *   DRAFT → PUBLISHED (wedding goes live, invitation links work)
+ *   PUBLISHED → COMPLETED (wedding day has passed, couple marked it as done)
+ *   COMPLETED → ARCHIVED (administrative archiving, read-only, hidden from dashboard)
+ *   PUBLISHED → SUSPENDED (temporary, e.g. non-payment)
+ *   SUSPENDED → PUBLISHED (reactivated after payment)
+ *   Any → ARCHIVED (administrative)
+ *
+ * TERMINATED is NOT used — "COMPLETED" is the business term for a finished wedding.
  */
-export type WeddingStatus = 'DRAFT' | 'PUBLISHED' | 'ARCHIVED' | 'SUSPENDED';
+export type WeddingStatus = 'DRAFT' | 'PUBLISHED' | 'COMPLETED' | 'ARCHIVED' | 'SUSPENDED';
 
 /**
  * User roles.

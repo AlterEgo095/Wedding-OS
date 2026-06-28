@@ -33,6 +33,7 @@ import {
   Plus, Pencil, Trash2, Loader2, Shield, Users
 } from 'lucide-react'
 import { toast } from 'sonner'
+import { isPlatformAdmin } from '@/lib/types'
 
 interface AdminUser {
   id: string
@@ -84,7 +85,7 @@ export default function UserManager({ token, userRole, onSessionExpired }: UserM
     role: 'CONTROLLER',
   })
 
-  const isSuperAdmin = userRole === 'SUPER_ADMIN'
+  const isSuperAdmin = isPlatformAdmin(userRole)
 
   const fetchUsers = async () => {
     try {

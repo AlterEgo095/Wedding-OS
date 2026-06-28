@@ -64,8 +64,8 @@ export default function HeroSection() {
   const contentOpacity = useTransform(scrollY, [0, 500], [1, 0])
   const contentY = useTransform(scrollY, [0, 500], [0, 80])
 
-  const groomName = settings.groom_name || 'Josué'
-  const brideName = settings.bride_name || 'Hornella'
+  const groomName = settings.groom_name || ''
+  const brideName = settings.bride_name || ''
   const dateDisplay = settings.site_subtitle || 'Vendredi 26 Juin 2026'
 
   const weddingDateStr = useMemo(

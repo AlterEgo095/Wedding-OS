@@ -117,15 +117,37 @@ export default function GuestPersonalSpace({ guest, settings, onLogout }: GuestP
       }
     : cleanGuestName(guest.firstName, guest.lastName, guest.category)
 
-  const groomName = settings.groom_name || 'Josué'
-  const brideName = settings.bride_name || 'Hornella'
+  const groomName = settings.groom_name || ''
+  const brideName = settings.bride_name || ''
+  // Composite couple label for places where empty names would render "& " —
+  // falls back to a generic "Mariage" so we never leak "Josué & Hornella"
+  // (the default wedding's couple) into another wedding's guest space.
+  const coupleLabel = (groomName && brideName)
+    ? `${groomName} & ${brideName}`
+    : (groomName || brideName || 'Mariage')
+  // Couple monogram (e.g. "Josué" + "Hornella" → "J & H"). Empty when neither
+  // name is configured so the previous hardcoded "J & H" doesn't leak into
+  // another wedding's invitation card.
+  const coupleMonogram = (groomName && brideName)
+    ? `${groomName.charAt(0).toUpperCase()} & ${brideName.charAt(0).toUpperCase()}`
+    : (groomName
+      ? groomName.charAt(0).toUpperCase()
+      : brideName
+        ? brideName.charAt(0).toUpperCase()
+        : '')
   const dateDisplay = settings.site_subtitle || 'Vendredi 26 Juin 2026'
   const venueName = settings.venue_name || 'Salle Polyvalente – Grand Palais Kinshasa'
   const venueAddress = settings.venue_address || '21 / 22 Avenue Bobozo'
   const venueReference = settings.venue_reference || 'Réf. Hôpital AKRAM, à la diagonale du Centre TELEMA'
   const venueTime = settings.venue_time || '21H30'
-  const hashtag = settings.hashtag || '#JosueEtHornella2026'
+  const hashtag = settings.hashtag || ''
   const closingMessage = settings.invitation_message || 'Votre présence rendra cette célébration encore plus mémorable.'
+  // Couple photo paths — settings-driven, empty fallback. The previous
+  // hardcoded "/uploads/couple-photo-{1,2}.jpeg" fallback leaked the default
+  // wedding's photos into every tenant's guest space (Phase 3 ÉTAPE 3b fix).
+  // The img tags below conditionally render so we never emit a broken <img src="">.
+  const couplePhoto1Path = settings.couple_photo_1 || ''
+  const couplePhoto2Path = settings.couple_photo_2 || ''
 
   const encryptedLinkUrl = guest.encryptedLink
     ? `${typeof window !== 'undefined' ? window.location.origin : ''}?invite=${guest.encryptedLink}`
@@ -152,17 +174,27 @@ export default function GuestPersonalSpace({ guest, settings, onLogout }: GuestP
   useEffect(() => {
     async function loadPhotos() {
       try {
+        // Preload the couple photos as base64 for html2canvas-pro download
+        // compatibility. Uses the settings-driven path when configured, else
+        // the legacy default-wedding photo path. Skips the preload entirely
+        // when no path is available so we don't fetch broken URLs on tenants
+        // that haven't configured a couple photo.
+        if (!couplePhoto1Path && !couplePhoto2Path) return
         const [r1, r2] = await Promise.all([
-          fetch('/uploads/couple-photo-1.jpeg'),
-          fetch('/uploads/couple-photo-2.jpeg'),
+          couplePhoto1Path
+            ? fetch(couplePhoto1Path)
+            : Promise.resolve<Response | null>(null),
+          couplePhoto2Path
+            ? fetch(couplePhoto2Path)
+            : Promise.resolve<Response | null>(null),
         ])
-        if (r1.ok) {
+        if (r1 && r1.ok) {
           const blob1 = await r1.blob()
           const reader1 = new FileReader()
           reader1.onloadend = () => setPhoto1Base64(reader1.result as string)
           reader1.readAsDataURL(blob1)
         }
-        if (r2.ok) {
+        if (r2 && r2.ok) {
           const blob2 = await r2.blob()
           const reader2 = new FileReader()
           reader2.onloadend = () => setPhoto2Base64(reader2.result as string)
@@ -171,7 +203,7 @@ export default function GuestPersonalSpace({ guest, settings, onLogout }: GuestP
       } catch { /* photos optional */ }
     }
     loadPhotos()
-  }, [])
+  }, [couplePhoto1Path, couplePhoto2Path])
 
   // Auto-start envelope reveal
   useEffect(() => {
@@ -302,7 +334,7 @@ export default function GuestPersonalSpace({ guest, settings, onLogout }: GuestP
   }, [cleanedName.displayName])
 
   const shareUrl = typeof window !== 'undefined' ? window.location.href : ''
-  const shareText = `${cleanedName.shortGreeting} — Mariage de ${groomName} & ${brideName}, ${dateDisplay}`
+  const shareText = `${cleanedName.shortGreeting} — Mariage de ${coupleLabel}, ${dateDisplay}`
 
   const handleShare = useCallback(async (channel: 'whatsapp' | 'messenger' | 'telegram' | 'email') => {
     const encodedUrl = encodeURIComponent(shareUrl)
@@ -311,11 +343,11 @@ export default function GuestPersonalSpace({ guest, settings, onLogout }: GuestP
       whatsapp: `https://wa.me/?text=${encodedText}%20${encodedUrl}`,
       messenger: `https://www.facebook.com/dialog/send?link=${encodedUrl}&app_id=0&redirect_uri=${encodedUrl}`,
       telegram: `https://t.me/share/url?url=${encodedUrl}&text=${encodedText}`,
-      email: `mailto:?subject=${encodeURIComponent(`Invitation — Mariage ${groomName} & ${brideName}`)}&body=${encodedText}%0A%0A${encodedUrl}`,
+      email: `mailto:?subject=${encodeURIComponent(`Invitation — Mariage ${coupleLabel}`)}&body=${encodedText}%0A%0A${encodedUrl}`,
     }
     window.open(urls[channel], '_blank')
     setShareMenuOpen(false)
-  }, [shareUrl, shareText, groomName, brideName])
+  }, [shareUrl, shareText, coupleLabel])
 
   /* ══════════════════════════════════════════════════════════════
      HIDDEN DOWNLOAD-READY INVITATION
@@ -359,11 +391,11 @@ export default function GuestPersonalSpace({ guest, settings, onLogout }: GuestP
             {/* Couple names */}
             <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: '12px 16px', zIndex: 3 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
-                <span style={{ fontSize: '24px', fontWeight: 'bold', color: '#8B6914' }}>J & H</span>
+                <span style={{ fontSize: '24px', fontWeight: 'bold', color: '#8B6914' }}>{coupleMonogram || 'M'}</span>
                 <div style={{ height: '1px', flex: 1, background: 'linear-gradient(to right, rgba(196,162,101,0.45), transparent)' }} />
               </div>
               <h1 style={{ fontSize: '30px', fontWeight: 'bold', color: '#8B6914', lineHeight: 1.1, margin: 0, fontFamily: 'Playfair Display, Georgia, serif' }}>
-                {groomName} & {brideName}
+                {coupleLabel}
               </h1>
               <p style={{ fontSize: '10px', letterSpacing: '0.25em', textTransform: 'uppercase', color: 'rgba(166,124,61,0.65)', fontWeight: 600, marginTop: '4px', fontFamily: 'Cormorant Garamond, sans-serif' }}>
                 {dateDisplay}
@@ -460,7 +492,7 @@ export default function GuestPersonalSpace({ guest, settings, onLogout }: GuestP
                 <p style={{ fontSize: '8px', color: 'rgba(122,106,74,0.45)', fontStyle: 'italic', lineHeight: 1.5, margin: 0, fontFamily: 'Cormorant Garamond, sans-serif' }}>{closingMessage}</p>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '6px' }}>
                   <span style={{ fontSize: '10px', color: 'rgba(196,162,101,0.3)' }}>&#9829;</span>
-                  <span style={{ fontSize: '12px', fontWeight: 'bold', color: '#8B6914', fontFamily: 'Playfair Display, Georgia, serif' }}>{groomName} & {brideName}</span>
+                  <span style={{ fontSize: '12px', fontWeight: 'bold', color: '#8B6914', fontFamily: 'Playfair Display, Georgia, serif' }}>{coupleLabel}</span>
                 </div>
                 <p style={{ fontSize: '7px', letterSpacing: '0.1em', color: 'rgba(196,162,101,0.3)', fontWeight: 600, margin: 0, marginTop: '2px', fontFamily: 'Cormorant Garamond, sans-serif' }}>{hashtag}</p>
               </div>
@@ -500,7 +532,7 @@ export default function GuestPersonalSpace({ guest, settings, onLogout }: GuestP
                   </div>
                 </motion.div>
                 <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.8, duration: 0.6 }} className="font-display text-[10px] tracking-[0.3em] uppercase mt-4 mb-3" style={{ color: 'rgba(139,105,20,0.5)' }}>Vous &#234;tes invit&#233;(e)</motion.p>
-                <motion.h2 initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 1.0, duration: 0.8 }} className="font-serif text-3xl sm:text-4xl font-bold mb-2" style={goldText}>{groomName} & {brideName}</motion.h2>
+                <motion.h2 initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 1.0, duration: 0.8 }} className="font-serif text-3xl sm:text-4xl font-bold mb-2" style={goldText}>{coupleLabel}</motion.h2>
                 <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 1.2, duration: 0.6 }} className="font-display text-[10px] tracking-[0.2em] uppercase mb-6" style={{ color: 'rgba(139,105,20,0.6)' }}>{dateDisplay}</motion.p>
                 {revealPhase === 'opening' && (
                   <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex items-center justify-center gap-2">
@@ -543,20 +575,24 @@ export default function GuestPersonalSpace({ guest, settings, onLogout }: GuestP
               <div className="relative md:w-[54%] shrink-0 overflow-hidden aspect-[16/10] md:aspect-auto md:min-h-[300px] lg:min-h-[340px]">
                 <div className="absolute inset-0 flex">
                   <div className="w-1/2 h-full relative overflow-hidden">
-                    <img src={photo1Base64 || '/uploads/couple-photo-1.jpeg'} alt={groomName} className="w-full h-full object-cover object-top" />
+                    {(photo1Base64 || couplePhoto1Path) ? (
+                      <img src={photo1Base64 || couplePhoto1Path} alt={groomName} className="w-full h-full object-cover object-top" />
+                    ) : null}
                   </div>
                   <div className="w-1/2 h-full relative overflow-hidden">
-                    <img src={photo2Base64 || '/uploads/couple-photo-2.jpeg'} alt={brideName} className="w-full h-full object-cover object-top" />
+                    {(photo2Base64 || couplePhoto2Path) ? (
+                      <img src={photo2Base64 || couplePhoto2Path} alt={brideName} className="w-full h-full object-cover object-top" />
+                    ) : null}
                   </div>
                 </div>
                 <div className="absolute inset-0" style={{ background: 'linear-gradient(to top, rgba(253,250,243,0.97) 0%, rgba(253,250,243,0.6) 30%, rgba(253,250,243,0.1) 50%, transparent 65%)' }} />
                 <div className="hidden md:block absolute inset-0" style={{ background: 'linear-gradient(to right, transparent 55%, rgba(253,250,243,0.5) 75%, rgba(253,250,243,0.95) 95%)' }} />
                 <div className="absolute bottom-0 left-0 right-0 p-3 sm:p-4 z-10">
                   <div className="flex items-center gap-2 mb-1">
-                    <span className="font-serif text-xl sm:text-2xl font-bold" style={goldText}>J & H</span>
+                    <span className="font-serif text-xl sm:text-2xl font-bold" style={goldText}>{coupleMonogram || 'M'}</span>
                     <div className="h-px flex-1" style={{ background: 'linear-gradient(to right, rgba(196,162,101,0.45), transparent)' }} />
                   </div>
-                  <h1 className="font-serif text-2xl sm:text-3xl md:text-[32px] font-bold leading-tight" style={goldText}>{groomName} & {brideName}</h1>
+                  <h1 className="font-serif text-2xl sm:text-3xl md:text-[32px] font-bold leading-tight" style={goldText}>{coupleLabel}</h1>
                   <p className="font-display text-[8px] sm:text-[10px] tracking-[0.25em] uppercase text-[#A67C3D]/65 font-semibold mt-1">{dateDisplay}</p>
                 </div>
               </div>
@@ -643,7 +679,7 @@ export default function GuestPersonalSpace({ guest, settings, onLogout }: GuestP
                     <p className="font-display text-[7px] sm:text-[8px] text-[#7A6A4A]/45 italic leading-snug">{closingMessage}</p>
                     <div className="flex items-center gap-1.5 mt-1.5">
                       <Heart className="size-2.5 text-[#C4A265]/30 fill-[#C4A265]/15" />
-                      <span className="font-serif text-[11px] sm:text-xs font-bold" style={goldText}>{groomName} & {brideName}</span>
+                      <span className="font-serif text-[11px] sm:text-xs font-bold" style={goldText}>{coupleLabel}</span>
                     </div>
                     <p className="font-display text-[6px] sm:text-[7px] tracking-wider text-[#C4A265]/30 font-semibold mt-0.5">{hashtag}</p>
                   </div>
@@ -658,7 +694,7 @@ export default function GuestPersonalSpace({ guest, settings, onLogout }: GuestP
           <div className="relative p-5 sm:p-6 text-center" style={{ background: 'linear-gradient(175deg, rgba(196,162,101,0.04) 0%, rgba(196,162,101,0.08) 50%, rgba(196,162,101,0.04) 100%)', border: '1px solid rgba(196,162,101,0.2)' }}>
             <div className="absolute inset-1 pointer-events-none" style={{ border: '1px solid rgba(196,162,101,0.06)' }} />
             <h3 className="font-serif text-xl sm:text-2xl font-bold mb-2" style={goldText}>Confirmer ma pr&#233;sence</h3>
-            <p className="font-display text-[10px] sm:text-[11px] text-[#7A6A4A]/55 mb-5">{groomName} & {brideName} souhaitent conna&#238;tre votre r&#233;ponse</p>
+            <p className="font-display text-[10px] sm:text-[11px] text-[#7A6A4A]/55 mb-5">{coupleLabel} souhaitent conna&#238;tre votre r&#233;ponse</p>
             {rsvpDone || rsvpStatus === 'CONFIRMED' || rsvpStatus === 'DECLINED' ? (
               <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full" style={{ background: rsvpStatus === 'CONFIRMED' ? 'linear-gradient(135deg, rgba(16,185,129,0.08), rgba(16,185,129,0.15))' : 'linear-gradient(135deg, rgba(239,68,68,0.08), rgba(239,68,68,0.12))', border: `1px solid ${rsvpStatus === 'CONFIRMED' ? 'rgba(16,185,129,0.25)' : 'rgba(239,68,68,0.2)'}` }}>
                 {rsvpStatus === 'CONFIRMED' ? (

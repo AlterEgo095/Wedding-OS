@@ -26,7 +26,7 @@ model Wedding {
   venueLat        String?
   venueLng        String?
   venueReference  String?
-  status          String        @default("DRAFT") // DRAFT, PUBLISHED, ARCHIVED, SUSPENDED
+  status          String        @default("DRAFT") // DRAFT, PUBLISHED, COMPLETED, ARCHIVED, SUSPENDED
   plan            String        @default("TRIAL") // TRIAL, ESSENTIEL, PREMIUM, ELITE
   customDomain    String?       @unique // e.g. "mariage-sophie.fr" (Premium/Élite only)
   isDefault       Boolean       @default(false) // marks the legacy wedding served at "/"

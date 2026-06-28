@@ -3,6 +3,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getAuthUser, hasPermission, hashPassword } from '@/lib/auth';
 import { resolveAdminTenant } from '@/lib/tenant-context';
+import { isPlatformAdmin } from '@/lib/types';
+import { checkAdminLimit } from '@/lib/plan-limits';
 
 // AdminUser is platform-level (not tenant-scoped) — SUPER_ADMIN has weddingId=null.
 // However, non-SUPER_ADMIN users can only see users in their own wedding.
@@ -14,8 +16,9 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
-    // SUPER_ADMIN sees all users; others see only users in their wedding
-    const where = user.role === 'SUPER_ADMIN' ? {} : { weddingId: user.weddingId };
+    // Platform admins (PLATFORM_ADMIN or legacy SUPER_ADMIN) see all users;
+    // other roles see only users in their own wedding.
+    const where = isPlatformAdmin(user.role) ? {} : { weddingId: user.weddingId };
 
     const users = await db.adminUser.findMany({
       where,
@@ -67,9 +70,36 @@ export async function POST(request: NextRequest) {
 
     const hashedPassword = await hashPassword(password);
 
-    // SUPER_ADMIN has no weddingId; other roles are scoped to the resolved wedding
-    // (or to an explicitly-provided weddingId for SUPER_ADMIN creating users in other weddings)
-    const assignedWeddingId = role === 'SUPER_ADMIN' ? null : (weddingId || context.weddingId);
+    // Platform admins (PLATFORM_ADMIN or legacy SUPER_ADMIN) have no weddingId;
+    // other roles are scoped to the resolved wedding (or to an explicitly-
+    // provided weddingId for platform admins creating users in other weddings).
+    const assignedWeddingId = isPlatformAdmin(role) ? null : (weddingId || context.weddingId);
+
+    // ─── Plan limit enforcement (Phase 3 ÉTAPE 5) ─────────────────────────
+    // Only enforced for wedding-scoped roles (ORGANIZER/RECEPTION/CONTROLLER).
+    // Platform admins are NOT counted against the limit. Existing users above
+    // the limit remain visible + editable (zero regression).
+    if (assignedWeddingId && !isPlatformAdmin(role)) {
+      try {
+        const limitCheck = await checkAdminLimit(assignedWeddingId);
+        if (!limitCheck.allowed) {
+          return NextResponse.json(
+            {
+              error: "Limite d'administrateurs atteinte pour votre plan",
+              limit: limitCheck.limit,
+              current: limitCheck.current,
+              plan: limitCheck.plan,
+              upgradeUrl: '/platform/admin',
+            },
+            { status: 403 }
+          );
+        }
+      } catch (limitError) {
+        // If the limit check itself fails, log and continue — we don't want
+        // to block a legitimate write because of an internal accounting error.
+        console.error('Admin limit check failed:', limitError);
+      }
+    }
 
     const newUser = await db.adminUser.create({
       data: {
@@ -125,8 +155,9 @@ export async function PUT(request: NextRequest) {
     if (name) updateData.name = name;
     if (role) {
       updateData.role = role;
-      // SUPER_ADMIN must have null weddingId; non-SUPER_ADMIN retains existing or explicit weddingId
-      if (role === 'SUPER_ADMIN') updateData.weddingId = null;
+      // Platform admins (PLATFORM_ADMIN or legacy SUPER_ADMIN) must have null weddingId;
+      // other roles retain existing or explicit weddingId.
+      if (isPlatformAdmin(role)) updateData.weddingId = null;
     }
     if (weddingId !== undefined) updateData.weddingId = weddingId;
     if (password) updateData.password = await hashPassword(password);

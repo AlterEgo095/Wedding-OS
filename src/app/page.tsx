@@ -22,6 +22,7 @@ import AENEWSBanner from '@/components/AENEWSBanner'
 import AmbientMusicPlayer from '@/components/AmbientMusicPlayer'
 import VisualEffectsLayer from '@/components/effects/VisualEffectsLayer'
 import LuxuryVisualEngine from '@/components/luxury/LuxuryVisualEngine'
+import { ThemeInjector } from '@/components/wedding/ThemeInjector'
 
 interface CoupleStory {
   id: string
@@ -287,6 +288,9 @@ function HomeContent() {
 
       {/* Luxury cinematic ambiance engine — independent layer */}
       <LuxuryVisualEngine />
+
+      {/* Phase 8: Theme injector — applies wedding colors + fonts */}
+      <ThemeInjector />
 
       <Navigation />
 

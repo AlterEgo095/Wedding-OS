@@ -4,6 +4,7 @@ import { db, tenantDb } from '@/lib/db';
 import { getAuthUser, hasPermission } from '@/lib/auth';
 import { v4 as uuidv4 } from 'uuid';
 import { resolveAdminTenant, runWithTenant } from '@/lib/tenant-context';
+import { checkGuestLimit } from '@/lib/plan-limits';
 
 export async function GET(request: NextRequest) {
   try {
@@ -83,6 +84,31 @@ export async function POST(request: NextRequest) {
 
       if (!firstName || !lastName) {
         return NextResponse.json({ error: 'First name and last name are required' }, { status: 400 });
+      }
+
+      // ─── Plan limit enforcement (Phase 3 ÉTAPE 5) ─────────────────────────
+      // Block NEW guest creation when the wedding has reached its plan quota.
+      // Existing guests above the limit remain visible + editable (zero regression).
+      try {
+        const limitCheck = await checkGuestLimit(context.weddingId);
+        if (!limitCheck.allowed) {
+          return NextResponse.json(
+            {
+              error: "Limite d'invités atteinte pour votre plan",
+              limit: limitCheck.limit,
+              current: limitCheck.current,
+              plan: limitCheck.plan,
+              upgradeUrl: '/platform/admin',
+            },
+            { status: 403 }
+          );
+        }
+      } catch (limitError) {
+        // If the limit check itself fails (e.g. wedding not found), log and
+        // continue — we don't want to block a legitimate write because of an
+        // internal accounting error. The tenant context already validated
+        // the weddingId above.
+        console.error('Guest limit check failed:', limitError);
       }
 
       const invitationCode = uuidv4().substring(0, 8).toUpperCase();

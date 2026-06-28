@@ -10,6 +10,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Save, Loader2, Settings as SettingsIcon } from 'lucide-react'
 import { Textarea } from '@/components/ui/textarea'
 import { toast } from 'sonner'
+import { isPlatformAdmin } from '@/lib/types'
 
 interface SettingsManagerProps {
   token: string
@@ -82,7 +83,7 @@ export default function SettingsManager({ token, userRole, onSessionExpired }: S
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
 
-  const isSuperAdmin = userRole === 'SUPER_ADMIN'
+  const isSuperAdmin = isPlatformAdmin(userRole)
 
   const fetchSettings = async () => {
     try {
