@@ -1,0 +1,548 @@
+     1→import { db } from './src/lib/db'
+     2→import { hashPassword } from './src/lib/auth'
+     3→
+     4→function generateCode(): string {
+     5→  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+     6→  let code = ''
+     7→  for (let i = 0; i < 8; i++) {
+     8→    code += chars.charAt(Math.floor(Math.random() * chars.length))
+     9→  }
+    10→  return code
+    11→}
+    12→
+    13→async function seed() {
+    14→  console.log('🌱 Seeding database with real wedding data...')
+    15→
+    16→  // ─── Admin Users ──────────────────────────────────────────────
+    17→  const existingAdmin = await db.adminUser.findUnique({ where: { email: 'admin@mariage.fr' } })
+    18→  if (!existingAdmin) {
+    19→    const hashedPassword = await hashPassword('admin123')
+    20→    await db.adminUser.create({
+    21→      data: {
+    22→        email: 'admin@mariage.fr',
+    23→        password: hashedPassword,
+    24→        name: 'Admin Principal',
+    25→        role: 'SUPER_ADMIN',
+    26→      },
+    27→    })
+    28→    console.log('✅ Created Super Admin: admin@mariage.fr / admin123')
+    29→  }
+    30→
+    31→  const existingOrganizer = await db.adminUser.findUnique({ where: { email: 'organizer@mariage.fr' } })
+    32→  if (!existingOrganizer) {
+    33→    const hashedPassword = await hashPassword('organizer123')
+    34→    await db.adminUser.create({
+    35→      data: {
+    36→        email: 'organizer@mariage.fr',
+    37→        password: hashedPassword,
+    38→        name: 'Organisateur',
+    39→        role: 'ORGANIZER',
+    40→      },
+    41→    })
+    42→    console.log('✅ Created Organizer: organizer@mariage.fr / organizer123')
+    43→  }
+    44→
+    45→  const existingReception = await db.adminUser.findUnique({ where: { email: 'reception@mariage.fr' } })
+    46→  if (!existingReception) {
+    47→    const hashedPassword = await hashPassword('reception123')
+    48→    await db.adminUser.create({
+    49→      data: {
+    50→        email: 'reception@mariage.fr',
+    51→        password: hashedPassword,
+    52→        name: 'Accueil',
+    53→        role: 'RECEPTION',
+    54→      },
+    55→    })
+    56→    console.log('✅ Created Reception: reception@mariage.fr / reception123')
+    57→  }
+    58→
+    59→  const existingController = await db.adminUser.findUnique({ where: { email: 'controller@mariage.fr' } })
+    60→  if (!existingController) {
+    61→    const hashedPassword = await hashPassword('controller123')
+    62→    await db.adminUser.create({
+    63→      data: {
+    64→        email: 'controller@mariage.fr',
+    65→        password: hashedPassword,
+    66→        name: 'Contrôleur',
+    67→        role: 'CONTROLLER',
+    68→      },
+    69→    })
+    70→    console.log('✅ Created Controller: controller@mariage.fr / controller123')
+    71→  }
+    72→
+    73→  // ─── Clean existing data ──────────────────────────────────────
+    74→  console.log('🧹 Cleaning existing data...')
+    75→  await db.guest.deleteMany()
+    76→  await db.table.deleteMany()
+    77→  await db.eventTimeline.deleteMany()
+    78→  await db.coupleStory.deleteMany()
+    79→  await db.media.deleteMany()
+    80→  await db.settings.deleteMany()
+    81→
+    82→  // ─── Tables ───────────────────────────────────────────────────
+    83→  const tablesData = [
+    84→    { name: 'ANSET', number: 1, capacity: 14 },
+    85→    { name: 'CEMYCINE', number: 2, capacity: 12 },
+    86→    { name: 'CESAKROL', number: 3, capacity: 12 },
+    87→    { name: 'DIGEST', number: 4, capacity: 12 },
+    88→    { name: 'CEFAM', number: 5, capacity: 12 },
+    89→    { name: 'NORMEGYL', number: 6, capacity: 12 },
+    90→    { name: 'CITRIMEX-DT', number: 7, capacity: 12 },
+    91→    { name: 'APHEROL', number: 8, capacity: 12 },
+    92→    { name: 'NICAR', number: 9, capacity: 14 },
+    93→    { name: 'CEFUROCLAV', number: 10, capacity: 12 },
+    94→    { name: 'CESACAL', number: 11, capacity: 12 },
+    95→    { name: 'TRACOL', number: 12, capacity: 14 },
+    96→    { name: 'CEPIME', number: 13, capacity: 14 },
+    97→    { name: 'FECOND', number: 14, capacity: 12 },
+    98→    { name: 'ESOMEX', number: 15, capacity: 12 },
+    99→    { name: 'PASMEX', number: 16, capacity: 12 },
+   100→    { name: 'LINZOX', number: 17, capacity: 12 },
+   101→    { name: 'VITRON-Z', number: 18, capacity: 12 },
+   102→    { name: 'VOGLITUS', number: 19, capacity: 12 },
+   103→    { name: 'TELSOTON', number: 20, capacity: 12 },
+   104→    { name: 'ROSUMEX', number: 21, capacity: 14 },
+   105→    { name: 'CESAKROL II', number: 22, capacity: 12 },
+   106→    { name: 'CETHER-L', number: 23, capacity: 12 },
+   107→    { name: 'NEBIMEX', number: 24, capacity: 12 },
+   108→    { name: 'HEMOREX', number: 25, capacity: 10 },
+   109→    { name: 'MAXSPRIN', number: 26, capacity: 12 },
+   110→    { name: 'DEZOLIN', number: 27, capacity: 12 },
+   111→    { name: 'MICOFLU', number: 28, capacity: 12 },
+   112→  ]
+   113→
+   114→  const tables: Record<number, string> = {}
+   115→  for (const t of tablesData) {
+   116→    const table = await db.table.create({
+   117→      data: { name: t.name, number: t.number, capacity: t.capacity },
+   118→    })
+   119→    tables[t.number] = table.id
+   120→  }
+   121→  console.log(`✅ Created ${tablesData.length} tables`)
+   122→
+   123→  // ─── Guests ───────────────────────────────────────────────────
+   124→  type GuestInput = {
+   125→    firstName: string
+   126→    lastName: string
+   127→    tableNumber: number
+   128→    seats: number
+   129→    category: string
+   130→    personalMessage?: string
+   131→  }
+   132→
+   133→  const guests: GuestInput[] = [
+   134→    // Table 1 - ANSET
+   135→    { firstName: 'Pasteur', lastName: 'GUYGUY', tableNumber: 1, seats: 2, category: 'VIP', personalMessage: 'Bienvenue Pasteur, votre présence est une bénédiction !' },
+   136→    { firstName: 'Pasteur', lastName: 'PECHO', tableNumber: 1, seats: 2, category: 'VIP', personalMessage: 'Merci d\'être là pour célébrer avec nous !' },
+   137→    { firstName: 'Berge', lastName: 'MUSEMA', tableNumber: 1, seats: 2, category: 'FAMILLE' },
+   138→    { firstName: 'Berge', lastName: 'SERGE', tableNumber: 1, seats: 2, category: 'FAMILLE' },
+   139→    { firstName: 'Berge', lastName: 'KALO', tableNumber: 1, seats: 2, category: 'FAMILLE' },
+   140→    { firstName: 'Tante', lastName: 'BODIKO', tableNumber: 1, seats: 2, category: 'FAMILLE', personalMessage: 'Chère Tante, votre amour nous guide toujours !' },
+   141→
+   142→    // Table 2 - CEMYCINE
+   143→    { firstName: 'Paul', lastName: '', tableNumber: 2, seats: 2, category: 'VIP' },
+   144→    { firstName: 'Pasteur', lastName: 'IMBULE', tableNumber: 2, seats: 2, category: 'VIP' },
+   145→    { firstName: 'Marie', lastName: 'JEANE', tableNumber: 2, seats: 1, category: 'FAMILLE' },
+   146→    { firstName: 'Michel', lastName: '', tableNumber: 2, seats: 2, category: 'AMIS' },
+   147→    { firstName: 'Marck', lastName: '', tableNumber: 2, seats: 2, category: 'AMIS' },
+   148→    { firstName: 'Garcia', lastName: '', tableNumber: 2, seats: 1, category: 'AMIS' },
+   149→    { firstName: 'Chantal', lastName: 'DJONGA', tableNumber: 2, seats: 1, category: 'AMIS' },
+   150→    { firstName: 'Parrain', lastName: '', tableNumber: 2, seats: 2, category: 'VIP', personalMessage: 'Cher Parrain, votre soutien signifie tout pour nous !' },
+   151→
+   152→    // Table 3 - CESAKROL
+   153→    { firstName: 'Thethe', lastName: 'LIBAZA', tableNumber: 3, seats: 1, category: 'AMIS' },
+   154→    { firstName: 'Elma', lastName: 'LIBAZA', tableNumber: 3, seats: 1, category: 'AMIS' },
+   155→    { firstName: 'Meya', lastName: '', tableNumber: 3, seats: 2, category: 'AMIS' },
+   156→    { firstName: 'Fabrice', lastName: '', tableNumber: 3, seats: 2, category: 'AMIS' },
+   157→    { firstName: 'Florida', lastName: '', tableNumber: 3, seats: 2, category: 'AMIS' },
+   158→    { firstName: 'Clarise', lastName: 'MOTELU', tableNumber: 3, seats: 1, category: 'AMIS' },
+   159→    { firstName: 'Wemba', lastName: '', tableNumber: 3, seats: 2, category: 'AMIS' },
+   160→    { firstName: 'Rachel', lastName: 'LIBAZA', tableNumber: 3, seats: 1, category: 'AMIS' },
+   161→
+   162→    // Table 4 - DIGEST
+   163→    { firstName: 'Bumba', lastName: '', tableNumber: 4, seats: 2, category: 'AMIS' },
+   164→    { firstName: 'Bavon', lastName: '', tableNumber: 4, seats: 2, category: 'AMIS' },
+   165→    { firstName: 'Huguette', lastName: '', tableNumber: 4, seats: 2, category: 'AMIS' },
+   166→    { firstName: 'Pa', lastName: 'SODA', tableNumber: 4, seats: 2, category: 'AMIS' },
+   167→    { firstName: 'Mboyo', lastName: '', tableNumber: 4, seats: 2, category: 'AMIS' },
+   168→    { firstName: 'Pa', lastName: 'Rossy', tableNumber: 4, seats: 2, category: 'AMIS' },
+   169→
+   170→    // Table 5 - CEFAM
+   171→    { firstName: 'Abani', lastName: '', tableNumber: 5, seats: 2, category: 'AMIS' },
+   172→    { firstName: 'Kalambayi', lastName: '', tableNumber: 5, seats: 2, category: 'AMIS' },
+   173→    { firstName: 'Mbele', lastName: '', tableNumber: 5, seats: 2, category: 'AMIS' },
+   174→    { firstName: 'Izuele', lastName: '', tableNumber: 5, seats: 2, category: 'AMIS' },
+   175→    { firstName: 'Bena', lastName: '', tableNumber: 5, seats: 2, category: 'AMIS' },
+   176→    { firstName: 'Mutitwa', lastName: '', tableNumber: 5, seats: 2, category: 'AMIS' },
+   177→
+   178→    // Table 6 - NORMEGYL
+   179→    { firstName: 'Mbele', lastName: '', tableNumber: 6, seats: 2, category: 'AMIS' },
+   180→    { firstName: 'Mputu', lastName: '', tableNumber: 6, seats: 2, category: 'AMIS' },
+   181→    { firstName: 'Bilu', lastName: '', tableNumber: 6, seats: 2, category: 'AMIS' },
+   182→    { firstName: 'Djodjo', lastName: '', tableNumber: 6, seats: 2, category: 'AMIS' },
+   183→    { firstName: 'Hernandez', lastName: '', tableNumber: 6, seats: 2, category: 'AMIS' },
+   184→    { firstName: 'Diego', lastName: '', tableNumber: 6, seats: 2, category: 'AMIS' },
+   185→
+   186→    // Table 7 - CITRIMEX-DT
+   187→    { firstName: 'Nzila', lastName: 'MATONDO', tableNumber: 7, seats: 2, category: 'AMIS' },
+   188→    { firstName: 'Elvice', lastName: 'KOYALA', tableNumber: 7, seats: 2, category: 'AMIS' },
+   189→    { firstName: 'Joel', lastName: 'MALUNDA', tableNumber: 7, seats: 2, category: 'AMIS' },
+   190→    { firstName: 'Ben', lastName: 'MUZOMWE', tableNumber: 7, seats: 1, category: 'AMIS' },
+   191→    { firstName: 'Isaac', lastName: 'WASSA', tableNumber: 7, seats: 1, category: 'AMIS' },
+   192→    { firstName: 'Nickson', lastName: 'DONGO', tableNumber: 7, seats: 1, category: 'AMIS' },
+   193→    { firstName: 'Vinny', lastName: 'BENDE', tableNumber: 7, seats: 1, category: 'AMIS' },
+   194→    { firstName: 'Francy', lastName: 'MOKOLI', tableNumber: 7, seats: 1, category: 'AMIS' },
+   195→    { firstName: 'Glody', lastName: 'MASANDI', tableNumber: 7, seats: 1, category: 'AMIS' },
+   196→    { firstName: 'David', lastName: 'MANYA', tableNumber: 7, seats: 1, category: 'AMIS' },
+   197→    { firstName: 'Djenny', lastName: '', tableNumber: 7, seats: 1, category: 'AMIS' },
+   198→
+   199→    // Table 8 - APHEROL
+   200→    { firstName: 'Hilda', lastName: '', tableNumber: 8, seats: 2, category: 'AMIS' },
+   201→    { firstName: 'Lukia', lastName: '', tableNumber: 8, seats: 2, category: 'AMIS' },
+   202→    { firstName: 'Molayi', lastName: '', tableNumber: 8, seats: 2, category: 'AMIS' },
+   203→    { firstName: 'Ngango', lastName: '', tableNumber: 8, seats: 2, category: 'AMIS' },
+   204→    { firstName: 'Giresse', lastName: 'ZIRI', tableNumber: 8, seats: 2, category: 'AMIS' },
+   205→    { firstName: 'Jered\'Art', lastName: '', tableNumber: 8, seats: 2, category: 'AMIS' },
+   206→
+   207→    // Table 9 - NICAR
+   208→    { firstName: 'Platinie', lastName: '', tableNumber: 9, seats: 1, category: 'AMIS' },
+   209→    { firstName: 'Jose', lastName: 'MPAKA', tableNumber: 9, seats: 1, category: 'AMIS' },
+   210→    { firstName: 'Mazuda', lastName: '', tableNumber: 9, seats: 1, category: 'AMIS' },
+   211→    { firstName: 'Yelenge', lastName: '', tableNumber: 9, seats: 1, category: 'AMIS' },
+   212→    { firstName: 'Maurise', lastName: '', tableNumber: 9, seats: 1, category: 'AMIS' },
+   213→    { firstName: 'Sera', lastName: 'MADEFU', tableNumber: 9, seats: 1, category: 'AMIS' },
+   214→    { firstName: 'Cadette', lastName: 'SUNDA', tableNumber: 9, seats: 1, category: 'AMIS' },
+   215→    { firstName: 'Fr', lastName: 'MEDIO', tableNumber: 9, seats: 1, category: 'AMIS' },
+   216→    { firstName: 'Zackarie', lastName: '', tableNumber: 9, seats: 2, category: 'AMIS' },
+   217→    { firstName: 'Josué', lastName: 'LIBAZA', tableNumber: 9, seats: 1, category: 'AMIS' },
+   218→    { firstName: 'Norna', lastName: 'LIBAZA', tableNumber: 9, seats: 1, category: 'AMIS' },
+   219→
+   220→    // Table 10 - CEFUROCLAV
+   221→    { firstName: 'Bodiko', lastName: '', tableNumber: 10, seats: 2, category: 'FAMILLE' },
+   222→    { firstName: 'Lissete', lastName: '', tableNumber: 10, seats: 1, category: 'FAMILLE' },
+   223→    { firstName: 'Nadege', lastName: '', tableNumber: 10, seats: 1, category: 'FAMILLE' },
+   224→    { firstName: 'Dada', lastName: '', tableNumber: 10, seats: 2, category: 'FAMILLE' },
+   225→    { firstName: 'Osee', lastName: 'BOPUPA', tableNumber: 10, seats: 1, category: 'FAMILLE' },
+   226→    { firstName: 'Miche', lastName: '', tableNumber: 10, seats: 2, category: 'FAMILLE' },
+   227→    { firstName: 'Elie', lastName: 'JOSEPH', tableNumber: 10, seats: 1, category: 'FAMILLE' },
+   228→    { firstName: 'Kyria', lastName: '', tableNumber: 10, seats: 2, category: 'FAMILLE' },
+   229→
+   230→    // Table 11 - CESACAL
+   231→    { firstName: 'Nehemie', lastName: '', tableNumber: 11, seats: 2, category: 'FAMILLE' },
+   232→    { firstName: 'Fr', lastName: 'GUELORD', tableNumber: 11, seats: 2, category: 'VIP' },
+   233→    { firstName: 'Motenda', lastName: '', tableNumber: 11, seats: 2, category: 'AMIS' },
+   234→    { firstName: 'Deborha', lastName: '', tableNumber: 11, seats: 2, category: 'AMIS' },
+   235→    { firstName: 'Give', lastName: 'Ilunga', tableNumber: 11, seats: 1, category: 'AMIS' },
+   236→    { firstName: 'Prisca', lastName: 'ILUNGA', tableNumber: 11, seats: 1, category: 'AMIS' },
+   237→    { firstName: 'Fr', lastName: 'Franklin MBONGO', tableNumber: 11, seats: 1, category: 'VIP' },
+   238→    { firstName: 'Ma', lastName: 'ONO', tableNumber: 11, seats: 1, category: 'FAMILLE' },
+   239→
+   240→    // Table 12 - TRACOL
+   241→    { firstName: 'Blaise', lastName: '', tableNumber: 12, seats: 2, category: 'AMIS' },
+   242→    { firstName: 'Djymie', lastName: '', tableNumber: 12, seats: 2, category: 'AMIS' },
+   243→    { firstName: 'Système', lastName: '', tableNumber: 12, seats: 2, category: 'AMIS' },
+   244→    { firstName: 'Gloria', lastName: 'MONTA', tableNumber: 12, seats: 1, category: 'AMIS' },
+   245→    { firstName: 'Albert', lastName: '', tableNumber: 12, seats: 1, category: 'AMIS' },
+   246→    { firstName: 'Hipolite', lastName: '', tableNumber: 12, seats: 1, category: 'AMIS' },
+   247→    { firstName: 'Kazadi', lastName: '', tableNumber: 12, seats: 2, category: 'AMIS' },
+   248→
+   249→    // Table 13 - CEPIME
+   250→    { firstName: 'Kamba', lastName: '', tableNumber: 13, seats: 2, category: 'AMIS' },
+   251→    { firstName: 'Bob', lastName: '', tableNumber: 13, seats: 2, category: 'AMIS' },
+   252→    { firstName: 'Guslaine', lastName: '', tableNumber: 13, seats: 1, category: 'AMIS' },
+   253→    { firstName: 'Deborha', lastName: '', tableNumber: 13, seats: 1, category: 'AMIS' },
+   254→    { firstName: 'Djenny', lastName: '', tableNumber: 13, seats: 1, category: 'AMIS' },
+   255→    { firstName: 'Atocha', lastName: 'SARAH', tableNumber: 13, seats: 1, category: 'AMIS' },
+   256→    { firstName: 'Munguanzi', lastName: '', tableNumber: 13, seats: 2, category: 'AMIS' },
+   257→    { firstName: 'Kapinga', lastName: 'ANNIE', tableNumber: 13, seats: 1, category: 'AMIS' },
+   258→    { firstName: 'Seya', lastName: '', tableNumber: 13, seats: 1, category: 'AMIS' },
+   259→
+   260→    // Table 14 - FECOND
+   261→    { firstName: 'Mvita', lastName: '', tableNumber: 14, seats: 2, category: 'AMIS' },
+   262→    { firstName: 'Sharonw', lastName: '', tableNumber: 14, seats: 1, category: 'AMIS' },
+   263→    { firstName: 'Malachie', lastName: '', tableNumber: 14, seats: 1, category: 'AMIS' },
+   264→    { firstName: 'Mbuyi', lastName: 'ELIE', tableNumber: 14, seats: 1, category: 'AMIS' },
+   265→    { firstName: 'Wislet', lastName: '', tableNumber: 14, seats: 1, category: 'AMIS' },
+   266→    { firstName: 'Kasema', lastName: '', tableNumber: 14, seats: 1, category: 'AMIS' },
+   267→    { firstName: 'Nash', lastName: '', tableNumber: 14, seats: 1, category: 'AMIS' },
+   268→    { firstName: 'Jeremie', lastName: '', tableNumber: 14, seats: 1, category: 'AMIS' },
+   269→    { firstName: 'Benji', lastName: '', tableNumber: 14, seats: 1, category: 'AMIS' },
+   270→    { firstName: 'Eliezer', lastName: '', tableNumber: 14, seats: 1, category: 'AMIS' },
+   271→    { firstName: 'Dr', lastName: 'PACKEL', tableNumber: 14, seats: 1, category: 'VIP' },
+   272→
+   273→    // Table 15 - ESOMEX
+   274→    { firstName: 'Franc', lastName: '', tableNumber: 15, seats: 2, category: 'AMIS' },
+   275→    { firstName: 'Victor', lastName: 'HUGO', tableNumber: 15, seats: 2, category: 'AMIS' },
+   276→    { firstName: 'Guelor', lastName: 'BIDE', tableNumber: 15, seats: 2, category: 'AMIS' },
+   277→    { firstName: 'Joseline', lastName: 'WASSA', tableNumber: 15, seats: 1, category: 'AMIS' },
+   278→    { firstName: 'Odette', lastName: '', tableNumber: 15, seats: 1, category: 'AMIS' },
+   279→    { firstName: 'Fanny', lastName: 'YEVUNDU', tableNumber: 15, seats: 1, category: 'AMIS' },
+   280→    { firstName: 'Christevie', lastName: 'Wassa', tableNumber: 15, seats: 1, category: 'AMIS' },
+   281→    { firstName: 'Pierrette', lastName: 'IZAGOLA', tableNumber: 15, seats: 1, category: 'AMIS' },
+   282→    { firstName: 'Elie', lastName: 'LIBAZA', tableNumber: 15, seats: 1, category: 'AMIS' },
+   283→
+   284→    // Table 16 - PASMEX
+   285→    { firstName: 'Isaac', lastName: 'WASSA', tableNumber: 16, seats: 2, category: 'AMIS' },
+   286→    { firstName: 'Kina', lastName: '', tableNumber: 16, seats: 2, category: 'AMIS' },
+   287→    { firstName: 'Shako', lastName: '', tableNumber: 16, seats: 2, category: 'AMIS' },
+   288→    { firstName: 'Gloiries', lastName: 'SANALISE', tableNumber: 16, seats: 1, category: 'AMIS' },
+   289→    { firstName: 'Benedicte', lastName: 'NDAKA', tableNumber: 16, seats: 1, category: 'AMIS' },
+   290→    { firstName: 'Djenny', lastName: '', tableNumber: 16, seats: 1, category: 'AMIS' },
+   291→    { firstName: 'Jamar', lastName: '', tableNumber: 16, seats: 1, category: 'AMIS' },
+   292→    { firstName: 'Tade', lastName: '', tableNumber: 16, seats: 1, category: 'AMIS' },
+   293→    { firstName: 'Deborha', lastName: 'KABUYA', tableNumber: 16, seats: 1, category: 'AMIS' },
+   294→
+   295→    // Table 17 - LINZOX
+   296→    { firstName: 'Herve', lastName: 'WASSA', tableNumber: 17, seats: 1, category: 'AMIS' },
+   297→    { firstName: 'Israel', lastName: '', tableNumber: 17, seats: 2, category: 'AMIS' },
+   298→    { firstName: 'Tito', lastName: '', tableNumber: 17, seats: 2, category: 'AMIS' },
+   299→    { firstName: 'Adiko', lastName: '', tableNumber: 17, seats: 1, category: 'AMIS' },
+   300→    { firstName: 'Ferro', lastName: '', tableNumber: 17, seats: 1, category: 'AMIS' },
+   301→    { firstName: 'Kaddy', lastName: '', tableNumber: 17, seats: 1, category: 'AMIS' },
+   302→    { firstName: 'Jonas', lastName: 'WASSA', tableNumber: 17, seats: 1, category: 'AMIS' },
+   303→    { firstName: 'Jack', lastName: 'LEMBI', tableNumber: 17, seats: 1, category: 'AMIS' },
+   304→    { firstName: 'Anno', lastName: 'MAYEMBO', tableNumber: 17, seats: 1, category: 'AMIS' },
+   305→    { firstName: 'Didier', lastName: 'TEBWA', tableNumber: 17, seats: 1, category: 'AMIS' },
+   306→
+   307→    // Table 18 - VITRON-Z
+   308→    { firstName: 'Jeremie', lastName: 'WASSA', tableNumber: 18, seats: 2, category: 'AMIS' },
+   309→    { firstName: 'Danny', lastName: 'BEDI', tableNumber: 18, seats: 1, category: 'AMIS' },
+   310→    { firstName: 'Valencia', lastName: '', tableNumber: 18, seats: 1, category: 'AMIS' },
+   311→    { firstName: 'Tonny', lastName: 'NDOMBA', tableNumber: 18, seats: 1, category: 'AMIS' },
+   312→    { firstName: 'Koko', lastName: 'KUKU', tableNumber: 18, seats: 1, category: 'AMIS' },
+   313→    { firstName: 'Henock', lastName: '', tableNumber: 18, seats: 1, category: 'AMIS' },
+   314→    { firstName: 'Vaneck', lastName: '', tableNumber: 18, seats: 1, category: 'AMIS' },
+   315→    { firstName: 'Reagan', lastName: 'LINAKA', tableNumber: 18, seats: 1, category: 'AMIS' },
+   316→    { firstName: 'Didier', lastName: 'TEBWA', tableNumber: 18, seats: 1, category: 'AMIS' },
+   317→    { firstName: 'Charle', lastName: '', tableNumber: 18, seats: 1, category: 'AMIS' },
+   318→    { firstName: 'Adan', lastName: '', tableNumber: 18, seats: 1, category: 'AMIS' },
+   319→
+   320→    // Table 19 - VOGLITUS
+   321→    { firstName: 'Aristote', lastName: '', tableNumber: 19, seats: 1, category: 'AMIS' },
+   322→    { firstName: 'Sandra', lastName: '', tableNumber: 19, seats: 1, category: 'AMIS' },
+   323→    { firstName: 'Aristote', lastName: '', tableNumber: 19, seats: 1, category: 'AMIS' },
+   324→    { firstName: 'Franklin', lastName: '', tableNumber: 19, seats: 1, category: 'AMIS' },
+   325→    { firstName: 'Aris', lastName: '', tableNumber: 19, seats: 1, category: 'AMIS' },
+   326→    { firstName: 'Lumiere', lastName: '', tableNumber: 19, seats: 1, category: 'AMIS' },
+   327→    { firstName: 'Baby', lastName: '', tableNumber: 19, seats: 1, category: 'AMIS' },
+   328→    { firstName: 'Grace', lastName: '', tableNumber: 19, seats: 1, category: 'AMIS' },
+   329→    { firstName: 'Pamela', lastName: '', tableNumber: 19, seats: 1, category: 'AMIS' },
+   330→    { firstName: 'Eliel', lastName: '', tableNumber: 19, seats: 1, category: 'AMIS' },
+   331→    { firstName: 'Kifata', lastName: '', tableNumber: 19, seats: 2, category: 'AMIS' },
+   332→
+   333→    // Table 20 - TELSOTON
+   334→    { firstName: 'Glody', lastName: '', tableNumber: 20, seats: 2, category: 'AMIS' },
+   335→    { firstName: 'Florida', lastName: '', tableNumber: 20, seats: 2, category: 'AMIS' },
+   336→    { firstName: 'Mireil', lastName: '', tableNumber: 20, seats: 2, category: 'AMIS' },
+   337→    { firstName: 'Claris', lastName: '', tableNumber: 20, seats: 2, category: 'AMIS' },
+   338→    { firstName: 'Meya', lastName: '', tableNumber: 20, seats: 2, category: 'AMIS' },
+   339→    { firstName: 'Antho', lastName: '', tableNumber: 20, seats: 2, category: 'AMIS' },
+   340→
+   341→    // Table 21 - ROSUMEX
+   342→    { firstName: 'Fabrice', lastName: 'IZAGOLO', tableNumber: 21, seats: 1, category: 'FAMILLE' },
+   343→    { firstName: 'Faida', lastName: 'IZAGOLO', tableNumber: 21, seats: 1, category: 'FAMILLE' },
+   344→    { firstName: 'Nadege', lastName: 'IZAGOLO', tableNumber: 21, seats: 1, category: 'FAMILLE' },
+   345→    { firstName: 'Melva', lastName: 'IZAGOLO', tableNumber: 21, seats: 1, category: 'FAMILLE' },
+   346→    { firstName: 'Divine', lastName: 'IZAGOLO', tableNumber: 21, seats: 1, category: 'FAMILLE' },
+   347→    { firstName: 'Junette', lastName: 'IZAGOLO', tableNumber: 21, seats: 1, category: 'FAMILLE' },
+   348→    { firstName: 'Obedine', lastName: 'IZAGOLA', tableNumber: 21, seats: 1, category: 'FAMILLE' },
+   349→    { firstName: 'Celine', lastName: '', tableNumber: 21, seats: 1, category: 'FAMILLE' },
+   350→    { firstName: 'Tychique', lastName: 'IZAGOLO', tableNumber: 21, seats: 1, category: 'FAMILLE' },
+   351→    { firstName: 'Andy', lastName: 'MBUMBA', tableNumber: 21, seats: 1, category: 'AMIS' },
+   352→    { firstName: 'Kathy', lastName: '', tableNumber: 21, seats: 2, category: 'AMIS' },
+   353→
+   354→    // Table 22 - CESAKROL II
+   355→    { firstName: 'Liza', lastName: '', tableNumber: 22, seats: 1, category: 'AMIS' },
+   356→    { firstName: 'Christel', lastName: '', tableNumber: 22, seats: 1, category: 'AMIS' },
+   357→    { firstName: 'Marie', lastName: 'FRANCOISE', tableNumber: 22, seats: 1, category: 'AMIS' },
+   358→    { firstName: 'Marie', lastName: 'DANIELA', tableNumber: 22, seats: 1, category: 'AMIS' },
+   359→    { firstName: 'Raisa', lastName: '', tableNumber: 22, seats: 1, category: 'AMIS' },
+   360→    { firstName: 'Arlon', lastName: '', tableNumber: 22, seats: 1, category: 'AMIS' },
+   361→    { firstName: 'Cecile', lastName: '', tableNumber: 22, seats: 2, category: 'AMIS' },
+   362→    { firstName: 'Farida', lastName: '', tableNumber: 22, seats: 1, category: 'AMIS' },
+   363→
+   364→    // Table 23 - CETHER-L
+   365→    { firstName: 'Kapesa', lastName: '', tableNumber: 23, seats: 2, category: 'AMIS' },
+   366→    { firstName: 'Christian', lastName: '', tableNumber: 23, seats: 2, category: 'AMIS' },
+   367→    { firstName: 'Okito', lastName: '', tableNumber: 23, seats: 2, category: 'AMIS' },
+   368→    { firstName: 'Berako', lastName: '', tableNumber: 23, seats: 2, category: 'AMIS' },
+   369→    { firstName: 'Princilia', lastName: '', tableNumber: 23, seats: 1, category: 'AMIS' },
+   370→    { firstName: 'Mimie', lastName: '', tableNumber: 23, seats: 1, category: 'AMIS' },
+   371→    { firstName: 'Julie', lastName: '', tableNumber: 23, seats: 1, category: 'AMIS' },
+   372→    { firstName: 'Belinda', lastName: '', tableNumber: 23, seats: 1, category: 'AMIS' },
+   373→
+   374→    // Table 24 - NEBIMEX
+   375→    { firstName: 'Regine', lastName: '', tableNumber: 24, seats: 1, category: 'FAMILLE' },
+   376→    { firstName: 'Sarah', lastName: 'EKOFO', tableNumber: 24, seats: 1, category: 'FAMILLE' },
+   377→    { firstName: 'Mama', lastName: 'EKOFO', tableNumber: 24, seats: 1, category: 'FAMILLE' },
+   378→    { firstName: 'Sabina', lastName: '', tableNumber: 24, seats: 1, category: 'FAMILLE' },
+   379→    { firstName: 'Eunice', lastName: '', tableNumber: 24, seats: 1, category: 'FAMILLE' },
+   380→    { firstName: 'Eugenie', lastName: '', tableNumber: 24, seats: 1, category: 'FAMILLE' },
+   381→    { firstName: 'Mimie', lastName: '', tableNumber: 24, seats: 1, category: 'FAMILLE' },
+   382→    { firstName: 'Pa', lastName: 'DENIS', tableNumber: 24, seats: 1, category: 'FAMILLE' },
+   383→    { firstName: 'Eunice', lastName: 'EDIA', tableNumber: 24, seats: 1, category: 'FAMILLE' },
+   384→    { firstName: 'Mogolia', lastName: 'PAPY', tableNumber: 24, seats: 1, category: 'FAMILLE' },
+   385→
+   386→    // Table 25 - HEMOREX
+   387→    { firstName: 'Yanick', lastName: 'SHOUNGU', tableNumber: 25, seats: 2, category: 'AMIS' },
+   388→    { firstName: 'Fataki', lastName: '', tableNumber: 25, seats: 2, category: 'AMIS' },
+   389→    { firstName: 'Naomie', lastName: 'KAPINGA', tableNumber: 25, seats: 2, category: 'AMIS' },
+   390→    { firstName: 'Hilair', lastName: '', tableNumber: 25, seats: 2, category: 'AMIS' },
+   391→    { firstName: 'Jonathan', lastName: 'NZEMA', tableNumber: 25, seats: 1, category: 'AMIS' },
+   392→    { firstName: 'Manu', lastName: '', tableNumber: 25, seats: 1, category: 'AMIS' },
+   393→
+   394→    // Table 26 - MAXSPRIN
+   395→    { firstName: 'Abigael', lastName: '', tableNumber: 26, seats: 2, category: 'AMIS' },
+   396→    { firstName: 'Milka', lastName: '', tableNumber: 26, seats: 2, category: 'AMIS' },
+   397→    { firstName: 'Lagerdie', lastName: '', tableNumber: 26, seats: 2, category: 'AMIS' },
+   398→    { firstName: 'Irene', lastName: '', tableNumber: 26, seats: 2, category: 'AMIS' },
+   399→    { firstName: 'Osee', lastName: '', tableNumber: 26, seats: 2, category: 'AMIS' },
+   400→    { firstName: 'Berlette', lastName: '', tableNumber: 26, seats: 2, category: 'AMIS' },
+   401→
+   402→    // Table 27 - DEZOLIN
+   403→    { firstName: 'Seraphin', lastName: '', tableNumber: 27, seats: 2, category: 'AMIS' },
+   404→    { firstName: 'Guyaume', lastName: '', tableNumber: 27, seats: 2, category: 'AMIS' },
+   405→    { firstName: 'Cedrick', lastName: '', tableNumber: 27, seats: 2, category: 'AMIS' },
+   406→    { firstName: 'Pelagie', lastName: '', tableNumber: 27, seats: 2, category: 'AMIS' },
+   407→    { firstName: 'Francoise', lastName: '', tableNumber: 27, seats: 2, category: 'AMIS' },
+   408→    { firstName: 'Judith', lastName: '', tableNumber: 27, seats: 2, category: 'AMIS' },
+   409→
+   410→    // Table 28 - MICOFLU
+   411→    { firstName: 'Aime', lastName: '', tableNumber: 28, seats: 2, category: 'AMIS' },
+   412→    { firstName: 'Brigitte', lastName: '', tableNumber: 28, seats: 2, category: 'AMIS' },
+   413→    { firstName: 'Kenedi', lastName: '', tableNumber: 28, seats: 2, category: 'AMIS' },
+   414→    { firstName: 'Laurette', lastName: '', tableNumber: 28, seats: 2, category: 'AMIS' },
+   415→    { firstName: 'Julie', lastName: '', tableNumber: 28, seats: 1, category: 'AMIS' },
+   416→    { firstName: 'Pa', lastName: 'JOSE', tableNumber: 28, seats: 1, category: 'AMIS' },
+   417→    { firstName: 'Masalo', lastName: '', tableNumber: 28, seats: 2, category: 'AMIS' },
+   418→  ]
+   419→
+   420→  for (const guest of guests) {
+   421→    await db.guest.create({
+   422→      data: {
+   423→        firstName: guest.firstName,
+   424→        lastName: guest.lastName || '',
+   425→        tableId: tables[guest.tableNumber],
+   426→        seats: guest.seats,
+   427→        category: guest.category,
+   428→        status: 'CONFIRMED',
+   429→        invitationCode: generateCode(),
+   430→        personalMessage: guest.personalMessage || null,
+   431→      },
+   432→    })
+   433→  }
+   434→  console.log(`✅ Created ${guests.length} guests`)
+   435→
+   436→  // ─── Timeline Events ──────────────────────────────────────────
+   437→  const events = [
+   438→    { time: '10:00', activity: 'Arrivée et Accueil', location: 'Hall Principal', description: 'Accueil des invités avec cocktail de bienvenue', order: 0 },
+   439→    { time: '11:00', activity: 'Cérémonie Religieuse', location: 'Église', description: 'Bénédiction nuptiale et échange des vœux', order: 1 },
+   440→    { time: '12:30', activity: 'Photos de Groupe', location: 'Jardin', description: 'Séance photos avec les mariés et les invités', order: 2 },
+   441→    { time: '13:00', activity: 'Cocktail d\'Honneur', location: 'Terrasse', description: 'Vin d\'honneur et amuse-bouches', order: 3 },
+   442→    { time: '14:30', activity: 'Entrée des Mariés', location: 'Grande Salle', description: 'Présentation du couple aux invités', order: 4 },
+   443→    { time: '15:00', activity: 'Déjeuner de Fête', location: 'Grande Salle', description: 'Repas de fête avec les invités', order: 5 },
+   444→    { time: '17:00', activity: 'Discours et Témoignages', location: 'Scène', description: 'Témoignages des proches et familles', order: 6 },
+   445→    { time: '18:00', activity: 'Coupe du Gâteau', location: 'Scène', description: 'Coupe du gâteau de mariage', order: 7 },
+   446→    { time: '19:00', activity: 'Première Danse', location: 'Piste de Danse', description: 'Danse inaugurale des mariés', order: 8 },
+   447→    { time: '19:30', activity: 'Soirée Dansante', location: 'Piste de Danse', description: 'DJ et animations musicales', order: 9 },
+   448→    { time: '22:00', activity: 'Feu d\'Artifice', location: 'Jardin', description: 'Spectacle pyrotechnique', order: 10 },
+   449→    { time: '23:00', activity: 'Souper de Minuit', location: 'Buffet', description: 'Collation tardive pour les invités', order: 11 },
+   450→  ]
+   451→
+   452→  for (const event of events) {
+   453→    await db.eventTimeline.create({ data: event })
+   454→  }
+   455→  console.log(`✅ Created ${events.length} timeline events`)
+   456→
+   457→  // ─── Couple Stories ───────────────────────────────────────────
+   458→  const stories = [
+   459→    {
+   460→      title: 'Notre Première Rencontre',
+   461→      description: 'Un hasard magnifique qui a changé nos vies à jamais. Nos regards se sont croisés et nous avons su que quelque chose de spécial venait de commencer.',
+   462→      date: '2021',
+   463→      imageUrl: '/upload/couple-photo-1.jpeg',
+   464→      order: 0,
+   465→    },
+   466→    {
+   467→      title: 'Le Premier « Je t\'aime »',
+   468→      description: 'Les mots les plus beaux sont ceux qui viennent du cœur. Ce moment restera gravé dans nos mémoires pour l\'éternité.',
+   469→      date: '2022',
+   470→      imageUrl: '/upload/couple-photo-2.png',
+   471→      order: 1,
+   472→    },
+   473→    {
+   474→      title: 'La Demande en Mariage',
+   475→      description: 'Un genou à terre, un anneau brillant, et des larmes de joie. Le jour où notre destin s\'est scellé pour toujours.',
+   476→      date: '2023',
+   477→      imageUrl: '/upload/couple-photo-1.jpeg',
+   478→      order: 2,
+   479→    },
+   480→    {
+   481→      title: 'Vers le Grand Jour',
+   482→      description: 'Les préparatifs, l\'excitation, et l\'impatience de célébrer notre amour avec tous ceux que nous aimons.',
+   483→      date: '2024',
+   484→      imageUrl: '/upload/couple-photo-2.png',
+   485→      order: 3,
+   486→    },
+   487→  ]
+   488→
+   489→  for (const story of stories) {
+   490→    await db.coupleStory.create({ data: story })
+   491→  }
+   492→  console.log(`✅ Created ${stories.length} couple stories`)
+   493→
+   494→  // ─── Media ────────────────────────────────────────────────────
+   495→  const media = [
+   496→    { type: 'PHOTO', url: '/upload/couple-photo-1.jpeg', title: 'Photo du Couple 1', category: 'COUPLE_STORY', order: 0 },
+   497→    { type: 'PHOTO', url: '/upload/couple-photo-2.png', title: 'Photo du Couple 2', category: 'COUPLE_STORY', order: 1 },
+   498→    { type: 'PHOTO', url: '/upload/wedding-hero.png', title: 'Image Hero', category: 'GALLERY', order: 2 },
+   499→    { type: 'PHOTO', url: '/upload/couple-story.png', title: 'Notre Histoire', category: 'GALLERY', order: 3 },
+   500→  ]
+   501→
+   502→  for (const m of media) {
+   503→    await db.media.create({ data: m })
+   504→  }
+   505→  console.log(`✅ Created ${media.length} media items`)
+   506→
+   507→  // ─── Settings ─────────────────────────────────────────────────
+   508→  const settings = [
+   509→    { key: 'groom_name', value: 'Josué' },
+   510→    { key: 'bride_name', value: 'Hornella' },
+   511→    { key: 'couple_photo_1', value: '/upload/couple-photo-1.jpeg' },
+   512→    { key: 'couple_photo_2', value: '/upload/couple-photo-2.png' },
+   513→    { key: 'couple_story', value: 'Un amour béni par Dieu, uni par la grâce divine et célébré avec tous nos proches. Josué & Hornella, unis pour la vie.' },
+   514→    { key: 'wedding_date', value: '2026-06-26' },
+   515→    { key: 'wedding_time', value: '21:30' },
+   516→    { key: 'venue_name', value: 'Salle Polyvalente – Grand Palais Kinshasa' },
+   517→    { key: 'venue_address', value: '21 / 22 Avenue Bobozo' },
+   518→    { key: 'venue_reference', value: 'Réf. Hôpital AKRAM, à la diagonale du Centre TELEMA' },
+   519→    { key: 'venue_city', value: 'Kinshasa' },
+   520→    { key: 'venue_lat', value: '-4.3250' },
+   521→    { key: 'venue_lng', value: '15.3222' },
+   522→    { key: 'venue_parking', value: 'Parking disponible sur place' },
+   523→    { key: 'venue_time', value: '21H30' },
+   524→    { key: 'reception_venue', value: 'Salle Polyvalente – Grand Palais Kinshasa' },
+   525→    { key: 'contact_email', value: 'contact@josue-hornella.wedding' },
+   526→    { key: 'contact_phone', value: '+243 800 000 000' },
+   527→    { key: 'rsvp_deadline', value: '2026-05-26' },
+   528→    { key: 'rsvp_message', value: 'Nous serions ravis de vous compter parmi nous pour célébrer notre union !' },
+   529→    { key: 'site_title', value: 'Mariage Josué & Hornella' },
+   530→    { key: 'site_subtitle', value: 'Vendredi 26 Juin 2026' },
+   531→    { key: 'welcome_message', value: 'Bienvenue sur le site de notre mariage ! Nous sommes impatients de célébrer ce jour merveilleux avec vous.' },
+   532→    { key: 'thank_you_message', value: 'Merci d\'avoir partagé ce moment exceptionnel avec nous !' },
+   533→    { key: 'hashtag', value: '#JosueEtHornella2026' },
+   534→    { key: 'invitation_message', value: 'Josué & Hornella ont l\'honneur de vous inviter à leur célébration de mariage.' },
+   535→  ]
+   536→
+   537→  for (const setting of settings) {
+   538→    await db.settings.create({ data: setting })
+   539→  }
+   540→  console.log(`✅ Created ${settings.length} settings`)
+   541→
+   542→  console.log('🎉 Seeding complete!')
+   543→}
+   544→
+   545→seed()
+   546→  .catch(console.error)
+   547→  .finally(() => db.$disconnect())
+   548→

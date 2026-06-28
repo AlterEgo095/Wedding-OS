@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback, useRef } from 'react'
+import { useState, useCallback, useRef, useEffect } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import Image from 'next/image'
 import { Button } from '@/components/ui/button'
@@ -22,6 +22,26 @@ import SettingsManager from '@/components/admin/SettingsManager'
 import AccessLogManager from '@/components/admin/AccessLogManager'
 import MusicManager from '@/components/admin/MusicManager'
 import AppearanceManager from '@/components/admin/AppearanceManager'
+import { isPlatformAdmin } from '@/lib/types'
+
+/**
+ * Compute the couple display label from a settings map (object form).
+ * Falls back to "Mariage" when names are not yet configured so we never
+ * leak "Josué & Hornella" (the default wedding's couple) into another
+ * wedding's admin shell.
+ */
+function deriveCoupleLabel(settings: Record<string, string> | null | undefined): string {
+  const bride = settings?.bride_name?.trim() || ''
+  const groom = settings?.groom_name?.trim() || ''
+  if (bride && groom) return `${groom} & ${bride}`
+  if (bride || groom) return bride || groom
+  return 'Mariage'
+}
+
+/** Derive the couple photo URL from settings, with a generic fallback. */
+function deriveCouplePhoto(settings: Record<string, string> | null | undefined): string {
+  return settings?.couple_photo_1?.trim() || '/couple-hero.jpeg'
+}
 
 interface AuthUser {
   id: string
@@ -74,6 +94,23 @@ export default function AdminPage() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const sessionExpiredRef = useRef(false)
 
+  // Couple label from settings (avoids hardcoding "Josué & Hornella"). Defaults
+  // to a generic "Mariage" until the settings fetch resolves.
+  const [settings, setSettings] = useState<Record<string, string> | null>(null)
+  const coupleLabel = deriveCoupleLabel(settings)
+  const couplePhoto = deriveCouplePhoto(settings)
+
+  useEffect(() => {
+    fetch('/api/settings')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (data?.settings && typeof data.settings === 'object') {
+          setSettings(data.settings as Record<string, string>)
+        }
+      })
+      .catch(() => {})
+  }, [])
+
   const handleLogin = useCallback((newToken: string, newUser: AuthUser) => {
     sessionExpiredRef.current = false
     setToken(newToken)
@@ -101,7 +138,7 @@ export default function AdminPage() {
   }, [])
 
   const visibleNavItems = NAV_ITEMS.filter(
-    (item) => !item.superAdminOnly || user?.role === 'SUPER_ADMIN'
+    (item) => !item.superAdminOnly || isPlatformAdmin(user?.role || '')
   )
 
   const renderContent = () => {
@@ -146,8 +183,8 @@ export default function AdminPage() {
           <div className="relative shrink-0">
             <div className="w-10 h-10 rounded-full gold-border p-[2px] overflow-hidden">
               <Image
-                src="/uploads/couple-photo-1.jpeg"
-                alt="Josué & Hornella"
+                src={couplePhoto}
+                alt={coupleLabel}
                 width={40}
                 height={40}
                 className="w-full h-full rounded-full object-cover"
@@ -155,7 +192,7 @@ export default function AdminPage() {
             </div>
           </div>
           <div className="flex-1 min-w-0">
-            <h2 className="font-bold text-sm gold-gradient font-display">Josué & Hornella</h2>
+            <h2 className="font-bold text-sm gold-gradient font-display truncate" title={coupleLabel}>{coupleLabel}</h2>
             <p className="text-xs text-muted-foreground truncate">
               {user?.name || 'Non connecté'}
             </p>
@@ -254,14 +291,14 @@ export default function AdminPage() {
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-full gold-border p-[2px] overflow-hidden">
                     <Image
-                      src="/uploads/couple-photo-1.jpeg"
-                      alt="Josué & Hornella"
+                      src={couplePhoto}
+                      alt={coupleLabel}
                       width={40}
                       height={40}
                       className="w-full h-full rounded-full object-cover"
                     />
                   </div>
-                  <h2 className="font-bold text-sm gold-gradient font-display">Josué & Hornella</h2>
+                  <h2 className="font-bold text-sm gold-gradient font-display truncate" title={coupleLabel}>{coupleLabel}</h2>
                 </div>
                 <Button
                   variant="ghost"

@@ -1,11 +1,49 @@
 'use client'
 
+import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { Heart, Sparkles } from 'lucide-react'
 import Image from 'next/image'
 
 export default function Footer() {
   const currentYear = new Date().getFullYear()
+
+  // Couple label + hashtag + date from settings — avoids hardcoding
+  // "Josué & Hornella", "#JosueEtHornella2026", "Vendredi 26 Juin 2026".
+  // Generic empty fallbacks so other weddings don't leak the default
+  // wedding's couple identity. The default wedding (josue-hornella) still
+  // resolves to its configured values via /api/settings (zero regression).
+  const [coupleLabel, setCoupleLabel] = useState<string>('Mariage')
+  const [hashtag, setHashtag] = useState<string>('')
+  const [dateDisplay, setDateDisplay] = useState<string>('')
+  // Couple photo paths — settings-driven when available, falling back to the
+  // legacy default-wedding photo path so the default wedding renders
+  // identically (zero regression).
+  const [couplePhoto1Path, setCouplePhoto1Path] = useState<string>('/uploads/couple-photo-1.jpeg')
+  const [couplePhoto2Path, setCouplePhoto2Path] = useState<string>('/uploads/couple-photo-2.jpeg')
+  const [groomName, setGroomName] = useState<string>('')
+  const [brideName, setBrideName] = useState<string>('')
+
+  useEffect(() => {
+    fetch('/api/settings')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        const s = data?.settings
+        if (s && typeof s === 'object') {
+          const bride = (s.bride_name || '').trim()
+          const groom = (s.groom_name || '').trim()
+          setGroomName(groom)
+          setBrideName(bride)
+          if (bride && groom) setCoupleLabel(`${groom} & ${bride}`)
+          else if (bride || groom) setCoupleLabel(bride || groom)
+          if (s.hashtag) setHashtag(s.hashtag)
+          if (s.site_subtitle) setDateDisplay(s.site_subtitle)
+          if (s.couple_photo_1) setCouplePhoto1Path(s.couple_photo_1)
+          if (s.couple_photo_2) setCouplePhoto2Path(s.couple_photo_2)
+        }
+      })
+      .catch(() => {})
+  }, [])
 
   return (
     <footer className="relative border-t border-gold/10 bg-gradient-to-b from-background to-champagne/5 dark:to-champagne/3 mt-auto">
@@ -25,8 +63,8 @@ export default function Footer() {
         >
           <div className="w-14 h-14 md:w-16 md:h-16 rounded-full overflow-hidden gold-border shadow-md shadow-gold/10">
             <img
-              src="/uploads/couple-photo-1.jpeg"
-              alt="Josué"
+              src={couplePhoto1Path}
+              alt={groomName}
               className="w-full h-full object-cover"
             />
           </div>
@@ -38,8 +76,8 @@ export default function Footer() {
           </motion.div>
           <div className="w-14 h-14 md:w-16 md:h-16 rounded-full overflow-hidden gold-border shadow-md shadow-gold/10">
             <img
-              src="/uploads/couple-photo-2.jpeg"
-              alt="Hornella"
+              src={couplePhoto2Path}
+              alt={brideName}
               className="w-full h-full object-cover"
             />
           </div>
@@ -54,27 +92,31 @@ export default function Footer() {
           className="text-center mb-6"
         >
           <h3 className="font-serif text-2xl md:text-3xl font-bold gold-gradient mb-2">
-            Josué & Hornella
+            {coupleLabel}
           </h3>
-          <p className="font-display text-sm tracking-[0.3em] uppercase text-muted-foreground">
-            Vendredi 26 Juin 2026
-          </p>
+          {dateDisplay && (
+            <p className="font-display text-sm tracking-[0.3em] uppercase text-muted-foreground">
+              {dateDisplay}
+            </p>
+          )}
         </motion.div>
 
         {/* Hashtag */}
-        <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true }}
-          transition={{ duration: 0.6, delay: 0.1 }}
-          className="text-center mb-8"
-        >
-          <span className="inline-flex items-center gap-2 px-5 py-2 rounded-full glass-card gold-border text-sm font-display tracking-wide text-gold">
-            <Heart className="size-3 fill-gold" />
-            #JosueEtHornella2026
-            <Heart className="size-3 fill-gold" />
-          </span>
-        </motion.div>
+        {hashtag && (
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ duration: 0.6, delay: 0.1 }}
+            className="text-center mb-8"
+          >
+            <span className="inline-flex items-center gap-2 px-5 py-2 rounded-full glass-card gold-border text-sm font-display tracking-wide text-gold">
+              <Heart className="size-3 fill-gold" />
+              {hashtag}
+              <Heart className="size-3 fill-gold" />
+            </span>
+          </motion.div>
+        )}
 
         {/* AENEWS Signature — Premium with Logo */}
         <motion.div
@@ -101,7 +143,7 @@ export default function Footer() {
         {/* Copyright */}
         <div className="text-center space-y-2">
           <p className="text-xs text-muted-foreground/60 font-display">
-            &copy; {currentYear} Josué & Hornella — Tous droits réservés
+            &copy; {currentYear} {coupleLabel} — Tous droits réservés
           </p>
           <p className="text-xs text-muted-foreground/40 font-display flex items-center justify-center gap-1">
             Fait avec <Heart className="size-3 text-rose-400 fill-rose-400" /> pour un jour exceptionnel

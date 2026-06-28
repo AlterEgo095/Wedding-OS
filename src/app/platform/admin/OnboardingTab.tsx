@@ -1411,7 +1411,7 @@ function planBadgeClass(plan: Plan): string {
   return {
     ELITE: 'bg-gold/15 text-gold border-gold/40',
     PREMIUM: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30',
-    ESSENTIEL: 'bg-violet-500/15 text-violet-400 border-violet-500/30',
+    ESSENTIEL: 'bg-gold-dark/15 text-gold-dark border-gold-dark/30',
     TRIAL: 'bg-zinc-500/15 text-zinc-400 border-zinc-500/30',
   }[plan]
 }

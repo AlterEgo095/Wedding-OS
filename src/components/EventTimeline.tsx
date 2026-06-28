@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef, useMemo } from 'react'
+import { useRef, useMemo, useState, useEffect } from 'react'
 import { motion, useInView } from 'framer-motion'
 import {
   Church,
@@ -456,6 +456,25 @@ export default function EventTimeline({ events }: { events: TimelineEvent[] }) {
   const sectionRef = useRef<HTMLDivElement>(null)
   const isInView = useInView(sectionRef, { once: true, margin: '-80px' })
 
+  // Couple label from settings — used in the end-marker badge so we don't
+  // leak "Josué & Hornella" into other weddings' programme. Generic
+  // "Mariage" fallback before the fetch settles.
+  const [coupleLabel, setCoupleLabel] = useState<string>('Mariage')
+  useEffect(() => {
+    fetch('/api/settings')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        const s = data?.settings
+        if (s && typeof s === 'object') {
+          const bride = (s.bride_name || '').trim()
+          const groom = (s.groom_name || '').trim()
+          if (bride && groom) setCoupleLabel(`${groom} & ${bride}`)
+          else if (bride || groom) setCoupleLabel(bride || groom)
+        }
+      })
+      .catch(() => {})
+  }, [])
+
   // Empty state
   if (!events || events.length === 0) {
     return (
@@ -646,7 +665,7 @@ export default function EventTimeline({ events }: { events: TimelineEvent[] }) {
                 className="font-display text-xs sm:text-sm tracking-[0.15em] uppercase font-medium"
                 style={{ color: `${GOLD}CC` }}
               >
-                Josué &amp; Hornella
+                {coupleLabel}
               </span>
               <Sparkles className="w-3.5 h-3.5" style={{ color: GOLD }} />
             </div>
