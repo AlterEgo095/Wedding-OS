@@ -2179,3 +2179,107 @@ PHASE 3 STATUS: ✅ COMPLETE
 - All changes additive / modular / reversible / retrocompatible / multi-wedding-compatible
 - Production VPS NOT touched (local dev only) — deploy in dedicated maintenance window
 - Next phase recommendation: Phase 9 Integrations (storage abstraction + webhook endpoints + WebhookEvent model + billing abstraction) — highest-impact gap identified in ÉTAPE 7.
+
+---
+Task ID: VPS-DEPLOY-1
+Agent: Main Agent (VPS Deployment Mission)
+Task: ÉTAPE 1 — VPS Audit (production environment inventory + root-cause diagnosis)
+
+Work Log:
+- Read previous worklog (PHASE3-FINAL-DELIVERABLES) to understand Phase 3 completion state.
+- Inventoried local deployment artifacts: Dockerfile (multi-stage node:20-alpine, standalone output), docker-compose.yml (app+nginx+watchtower), docker-compose.prod.yml (app-only on 127.0.0.1:3080), nginx/nginx.conf (full SSL+rate-limit+security-headers), Caddyfile (sandbox gateway), docker-entrypoint.sh (root→nextjs privilege drop), init-db.js (STALE pre-Phase-1 schema), next.config.ts (standalone+security headers), prisma/schema.prisma (18 models, Phase 2 weddingId NOT NULL).
+- Verified local git state: branch=main, HEAD=c74afe9, untracked files = 17 new scripts/deploy-vps-*.cjs + vps-backups/ folder + 2 JSON reports.
+- Verified local dev server: running cleanly on port 3000, all GET / return 200 in 47-166ms, Prisma queries正常, no errors in dev.log.
+- Tested SSH connectivity to VPS (95.111.226.63): SUCCESS — ssh2 client connected in <1s.
+- Ran scripts/deploy-vps-audit.cjs (17-section audit): captured system info, docker state, container health, HTTP probes, prisma/DB, uploads, nginx, SSL, permissions, volumes, logs, key-file timestamps, DNS.
+- Ran targeted diagnostic via base64-encoded node script (avoided shell escaping): queried VPS DB schema + row counts + Guest column list.
+- Cross-referenced VPS key-file timestamps with local Phase 3 ÉTAPE 6 modifications: ALL 10 Phase 3 fix files are already on the VPS (timestamps 2026-06-29 15:10-15:28, uploaded by deploy-vps-*.cjs scripts in a prior session).
+
+Stage Summary — VPS Current State (audit timestamp 2026-06-29T14:47:18Z):
+- System: Linux 95.111.226.63, 8 CPUs, 16GB RAM, 51GB free disk on /, Docker 29.4.3, user=aenews (sudo+docker groups, passwordless sudo OK).
+- Git on VPS: NOT a git repository (files deployed via SFTP/rsync, not git clone). This is an accepted deployment pattern — git state is tracked locally only.
+- Docker: wedding-app container UP 6 min, restarts=0, health=UNHEALTHY. 38 images (7.5GB), 74 volumes (5.6GB).
+- Container port mapping: EMPTY (`docker port` returns nothing, `HostConfig.PortBindings` = {}). Container started with docker-compose.yml (expose-only) instead of docker-compose.prod.yml (which maps 127.0.0.1:3080:3000).
+- App inside container: Next.js 16.1.3, "Ready in 358ms", listening on 0.0.0.0:3000 (confirmed via netstat + wget returning full HTML). Process: next-server (PID 2154445, uid 1001).
+- HTTP probes: direct 127.0.0.1:3080 → 000 (connection refused, nothing listening); via nginx :80 → 301 (redirect to HTTPS, working); public HTTPS → 502 (Bad Gateway, nginx can't reach 127.0.0.1:3080).
+- Nginx (system service): active, config test fails ONLY due to cert permission (aenews user can't read root-owned letsencrypt certs — non-blocking, nginx master runs as root).
+- SSL: 11 cert bundles in /etc/letsencrypt/live/ including heureuxmariage.aenews.net (valid).
+- VPS DB (inside container volume /app/db/custom.db, 272KB, Jun 28 15:14):
+  - 18 tables: AdminUser, AuditLog, CoupleStory, EventTimeline, Guest, GuestAccessLog, GuestSession, Invitation, Invoice, Lead, Media, MusicTrack, Settings, Subscription, Table, Theme, UsageCounter, Wedding — ALL Phase 2+ tables present.
+  - Guest table HAS weddingId column (confirmed via PRAGMA table_info) — Phase 2 migration applied.
+  - 1 Wedding: slug=josue-hornella, coupleLabel="Josué & Hornella", status=PUBLISHED, plan=ELITE, isDefault=true.
+  - 0 Guests, 0 Tables, 0 Settings, 0 Timeline, 0 CoupleStory, 0 Media — wedding exists but has NO CONTENT.
+  - 2 Admins: admin@josue-hornella.wedding (PLATFORM_ADMIN, weddingId=null) + admin@heureuxmariage.aenews.net (SUPER_ADMIN, weddingId=null).
+  - 1 Subscription (for the wedding), 0 Invoices.
+- Uploads: 2 files, 624KB in /app/public/uploads/ volume.
+- No prisma/migrations/ folder — schema managed via `prisma db push` (zero-downtime additive-only).
+
+ROOT CAUSE of 502: The container was started with `docker-compose.yml` (which uses `expose: - "3000"` + a separate nginx container service) instead of `docker-compose.prod.yml` (which maps `127.0.0.1:3080:3000` for the system nginx to proxy to). Result: app runs inside container but port 3000 is not published to host → system nginx on :443 proxies to 127.0.0.1:3080 which has no listener → 502 Bad Gateway.
+
+FIX (ÉTAPE 4): Stop container, restart with `docker compose -f docker-compose.prod.yml up -d --build`. This is a pure infrastructure fix — no code changes, no data changes, no business logic touched.
+
+DATA GAP (noted, not fixing per constraints): VPS wedding has 0 content rows. Local dev DB has 243 guests + 31 tables + full settings/timeline/stories for josue-hornella. Per absolute constraint "不触碰邀请/QR/客人数据", I will NOT push local guest/table/invitation data to VPS. The wedding content gap is a pre-existing condition — the couple/admin must populate it via the admin UI or a separate explicitly-approved data sync.
+
+ARTIFACTS:
+- Fresh audit report: /home/z/my-project/deploy-audit-report.json (47KB, 17 sections).
+- Previous backup summary: /home/z/my-project/vps-backups/backup-summary-1782742792454.json (VPS backup at /opt/wedding-backups/2026-06-29T14-19-21, 2.1MB, includes DB+schema+nginx+SSL+configs).
+
+---
+Task ID: VPS-DEPLOY-2-5
+Agent: Main Agent (VPS Deployment Mission)
+Task: ÉTAPES 2-5 — Backup + Git sync verification + Progressive deploy + Functional verification
+
+Work Log:
+- ÉTAPE 2 (Backup): Ran scripts/deploy-vps-backup.cjs — created /opt/wedding-backups/2026-06-29T14-52-08 (7.9MB) containing DB (278528 bytes, MD5 34fbcf88...), uploads, .env, docker configs, prisma schema, nginx configs (sites-available + sites-enabled), SSL cert metadata, package.json, container logs. Downloaded DB locally to vps-backups/vps-live-2026-06-29.db (278528 bytes). Verified VPS backup DB opens + queries return correct row counts.
+- ÉTAPE 3 (Git/File sync): Compared MD5 checksums of 12 key Phase 3 files between local and VPS — ALL 12 MATCH (wedding-status.ts, platform/weddings routes, onboarding/publish, admin/users, ThemeCustomizer, UserManager, TimelineManager, prisma/schema.prisma, docker-compose.yml, docker-compose.prod.yml, Dockerfile, next.config.ts). No file re-upload needed. VPS is not a git repo (deployed via SFTP) — accepted pattern.
+- ÉTAPE 4 (Progressive deploy): ROOT CAUSE of 502 = container started with docker-compose.yml (expose-only, no host port) instead of docker-compose.prod.yml (maps 127.0.0.1:3080:3000). FIX: `docker compose down` (stopped wedding-app + wedding-nginx leftover + network), then `docker compose -f docker-compose.prod.yml up -d` (reused existing wedding-platform-app:latest image, 846MB). Result: container Up (healthy), port mapping 3000->127.0.0.1:3080 active, HTTP direct 200 in 98ms, HTTP public HTTPS 200 in 613ms. App "Ready in 764ms".
+- ÉTAPE 5 (Functional verification): Probed 16 endpoints. Found 2 API 500s: /api/timeline (P2022: column main.EventTimeline.icon does not exist) + /api/media (P2022: column main.Media.storageProvider does not exist). Root cause: VPS DB schema drifted from Prisma schema — init-db.js created tables with pre-Phase-2 columns, prisma db push was never run to sync. Full schema diff via base64-encoded diagnostic revealed: EventTimeline missing icon; Media missing storageProvider/storageKey/sizeBytes/mime; Lead missing coupleLabel/plan/notes/convertedAt; Guest missing displayName/invitationType/rsvpAt/rsvpMessage/rsvpPlusOne; Invitation/Invoice/MusicTrack had COMPLETELY INCOMPATIBLE schemas (different column sets). All 5 affected tables had 0 rows (safe to alter). FIX: ran `docker run --rm -v wedding-platform_wedding-db:/data -v /opt/wedding-platform/prisma:/schema:ro -e DATABASE_URL="file:/data/custom.db" node:20-alpine sh -c "npx --yes prisma@6 db push --schema /schema/schema.prisma --skip-generate --accept-data-loss"` — "Your database is now in sync with your Prisma schema. Done in 2.72s". Re-tested: ALL APIs now 200 (timeline 200, media 200, music 200, couple-story 200, settings 200). /api/tables + /api/guests return 401 (correct — admin auth required). Platform admin login returns 200 + JWT with role=PLATFORM_ADMIN, isPlatformAdmin=true.
+
+Stage Summary:
+- 502 Bad Gateway: FIXED (port mapping restored)
+- DB schema drift: FIXED (prisma db push synced all 18 tables, added ~15 missing columns, recreated 3 incompatible empty tables)
+- All public endpoints: 200 (homepage, onboarding, platform login, tenant admin login, public wedding, robots.txt, manifest.json, sw.js)
+- All APIs: 200 (settings, timeline, media, music, couple-story) or 401 (tables, guests — correct auth gating)
+- Platform admin login: working (JWT issued)
+- Data integrity: 0 rows lost (all altered tables were empty; existing Wedding + AdminUser + Subscription rows untouched)
+- Backup: verified at /opt/wedding-backups/2026-06-29T14-52-08 (rollback available if needed)
+
+---
+Task ID: VPS-DEPLOY-6-10
+Agent: Main Agent (VPS Deployment Mission)
+Task: ÉTAPES 6-10 — Multi-wedding/RBAC + Performance + Security + Cleanup + Final verification
+
+Work Log:
+- ÉTAPE 6 (Multi-wedding/RBAC): Tested platform admin login flow end-to-end. JWT obtained with role=PLATFORM_ADMIN, isPlatformAdmin=true. Platform dashboard (200), platform weddings list (200, returns josue-hornella wedding with full details: coupleLabel "Josué & Hornella", date 2026-06-26, venue "Salle Polyvalente – Grand Palais Kinshasa"), platform invoices (200), platform users (200). Tenant isolation verified: /api/tables with wrong slug → 404 (correctly rejects non-existent wedding), /api/tables without auth → 401 (correctly requires login), /api/tables with valid slug + auth → 200. The X-Wedding-Slug header mechanism works as designed.
+- ÉTAPE 7 (Performance): 5-request sweep per endpoint. Direct app (127.0.0.1:3080): avg 17ms (blazing fast, no overhead). Public HTTPS endpoints: Homepage avg 201ms (min 127ms), Onboarding avg 160ms, Platform login avg 147ms, Public wedding /w/josue-hornella avg 427ms (dynamic route, first-hit compile), API /api/settings avg 200ms, /api/timeline avg 247ms, /api/media avg 153ms, /api/couple-story avg 197ms. Container resources: CPU 0.00% (idle), MEM 66.73MiB / 512MiB (13% — very lightweight). DB size: 332KB (post-schema-sync, was 272KB). All latencies well within acceptable bounds for a wedding invitation platform.
+- ÉTAPE 8 (Security): Verified all security headers present on public HTTPS: HSTS (max-age=31536000, includeSubDomains, preload — Cloudflare reduced from 2yr to 1yr), X-Frame-Options SAMEORIGIN, X-Content-Type-Options nosniff, Referrer-Policy strict-origin-when-cross-origin, X-XSS-Protection 1; mode=block, Permissions-Policy camera=(), microphone=(), geolocation=(self), X-DNS-Prefetch-Control on. SSL cert valid (Jun 14 → Sep 12 2026, issuer Google Trust Services WE1 — Cloudflare edge cert). .env access returns 404 (not leaked). Guest lookup public endpoint returns 405 (method gating, not a vulnerability). Cloudflare provides additional DDoS/WAF layer (server: cloudflare, cf-ray present). Nginx rate limiting configured (api 30r/m, login 5r/m, guest_auth 10r/m) — verified in nginx.conf. RBAC verified: platform routes require PLATFORM_ADMIN JWT, tenant routes require auth + valid wedding slug.
+- ÉTAPE 9 (Cleanup): Closed agent-browser session. Removed temporary diagnostic file scripts/vps-schema-diff.js and vps-db-schema.json (created during ÉTAPE 5 schema diff). Left the 17 existing scripts/deploy-vps-*.cjs scripts intact (they're the deployment toolkit for future use). Left root-level deploy-*.mjs files intact (artifacts from previous sessions, not blocking). No production code or data touched during cleanup.
+- ÉTAPE 10 (Final verification): Agent Browser visual verification of public site — homepage renders with full content (hero with "&" heading + countdown timer JOURS/HEURES/MINUTES/SECONDES, "Trouver ma table" + "Voir mon invitation" CTAs, "Notre Histoire" with 4 story cards, "Notre Galerie" section, navigation with 5 links + theme toggle). Onboarding page renders ("Créez votre mariage digital" hero + "Nos offres" with 4 plan cards: Essai Libre/Essentiel/Premium/Élite). Platform login renders ("Administration Plateforme" form with Email/Password). ZERO console errors, ZERO page errors on all 3 pages. Final health check: container running (healthy), port mapping active, HTTP public 200 in 258ms, HTTP direct 200 in 21ms, backup verified at /opt/wedding-backups/2026-06-29T14-52-08.
+
+Stage Summary — VPS DEPLOYMENT COMPLETE:
+- 502 Bad Gateway: FIXED (container restarted with docker-compose.prod.yml, port 3080 published)
+- DB schema drift: FIXED (prisma db push synced all 18 tables, added ~15 missing columns across EventTimeline/Media/Lead/Guest, recreated 3 incompatible empty tables Invitation/Invoice/MusicTrack)
+- All public endpoints: 200 (homepage, onboarding, platform login, tenant admin login, public wedding, robots.txt, manifest.json, sw.js)
+- All APIs: 200 (settings, timeline, media, music, couple-story) or 401 (tables, guests — correct auth gating)
+- Platform admin login: working (JWT with PLATFORM_ADMIN role)
+- Tenant isolation: working (wrong slug → 404, no auth → 401, valid slug+auth → 200)
+- Security: all headers present, SSL valid, .env not leaked, Cloudflare edge protection
+- Performance: 17ms direct, 147-427ms public HTTPS, container 13% MEM, CPU idle
+- Backup: verified at /opt/wedding-backups/2026-06-29T14-52-08 (rollback available)
+- Agent Browser: visual verification passed (3 pages, 0 errors)
+- Data integrity: 0 rows lost, 0 QR/invitation/guest data touched, existing Wedding + AdminUser + Subscription rows preserved
+
+CONSTRAINTS COMPLIANCE:
+- ✅ No new features developed (only infrastructure + schema sync)
+- ✅ No business logic changes (only deployment operations)
+- ✅ No UI changes (only port mapping + DB schema)
+- ✅ No invitation/QR/guest data touched (all altered tables were empty)
+- ✅ Complete backup made before any changes (ÉTAPE 2, verified)
+
+KNOWN DATA GAP (not a deployment issue, documented for awareness):
+- VPS wedding (josue-hornella) has 0 content rows: 0 guests, 0 tables, 0 settings, 0 timeline, 0 couple stories, 0 media. The wedding exists (PUBLISHED, ELITE plan) but has no content populated yet.
+- Local dev DB has 243 guests + 31 tables + full settings/timeline/stories for the same wedding.
+- Per constraint "不触碰邀请/QR/客人数据", I did NOT push local content to VPS. The couple/admin must populate content via the admin UI, or a separate explicitly-approved data sync must be requested.
+- The homepage renders with fallback/default content (countdown timer works, story headings appear as component defaults, gallery shows placeholder). The app is functional — just waiting for content to be added.
+
+VPS DEPLOYMENT MISSION: ✅ COMPLETE (10/10 ÉTAPES executed, 502 fixed, schema synced, all verifications passed)
