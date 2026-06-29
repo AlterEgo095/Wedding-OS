@@ -1,0 +1,202 @@
+  3100→3. Add Notification model + /api/notifications endpoints + bell-icon UI in admin header with unread badge.
+  3101→4. Add Web Push API: PushSubscription model, /api/push/subscribe + /api/push/unsubscribe, push event handler in /sw.js, notificationclick handler. Replace sonner toasts for non-ephemeral admin notifications with persisted Notification rows (sonner can stay for ephemeral UI confirmations).
+  3102→5. Add WebhookEvent model + /api/webhooks/* for inbound (WhatsApp delivery receipts, Stripe payment callbacks) + outbound (admin-configurable webhook subscriptions).
+  3103→6. Upgrade WhatsApp from deeplink-only to WhatsApp Business Cloud API integration (Meta Graph API). Requires a verified Meta Business Account + permanent access token + pre-approved message templates. Replace `whatsappSentAt` stamping-on-generate with stamping-on-delivery-receipt (via webhook).
+  3104→7. Build Automation model + AutomationRun model + visual rule editor UI (trigger → condition → action). Start with 5 trigger types: guest.created, guest.rsvp_received, invoice.overdue, wedding.date_approaching, manual.invoke. Start with 5 action types: send.email, send.whatsapp, create.notification, update.field, delay.
+  3105→8. Build Workflow model + visual workflow builder (drag-and-drop nodes). Long-term goal — depends on Automation (7) as the underlying executor.
+  3106→
+  3107→
+  3108→---
+  3109→Task ID: CONSOLIDATION-AUDIT-7
+  3110→Agent: Explore Agent — Design Engine Audit
+  3111→Task: Audit graphic/design engine — Penpot overlap analysis
+  3112→
+  3113→Work Log:
+  3114→- Read /home/z/my-project/worklog.md (last 250 lines: CONSOLIDATION-AUDIT-3 Invitation + AUDIT-2 Theme + AUDIT-4 Media context). Confirmed prior audit (AUDIT-4 line 1354) noted "Penpot: aucun point d'ancrage identifié" — no existing Penpot integration point. CONSOLIDATION-AUDIT-1/2/3/4 already covered Command Center, Theme Engine, Invitation Engine, Media Engine — this audit focuses on the GRAPHIC/DESIGN engine specifically for Penpot overlap.
+  3115→- Read package.json — confirmed design-relevant deps:
+  3116→  - jspdf ^4.2.1 (line 65), html-to-image ^1.11.13 (line 61), html2canvas-pro ^2.0.4 (line 62) — client-side PDF/PNG export
+  3117→  - qrcode ^1.5.4 (line 73) + @types/qrcode (line 98) — QR code (PNG output)
+  3118→  - sharp ^0.34.3 (line 82) — INSTALLED BUT NEVER IMPORTED in src/ (verified via grep `from ['"]sharp['"]` → 0 matches; case-insensitive `sharp|Sharp` across src/ → 0 matches). DEAD DEPENDENCY for image processing.
+  3119→  - framer-motion ^12.23.2 (line 60) — animation
+  3120→  - lucide-react ^0.525.0 (line 66) — icon library (used in 60 files via `from 'lucide-react'`)
+  3121→  - @dnd-kit/* ^6.3.1/^10.0.0/^3.2.2 (lines 18-20) — INSTALLED BUT NEVER IMPORTED in src/ (verified via grep `@dnd-kit|DndContext|useDraggable|SortableContext` → 0 matches in src/). DEAD DEPENDENCY for drag-and-drop design.
+  3122→  - NO fabric, NO konva, NO react-konva, NO excalidraw, NO d3, NO three, NO snap.svg, NO svg.js, NO paper.js, NO pdfkit, NO puppeteer, NO @react-pdf.
+  3123→- Read src/lib/themes/templates.ts (212 lines) — 4 THEME_TEMPLATES (Or Classique, Rose Romantique, Minimal Moderne, Nuit Royale) defining primaryColor/accentColor/fontDisplay/fontBody/layout/preview; 8 FONT_OPTIONS (Google Fonts); 4 LAYOUT_OPTIONS (classic/modern/minimalist/royal — LABELS ONLY, no layout switching code). These are wedding-website theme presets, NOT invitation card templates.
+  3124→- Read src/components/InvitationCard.tsx (523 lines) — SINGLE fixed invitation card design (3:4.2 aspect ratio): paper texture (CSS gradients), gold border with glow, shimmer overlay (Framer Motion), 1 inline OrnamentalFlourish SVG (lines 60-91, hardcoded paths), 2-circle overlapping couple photos, 5-category badge system (VIP/FAMILLE/AMIS/SPONSORS/COLLEGUES), personal message quoted block, QR code via `<img src={qrCodeUrl}>`. No template selector, no editable layout, no user-designable elements.
+  3125→- Read src/components/GuestPersonalSpace.tsx (lines 1-50, 257-334, 355-404, 733) — handleDownload('pdf'|'png'|'jpg') at line 257: dynamically imports `html2canvas-pro` + `jspdf`, renders hidden 700px-wide 2-zone invitation DOM (lines 357-504, pure HTML+CSS with inline styles, comment at line 355 explicitly notes "no SVG, no Framer Motion"), captures canvas at 2x scale, exports PDF (A5, orientation auto by aspect, `pdf.addImage(dataUrl, 'PNG', ...)` — RASTER not vector) or PNG/JPG via `canvas.toDataURL(...)`. 3 export formats in dropdown (line 733).
+  3126→- Read src/app/api/guests/qrcode/[code]/route.ts (120 lines) — uses `import QRCode from 'qrcode'` (line 7); `QRCode.toDataURL(qrUrl, {width:300, margin:2, color:{dark:'#000000', light:'#FFFFFF'}})` at line 94. Returns base64 PNG data URL (NOT SVG). Tenant-scoped URL `/w/{slug}/invite/{encryptedToken}` (line 92).
+  3127→- Read src/components/luxury/LuxuryVisualEngine.tsx (336 lines) — real-time Canvas 2D rendering engine for cinematic ambiance. Single `<canvas>` overlay (line 309) for stars + dust + sparkles. DOM-based Luminous Halos (Framer Motion). Global Breathing CSS effect. Auto-detects device tier (navigator.hardwareConcurrency + deviceMemory + mobile UA). Adaptive FPS-based performance with hysteresis (3 consecutive low FPS → downgrade; 5 consecutive high FPS → upgrade; never auto-downgrades below "low").
+  3128→- Read src/components/luxury/particle-engine.ts (491 lines) — custom Canvas 2D particle engine (no external deps). Star field with individual twinkle cycles + lifecycle (spawn/live/die/respawn with staggered ages). Golden dust with fbmNoise-based Perlin-like organic drift (3-octave fractal brownian motion, hash-based smoothNoise). Micro sparkles with random flash lifecycle. FPS tracking + onFpsUpdate callback. Particle counts per tier: ultra=800 stars/150 dust/40 sparkles; high=500/100/25; medium=250/60/15; low=100/30/8; minimal=50/15/4.
+  3129→- Read src/lib/luxury-engine-store.ts (303 lines) — Zustand store + localStorage (tenant-scoped key `wedding_luxury_engine_<slug>` with backward-compat migration). 7 effect toggles (starrySky, goldenDust, microSparkles, luminousHalos, globalBreathing, sectionAmbiance, scrollReflections). 4 sliders (intensity 0-100, density 0-100, speed 0-100, haloCount 2-8). 4 LUXURY_THEMES palettes (gold/rose/champagne/midnight) with primary/secondary/tertiary/halo/dust[4]/star/breath colors. 5 performance tiers (ultra/high/medium/low/minimal).
+  3130→- Read src/lib/visual-effects-store.ts (170 lines) — separate Zustand store for the OLDER effects system (visual-effects vs luxury-engine are TWO PARALLEL SYSTEMS). 12 toggles (sparkles, particles, parallax, dynamicLight, glowEffects, bokeh, floatingElements, microAnimations, glassmorphism, premiumButtons, scrollReveal, music). 3 sliders (sparkleIntensity, particleCount, animationSpeed). Same tenant-scoped localStorage pattern.
+  3131→- Read all 7 effects components (src/components/effects/*.tsx): BokehEffect (5 large soft circles via Framer Motion + radial gradients), DynamicLightSweep (golden linear-gradient sweep, 12s default), FloatingParticles (3 particle types: dust/halo/micro-star, Framer Motion-driven), ScrollReveal (IntersectionObserver + 7 animation variants: fade-in/slide-up/slide-left/slide-right/scale/scale-fade/glow), SectionEffects (per-section wrapper with 7 variants: hero/story/gallery/timeline/invitation/map/auth — each configures sparkle/particle counts + colors + light sweep params), SparkleEffect (3 particle types: dot/star/cross, gold/rose-gold/mixed palettes), VisualEffectsLayer (master overlay combining Bokeh + Sparkles + FloatingParticles).
+  3132→- Read src/app/globals.css (865 lines) — comprehensive design token system: light + dark mode color tokens (--gold/--gold-light/--gold-dark/--champagne/--rose-gold/--cream/--primary/--accent/--background/--foreground/--card/--popover/--secondary/--muted/--destructive/--border/--input/--ring/--chart-1..5/--sidebar-*); theme-aware tokens (--theme-primary/--theme-accent/--theme-font-display/--theme-font-body, overridable per wedding via ThemeInjector.tsx); font tokens (--font-display/--font-body/--font-serif/--font-sans/--font-mono); radius tokens (--radius-sm/md/lg/xl); 7 animation tokens (--animate-*); 13 keyframe animations; 20+ utility classes (glass/glass-card/glass-premium/gold-gradient/gold-border/section-divider/bg-gradient-warm/gold/hero/shimmer/flourish/link-elegant/text-shadow-elegant/paper-texture/btn-premium/card-premium/gold-shimmer-hover/countdown-flip/countdown-halo/animate-premium-*/section-transition). paper-texture class (line 838) uses inline SVG data-URI with feTurbulence filter.
+  3133→- Grep for SVG/canvas/createElementNS/toDataURL across src/ → 26 files match. Categorized:
+  3134→  - Inline SVG decorations (4 components): InvitationCard.tsx:62-89 (OrnamentalFlourish), OurStory.tsx:123-144 (4-petal decorative icon), AENEWSBanner.tsx:167-173, MarketingSection.tsx:234-236.
+  3135→  - shadcn/ui Radix primitives (16 files) render icons as inline SVG (collapsible panels, dropdown arrows, etc.).
+  3136→  - Canvas: LuxuryVisualEngine.tsx:309 (`<canvas ref={canvasRef}>`) + particle-engine.ts:140 (`canvas.getContext('2d', {alpha:true})`). This is the ONLY true Canvas usage for rendering.
+  3137→  - html2canvas-pro internal canvas: GuestPersonalSpace.tsx:288 (capture) + 301-302 (`canvas.toDataURL('image/png'|'image/jpeg')`).
+  3138→  - toDataURL: GuestPersonalSpace.tsx:301-302 (PNG/JPG export), api/guests/qrcode/[code]/route.ts:94 (QR PNG).
+  3139→  - NO createElementNS usage in src/ (verified via grep).
+  3140→- Grep for design editor / drag-drop / visual editor / canvas editor → 0 matches in src/. Confirmed NO visual design editor exists. @dnd-kit installed but unused — dead dependency.
+  3141→- Read src/app/api/media/route.ts (192 lines) — media upload accepts SVG (line 11: ALLOWED_EXTENSIONS includes '.svg'; line 13: 'image/svg+xml') + PNG/JPEG/GIF/WEBP/MP4/WEBM/PDF. Stores raw file via `writeFile` (line 114) — NO processing, NO thumbnail generation, NO resizing (sharp is installed but never imported). Media is for gallery/couple-story, NOT for design assets.
+  3142→- Globbed public/ for assets: ONLY 1 standalone SVG (public/logo.svg — AENEWS logo), 8 PWA PNG icons (72×72 to 512×512), 7 couple-*.jpeg photos (hardcoded in CouplePhotosSection.tsx), 2 uploads in public/uploads/. NO icon library, NO illustration library, NO decorative element library, NO stock photos, NO clipart, NO borders/frames/ornaments library.
+  3143→- Searched for design-tokens.ts / tokens.ts / design-system.ts / component-library.ts files → 0 matches. Design tokens live ONLY in src/app/globals.css (CSS custom properties) + LUXURY_THEMES in luxury-engine-store.ts. NO standalone token file, NO Storybook, NO component catalog.
+  3144→- Confirmed component inventory: 43 shadcn/ui primitives in src/components/ui/* (generic Radix-based UI kit, NOT wedding-specific design components); 7 visual-effect components in src/components/effects/*; 2 luxury-engine components in src/components/luxury/*; 25+ business components (InvitationCard, GuestPersonalSpace, HeroSection, OurStory, CoupleGallery, PremiumGallery, EventTimeline, AmbientMusicPlayer, Navigation, Footer, GuestSearch, GuestAuthForm, MapSection, PWAInstall, MarketingSection, AENEWSBanner, CouplePhotosSection, ThemeInjector, ThemeCustomizer, AppearanceManager, LuxuryExperienceManager, + 9 admin managers).
+  3145→
+  3146→Stage Summary — 9-Capability Design Engine Audit:
+  3147→
+  3148→1. **SVG (rendering, manipulation, export)** — ⚠️ PARTIAL (rendering only, NO manipulation, NO export)
+  3149→   - Files: src/components/InvitationCard.tsx:60-91 (OrnamentalFlourish inline SVG), src/components/OurStory.tsx:123-144 (4-petal decoration), src/components/AENEWSBanner.tsx:167-173, src/components/MarketingSection.tsx:234-236, src/app/globals.css:838 (paper-texture SVG data-URI with feTurbulence filter), public/logo.svg (1 standalone SVG — AENEWS logo), lucide-react icons rendered as inline SVG across 60 files.
+  3150→   - How: Hardcoded inline SVG markup for ornamental flourishes (paths, circles). lucide-react renders React icon components as inline SVG. paper-texture CSS class uses an SVG data-URI background with feTurbulence noise filter.
+  3151→   - Missing: NO SVG manipulation library (no snap.svg, no svg.js, no d3, no paper.js). NO SVG export. NO data-driven SVG generation. NO user-editable SVG. SVGs are static decorative assets only.
+  3152→   - Penpot overlap: HIGH — Penpot's NATIVE format is SVG. Penpot would replace the static inline SVGs with editable vector designs.
+  3153→   - Penpot value-add: HIGH — vector design tools, SVG editing, SVG export (none present).
+  3154→
+  3155→2. **Canvas (HTML5 Canvas for drawing/rendering)** — ✅ YES (but ONLY for particle effects, NOT design)
+  3156→   - Files: src/components/luxury/LuxuryVisualEngine.tsx:309 (`<canvas ref={canvasRef}>`), src/components/luxury/particle-engine.ts:140 (`canvas.getContext('2d', {alpha:true})`).
+  3157→   - How: Custom Canvas 2D particle engine for cinematic ambiance — star field with twinkle + lifecycle, golden dust with Perlin-like fbm noise drift, micro sparkles with flash lifecycle. requestAnimationFrame loop with FPS monitoring + adaptive performance (3-tier hysteresis). 5 performance tiers cap particle counts (ultra=800/150/40 down to minimal=50/15/4).
+  3158→   - NOT used for: design canvas, drawing canvas, image canvas, invitation rendering canvas. The invitation is HTML+CSS (rasterized via html2canvas-pro at export time only).
+  3159→   - Penpot overlap: LOW — Penpot uses Canvas for its editor viewport, but the platform's Canvas is purely an ambiance particle system, not a design surface.
+  3160→   - Penpot value-add: HIGH — Penpot would add a design Canvas (drag-drop, draw, edit) which is completely absent.
+  3161→
+  3162→3. **Templates (invitation/page/layout templates)** — ⚠️ PARTIAL (theme templates only, NO invitation/page templates)
+  3163→   - Files: src/lib/themes/templates.ts:102-163 (4 THEME_TEMPLATES), :40-89 (8 FONT_OPTIONS), :93-98 (4 LAYOUT_OPTIONS — labels only).
+  3164→   - How: 4 wedding-website theme presets (Or Classique/Rose Romantique/Minimal Moderne/Nuit Royale) defining primaryColor + accentColor + fontDisplay + fontBody + layout label + preview swatches. Applied via /api/theme/apply-template POST. 8 Google Font options. 4 layout labels (classic/modern/minimalist/royal) — but the LAYOUT field is just a stored string, NO code switches the public page structure based on it.
+  3165→   - InvitationCard.tsx is a SINGLE fixed design (3:4.2 aspect, paper texture, 2-circle photos, ornamental flourish). GuestPersonalSpace download DOM is a SINGLE fixed 2-zone layout (54% photos / 46% info). NO invitation card template selector.
+  3166→   - Missing: multiple invitation card designs, page section templates, content block library, layout switching code.
+  3167→   - Penpot overlap: MEDIUM — Penpot has its own template system; the platform's "templates" are just color/font tuples, not visual designs.
+  3168→   - Penpot value-add: HIGH — Penpot templates are real visual design files with editable layers; would add true multi-template invitation designs.
+  3169→
+  3170→4. **Assets (asset library — icons, illustrations, stock photos, decorative elements)** — ❌ NO (no curated asset library)
+  3171→   - Files: public/logo.svg (1 SVG), public/icons/icon-{72..512}.png (8 PWA app icons), public/photos/couple-{venue,signing,seated,portrait,bouquet,bridge,storefront}.jpeg (7 hardcoded couple photos in CouplePhotosSection.tsx), public/uploads/couple-photo-{1,2}.jpeg (2 default couple photos).
+  3172→   - lucide-react (npm package, used in 60 files) is the de facto "icon library" — generic React icon components (Gem, Heart, Users, Hash, Ticket, Quote, Sparkles, Stars, Sun, etc.), NOT wedding-specific assets.
+  3173→   - Media upload (api/media) accepts SVG/PNG/JPEG/GIF/WEBP/MP4/PDF — but these are USER-UPLOADED files for gallery/couple-story, NOT a curated asset library.
+  3174→   - NO illustration library, NO stock photo library, NO clipart, NO decorative border/frame/ornament library (only 1 inline OrnamentalFlourish SVG component in InvitationCard.tsx).
+  3175→   - Penpot overlap: LOW — Penpot's asset library would not duplicate anything (nothing exists to duplicate).
+  3176→   - Penpot value-add: HIGH — Penpot would bring a proper asset library (icons, illustrations, decorative elements, reusable components) which is entirely absent.
+  3177→
+  3178→5. **Export PDF** — ✅ YES (client-side only, RASTER not vector)
+  3179→   - Libraries: jspdf ^4.2.1 (package.json:65), html2canvas-pro ^2.0.4 (package.json:62), html-to-image ^1.11.13 (package.json:61 — installed but not used in handleDownload, uses html2canvas-pro instead).
+  3180→   - Files: src/components/GuestPersonalSpace.tsx:257-334 (handleDownload), hidden download DOM at :357-504.
+  3181→   - How: Client-side — dynamically imports html2canvas-pro + jspdf → renders hidden 700px-wide 2-zone invitation DOM (pure HTML+CSS, no SVG, no Framer Motion per comment line 355) → captures canvas at 2x scale → `new jsPDF({orientation, unit:'mm', format:'a5'})` → `pdf.addImage(dataUrl, 'PNG', offsetX, offsetY, cardW, cardH)` → `pdf.save('invitation-{displayName}.pdf')`. PDF embeds PNG raster — NOT vector.
+  3182→   - Missing: NO server-side PDF generator (no pdfkit, no puppeteer, no @react-pdf). NO batch PDF export. NO admin-side "download this guest's invitation as PDF" (only the guest can self-download). NO vector PDF.
+  3183→   - Penpot overlap: MEDIUM — Penpot exports vector PDF (better quality); would replace the raster PDF.
+  3184→   - Penpot value-add: MEDIUM — vector PDF export, batch export, server-side rendering pipeline (Penpot has its own render engine).
+  3185→
+  3186→6. **Export PNG** — ✅ YES (client-side, RASTER)
+  3187→   - Same handler: src/components/GuestPersonalSpace.tsx:301-302 — `canvas.toDataURL('image/png')` for PNG, `canvas.toDataURL('image/jpeg', 0.95)` for JPG. 2x scale via html2canvas-pro options.
+  3188→   - QR code is also PNG: api/guests/qrcode/[code]/route.ts:94 — `QRCode.toDataURL(qrUrl, {width:300, margin:2})` returns base64 PNG.
+  3189→   - Missing: NO SVG export. NO high-DPI print-ready export (only 2x scale). NO batch PNG export.
+  3190→   - Penpot overlap: MEDIUM — Penpot exports PNG/SVG; would replace raster PNG.
+  3191→   - Penpot value-add: MEDIUM — SVG export (none present), high-DPI print export, multi-format batch export.
+  3192→
+  3193→7. **Invitation generation (visually generated/rendered)** — ✅ YES (data-bound to fixed design, NOT generative design)
+  3194→   - Files: src/components/InvitationCard.tsx (523 lines, live on-screen card), src/components/GuestPersonalSpace.tsx (787 lines, guest-side envelope-reveal animation + download-ready DOM).
+  3195→   - How: Data binding into a FIXED HTML/CSS template. Per-guest fields: displayName, tableName, tableNumber, seats, category (5 badges), invitationCode, personalMessage, qrCodeUrl. Per-wedding fields: couple names, wedding date, venue name+address+reference, couple photos (via /api/settings fetch). InvitationCard renders live with Framer Motion animations (entrance, shimmer, photo float). GuestPersonalSpace adds 4-phase envelope reveal, RSVP section, share menu (WhatsApp/Telegram/Email), encrypted link copy, download menu (PDF HD / PNG HD / JPG).
+  3196→   - "Generated" = data binding into 1 fixed design template. NOT generative. NOT user-designable. NOT multi-template.
+  3197→   - Penpot overlap: HIGH — Penpot could replace the fixed invitation card with editable, multi-template designs.
+  3198→   - Penpot value-add: HIGH — true invitation DESIGN (drag-drop, custom layouts, multiple templates, per-wedding custom designs beyond color swap).
+  3199→
+  3200→8. **Component library (reusable UI/design component library)** — ✅ YES (generic UI kit, NOT wedding-design-specific)
+  3201→   - Files: src/components/ui/* (43 shadcn/ui primitives: button, card, dialog, dropdown-menu, select, sheet, sidebar, tabs, table, accordion, alert, alert-dialog, aspect-ratio, avatar, badge, breadcrumb, calendar, carousel, chart, checkbox, collapsible, command, context-menu, drawer, form, hover-card, input, input-otp, label, menubar, navigation-menu, pagination, popover, progress, radio-group, resizable, scroll-area, separator, skeleton, slider, sonner, switch, table, textarea, toast, toaster, toggle, toggle-group, tooltip).
+  3202→   - src/components/effects/* (7 visual effect components: BokehEffect, DynamicLightSweep, FloatingParticles, ScrollReveal, SectionEffects, SparkleEffect, VisualEffectsLayer).
+  3203→   - src/components/luxury/* (2 components: LuxuryVisualEngine, particle-engine).
+  3204→   - 25+ business components (InvitationCard, GuestPersonalSpace, HeroSection, OurStory, CoupleGallery, PremiumGallery, EventTimeline, AmbientMusicPlayer, Navigation, Footer, GuestSearch, GuestAuthForm, MapSection, PWAInstall, MarketingSection, AENEWSBanner, CouplePhotosSection, ThemeInjector, ThemeCustomizer, AppearanceManager, LuxuryExperienceManager, + 9 admin managers).
+  3205→   - Missing: NO Storybook, NO component catalog, NO design system documentation, NO component variants system (beyond shadcn defaults), NO wedding-specific design component library (ornaments, borders, frames, decorative blocks).
+  3206→   - Penpot overlap: MEDIUM — Penpot's component library is design-component-oriented (with variants, instances); the platform's components are React code components, not visual design components.
+  3207→   - Penpot value-add: HIGH — Penpot would add visual design components with variants/instances that designers can compose without code.
+  3208→
+  3209→9. **Design tokens (centralized design system — colors, typography, spacing, shadows)** — ✅ YES (CSS custom properties in globals.css)
+  3210→   - Files: src/app/globals.css (865 lines, full token system), src/lib/luxury-engine-store.ts:193-302 (LUXURY_THEMES + TIER_CONFIG palettes), src/components/wedding/ThemeInjector.tsx (per-wedding token injection).
+  3211→   - Color tokens (light + dark): --gold, --gold-light, --gold-dark, --champagne, --rose-gold, --cream, --primary, --accent, --background, --foreground, --card, --popover, --secondary, --muted, --destructive, --border, --input, --ring, --chart-1..5, --sidebar-* (12 sidebar tokens).
+  3212→   - Theme-aware tokens (overridable per wedding via ThemeInjector): --theme-primary, --theme-accent, --theme-font-display, --theme-font-body. Wired into 9 design tokens in globals.css:69-123 (--gold, --gold-light, --gold-dark, --rose-gold, --primary, --accent, --ring, --font-display, --font-body) with safe fallbacks.
+  3213→   - Font tokens: --font-display, --font-body, --font-serif, --font-sans, --font-mono.
+  3214→   - Radius tokens: --radius, --radius-sm/md/lg/xl.
+  3215→   - Animation tokens: --animate-fade-in, --animate-slide-up, --animate-slide-down, --animate-float, --animate-shimmer, --animate-pulse-gold, --animate-spin-slow. 13 keyframe animations defined.
+  3216→   - 4 LUXURY_THEMES color palettes (gold/rose/champagne/midnight) with primary/secondary/tertiary/halo/dust[4]/star/breath colors.
+  3217→   - 20+ utility classes (glass, glass-card, glass-premium, gold-gradient, gold-border, section-divider, bg-gradient-warm/gold/hero, shimmer, flourish, link-elegant, text-shadow-elegant, paper-texture, btn-premium, card-premium, gold-shimmer-hover, countdown-flip, countdown-halo, animate-premium-scale/slide/glow, section-transition, will-change-transform/opacity).
+  3218→   - Missing: NO standalone design-tokens.ts/json file, NO token documentation, NO spacing scale tokens (no --spacing-* tokens), NO elevation/shadow scale tokens (shadows hardcoded per-class), NO typography scale tokens (no --text-xs/sm/base/lg/xl/2xl/3xl tokens), NO breakpoint tokens. NO token versioning.
+  3219→   - Penpot overlap: HIGH — Penpot has native design token support (colors, typography, spacing, shadows, components). The platform's token system covers colors + fonts + radius + animations but is missing spacing/shadow/typography scales.
+  3220→   - Penpot value-add: MEDIUM — Penpot would add structured spacing/shadow/typography scales and a token management UI; would also enable designers (not just devs) to edit tokens.
+  3221→
+  3222→VERDICT: Design Engine is ~35% complete (measured against a full design platform like Penpot).
+  3223→
+  3224→BREAKDOWN:
+  3225→- ✅ Strong (fully implemented): Design tokens (CSS-level), Canvas particle engine (LuxuryVisualEngine), Client-side PDF/PNG/JPG export, Invitation generation (data-bound, fixed design), Component library (shadcn/ui + 34 custom components).
+  3226→- ⚠️ Partial: SVG (rendering-only, no manipulation/export), Templates (theme presets only, no invitation/page templates).
+  3227→- ❌ Absent: Asset library (no icons/illustrations/stock/decorative elements), Visual drag-and-drop design editor, Vector design tools, SVG export, Server-side PDF rendering, Multiple invitation card designs, True WYSIWYG invitation editor, Custom layout editing, Storybook/component catalog, Spacing/shadow/typography scale tokens.
+  3228→
+  3229→KEY ARCHITECTURAL FINDING: The platform has TWO PARALLEL visual effects systems — (1) `visual-effects-store.ts` (older, 12 toggles, controls the 7 effects/* components via Framer Motion DOM elements) and (2) `luxury-engine-store.ts` (newer, 7 toggles + 4 sliders, controls LuxuryVisualEngine via Canvas 2D particle engine). Both are tenant-scoped via localStorage. The LuxuryVisualEngine is the more advanced/sophisticated of the two — but BOTH are visual EFFECTS engines (ambiance: particles, sparkles, bokeh, light sweeps, halos), NOT design tools. They do NOT enable users to design anything — they only add ambient motion to an already-designed page.
+  3230→
+  3231→DEAD DEPENDENCIES (installed in package.json but never imported in src/):
+  3232→- `sharp` ^0.34.3 (line 82) — would have enabled server-side image processing (resize, format conversion, thumbnail generation) but is NEVER imported. Media upload (api/media) writes raw files to disk with no processing.
+  3233→- `@dnd-kit/*` ^6.3.1/^10.0.0/^3.2.2 (lines 18-20) — would have enabled drag-and-drop interactions but is NEVER imported. No design editor, no sortable lists, no drag-drop UI anywhere.
+  3234→- `html-to-image` ^1.11.13 (line 61) — superseded by html2canvas-pro in the actual handleDownload implementation; appears unused.
+  3235→
+  3236→PENPOT OVERLAP ASSESSMENT:
+  3237→
+  3238→Would Penpot DUPLICATE existing capabilities? (redundant features)
+  3239→- HIGH redundancy: SVG rendering (Penpot's native format is SVG — but the platform only has static inline SVGs, so Penpot would replace not duplicate). Design tokens (Penpot has native token support — would replace the CSS custom properties approach, though with significant overlap).
+  3240→- MEDIUM redundancy: Export PDF/PNG (Penpot exports both formats — but as vector/high-quality, would replace the raster client-side export). Invitation card design (Penpot could replace the fixed InvitationCard.tsx with editable designs — but this is a replacement, not a duplicate). Component library (Penpot's design components vs the platform's React code components — different paradigms, partial overlap).
+  3241→- LOW redundancy: Templates (platform's templates are color/font tuples, Penpot's are visual design files — minimal overlap). Canvas (platform uses Canvas for particles, Penpot uses Canvas for editor — different purposes). Assets (platform has no asset library, nothing to duplicate).
+  3242→
+  3243→Would Penpot ADD NEW capabilities not present? (value-adding features)
+  3244→- HIGH value-add: Visual drag-and-drop design editor (COMPLETELY ABSENT — no design canvas, no visual editor, no drag-drop UI). Vector design tools (COMPLETELY ABSENT). True multi-template invitation card designs (only 1 fixed design exists). Custom asset library (icons/illustrations/ornaments — COMPLETELY ABSENT). SVG export (COMPLETELY ABSENT). True WYSIWYG invitation editor (couples cannot design their card — they can only swap 2 colors + 2 fonts). Custom layout editing (layout field is a label, doesn't switch layouts). Real-time multi-user design collaboration (ABSENT).
+  3245→- MEDIUM value-add: Server-side vector PDF rendering (replaces client-side raster). Spacing/shadow/typography scale tokens (currently absent — only color/font/radius/animation tokens exist). Storybook-style component catalog (ABSENT). Batch export (ABSENT — only per-guest self-download).
+  3246→- LOW value-add: Particle effects (Penpot doesn't do ambiance particles — the LuxuryVisualEngine would remain unique). QR code generation (Penpot doesn't generate QR codes — the qrcode library would remain). Theme color/font tokens (Penpot could enhance but the current system already works).
+  3247→
+  3248→CRITICAL ANSWERS TO SPECIFIC QUESTIONS:
+  3249→- Visual drag-and-drop design editor (like Canva/Figma/Penpot canvas)? ❌ NO. NONE exists. @dnd-kit is installed but never imported. No design canvas, no visual editor, no drag-drop UI anywhere in src/.
+  3250→- Can users visually design invitations? ❌ NO. The InvitationCard.tsx is a SINGLE FIXED HTML/CSS design. Couples can only swap 2 colors (primaryColor, accentColor) + 2 fonts (fontDisplay, fontBody) via ThemeCustomizer. They cannot change the card layout, ornaments, photo positions, text positions, borders, or any visual element.
+  3251→- Design token system in globals.css? ✅ YES, comprehensive — 40+ CSS custom properties for colors (light + dark), 4 theme-aware tokens, 5 font tokens, 5 radius tokens, 7 animation tokens, 13 keyframe animations. BUT missing spacing scale, shadow scale, typography scale (font-size) tokens.
+  3252→- How many design templates exist? 4 wedding-website THEME templates (color/font tuples, NOT visual designs) + 1 fixed invitation card design + 1 fixed download-ready 2-zone layout. ZERO editable visual design templates.
+  3253→- Is the LuxuryVisualEngine a real-time rendering engine? ✅ YES — Canvas 2D particle engine with requestAnimationFrame loop, FPS monitoring, adaptive performance (5 tiers with hysteresis), 3 particle types (stars/dust/sparkles) with Perlin-like noise drift, lifecycle management, scroll parallax. BUT it is a VISUAL EFFECTS engine (ambiance), NOT a design tool. It does NOT enable users to design anything.
+  3254→- Are SVGs used for decorative elements? ⚠️ BARELY — only 4 inline SVG decorations exist (OrnamentalFlourish in InvitationCard, 4-petal icon in OurStory, 2 small SVGs in AENEWSBanner + MarketingSection). 1 standalone SVG file (public/logo.svg). NO SVG library, NO SVG manipulation, NO SVG export. lucide-react provides generic icons (60 files) but these are UI icons, not wedding-specific decorative elements.
+  3255→- Can the user customize the visual effects? ✅ YES — 2 separate admin panels: (1) AppearanceManager toggles 12 older visual effects (sparkles/particles/parallax/dynamicLight/glowEffects/bokeh/floatingElements/microAnimations/glassmorphism/premiumButtons/scrollReveal/music) + 3 sliders (sparkleIntensity/particleCount/animationSpeed). (2) LuxuryExperienceManager toggles 7 newer luxury effects (starrySky/goldenDust/microSparkles/luminousHalos/globalBreathing/sectionAmbiance/scrollReflections) + 4 sliders (intensity/density/speed/haloCount) + 4 theme palettes (gold/rose/champagne/midnight) + 5 performance tiers + live FPS monitoring. All tenant-scoped via localStorage.
+  3256→
+  3257→CONSTRAINTS COMPLIANCE:
+  3258→- ✅ READ ONLY — no files modified, created, or deleted.
+  3259→- ✅ No code changes.
+  3260→- ✅ No data touched.
+  3261→- ✅ No write/deploy/migration commands run. Only Read/Grep/Glob/Bash (single bash command appended this report to worklog.md as instructed).
+  3262→
+  3263→---
+  3264→Task ID: CONSOLIDATION-AUDIT-FINAL
+  3265→Agent: Main Agent (Consolidation Audit Orchestrator)
+  3266→Task: Synthesize 7 sub-audits + VPS comparison + Penpot analysis into final deliverable
+  3267→
+  3268→Work Log:
+  3269→- Dispatched 7 parallel Explore agents (CONSOLIDATION-AUDIT-1 through 7) covering: Command Center modules, Theme Engine, Invitation Engine, Media Engine, Automation, AI, Design Engine.
+  3270→- Each agent performed READ-ONLY audit (no files modified, no migrations, no deploy commands).
+  3271→- All 7 agents appended detailed findings to worklog.md (lines 2287-3261).
+  3272→- Ran scripts/deploy-vps-audit.cjs (read-only SSH probe) to capture current VPS state: container healthy (Up 41min), port 127.0.0.1:3080->3000 mapped, HTTP public 200 in 419ms, DB 332KB synced.
+  3273→- Compared 18 key file byte-sizes between Sandbox and VPS — ALL 18 MATCH EXACTLY (confirms code-identical deployment).
+  3274→- Local git HEAD: d0d3ecf. VPS is NOT a git repo (deployed via SFTP/rsync — accepted pattern).
+  3275→- Composed final deliverable with: real state, completed features, partial features, prepared-only features, Sandbox/VPS diff table, % advancement, pre-Penpot gaps, Penpot value-add, recommendations.
+  3276→
+  3277→Stage Summary — CONSOLIDATION AUDIT RESULTS:
+  3278→
+  3279→Per-engine completeness:
+  3280→1. Command Center (15 modules): 4 fully-implemented (Dashboard, Media Center, Billing, Users) + 7 partial + 4 absent (Portfolio, AI Center, Automation, Marketplace) = ~50%
+  3281→2. Theme Engine: ~70% (solid backend, thin color palette, no import/export, dead layout field, ThemeCustomizer not mounted in tenant admin)
+  3282→3. Invitation Engine: ~88% (AES-256-GCM tokens, QR codes, client-side PDF/PNG export, 1 fixed card design — no template selector)
+  3283→4. Media Engine: ~60% (upload works, local FS only, sharp installed but NEVER used, PremiumGallery NOT wired to /api/media — admin uploads invisible publicly)
+  3284→5. Automation: ~7% (NO email library, NO cron, NO workflows, WhatsApp is deeplink-only, z-ai-web-dev-sdk dormant)
+  3285→6. AI: ~1-2% ABSENT (z-ai-web-dev-sdk in package.json but NEVER imported, zero AI routes/components/models)
+  3286→7. Design Engine: ~35% (strong visual EFFECTS but zero visual DESIGN tools — no drag-drop editor, no asset library, 1 fixed invitation card)
+  3287→
+  3288→Weighted overall Wedding OS advancement: ~50%
+  3289→
+  3290→CRITICAL pre-Penpot gaps (blockers for a real product):
+  3291→- Media pipeline broken: PremiumGallery hardcoded to static photos, admin uploads invisible publicly
+  3292→- ThemeCustomizer not mounted in tenant admin (couples can't edit their own theme)
+  3293→- WhatsApp deeplink-only (whatsappSentAt stamped on generation, not delivery)
+  3294→- No email sending at all (no SMTP, no transactional service)
+  3295→- No cron/scheduler (no reminders, no auto-tasks)
+  3296→
+  3297→Penpot overlap assessment:
+  3298→- HIGH overlap: design tokens (CSS vars), SVG rendering, invitation generation (1 fixed card) — Penpot would ENHANCE not duplicate
+  3299→- MEDIUM overlap: templates (4 theme presets), export PDF/PNG (client-side raster)
+
+[showing lines 3100-3299 of 3305; use offset=3300 with limit to continue reading]
