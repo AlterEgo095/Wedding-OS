@@ -54,11 +54,21 @@ interface CustomDomainData {
 }
 
 interface ThemeCustomizerProps {
-  /** Wedding slug for API calls (defaults to 'josue-hornella') */
+  /** Wedding slug for API calls.
+   *  When omitted (e.g. in platform admin's Appearance tab), the component
+   *  renders a wedding picker dropdown and defaults to the first available
+   *  wedding — never silently hardcodes 'josue-hornella' (Phase 3 ÉTAPE 6 fix).
+   */
   slug?: string;
 }
 
-export function ThemeCustomizer({ slug = 'josue-hornella' }: ThemeCustomizerProps) {
+interface WeddingOption {
+  id: string;
+  slug: string;
+  coupleLabel: string;
+}
+
+export function ThemeCustomizer({ slug: explicitSlug }: ThemeCustomizerProps = {}) {
   const [theme, setTheme] = useState<ThemeData | null>(null);
   const [domain, setDomain] = useState<CustomDomainData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -70,7 +80,51 @@ export function ThemeCustomizer({ slug = 'josue-hornella' }: ThemeCustomizerProp
   // weddings' theme preview. Generic "Mariage" fallback before the fetch settles.
   const [coupleLabel, setCoupleLabel] = useState<string>('Mariage');
 
+  // Phase 3 ÉTAPE 6: when no explicit slug is provided (platform admin
+  // context), we fetch the list of weddings and let the admin pick which
+  // one to edit. The selected slug drives all subsequent API calls — no
+  // more silent hardcoded 'josue-hornella' default.
+  const [weddingOptions, setWeddingOptions] = useState<WeddingOption[]>([]);
+  const [selectedSlug, setSelectedSlug] = useState<string>(explicitSlug ?? '');
+
+  // If parent passes an explicit slug, always use it (tenant admin context).
+  // Otherwise use the admin-selected slug, falling back to the first wedding
+  // in the list once loaded.
+  const slug = explicitSlug ?? selectedSlug;
+
   const headers = { 'X-Wedding-Slug': slug };
+
+  // Fetch the list of weddings (platform admin context only — when no
+  // explicit slug was passed). Best-effort: on failure, leave the picker
+  // empty and the rest of the component will show its loading state.
+  useEffect(() => {
+    if (explicitSlug) return; // tenant admin context — no picker needed
+    let cancelled = false;
+    fetch('/api/platform/weddings?limit=100', {
+      // Public-ish GET — platform-admin gated on the server side. We rely on
+      // the httpOnly cookie set by /api/platform/login instead of a Bearer
+      // token, because this component is rendered from the platform admin
+      // shell which uses cookie-based auth.
+      credentials: 'include',
+    })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (cancelled || !data?.weddings) return;
+        const opts: WeddingOption[] = data.weddings.map((w: { id: string; slug: string; coupleLabel: string }) => ({
+          id: w.id,
+          slug: w.slug,
+          coupleLabel: w.coupleLabel || w.slug,
+        }));
+        setWeddingOptions(opts);
+        // If no slug selected yet, default to the first wedding (NOT to a
+        // hardcoded 'josue-hornella').
+        setSelectedSlug((prev) => prev || opts[0]?.slug || '');
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [explicitSlug]);
 
   // Fetch settings to derive the couple label used in the live preview.
   useEffect(() => {
@@ -219,6 +273,40 @@ export function ThemeCustomizer({ slug = 'josue-hornella' }: ThemeCustomizerProp
 
   return (
     <div className="space-y-6">
+      {/* ─── Wedding picker (platform admin context only) ─── */}
+      {/* Phase 3 ÉTAPE 6: when no explicit slug is passed (i.e. the platform
+          admin's Appearance tab), show a dropdown so the admin can pick which
+          wedding's theme to edit. Previously the slug silently defaulted to
+          'josue-hornella', which leaked theme edits across weddings. */}
+      {!explicitSlug && weddingOptions.length > 0 && (
+        <Card className="border-gold/20 bg-gradient-to-br from-card to-card/50">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Globe className="w-4 h-4 text-gold" />
+              Mariage sélectionné
+            </CardTitle>
+            <p className="text-xs text-muted-foreground">
+              Vous modifiez le thème du mariage ci-dessous. Toutes les modifications
+              (couleurs, polices, layout, domaine) s'appliquent à ce mariage uniquement.
+            </p>
+          </CardHeader>
+          <CardContent>
+            <Select value={selectedSlug} onValueChange={setSelectedSlug}>
+              <SelectTrigger>
+                <SelectValue placeholder="Sélectionnez un mariage" />
+              </SelectTrigger>
+              <SelectContent>
+                {weddingOptions.map((w) => (
+                  <SelectItem key={w.id} value={w.slug}>
+                    {w.coupleLabel} <span className="text-muted-foreground">— /w/{w.slug}</span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </CardContent>
+        </Card>
+      )}
+
       {/* ─── Templates ─── */}
       <Card className="border-gold/20 bg-gradient-to-br from-card to-card/50">
         <CardHeader>
