@@ -3302,3 +3302,765 @@ Penpot overlap assessment:
 VERDICT: Penpot would be HIGHLY COMPLEMENTARY, not redundant. The platform has strong ambiance/effects but zero design tools. Only the design-token system would overlap (and Penpot would enhance it).
 
 Sandbox/VPS comparison: CODE IDENTICAL (18/18 key files match byte-size, prior MD5 verification on 12 files). Only difference is DATA (Sandbox has 243 guests + 31 tables + content for josue-hornella; VPS has 0 content rows — pre-existing gap, not a deployment issue).
+
+---
+Task ID: CONSOLIDATION-PHASE2-DESIGN
+Agent: Explore Agent — Design Engine Reuse Analysis for Penpot
+Task: Analyze Design Engine — what exists, what's missing, what can be reused when Penpot is integrated
+
+Work Log:
+- Read /home/z/my-project/worklog.md (lines 2900-3304, prior CONSOLIDATION-AUDIT-6/7 + FINAL synthesis) for context. Prior AUDIT-7 verdict: design engine ~35%, "Penpot would be HIGHLY COMPLEMENTARY, not redundant". This Phase-2 audit goes DEEPER on REUSABILITY — for each of 10 design assets, produce a precise verdict (REUSE-AS-IS / REUSE-WITH-MODIFICATION / REPLACE-WITH-PENPOT / COEXIST-NO-OVERLAP) with file:line references.
+- Read full src/app/globals.css (865 lines) end-to-end. Enumerated every CSS custom property + categorized.
+- Read src/components/wedding/ThemeInjector.tsx (82 lines) end-to-end. Confirmed it sets exactly 4 CSS vars + dynamically loads Google Fonts via <link> injection.
+- Read src/lib/themes/templates.ts (212 lines) end-to-end. Confirmed 4 THEME_TEMPLATES + 8 FONT_OPTIONS + 4 LAYOUT_OPTIONS (label-only).
+- Read src/app/api/theme/route.ts (125 lines) end-to-end. Confirmed GET returns 5 fields + `customizations` JSON column (currently unused) + audit-logged PUT with hex+layout+font validation.
+- Read src/components/admin/ThemeCustomizer.tsx (lines 1-60) + verified mount point at src/app/platform/admin/page.tsx:2197-2198 (`case 'appearance': return <ThemeCustomizer />`). Confirmed admin tab exists where Penpot could mount as sibling or replace.
+- Read src/components/luxury/LuxuryVisualEngine.tsx (336 lines) + src/components/luxury/particle-engine.ts (lines 1-60, 491 LOC total). Confirmed Canvas 2D particle engine for ambiance, NOT a design surface.
+- Read all 7 effects components in src/components/effects/ (first 30-40 lines of each): BokehEffect, DynamicLightSweep, FloatingParticles, ScrollReveal, SectionEffects, SparkleEffect, VisualEffectsLayer — all Framer Motion DOM overlays, ambiance only.
+- Read src/components/InvitationCard.tsx (523 lines) end-to-end. Confirmed: data-bound fixed design, fetches /api/settings (8 settings fields: groom_name, bride_name, venue_name, venue_address, venue_reference, site_subtitle, couple_photo_1/2, invitation_message) + 8 guest fields from props. Ornament is hardcoded inline SVG (lines 60-91). QR rendered via <img src={qrCodeUrl}> (line 481-485).
+- Read src/app/api/guests/qrcode/[code]/route.ts (120 lines) end-to-end. Confirmed: qrcode npm lib, QRCode.toDataURL() returns base64 PNG (300×300, 2px margin, hardcoded black/white), tenant-scoped URL `/w/{slug}/invite/{encryptedToken}`.
+- Read src/components/GuestPersonalSpace.tsx handleDownload (lines 256-334) + hidden export DOM (lines 357-504). Confirmed: client-side html2canvas-pro at scale 2 → jsPDF A5 raster PDF / PNG / JPG. Pure HTML+CSS, hardcoded colors (#FDFAF3, #FBF7EC, #C4A265), no SVG, no Framer Motion.
+- Listed src/components/ui/ — 48 shadcn/ui primitives installed (verified count).
+- Listed public/ — 25 assets total: 1 standalone SVG (logo.svg), 8 PWA icons, 7 couple photos (hardcoded in CouplePhotosSection), 2 default uploads, 2 hero images, 1 aenews-logo.png, 4 infra files (robots.txt, manifest.json, sw.js, couple-moment.jpeg).
+
+Stage Summary:
+
+═══════════════════════════════════════════════════════════════════════
+SECTION 1 — EXISTING DESIGN ASSETS INVENTORY (10 items, with reuse verdict)
+═══════════════════════════════════════════════════════════════════════
+
+═══ 1. DESIGN TOKENS — src/app/globals.css (865 lines) ═══
+
+File reference: src/app/globals.css:6-181 (`@theme inline` block + `:root` + `.dark`)
+
+What it does: Defines 65+ CSS custom properties in 3 layers:
+  (a) `@theme inline` mapping block (lines 6-59): 41 Tailwind→CSS-var bindings (color-*, font-*, radius-*, animate-*).
+  (b) `:root` (lines 65-124): Light-mode tokens — 5 brand (gold/gold-light/gold-dark/champagne/rose-gold/cream), 7 semantic (primary/accent/background/foreground/card/popover/secondary/muted/destructive/border/input/ring), 5 chart, 7 sidebar, 2 theme-aware fonts.
+  (c) `.dark` (lines 130-181): Dark-mode overrides — same axes.
+  (d) Plus 7 animation tokens (lines 52-58), 5 radius tokens (lines 48-51), 5 font tokens (lines 9-12, 122-123).
+
+Categorized enumeration:
+  • Color tokens — 40+ (light+dark): --gold, --gold-light, --gold-dark, --champagne, --rose-gold, --cream, --primary[+foreground], --accent[+foreground], --background, --foreground, --card[+foreground], --popover[+foreground], --secondary[+foreground], --muted[+foreground], --destructive, --border, --input, --ring, --chart-1..5, --sidebar (+7 sidebar-* variants).
+  • Typography tokens — 5: --font-display (theme-aware), --font-body (theme-aware), --font-serif, --font-sans, --font-mono. NO font-size scale tokens (no --text-xs/sm/base/lg/xl/2xl/3xl).
+  • Spacing tokens — ZERO (no --spacing-* tokens; spacing handled via Tailwind utilities inline).
+  • Radius tokens — 5: --radius (base, 0.75rem), --radius-sm/md/lg/xl (derived via calc()).
+  • Shadow tokens — ZERO (shadows hardcoded per utility class, no --shadow-* tokens).
+  • Animation tokens — 7: --animate-fade-in, --animate-slide-up, --animate-slide-down, --animate-float, --animate-shimmer, --animate-pulse-gold, --animate-spin-slow. 13 @keyframes defined.
+  • Theme-aware tokens (dynamically overridable per wedding) — 4: --gold (line 69), --gold-light (70), --gold-dark (71), --rose-gold (73), --primary (86), --accent (95), --ring (102), --font-display (122), --font-body (123) all resolve to `var(--theme-*, <fallback>)`. The --theme-* variables themselves are NOT defined in CSS — they're set at runtime by ThemeInjector (see item 2).
+
+Static vs dynamic: ~56 tokens are STATIC (defined once in CSS, never mutated). ~9 tokens are DYNAMICALLY OVERRIDDEN by ThemeInjector at runtime via document.documentElement.style.setProperty('--theme-primary', ...).
+
+**Reuse verdict: REUSE-WITH-MODIFICATION**
+Yes, these tokens can be the SYNC POINT — but with conditions:
+  • The 4-token surface (`--theme-primary`, `--theme-accent`, `--theme-font-display`, `--theme-font-body`) is currently too narrow for Penpot. Penpot's token system supports 5 axes: color, typography, spacing, shadow, border-radius. Today the platform only has 2 axes (color, font-family).
+  • MODIFICATION NEEDED: Add `--theme-spacing-*`, `--theme-shadow-*`, `--theme-radius-*`, `--theme-text-*` token slots mirroring the Penpot token taxonomy. Wire them into globals.css with fallbacks (same pattern as line 69: `var(--theme-spacing-md, 1rem)`).
+  • MODIFICATION NEEDED: Promote the LUXURY_THEMES palettes (gold/rose/champagne/midnight — each with primary/secondary/tertiary/halo/dust[4]/star/breath = 10 colors per palette, currently in src/lib/luxury-engine-store.ts) into the theme contract so Penpot can sync them too.
+  • The existing `customizations: JSON` column on Theme table (api/theme/route.ts:22, 86) is the READY-MADE persistence slot for Penpot token bundles — no schema migration needed, just key-convention.
+
+═══ 2. ThemeInjector — src/components/wedding/ThemeInjector.tsx (82 lines) ═══
+
+File reference: src/components/wedding/ThemeInjector.tsx:21-81
+
+What it does: Client-side React component (renders null). On mount, fetches `/api/theme`, then sets 4 CSS vars on `document.documentElement`:
+  • `--theme-primary` (line 39) — hex color
+  • `--theme-accent` (line 40) — hex color
+  • `--theme-font-display` (line 41) — `'FontFamily', serif` string
+  • `--theme-font-body` (line 42) — `'FontFamily', sans-serif` string
+Also injects Google Fonts `<link>` tags into `<head>` (lines 52-61) using `getFontOption(fontFamily).googleFontUrl`. Cleans up CSS vars on unmount (lines 73-76) but leaves fonts cached.
+
+Mechanism: Inline style on `document.documentElement` (i.e. `<html style="--theme-primary: #D4A853; ...">`). NOT a `<style>` tag, NOT a CSS class.
+
+**Reuse verdict: REUSE-WITH-MODIFICATION — YES, this should become the bridge between Penpot token system and the app.**
+  • The pattern is correct (read tokens from API → set CSS vars on :root). The injection target (`document.documentElement`) is the right sync surface.
+  • MODIFICATION NEEDED: Extend the 4-property surface to N properties. Replace the hardcoded `primaryColor/accentColor/fontDisplay/fontBody` field list with a generic `for (const [k, v] of Object.entries(theme.tokens)) root.style.setProperty(`--theme-${k}`, v)` loop. The /api/theme response already includes `customizations: JSON` (api/theme/route.ts:22) which can carry an arbitrary Penpot token bundle.
+  • MODIFICATION NEEDED: Add an event listener / polling mechanism so that when the couple edits tokens in Penpot (admin side), the live preview re-injects without a full page reload. Today the injector runs once on mount (useEffect deps []).
+  • MODIFICATION NEEDED: De-duplicate against LUXURY_THEMES injection (currently LuxuryVisualEngine.tsx:122 reads from useLuxuryEngine store, separate from ThemeInjector). One unified token source preferred.
+
+═══ 3. THEME TEMPLATES — src/lib/themes/templates.ts (212 lines) ═══
+
+File reference: src/lib/themes/templates.ts:102-163 (THEME_TEMPLATES), 40-89 (FONT_OPTIONS), 93-98 (LAYOUT_OPTIONS)
+
+What it does: 4 THEME_TEMPLATES (Or Classique, Rose Romantique, Minimal Moderne, Nuit Royale). Each template = a 5-field tuple: primaryColor (#hex), accentColor (#hex), fontDisplay (Google Font family name), fontBody (Google Font family name), layout ('classic'|'modern'|'minimalist'|'royal'). Plus 8 FONT_OPTIONS (Cormorant Garamond, Playfair Display, Marcellus, Lora, Inter, Lato, Montserrat, Italiana) + 4 LAYOUT_OPTIONS.
+
+These are PRESETS (color/font tuples), NOT TEMPLATES (full visual designs). The 4 LAYOUT_OPTIONS are LABEL-ONLY — no code switches the public page structure based on the layout value (verified by grep `layout === 'modern'` etc. → 0 matches in src/).
+
+**Reuse verdict: REUSE-WITH-MODIFICATION — can become Penpot template starting points.**
+  • Each of the 4 presets becomes a "starter Penpot file" seeded with the same primary/accent colors + font families. The couple opens Penpot with these tokens already applied, then customizes freely.
+  • MODIFICATION NEEDED: Replace the 5-field tuple with a `penpotFileId` reference (foreign key to a Penpot file) + keep the legacy 5 fields for backward-compat / non-Penpot fallback. Migration path: `<ThemeTemplate>.penpotFileId = '...'` added to the type.
+  • MODIFICATION NEEDED: The LAYOUT_OPTIONS are dead today. Either implement layout switching (significant work) OR remove them and let Penpot own layout entirely (cleaner).
+  • FONT_OPTIONS + Google Fonts integration (ThemeInjector:45-50) STAYS — Penpot doesn't replace the font-loading infrastructure.
+
+═══ 4. LuxuryVisualEngine + particle-engine — src/components/luxury/* (827 lines) ═══
+
+File reference: src/components/luxury/LuxuryVisualEngine.tsx:94-335 (main component), src/components/luxury/particle-engine.ts (491 lines full)
+
+What it does: Real-time Canvas 2D rendering engine for cinematic ambiance. Renders 3 layered particle systems onto a single `<canvas>` (line 309):
+  • Star field with individual twinkle cycles (particle-engine.ts:52+)
+  • Golden dust with fbmNoise Perlin-like drift (particle-engine.ts:39-49, 3-octave fractal brownian motion)
+  • Micro sparkles with random flash lifecycle
+Plus 2 DOM-based layers: Luminous Halos (Framer Motion motion.div with radial gradients, lines 25-66) + Global Breathing (radial gradient pulsing overlay, lines 71-91).
+
+5-tier adaptive performance: ultra (800 stars/150 dust/40 sparkles) → high → medium → low → minimal (50/15/4). FPS-based hysteresis (3 low reads downgrade, 5 high reads upgrade — lines 182-214). Auto device-tier detection (cores + memory + mobile UA — lines 160-176). Canvas pixelRatio per tier.
+
+This is an AMBIANCE LAYER, NOT a design tool. It does not render user-designable content — it overlays atmospheric particles/halos on top of an already-rendered page.
+
+**Reuse verdict: COEXIST-NO-OVERLAP — LuxuryVisualEngine runs ON TOP of Penpot designs.**
+  • Penpot designs the layout/visual content. LuxuryVisualEngine layers particles/halos over the rendered output. They serve different purposes (design vs ambiance).
+  • Architectural fit: LuxuryVisualEngine is `position: fixed; inset: 0; pointer-events: none; z-index: 0` (line 304-305). It already layers over any underlying content — including Penpot-rendered HTML. No modification needed for coexistence.
+  • MODIFICATION NEEDED (optional): Wire LuxuryVisualEngine's 4 LUXURY_THEMES palettes to ALSO read from --theme-* tokens so Penpot-controlled theme colors propagate into the particle colors. Currently LuxuryVisualEngine reads themeColors from useLuxuryEngine store (LuxuryVisualEngine.tsx:122), NOT from CSS vars.
+
+═══ 5. VISUAL EFFECTS COMPONENTS — src/components/effects/* (7 components) ═══
+
+File reference:
+  • BokehEffect.tsx (98 LOC) — 5 large soft circles (radial gradients, 8% opacity) floating via Framer Motion. AMBIANCE.
+  • DynamicLightSweep.tsx (65 LOC) — Golden linear-gradient sweep passing over elements. 12s default cycle, diagonal angle 105°, opacity 0.06. AMBIANCE.
+  • FloatingParticles.tsx (168 LOC) — 3 particle types (dust/halo/micro-star) drifting via Framer Motion. AMBIANCE.
+  • ScrollReveal.tsx (117 LOC) — IntersectionObserver-based scroll-triggered animation wrapper. 7 variants (fade-in/slide-up/slide-left/slide-right/scale/scale-fade/glow). UX BEHAVIOR (not visual design).
+  • SectionEffects.tsx (92 LOC) — Per-section wrapper with 7 variants (hero/story/gallery/timeline/invitation/map/auth) configuring sparkle/particle counts + colors + light sweep params. UX BEHAVIOR.
+  • SparkleEffect.tsx (150 LOC) — 3 particle types (dot/star/cross) with gold/rose-gold/mixed palettes, random lifecycle. AMBIANCE.
+  • VisualEffectsLayer.tsx (44 LOC) — Master page-overlay combining Bokeh + Sparkles + FloatingParticles. AMBIANCE.
+
+All 7 are Framer Motion-driven DOM overlays (`position: fixed; pointer-events: none; z-index: 1` per VisualEffectsLayer.tsx:37). They render on TOP of the page content but do NOT render the page content itself.
+
+**Reuse verdict: COEXIST-NO-OVERLAP — all 7 effects layer over Penpot designs without conflict.**
+  • Ambiance effects (Bokeh, LightSweep, FloatingParticles, SparkleEffect, VisualEffectsLayer): purely additive overlays. They work on any underlying rendered HTML, including Penpot output.
+  • Behavior effects (ScrollReveal, SectionEffects): these wrap children with animation. They would still wrap Penpot-rendered children. Caveat: if Penpot renders via its own canvas/iframe, ScrollReveal's IntersectionObserver may need to target the iframe container instead of children. Minor wiring concern, not a blocker.
+
+═══ 6. InvitationCard component — src/components/InvitationCard.tsx (523 lines) ═══
+
+File reference: src/components/InvitationCard.tsx:104-522
+
+What it does: Single fixed invitation card design. 3:4.2 aspect ratio (line 179). Stack:
+  1. Paper texture background (CSS repeating-linear-gradient + linear-gradient, lines 185-238 — separate light/dark variants)
+  2. Gold border with glow (gold-border class, line 241)
+  3. Inner golden frame (border-gold/15, line 244)
+  4. Shimmer overlay (Framer Motion animated linear-gradient sweep, lines 247-263)
+  5. Content (z-10): ornamental flourish SVG (60-91) → couple title → 2 overlapping circle photos (297-339) → couple names (gold-gradient text, 342-360) → small divider (362-370) → guest name (372-385) → table+seats (387-405) → category badge + invitation code (407-425) → personal message block (427-445) → date+venue (450-474) → QR code (477-491) → bottom divider + photo watermark (493-516).
+
+Data contract — what it consumes (the Penpot replacement MUST also consume):
+  Per-guest props (8 fields, lines 9-19): guestName, tableName, tableNumber, seats, category (VIP/FAMILLE/AMIS/SPONSORS/COLLEGUES), invitationCode, personalMessage?, qrCodeUrl?
+  Per-wedding settings (8 fields, fetched from /api/settings at lines 118-125): groom_name, bride_name, venue_name, venue_address, venue_reference, site_subtitle (used as date display), couple_photo_1, couple_photo_2, invitation_message.
+
+5-category badge system hardcoded in categoryConfig (lines 21-57) with Tailwind classes + lucide icons per category.
+
+**Reuse verdict: REPLACE-WITH-PENPOT — this is the prime replacement candidate.**
+  • The InvitationCard is a SINGLE FIXED HTML/CSS design — couples can only swap 2 colors + 2 fonts via ThemeCustomizer. They cannot change layout, ornaments, photo positions, text positions, borders, or visual elements.
+  • Penpot would allow N editable invitation designs (per-wedding choice) + per-couple customization beyond color swap.
+  • Data contract for Penpot replacement: the same 8 guest fields + 8 wedding settings fields must be exposed to the Penpot rendering context. The cleanest path is a "data binding" layer where Penpot text nodes have data-attributes like `data-bind="guest.displayName"` / `data-bind="wedding.venue_name"` / `data-bind="qr_code"` — and the platform's renderer injects values at runtime.
+  • MIGRATION: keep InvitationCard.tsx as the fallback for couples who haven't designed in Penpot (zero regression). Add a per-wedding `invitationPenpotFileId` column (or reuse `customizations` JSON). If the wedding has a Penpot file → render via Penpot runtime; else → render InvitationCard.tsx.
+  • The OrnamentalFlourish SVG (lines 60-91) should be extracted into the asset library and imported into Penpot as a reusable decorative element.
+
+═══ 7. QR CODE GENERATION — src/app/api/guests/qrcode/[code]/route.ts (120 lines) ═══
+
+File reference: src/app/api/guests/qrcode/[code]/route.ts:94-97
+
+What it does: Server-side endpoint that generates a QR code PNG on-demand. Uses `import QRCode from 'qrcode'` (line 7). Calls `QRCode.toDataURL(qrUrl, {width:300, margin:2, color:{dark:'#000000', light:'#FFFFFF'}})` — returns a base64 PNG data URL. The encoded URL is tenant-aware: `${baseUrl}/w/${slug}/invite/${encryptedToken}` (line 92). Access-controlled (admin OR guest_session matching guestId, lines 53-82). Audit-logged (QR_SCAN action, lines 99-103).
+
+Format: base64 PNG, 300×300, 2px margin, hardcoded black-on-white. NOT SVG, NOT configurable.
+
+**Reuse verdict: COEXIST-NO-OVERLAP — Penpot embeds the QR as a placed image.**
+  • Penpot doesn't generate QR codes natively. The QR generation stays server-side.
+  • Penpot designs the card; the QR is placed as an `<img>` node with `src="data:image/png;base64,..."` (exactly as InvitationCard.tsx:481-485 does today).
+  • MODIFICATION NEEDED (optional): add a `?format=svg` query param to the route (qrcode lib supports `QRCode.toString(text, {type:'svg'})`) so Penpot can embed a vector QR — better for print quality. The qrcode npm package already supports SVG output; it's a one-method change.
+  • MODIFICATION NEEDED (optional): add `?color=...` and `?bg=...` query params so the QR color matches the Penpot design (currently hardcoded black/white).
+
+═══ 8. EXPORT PDF/PNG — src/components/GuestPersonalSpace.tsx:256-334 + hidden DOM 357-504 ═══
+
+File reference: src/components/GuestPersonalSpace.tsx:257-334 (handleDownload), :357-504 (downloadInvitation hidden DOM)
+
+What it does: Client-side raster export. Three formats (PDF/PNG/JPG) from a single handleDownload callback.
+  Pipeline (lines 257-334):
+    1. Dynamic-import html2canvas-pro + jspdf (lines 260-261)
+    2. Unhide the off-screen downloadRef element (position:fixed; left:-9999px → left:0; opacity:1)
+    3. Wait for all <img> inside to load (Promise.all, lines 275-285)
+    4. html2canvas(downloadEl, {scale:2, backgroundColor:'#FAF6EE', useCORS:true, allowTaint:true}) → Canvas (line 288-294)
+    5. canvas.toDataURL('image/png') or ('image/jpeg', 0.95) (lines 300-302)
+    6. For PDF: new jsPDF({orientation, unit:'mm', format:'a5'}) → pdf.addImage(dataUrl, 'PNG', x, y, w, h) → pdf.save() (lines 311-327). RASTER EMBED.
+    7. For PNG/JPG: anchor download with href=dataUrl (lines 329-330).
+
+  Hidden export DOM (lines 357-504): a 700px-wide 2-zone invitation card with PURE HTML+CSS (inline styles, no Tailwind, no SVG, no Framer Motion — per comment line 354-355 "Canvas-friendly"). Hardcoded colors (#FDFAF3, #FBF7EC, #F7F1E5, #C4A265) — DOES NOT respect theme tokens. Different design from on-screen InvitationCard.tsx.
+
+**Reuse verdict: REPLACE-WITH-PENPOT — Penpot's server-side vector export is strictly superior.**
+  • Current implementation has 3 weaknesses: (a) RASTER PDF (PNG embedded in PDF, not vector text), (b) hardcoded colors that ignore theme tokens, (c) duplicate design (on-screen InvitationCard ≠ download DOM — two designs to maintain).
+  • Penpot exports native vector PDF + SVG + high-DPI PNG server-side. Strictly better quality.
+  • Penpot would also UNIFY the design (one Penpot file → renders on-screen AND exports — no duplication).
+  • MIGRATION: replace handleDownload with a call to a new `/api/invitations/[code]/export?format=pdf` endpoint that proxies to Penpot's export API. The hidden downloadInvitation DOM (357-504) is removed entirely.
+  • FALLBACK: keep handleDownload for weddings without a Penpot file (zero regression).
+
+═══ 9. COMPONENT LIBRARY (shadcn/ui) — src/components/ui/* (48 files) ═══
+
+File reference: src/components/ui/ (48 files): accordion, alert, alert-dialog, aspect-ratio, avatar, badge, breadcrumb, button, calendar, card, carousel, chart, checkbox, collapsible, command, context-menu, dialog, drawer, dropdown-menu, form, hover-card, input, input-otp, label, menubar, navigation-menu, pagination, popover, progress, radio-group, resizable, scroll-area, select, separator, sheet, sidebar, skeleton, slider, sonner, switch, table, tabs, textarea, toast, toaster, toggle, toggle-group, tooltip.
+
+What it does: Generic Radix-based React UI kit (shadcn/ui standard set). Used throughout admin/platform UI for forms, dialogs, dropdowns, navigation. NOT wedding-design-specific.
+
+**Reuse verdict: COEXIST-NO-OVERLAP — Penpot doesn't replace app UI components.**
+  • shadcn/ui components are APP UI (admin panels, forms, navigation, data tables). Penpot is a DESIGN CANVAS (for invitation cards, marketing assets, visual layouts). Different problem domains.
+  • Can Penpot DESIGN use shadcn/ui as building blocks? PARTIALLY — Penpot can render shadcn-style buttons/cards visually (as rectangles with text) but cannot import the React components themselves. A "design-to-code" export from Penpot could output HTML/Tailwind classes that match shadcn conventions, but that's a manual mapping, not a sync.
+  • RECOMMENDATION: don't try to bridge. Treat shadcn/ui as the app shell (always present) and Penpot as the design surface (mounted inside an admin tab, renders invitation/marketing assets).
+
+═══ 10. ASSET LIBRARY — public/ (25 files) ═══
+
+File reference:
+  • public/logo.svg — 1 standalone SVG (AENEWS logo)
+  • public/aenews-logo.png — 1 PNG logo variant
+  • public/icons/icon-{72,96,128,144,152,192,384,512}x{...}.png — 8 PWA app icons
+  • public/photos/couple-{venue,signing,seated,portrait,bouquet,bridge,storefront}.jpeg — 7 hardcoded couple photos (referenced in CouplePhotosSection.tsx)
+  • public/couple-hero.{png,jpeg}, public/couple-moment.jpeg — 3 hero/section images
+  • public/uploads/couple-photo-{1,2}.jpeg — 2 default couple photos (settings-driven fallbacks)
+  • public/robots.txt, public/manifest.json, public/sw.js — 3 infra files
+
+What it does: Mostly hardcoded stock photos for the default wedding + PWA icons. NO curated asset library — no icon library (lucide-react is the de facto icon system but it's a code dependency, not a design asset), NO illustration library, NO clipart, NO decorative border/frame/ornament library (only 1 inline OrnamentalFlourish SVG component in InvitationCard.tsx:60-91). NO asset management system (just a flat folder of files).
+
+**Reuse verdict: REUSE-WITH-MODIFICATION — existing public/ assets can be imported into Penpot.**
+  • Penpot supports uploading SVG/PNG/JPEG assets into its asset library. The 1 SVG (logo.svg) + 25 PNG/JPEG files can be bulk-imported.
+  • MODIFICATION NEEDED: extract the OrnamentalFlourish SVG (InvitationCard.tsx:60-91) + 4-petal SVG (OurStory.tsx:123-144) + 2 small SVGs (AENEWSBanner.tsx:167-173, MarketingSection.tsx:234-236) into standalone .svg files under public/ornaments/ for import into Penpot.
+  • MODIFICATION NEEDED: build a proper asset management system (today `/api/media` accepts uploads but writes raw files to disk with no processing — verified by prior audit AUDIT-4 + sharp is installed but unused). Penpot would bring its own asset library — but the existing public/ assets should be migrated in.
+
+═══════════════════════════════════════════════════════════════════════
+SECTION 2 — WHAT PENPOT ADDS (net new — completely absent today)
+═══════════════════════════════════════════════════════════════════════
+
+1. **Visual drag-and-drop design editor** — COMPLETELY ABSENT. No design canvas, no visual editor, no drag-drop UI. `@dnd-kit` is in package.json (lines 18-20) but NEVER imported in src/ (verified by prior audit). Penpot's core value.
+
+2. **Vector design tools (pen tool, shape tools, path editing)** — COMPLETELY ABSENT. No fabric, no konva, no snap.svg, no svg.js, no paper.js, no d3. SVGs are static inline markup only.
+
+3. **SVG manipulation + SVG export** — COMPLETELY ABSENT. 4 hardcoded inline SVGs (InvitationCard, OurStory, AENEWSBanner, MarketingSection). Cannot edit paths, cannot export SVG. Penpot's native format is SVG.
+
+4. **Multi-template invitation card designs** — COMPLETELY ABSENT. ONE fixed InvitationCard.tsx design (523 lines). Couples cannot choose between designs.
+
+5. **WYSIWYG editing** — COMPLETELY ABSENT. ThemeCustomizer lets couples swap 2 colors + 2 fonts. They cannot edit layout, ornaments, photo positions, text positions, borders, or any visual element.
+
+6. **Server-side vector PDF export** — COMPLETELY ABSENT. Current export is client-side html2canvas-pro RASTER (PNG embedded in PDF). Penpot exports native vector PDF.
+
+7. **Asset library (icons, illustrations, ornaments, frames)** — COMPLETELY ABSENT. Only 1 standalone SVG (logo.svg) + 1 inline ornament. No curated library.
+
+8. **Real-time multi-user design collaboration** — COMPLETELY ABSENT. Penpot's flagship feature.
+
+9. **Design component library with variants/instances** — COMPLETELY ABSENT. shadcn/ui is code components, not visual design components. No Storybook, no component catalog.
+
+10. **Spacing scale / shadow scale / typography size scale tokens** — COMPLETELY ABSENT. globals.css has color + font-family + radius + animation tokens but NO spacing, NO shadow, NO font-size scale.
+
+11. **Custom layout editing** — DEAD. LAYOUT_OPTIONS (templates.ts:93-98) has 4 layout IDs but no code switches layouts based on the value (grep verified). The `layout` field is stored in DB and returned by API but never read by rendering code.
+
+12. **Batch export (admin-side "download all invitations as PDF")** — COMPLETELY ABSENT. Only per-guest self-download via GuestPersonalSpace. No admin-side bulk export.
+
+═══════════════════════════════════════════════════════════════════════
+SECTION 3 — WHAT PENPOT REPLACES (existing but inferior)
+═══════════════════════════════════════════════════════════════════════
+
+1. **InvitationCard.tsx (fixed single design)** → REPLACE-WITH-PENPOT
+   Migration path: add `invitationPenpotFileId` to Theme.customizations JSON (no schema migration). If set → render Penpot runtime; else → fallback to InvitationCard.tsx. The 8-guest-field + 8-wedding-setting data contract (see Section 1 item 6) becomes the binding layer.
+
+2. **GuestPersonalSpace handleDownload (client-side raster export)** → REPLACE-WITH-PENPOT
+   Migration path: replace handleDownload body with `fetch('/api/invitations/[code]/export?format=pdf')` → server proxies to Penpot export API. Remove the hidden downloadInvitation DOM (lines 357-504). Keep handleDownload as fallback for non-Penpot weddings.
+
+3. **Theme templates (4 color/font tuples)** → REUSE-WITH-MODIFICATION (then REPLACE long-term)
+   Migration path: each of the 4 presets (Or Classique, Rose Romantique, Minimal Moderne, Nuit Royale) gets a corresponding Penpot file. templates.ts adds `penpotFileId` field. Long-term: templates.ts becomes a thin lookup table mapping preset ID → Penpot file ID.
+
+4. **Layout field (dead)** → REPLACE-WITH-PENPOT (cleanly)
+   Migration path: drop LAYOUT_OPTIONS entirely. Penpot owns layout. No code reads `layout` today so removing it is non-breaking.
+
+═══════════════════════════════════════════════════════════════════════
+SECTION 4 — WHAT PENPOT COEXISTS WITH (no overlap)
+═══════════════════════════════════════════════════════════════════════
+
+1. **LuxuryVisualEngine (Canvas 2D particle engine)** — ambiance overlay, not design. Runs ON TOP of Penpot designs (position:fixed; z-index:0; pointer-events:none). Penpot designs the content, LuxuryVisualEngine adds particles/halos/breathing. Different problem domains.
+
+2. **All 7 effects components (Bokeh, DynamicLightSweep, FloatingParticles, ScrollReveal, SectionEffects, SparkleEffect, VisualEffectsLayer)** — same as above. Framer Motion DOM overlays. They layer over any rendered HTML including Penpot output.
+
+3. **shadcn/ui (48 components)** — app UI primitives (admin panels, forms, dialogs, navigation, data tables). Penpot doesn't replace these — it designs invitation cards and visual assets, not the app shell.
+
+4. **QR code generation (/api/guests/qrcode/[code]/route.ts)** — data layer. Penpot embeds the QR as a placed image (img src=data:image/png;base64,...). Server-side generation stays. Optional enhancement: add SVG format + color params for vector QR + theme-matching.
+
+5. **ThemeInjector** — bridge, not a competitor. Penpot writes tokens → ThemeInjector reads tokens via /api/theme → sets CSS vars on :root → all React components re-render. Coexists perfectly.
+
+6. **Design tokens in globals.css** — sync point, not a competitor. The 4-token surface (`--theme-primary/accent/font-display/font-body`) extends to N tokens (spacing/shadow/radius/text scales). Penpot becomes the source of truth.
+
+7. **FONT_OPTIONS + Google Fonts loading** — infrastructure, not design. ThemeInjector.tsx:45-61 injects `<link>` tags for Google Fonts. Penpot doesn't replace font loading; it uses the loaded fonts.
+
+8. **All wedding business logic (RSVP, guest sessions, access logs, audit logs, billing, music player)** — completely orthogonal to design. Penpot doesn't touch any of these.
+
+═══════════════════════════════════════════════════════════════════════
+SECTION 5 — INTEGRATION ARCHITECTURE RECOMMENDATION
+═══════════════════════════════════════════════════════════════════════
+
+═══ A. How should Penpot tokens sync with existing CSS vars? ═══
+
+RECOMMENDATION: One-directional sync (Penpot → /api/theme → ThemeInjector → CSS vars → React).
+
+Flow:
+  1. Couple edits tokens in Penpot admin UI (Penpot's native token panel).
+  2. On save, Penpot plugin POSTs token bundle to `/api/theme` PUT (already exists, returns 200). The token bundle goes into the existing `customizations: JSON` column (api/theme/route.ts:22, 86) — no schema migration.
+  3. ThemeInjector fetches `/api/theme` GET, reads `customizations` (an object of `{primary: '#hex', accent: '#hex', spacing: {md: '1rem', ...}, shadow: {...}, ...}`), loops over entries, calls `document.documentElement.style.setProperty('--theme-' + key, value)` for each.
+  4. globals.css already has fallback pattern (`var(--theme-primary, oklch(...))` at lines 69-123). New tokens follow the same pattern: `--spacing-md: var(--theme-spacing-md, 1rem);`.
+  5. React components using `var(--gold)`, `var(--spacing-md)` etc. re-render automatically (CSS var changes propagate without JS).
+
+MODIFICATIONS NEEDED:
+  • Extend ThemeInjector from 4 hardcoded vars to a generic loop over `customizations` keys.
+  • Extend globals.css with --theme-spacing-*, --theme-shadow-*, --theme-radius-*, --theme-text-* token slots + fallbacks.
+  • Add live-preview WebSocket or polling so admin edits in Penpot reflect instantly on the public site (today ThemeInjector runs once on mount).
+  • Optionally promote LUXURY_THEMES palettes (10 colors per palette, 4 palettes) into the same token contract so particle colors also sync.
+
+═══ B. Where should Penpot mount in the admin? ═══
+
+RECOMMENDATION: Mount as a new sub-tab INSIDE the existing `appearance` tab in platform admin (src/app/platform/admin/page.tsx:2197-2198). The `appearance` tab currently renders `<ThemeCustomizer />` (which already has a weddingSlug prop + wedding picker — see ThemeCustomizer.tsx:56-60).
+
+Two approaches:
+  Option 1 (RECOMMENDED): Split `appearance` tab into 2 sub-tabs:
+    • "Thème rapide" (current ThemeCustomizer — 4 presets + color/font pickers, for non-designers)
+    • "Studio Penpot" (iframe to Penpot editor with current weddingSlug context, for designers)
+  Option 2: Replace ThemeCustomizer entirely with Penpot iframe (cleaner long-term but breaks the simple non-designer flow).
+
+Why mount in `appearance` tab specifically:
+  • It already has weddingSlug context (needed to scope Penpot file per wedding).
+  • It already validates PLATFORM_ADMIN/ORGANIZER permissions.
+  • It already has audit-logging via /api/theme PUT (UPDATE_THEME action).
+  • Tenant admins (if separate route exists) get the same mount point.
+
+═══ C. Should InvitationCard become a Penpot-rendered component? ═══
+
+RECOMMENDATION: YES — InvitationCard becomes a Penpot-rendered component, with the existing InvitationCard.tsx as fallback.
+
+Migration path:
+  1. Add `invitationPenpotFileId?: string` to Theme.customizations JSON (zero schema migration).
+  2. Create a new `<PenpotInvitationCard guest={...} settings={...} />` component that fetches the Penpot file for the wedding and renders it server-side (Penpot provides a render API) or client-side (Penpot runtime).
+  3. In the guest landing page (/w/[slug]/invite/[code]/page.tsx), check Theme.customizations.invitationPenpotFileId:
+     • If set → render <PenpotInvitationCard>.
+     • If not set → render <InvitationCard> (current behavior, zero regression).
+  4. The data binding contract (8 guest fields + 8 wedding settings fields — see Section 1 item 6) is exposed to Penpot via a `/api/invitations/[code]/context` endpoint that returns the binding context. Penpot text/image nodes carry `data-bind="guest.displayName"` etc. attributes; the platform's renderer injects values.
+
+BENEFITS:
+  • Couples get N editable invitation designs instead of 1 fixed.
+  • On-screen rendering + export rendering become ONE design (no more duplicate hidden DOM in GuestPersonalSpace.tsx:357-504).
+  • The OrnamentalFlourish SVG + photo positions + borders + everything becomes designer-controlled.
+
+═══ D. Should the LuxuryVisualEngine layer over Penpot designs? ═══
+
+RECOMMENDATION: YES — LuxuryVisualEngine layers over Penpot designs unchanged.
+
+Architectural fit:
+  • LuxuryVisualEngine is `position: fixed; inset: 0; pointer-events: none; z-index: 0` (LuxuryVisualEngine.tsx:304-305). It already layers over ANY underlying content.
+  • Penpot-rendered HTML replaces InvitationCard.tsx in the z-10+ content layer. LuxuryVisualEngine at z-0 stays underneath as ambiance.
+  • The 7 effects components (Bokeh, Sparkle, etc.) at z-[1] stay between LuxuryVisualEngine (z-0) and content (z-10+). All three layers compose cleanly.
+
+MODIFICATION NEEDED (optional, recommended):
+  • Wire LuxuryVisualEngine's 4 LUXURY_THEMES palettes (gold/rose/champagne/midnight — 10 colors each in luxury-engine-store.ts) to read from CSS vars (`--theme-luxury-halo`, `--theme-luxury-dust`, etc.) instead of the Zustand store. This way, when Penpot token sync updates CSS vars, the particle colors update too.
+  • Currently LuxuryVisualEngine.tsx:122 reads `themeColors = LUXURY_THEMES[theme]` from useLuxuryEngine store (separate from ThemeInjector). Unify.
+
+CONSTRAINTS COMPLIANCE:
+- ✅ READ ONLY — no files modified, created, or deleted. Appended findings to worklog.md (append mode, as instructed).
+- ✅ No code changes, no data touched, no migrations, no deploy commands. Only Read/Grep/Glob/LS/Bash (single append at end) tools used.
+
+---
+Task ID: CONSOLIDATION-PHASE2-WIRING
+Agent: Explore Agent — Partial Module Wiring Analyzer
+Task: Verify which partial modules can be completed by simple wiring (no new features)
+
+Work Log:
+- Read worklog.md lines 2900-3304 (AUDIT-7 AI/LLM, CONSOLIDATION-AUDIT-7 Design Engine, CONSOLIDATION-AUDIT-FINAL) for context. Confirmed prior audits already flagged: PremiumGallery hardcoded to static photos (line 3283/3291), ThemeCustomizer not mounted in tenant admin (line 3282/3292), Theme.layout is a dead field (line 3282 "dead layout field"), LuxuryVisualEngine + VisualEffectsStore both localStorage-only (line 3229 "Both are tenant-scoped via localStorage").
+- Read prisma/schema.prisma (432 lines, full file). Confirmed models: Wedding (15 fields + 13 relations), Theme (layout default='classic', customizations JSON nullable), MusicTrack (separate 1:1 model with url/volume/enabled/autoplay/storageProvider/storageKey/title), Media (storageProvider/storageKey/url/sizeBytes/mime/order), Guest (rsvpAt/rsvpMessage/rsvpPlusOne/invitationType + 6 view-tracking fields), Invitation (channel/recipient/status/sentAt — COMPLETELY UNUSED outside duplicate route), Lead (convertedAt/convertedWeddingId), Subscription (status + 5 payment timestamps), Invoice (whatsappSentAt + paidAt + confirmedBy, NO general sentAt field), AuditLog (weddingId nullable, action, details).
+
+CASE 1 — PremiumGallery media wiring:
+- Read src/components/PremiumGallery.tsx (full, 220 lines). Component accepts `images?: GalleryImage[]` prop (interface at line 18-20). Falls back to 8 hardcoded static photos (defaultPhotos, lines 22-31) when no prop. GalleryImage shape = { id, url, title?, description?, category? }.
+- Read src/app/page.tsx:256 → renders `<PremiumGallery />` WITHOUT prop (default wedding page).
+- Read src/app/w/[slug]/page.tsx:225 → renders `<PremiumGallery />` WITHOUT prop (per-wedding page).
+- Read src/app/api/media/route.ts GET (lines 19-40): returns `{ media: [...] }`. Each Media row has { id, type, url, title, description, category, sizeBytes, mime, order, ... }. Shape matches GalleryImage (subset).
+- Confirmed: /api/media GET is PUBLIC (withPublicTenant, no auth). Already tenant-aware (auto-resolves weddingId from X-Wedding-Slug header).
+- Wiring gap: 0 lines of fetch + 1 prop added per page = ~6 lines per page.
+- Verdict: WIRING-ONLY.
+
+CASE 2 — ThemeCustomizer admin access:
+- Read src/components/admin/ThemeCustomizer.tsx (full, 615 lines). Accepts `slug?: string` prop (line 56-63). When slug is omitted → shows wedding picker dropdown (lines 281-308, fetches /api/platform/weddings). When slug provided → uses it directly in X-Wedding-Slug header (line 95). Already handles both contexts.
+- Read src/app/w/[slug]/admin/page.tsx (full, 545 lines). 10 nav tabs defined (line 64-75): dashboard, guests, tables, access-logs, media, music, timeline, appearance, users, settings. Active tab 'appearance' renders AppearanceManager (line 227). NO import of ThemeCustomizer (grep confirmed). Global fetch interceptor already installed at line 135-159 — sets X-Wedding-Slug on every /api/* call. ThemeCustomizer's own header (line 95) is redundant but harmless in this context.
+- Read src/components/admin/AdminPanel.tsx (legacy default-wedding modal admin). Same structure: 11 tabs (with extra 'luxury' at line 78). 'appearance' renders AppearanceManager (line 178). NO ThemeCustomizer import.
+- Read src/components/admin/AppearanceManager.tsx (full, 229 lines). ONLY toggles Zustand store (useVisualEffects) persisted to localStorage. Does NOT touch /api/theme, does NOT edit colors/fonts/layout, does NOT accept slug prop. The "Apparence" tab in tenant admin therefore DOES NOT allow couples to edit their wedding theme — they can only toggle visual effect booleans.
+- ThemeCustomizer is ONLY mounted in /app/platform/admin/page.tsx:2198 (`case 'appearance': return <ThemeCustomizer />` — platform-level admin with wedding picker).
+- Wiring gap: in /w/[slug]/admin/page.tsx, add (a) `import { ThemeCustomizer } from '@/components/admin/ThemeCustomizer'`, (b) one nav item like `{ id: 'theme', label: 'Thème', icon: Palette }`, (c) one case `case 'theme': return <ThemeCustomizer slug={slug} />`. ~5 lines.
+- Verdict: WIRING-ONLY.
+
+CASE 3 — Theme.layout application:
+- Read prisma/schema.prisma:309 → `layout String @default("classic") // classic, modern, minimalist, royal`.
+- Grep src/ for `theme.layout|theme.customizations|\.layout\b` → 13 hits in 4 files (ThemeCustomizer UI for editing, /api/theme for GET/PUT, /api/theme/apply-template, /api/platform/weddings/[id]/duplicate for cloning). ZERO renderer-side consumption.
+- Read src/components/wedding/ThemeInjector.tsx (full, 82 lines). Fetches /api/theme, destructure `data` as ThemeData (line 6-12 includes `layout: string`). Only USES primaryColor, accentColor, fontDisplay, fontBody (lines 39-42) — IGNORES `data.layout` entirely. No CSS class swap, no data-layout attribute, no conditional rendering.
+- Read src/lib/themes/templates.ts (lines 85-194): LAYOUT_OPTIONS = [classic, modern, minimalist, royal] with labels + descriptions. 4 THEME_TEMPLATES each carry a `layout` value. No renderer-side layout-switching utility exists.
+- Wiring gap: NONE that is "simple". Wiring-only approach could inject `document.documentElement.dataset.layout = data.layout` (1 line) — but the actual layout variation (asymmetric layouts for 'modern', sparse whitespace for 'minimalist', ornate gold for 'royal') requires building 4 distinct visual variants of the entire wedding page (HeroSection, OurStory, EventTimeline, PremiumGallery, MapSection, Footer). That's a multi-day UI rewrite, not wiring.
+- Verdict: NEEDS-NEW-LOGIC (would need 4 layout variants of every section component, or 1 parametric variant system).
+
+CASE 4 — MusicTrack usage:
+- Read prisma/schema.prisma:315-328 → MusicTrack model exists (id, weddingId @unique 1:1, storageProvider, storageKey, url, title, volume, enabled, autoplay, timestamps).
+- Grep src/ for `MusicTrack|musicTrack` → 3 hits: (1) tenant-scoped.ts:55 listed in TENANT_SCOPED_MODELS config, (2) platform/weddings/[id]/duplicate/route.ts:166 `db.musicTrack.create()` when cloning a wedding (creates a row that nothing ever reads back), (3) Wedding schema relation `music MusicTrack?` (line 46).
+- Read src/app/api/music/route.ts (full, 229 lines): ALL CRUD uses `tenantDb.settings.findUnique/upsert` with keys `music_file`, `music_enabled`, `music_volume`, `music_original_name` (lines 26-39 helpers, GET/POST/PUT/DELETE all use Settings table). NEVER touches MusicTrack.
+- Read src/components/admin/MusicManager.tsx (lines 1-120): fetches `/api/music` (which returns Settings-shaped data). Writes via POST `/api/music` (upload). Never references MusicTrack.
+- Read src/components/AmbientMusicPlayer.tsx: receives `musicFile, defaultVolume, enabled` as PROPS from parent page (which fetches from /api/music → Settings). Does NOT fetch MusicTrack.
+- Conclusion: MusicTrack model is VESTIGIAL — defined in schema, created only by wedding-duplicate route, NEVER read by any consumer. Music flow works end-to-end via Settings (admin uploads → Settings row → /api/music GET → page.tsx → AmbientMusicPlayer props). This is NOT a "broken wiring" — it's an architectural drift where the schema has a dedicated model but the implementation chose key/value Settings instead.
+- Wiring gap: NONE (current flow works). Refactoring to use MusicTrack would require: rewrite /api/music to use tenantDb.musicTrack (replacing 4 Settings keys with 1 MusicTrack row), one-time data migration script (Settings → MusicTrack rows), no UI changes (admin UI calls /api/music which keeps same response shape).
+- Verdict: NOT-A-WIRING-CASE (cosmetic schema-implementation drift, music works fine; refactor optional).
+
+CASE 5 — Appearance sync server:
+- Read src/lib/visual-effects-store.ts (full, 170 lines): Zustand store. Persists to localStorage via `localStorage.setItem(lsKey(), JSON.stringify(state))` (line 107). `lsKey()` returns `wedding_visual_effects_<slug>` (tenant-scoped). NO fetch to /api/* anywhere in the file.
+- Read src/lib/luxury-engine-store.ts (first 100 lines): Same pattern. Zustand + localStorage only. `lsKey()` returns `wedding_luxury_engine_<slug>`. saveToStorage at line 129. NO fetch.
+- Read src/components/admin/AppearanceManager.tsx (full, 229 lines): uses `useVisualEffects()` (Zustand). Calls state.toggle(), state.setValue(), state.enableAll(), etc. NO fetch to /api. NO save to server.
+- Read src/components/admin/LuxuryExperienceManager.tsx (first 100 lines): uses `useLuxuryEngine()` (Zustand). Same pattern. NO fetch to /api. NO save to server.
+- Grep prisma/schema.prisma for `Appearance|VisualEffect|LuxurySetting` → ZERO matches. NO Prisma model for visual effects settings.
+- LS src/app/api/ → NO /api/appearance, /api/visual-effects, /api/luxury endpoints.
+- Wiring gap: cannot be wired — there is NO server-side endpoint or model to wire to. Required: (a) NEW Prisma model OR new Settings keys (e.g. `appearance_settings`, `luxury_engine_settings` as JSON strings), (b) NEW /api endpoints (GET/PUT) for each, (c) modify both Zustand stores to load on mount + debounced-save on change, (d) one-time localStorage→server migration.
+- Verdict: NEEDS-SCHEMA-CHANGE + NEEDS-NEW-LOGIC.
+
+OTHER PARTIAL SITUATIONS FOUND:
+
+CASE 6 — Theme.customizations JSON field (dead schema field):
+- Grep src/ for `customizations` → 6 hits in 3 files: /api/theme/route.ts (GET line 22 returns it parsed; PUT line 49 accepts it, line 86 stringifies it for storage), /api/platform/weddings/[id]/duplicate/route.ts:156 (clones it), ThemeCustomizer.tsx (interface not present).
+- Read ThemeCustomizer.tsx:209 → `body: JSON.stringify(theme)` where theme = { primaryColor, accentColor, fontDisplay, fontBody, layout }. NO customizations field sent. UI has no widget for it.
+- Read ThemeInjector.tsx → never reads data.customizations.
+- Verdict: field is written ONLY when API caller explicitly sends it (no UI does). Returned by GET but never consumed by any renderer. DEAD FIELD. Not a wiring gap — would need UI design + renderer consumption logic. NEEDS-NEW-LOGIC to make useful.
+
+CASE 7 — Media.mime / Media.storageKey fields (write-only fields):
+- Grep src/ for `mime:|\.mime\b` → 2 hits: /api/media/route.ts:130 (writes `mime: file.type || null` on upload). NEVER read by any consumer.
+- Grep src/ for `storageKey:|storageProvider:` → 4 hits: /api/media/route.ts:122-123 (writes on upload), /api/platform/weddings/[id]/duplicate/route.ts:169-170 (clones for MusicTrack only). NEVER read by any consumer for Media.
+- Grep src/ for `sizeBytes` → /api/media/route.ts:129 (write), /lib/plan-limits.ts:108 (`_sum: { sizeBytes: true }` — READ for storage quota enforcement), /api/platform/weddings/[id]/duplicate/route.ts (clones). So sizeBytes IS read (for plan limits).
+- Verdict: mime + storageKey + storageProvider are dead write-only fields on Media (only used for future R2 migration hint per the comment "Phase 9 will move to R2"). sizeBytes is alive. NOT-A-WIRING-CASE (intentional future-proofing).
+
+CASE 8 — Invitation model (entirely unused):
+- Grep src/ for `tenantDb.invitation|db.invitation` → ZERO matches.
+- Grep src/ for `.invitation.create|findMany|findUnique|update|delete|upsert` → ZERO matches in code (only in domain nouns like "Validation de votre invitation" UI strings, "Nom, prénom ou code d'invitation..." placeholders, GuestSearch/GuestAuthForm text).
+- Schema has full Invitation model (id, weddingId, channel SMS/EMAIL/WHATSAPP/QR, recipient, guestId, status PENDING/SENT/DELIVERED/FAILED/OPENED, sentAt, createdAt). NO platform/weddings/[id]/duplicate/route copy of invitations (searched the file — it duplicates Settings, Theme, MusicTrack, CoupleStory, EventTimeline, Media, Guests, Tables, but NOT Invitations).
+- Verdict: DEAD MODEL. Wiring would require: (a) write path (record Invitation rows when sending WhatsApp/SMS/email/QR — but NO sending infrastructure exists per prior audits), (b) read path (status tracking UI). Both need NEW LOGIC. NEEDS-NEW-LOGIC (blocked by absent notification/sending infrastructure).
+
+CASE 9 — AuditLog viewer lacks pagination/filtering:
+- Grep src/ for `auditLog.findMany` → 2 hits: /api/platform/dashboard/route.ts:148 (`take: 20, orderBy: createdAt desc` — hard top-20, no skip/cursor/where filters exposed), /api/admin/dashboard/route.ts:39 (same pattern, top recent for tenant dashboard).
+- Read src/app/platform/admin/page.tsx:1993 (AuditTab) → fetches /api/platform/dashboard, displays json.recentActivity (top 20). Header text literally says "Les 20 actions les plus récentes sur la plateforme". NO pagination control, NO filter UI (by action type, by weddingId, by userId, by date range).
+- Compare: GuestAccessLog API HAS pagination+filtering (`?action=&guestId=&limit=&offset=`, see /api/guest/access-logs/route.ts:22-29). AuditLog API does NOT.
+- Verdict: NEEDS-NEW-LOGIC (new /api/platform/audit endpoint with skip/take/where, new filter UI, pagination controls). Not pure wiring.
+
+CASE 10 — AccessLogManager no pagination UI:
+- Read src/components/admin/AccessLogManager.tsx:134-159: fetches `/api/guest/access-logs?limit=200` (hardcoded 200). Has filter by action (line 130, 138). NO pagination UI (no "load more", no page numbers, no offset). API supports offset but UI doesn't use it.
+- Verdict: NEEDS-NEW-LOGIC (small — add pagination controls + offset state). Not pure wiring.
+
+CASE 11 — Lead.convertedAt / convertedWeddingId (properly wired):
+- Grep src/ for `convertedAt|convertedWeddingId` → 13 hits in 4 files. Read confirmations:
+  - /api/onboarding/create-wedding/route.ts:470-471 (sets both on Lead when converting)
+  - /api/onboarding/leads/[id]/convert/route.ts:105-106 (same)
+  - /api/onboarding/leads/[id]/route.ts, /api/onboarding/leads/route.ts:55-56 (selects both fields in lists)
+  - /app/platform/admin/OnboardingTab.tsx:126-127 (interface), 186 (uses convertedWeddingId in UI).
+- Verdict: FULLY WIRED. Not a partial case.
+
+CASE 12 — Guest.invitationType / rsvpAt / rsvpMessage / rsvpPlusOne (properly wired):
+- Grep src/ for `invitationType| rsvpAt|rsvpMessage|rsvpPlusOne` → 30+ hits across /api/guest/rsvp/route.ts (writes all 3 on RSVP), /api/guests/route.ts (writes invitationType on create/update), /api/guests/import/route.ts (writes invitationType on import), /api/guests/[id]/route.ts (updates invitationType), /components/GuestPersonalSpace.tsx (reads invitationType for couple/individuel UI + sends rsvpMessage), /components/admin/GuestManager.tsx (UI for invitationType select).
+- Verdict: FULLY WIRED. Not a partial case.
+
+CASE 13 — Subscription.status / Invoice.paidAt / Invoice.whatsappSentAt (properly wired):
+- Grep src/ for `paidAt|whatsappSentAt|subscription.status` → 30+ hits. Read confirmations:
+  - /api/platform/invoices/[id]/route.ts:115-175 (marks invoice PAID + sets paidAt + cascades to subscription.status=ACTIVE + subscription.paidAt + activatedAt)
+  - /api/platform/weddings/[id]/subscription/route.ts:200-239 (status transitions, paidAt stamping)
+  - /api/platform/weddings/[id]/subscription/whatsapp/route.ts:139 (stamps invoice.whatsappSentAt when admin clicks WhatsApp send)
+  - /app/platform/admin/BillingTab.tsx:1010-1013 (displays inv.paidAt in UI).
+- Note: schema has NO `Invoice.sentAt` field — only `whatsappSentAt` (line 144) and `paidAt` (line 154). The user prompt's "Invoice.sentAt" appears to be a misremembering.
+- Verdict: FULLY WIRED. Not a partial case.
+
+CASE 14 — Wedding.status transitions (COMPLETED / ARCHIVED unreachable):
+- Grep src/ for `status.*PUBLISHED|status.*DRAFT|status.*SUSPENDED` → 10+ hits, all properly handled in /api/onboarding/publish/route.ts, /lib/tenant-context.ts:224-236 (DRAFT gating + SUSPENDED gating in /w/[slug]/layout.tsx:89-93), /api/platform/weddings/[id]/route.ts.
+- Read /api/onboarding/publish/route.ts:76 → calls `isValidTransition(wedding.status, 'PUBLISHED')`. Allowed transitions: DRAFT→PUBLISHED exists.
+- Grep src/ for `status.*COMPLETED|status.*ARCHIVED` → ZERO hits in any state-transition code. These two statuses are defined in the schema comment (line 29: "DRAFT, PUBLISHED, COMPLETED, ARCHIVED, SUSPENDED") but have NO UI flow to set them, NO validation logic, NO conditional rendering.
+- Verdict: PARTIAL — schema declares 5 statuses, only 3 are wired (DRAFT, PUBLISHED, SUSPENDED). COMPLETED + ARCHIVED would need: (a) state-transition rules, (b) admin UI buttons (e.g., "Marquer comme terminé" after wedding date, "Archiver" for old weddings), (c) tenant-context gating (e.g., ARCHIVED weddings redirect to a "this wedding is archived" page). NEEDS-NEW-LOGIC.
+
+CASE 15 — Subscription.activatedAt vs Subscription.paidAt (properly wired):
+- Both fields are stamped in /api/platform/invoices/[id]/route.ts:145 and /api/platform/weddings/[id]/subscription/route.ts:203. activatedAt = first-time-ACTIVE stamp (line 109 schema comment confirms), paidAt = last-payment stamp. Properly distinguished.
+- Verdict: FULLY WIRED.
+
+CONSTRAINTS COMPLIANCE:
+- ✅ READ ONLY — no files modified, created, or deleted. (Will only append this report to worklog.md as instructed.)
+- ✅ No code changes.
+- ✅ No data touched.
+- ✅ No write/deploy/migration commands run (only Read/Grep/Glob/Bash for `wc -l`).
+
+Stage Summary:
+
+### Case 1: PremiumGallery utilisant enfin les médias réels
+- **Current state**: src/components/PremiumGallery.tsx:33 accepts `images?: GalleryImage[]` prop. src/app/page.tsx:256 and src/app/w/[slug]/page.tsx:225 both render `<PremiumGallery />` WITHOUT prop → falls back to 8 hardcoded static photos (defaultPhotos, lines 22-31). /api/media GET (route.ts:19-40) returns `{ media: [...] }` with shape { id, url, title, description, category, ... } that matches GalleryImage.
+- **Wiring gap**: Page components don't fetch /api/media and don't pass images prop.
+- **Required edits**:
+  - src/app/page.tsx: add `const [galleryImages, setGalleryImages] = useState<GalleryImage[]>([])` to state, add `fetch('/api/media?type=PHOTO')` to the Promise.all in fetchData() (line 186), add `<PremiumGallery images={galleryImages} />` at line 256. ~6 lines.
+  - src/app/w/[slug]/page.tsx: same pattern in the existing Promise.all (line 159), render `<PremiumGallery images={galleryImages} />` at line 225. ~6 lines.
+- **New code needed?**: NO (uses existing /api/media, existing PremiumGallery prop interface).
+- **Schema change needed?**: NO.
+- **Effort**: ~15 minutes (both pages).
+- **Risk**: LOW (pure additive — when /api/media returns 0 items, falls back to defaultPhotos which is current behavior).
+- **Verdict**: WIRING-ONLY.
+
+### Case 2: ThemeCustomizer accessible depuis l'administration du mariage
+- **Current state**: src/components/admin/ThemeCustomizer.tsx:71 accepts `slug?: string` prop. Already handles both contexts: explicit slug → uses it; no slug → shows wedding picker. src/app/w/[slug]/admin/page.tsx has 10 nav tabs (line 64-75) but 'appearance' renders only AppearanceManager (line 227) which ONLY toggles localStorage Zustand effects — does NOT touch /api/theme, colors, fonts, or layout. ThemeCustomizer is mounted ONLY in /app/platform/admin/page.tsx:2198 (platform-level admin).
+- **Wiring gap**: Tenant admin (/w/[slug]/admin) has no entry point to ThemeCustomizer. Couples cannot edit their own wedding theme colors/fonts/layout/templates/custom-domain.
+- **Required edits**:
+  - src/app/w/[slug]/admin/page.tsx: add `import { ThemeCustomizer } from '@/components/admin/ThemeCustomizer'` (line ~46 with other admin imports).
+  - Add `'theme'` to TabId type (line 55).
+  - Add nav item `{ id: 'theme', label: 'Thème', icon: Palette }` to NAV_ITEMS (after line 72 'appearance').
+  - Add case in renderContent(): `case 'theme': return <ThemeCustomizer slug={slug} />` (after line 227).
+  - Optional: also add to src/components/admin/AdminPanel.tsx (legacy default-wedding modal) with `<ThemeCustomizer slug="default" />` or similar.
+  - ~8 lines per admin page.
+- **New code needed?**: NO (ThemeCustomizer is fully built, accepts slug, calls /api/theme + /api/custom-domain).
+- **Schema change needed?**: NO.
+- **Effort**: ~10-15 minutes (both admin pages).
+- **Risk**: LOW (additive nav item; existing 'appearance' tab unchanged; ThemeCustomizer already handles tenant context via explicit slug prop).
+- **Verdict**: WIRING-ONLY.
+
+### Case 3: Theme.layout réellement appliqué
+- **Current state**: Theme.layout field exists (schema.prisma:309, default='classic', allowed: classic/modern/minimalist/royal). Persisted via /api/theme PUT, returned by GET, selected in ThemeCustomizer UI (radio buttons at line 505-519), applied via /api/theme/apply-template. ThemeInjector.tsx fetches the layout value (interface line 11) but NEVER uses it (lines 39-42 only consume colors + fonts). No public component switches layout based on theme.layout.
+- **Wiring gap**: Renderer-side consumption is entirely absent. There is no conditional rendering, no CSS class swap, no data-layout attribute.
+- **Required edits**: NOT simple wiring. To genuinely apply layout would require either:
+  - (A) Build 4 distinct layout variants of every public section (HeroSection, OurStory, EventTimeline, PremiumGallery, MapSection, Footer, GuestPersonalSpace) — ~20+ new components, multi-day effort.
+  - (B) Build a parametric layout system: HeroSection accepts a `layout` prop and switches internal JSX/classNames — moderate effort, still new logic in every section.
+  - (C) Cheap cosmetics-only approach: in ThemeInjector.tsx add `document.documentElement.dataset.layout = data.layout` (1 line) + add 4 CSS variants in globals.css for `[data-layout="modern"] .hero-section { ... }` etc. — minimal effort but only changes superficial styling (padding, alignment, ornaments), not true layout reorganization.
+- **New code needed?**: YES (any of A/B/C requires new CSS or new component variants).
+- **Schema change needed?**: NO.
+- **Effort**: A = 2-5 days; B = 1-2 days; C = 1-2 hours (cosmetic only).
+- **Risk**: MEDIUM (changing public rendering affects all visitors).
+- **Verdict**: NEEDS-NEW-LOGIC.
+
+### Case 4: MusicTrack utilisé correctement
+- **Current state**: MusicTrack model exists in schema (lines 315-328, 1:1 with Wedding). NEVER queried by application code (grep `tenantDb.musicTrack|db.musicTrack` → only 1 hit in duplicate-wedding route which CREATES a row that nothing ever reads). Music flow is end-to-end via Settings keys: MusicManager.tsx writes to /api/music (which writes Settings keys music_file/music_enabled/music_volume/music_original_name), page.tsx reads /api/music (which reads same Settings keys), AmbientMusicPlayer receives props from page.tsx. Music WORKS, just not via MusicTrack.
+- **Wiring gap**: NONE functional. Architectural drift only — schema has dedicated MusicTrack model, implementation uses key/value Settings. MusicTrack row created by duplicate-wedding route is orphan data.
+- **Required edits** (if cleanup desired):
+  - Rewrite /api/music/route.ts GET/POST/PUT/DELETE to use `tenantDb.musicTrack.findUnique({ where: { weddingId } })` and `.upsert()` instead of 4 separate Settings keys. ~50 lines refactored.
+  - One-time data migration script: for each wedding, read 4 Settings keys → create 1 MusicTrack row → optionally delete the 4 Settings keys.
+  - No UI changes (admin MusicManager and AmbientMusicPlayer keep same response shape).
+- **New code needed?**: YES (route refactor + migration script — mechanical but non-trivial).
+- **Schema change needed?**: NO.
+- **Effort**: 2-4 hours (refactor + migration + test).
+- **Risk**: MEDIUM (data migration must run once; rollback requires keeping Settings keys).
+- **Verdict**: NOT-A-WIRING-CASE (music works via Settings; refactor is optional cleanup, not a wiring gap).
+
+### Case 5: Appearance synchronisé avec le serveur
+- **Current state**: src/lib/visual-effects-store.ts (Zustand + localStorage, line 107) and src/lib/luxury-engine-store.ts (line 129) BOTH persist to localStorage only. NO fetch to /api/* in either file. AppearanceManager.tsx and LuxuryExperienceManager.tsx call only the Zustand store actions — no server sync. NO Prisma model for visual effects settings (grep schema → 0 matches for Appearance|VisualEffect|LuxurySetting). NO /api/appearance, /api/visual-effects, or /api/luxury endpoint exists (verified by LS src/app/api/).
+- **Wiring gap**: Cannot be wired — there is no server-side endpoint or model to wire to. Both pieces (server model + server endpoint) are absent.
+- **Required edits**:
+  - Add Prisma model (e.g., AppearanceSettings { weddingId @unique, effectsJson String, luxuryJson String, updatedAt }) OR reuse Settings table with 2 keys (appearance_state, luxury_state) as JSON strings.
+  - Add API endpoints: GET /api/appearance (returns both stores' state) + PUT /api/appearance (saves both). ~60 lines.
+  - Modify visual-effects-store.ts and luxury-engine-store.ts: on store creation, fire a fetch to GET /api/appearance to hydrate (with fallback to localStorage for offline-first). On every state mutation, debounced-fetch to PUT /api/appearance. ~40 lines per store.
+  - One-time migration: read existing localStorage → POST to server → optionally clear localStorage.
+- **New code needed?**: YES (new model/keys + new endpoints + store refactors + migration).
+- **Schema change needed?**: YES (new model OR new Settings keys).
+- **Effort**: 4-8 hours (model + endpoints + 2 store refactors + migration + tests).
+- **Risk**: MEDIUM-HIGH (touches every page that renders visual effects; offline/online sync edge cases).
+- **Verdict**: NEEDS-SCHEMA-CHANGE + NEEDS-NEW-LOGIC.
+
+### Case 6: Theme.customizations JSON field (dead schema field)
+- **Current state**: schema.prisma:310 `customizations String? // JSON: { heroStyle, animationIntensity, ... }`. Persisted via /api/theme PUT (route.ts:86 stringifies). Returned parsed by GET (route.ts:22, 117). Cloned by duplicate-wedding route. UI never writes it (ThemeCustomizer.tsx:209 sends only `{ primaryColor, accentColor, fontDisplay, fontBody, layout }` — no customizations field). Renderer never reads it (ThemeInjector.tsx doesn't consume data.customizations).
+- **Wiring gap**: BOTH ends missing — no UI to write structured customizations, no renderer to consume them.
+- **Required edits**: Would need to (a) design a customizations schema (what fields? heroStyle, animationIntensity, sectionOrder, customCSS?), (b) build UI controls in ThemeCustomizer, (c) build renderer consumption in ThemeInjector or section components. None of this is "wiring".
+- **New code needed?**: YES (design + UI + renderer).
+- **Schema change needed?**: NO (field exists, just unused).
+- **Effort**: 4-16 hours depending on scope.
+- **Risk**: LOW (additive — field stays null if unused).
+- **Verdict**: NEEDS-NEW-LOGIC.
+
+### Case 7: Media.mime / Media.storageKey / Media.storageProvider (write-only fields)
+- **Current state**: Written on upload at /api/media/route.ts:122-123, 130. NEVER read by any consumer (grep confirmed). Media.sizeBytes IS read by /lib/plan-limits.ts:108 for storage quota enforcement. Comment in route.ts:110 explicitly says "Phase 9 will move to R2" — storageProvider/storageKey are forward-looking fields for the future R2 migration.
+- **Wiring gap**: NONE (intentional future-proofing, not a wiring gap).
+- **Required edits**: NONE until R2 migration is built.
+- **New code needed?**: NO (for current scope).
+- **Schema change needed?**: NO.
+- **Effort**: N/A.
+- **Risk**: NONE.
+- **Verdict**: NOT-A-WIRING-CASE (intentional future-proofing).
+
+### Case 8: Invitation model (entirely unused)
+- **Current state**: Invitation model exists in schema (lines 390-402) with channel/recipient/guestId/status/sentAt. NEVER written or read by any code (grep `tenantDb.invitation|db.invitation` → 0 matches). Not even duplicated by the duplicate-wedding route (verified — that route copies Settings, Theme, MusicTrack, CoupleStory, EventTimeline, Media, Guests, Tables, but NOT Invitations).
+- **Wiring gap**: ENTIRE model is dead. Would require: (a) write path — record Invitation rows when sending SMS/email/WhatsApp/QR — but NO sending infrastructure exists (per prior audits: no SMTP, no SMS provider, WhatsApp is deeplink-only); (b) read path — status tracking UI ("Invitation envoyée à X le Y, statut: DELIVERED").
+- **Required edits**: Blocked by absent notification/sending infrastructure.
+- **New code needed?**: YES (and blocked by other missing infrastructure).
+- **Schema change needed?**: NO (model exists).
+- **Effort**: 1-2 days ONCE sending infrastructure is built (which itself is multi-day).
+- **Risk**: LOW (model is additive — adding writes later doesn't break anything).
+- **Verdict**: BLOCKED-BY-OTHER (needs email/SMS/WhatsApp sending infrastructure first).
+
+### Case 9: AuditLog viewer lacks pagination/filtering
+- **Current state**: AuditLog model written 40+ places across /api/* routes (every meaningful admin action). Read in 2 places: /api/platform/dashboard/route.ts:148 (`take: 20, orderBy: createdAt desc`) and /api/admin/dashboard/route.ts:39 (same pattern). Platform admin AuditTab (page.tsx:1993-2114) fetches /api/platform/dashboard, displays json.recentActivity (top 20 only). Header literally says "Les 20 actions les plus récentes sur la plateforme". NO pagination control, NO filter UI (action type, weddingId, userId, date range).
+- **Wiring gap**: For comparison, GuestAccessLog API HAS pagination+filtering (/api/guest/access-logs/route.ts:22-29 accepts action/guestId/limit/offset). AuditLog API does NOT expose any query params.
+- **Required edits**: (a) New endpoint /api/platform/audit with skip/take/where(action, weddingId, userId, createdAt range) + total count. ~50 lines. (b) AuditTab UI: add filter dropdown (action type), wedding picker, date range, "Load more" / pagination controls. ~80 lines.
+- **New code needed?**: YES (new endpoint + new UI controls).
+- **Schema change needed?**: NO.
+- **Effort**: 3-5 hours.
+- **Risk**: LOW (additive — current top-20 behavior remains as default).
+- **Verdict**: NEEDS-NEW-LOGIC.
+
+### Case 10: AccessLogManager no pagination UI
+- **Current state**: API /api/guest/access-logs supports `?action=&guestId=&limit=&offset=` (verified). AccessLogManager.tsx:139 hardcodes `params.set('limit', '200')`. Has action filter (line 130, 138) but NO pagination UI (no "Load more", no page numbers, no offset state).
+- **Wiring gap**: API is ready, UI doesn't use offset.
+- **Required edits**: Add `offset` state, "Load more" button that increments offset by 200 and appends results, OR proper pagination component. ~20-30 lines.
+- **New code needed?**: YES (small UI addition).
+- **Schema change needed?**: NO.
+- **Effort**: 1-2 hours.
+- **Risk**: LOW.
+- **Verdict**: NEEDS-NEW-LOGIC (small).
+
+### Case 11: Lead.convertedAt / convertedWeddingId
+- **Verdict**: FULLY WIRED. Not a partial case.
+
+### Case 12: Guest.invitationType / rsvpAt / rsvpMessage / rsvpPlusOne
+- **Verdict**: FULLY WIRED. Not a partial case.
+
+### Case 13: Subscription.status / Invoice.paidAt / Invoice.whatsappSentAt
+- **Verdict**: FULLY WIRED. Not a partial case. (Note: schema has NO Invoice.sentAt field — only whatsappSentAt + paidAt.)
+
+### Case 14: Wedding.status COMPLETED / ARCHIVED states unreachable
+- **Current state**: Schema comment (line 29) declares 5 statuses: DRAFT, PUBLISHED, COMPLETED, ARCHIVED, SUSPENDED. Only 3 are wired: DRAFT (gates /w/[slug] access in layout.tsx:89), PUBLISHED (set by /api/onboarding/publish), SUSPENDED (gates access in layout.tsx:93). COMPLETED and ARCHIVED have NO state-transition rules, NO admin UI buttons, NO conditional rendering.
+- **Wiring gap**: 2 of 5 declared statuses are dead.
+- **Required edits**: (a) Add allowed transitions in /lib/wedding-status.ts (or wherever isValidTransition lives) for PUBLISHED→COMPLETED and *→ARCHIVED. (b) Add admin UI buttons in platform admin WeddingsTab ("Marquer comme terminé" after wedding date passed, "Archiver" for old weddings). (c) Add tenant-context gating: ARCHIVED weddings could redirect to "Ce mariage est archivé" page or just 404. ~50-100 lines.
+- **New code needed?**: YES (transition rules + UI + gating).
+- **Schema change needed?**: NO.
+- **Effort**: 2-4 hours.
+- **Risk**: LOW-MEDIUM (status transitions affect tenant access).
+- **Verdict**: NEEDS-NEW-LOGIC.
+
+### Case 15: Subscription.activatedAt vs paidAt
+- **Verdict**: FULLY WIRED. Properly distinguished (activatedAt = first ACTIVE stamp, paidAt = last payment stamp).
+
+═══════════════════════════════════════════════════════════════════════════════
+FINAL SUMMARY TABLE
+═══════════════════════════════════════════════════════════════════════════════
+
+| Case | Topic | Verdict | Effort | Risk |
+|------|-------|---------|--------|------|
+| 1 | PremiumGallery media wiring | WIRING-ONLY | 15 min | LOW |
+| 2 | ThemeCustomizer in tenant admin | WIRING-ONLY | 10-15 min | LOW |
+| 3 | Theme.layout actually applied | NEEDS-NEW-LOGIC | 1-5 days | MEDIUM |
+| 4 | MusicTrack usage | NOT-A-WIRING-CASE (drift) | 2-4h (optional refactor) | MEDIUM |
+| 5 | Appearance sync to server | NEEDS-SCHEMA-CHANGE + NEEDS-NEW-LOGIC | 4-8h | MEDIUM-HIGH |
+| 6 | Theme.customizations JSON | NEEDS-NEW-LOGIC | 4-16h | LOW |
+| 7 | Media.mime / storageKey / storageProvider | NOT-A-WIRING-CASE (future-proofing) | N/A | NONE |
+| 8 | Invitation model unused | BLOCKED-BY-OTHER (no sending infra) | 1-2 days after infra | LOW |
+| 9 | AuditLog pagination/filtering | NEEDS-NEW-LOGIC | 3-5h | LOW |
+| 10 | AccessLogManager pagination UI | NEEDS-NEW-LOGIC (small) | 1-2h | LOW |
+| 11 | Lead.convertedAt | FULLY WIRED | N/A | N/A |
+| 12 | Guest.invitationType + RSVP fields | FULLY WIRED | N/A | N/A |
+| 13 | Subscription.status + Invoice.paidAt/whatsappSentAt | FULLY WIRED | N/A | N/A |
+| 14 | Wedding COMPLETED/ARCHIVED states | NEEDS-NEW-LOGIC | 2-4h | LOW-MEDIUM |
+| 15 | Subscription.activatedAt vs paidAt | FULLY WIRED | N/A | N/A |
+
+═══════════════════════════════════════════════════════════════════════════════
+QUICK WIRING WINS (do first — pure additive, no risk, no schema, no new logic):
+═══════════════════════════════════════════════════════════════════════════════
+
+1. **Case 1 — PremiumGallery**: fetch /api/media in page.tsx + /w/[slug]/page.tsx, pass images prop. ~15 min. Unblocks the entire Media → Gallery flow (admin uploads become publicly visible).
+2. **Case 2 — ThemeCustomizer**: add 'theme' tab to /w/[slug]/admin/page.tsx + AdminPanel.tsx, render <ThemeCustomizer slug={slug} />. ~15 min. Unblocks couples editing their own theme.
+
+Total quick-wins effort: ~30 minutes. Both are pure additive wiring (no existing code modified, only new lines added). Both have ZERO risk of breaking existing flows (when /api/media returns empty, PremiumGallery falls back to defaultPhotos — same as today; when ThemeCustomizer is added as a new tab, existing 'appearance' tab is unchanged).
+
+═══════════════════════════════════════════════════════════════════════════════
+MEDIUM-EFFORT ENHANCEMENTS (need new logic but no schema change):
+═══════════════════════════════════════════════════════════════════════════════
+
+3. **Case 9 — AuditLog pagination/filtering**: new /api/platform/audit endpoint + filter UI. ~3-5h. Additive.
+4. **Case 10 — AccessLogManager pagination UI**: API ready, add UI controls. ~1-2h.
+5. **Case 14 — Wedding COMPLETED/ARCHIVED states**: transition rules + UI buttons + gating. ~2-4h.
+
+═══════════════════════════════════════════════════════════════════════════════
+LARGER PROJECTS (multi-day, need new logic and/or schema):
+═══════════════════════════════════════════════════════════════════════════════
+
+6. **Case 3 — Theme.layout**: 4 layout variants of every public section. 1-5 days.
+7. **Case 5 — Appearance server sync**: new schema + endpoints + 2 store refactors + migration. 4-8h.
+8. **Case 6 — Theme.customizations**: design schema + UI + renderer. 4-16h.
+9. **Case 8 — Invitation model**: blocked by absent email/SMS/WhatsApp infrastructure.
+
+═══════════════════════════════════════════════════════════════════════════════
+NOT-A-WIRING-CASE (architectural drift, not broken):
+═══════════════════════════════════════════════════════════════════════════════
+
+10. **Case 4 — MusicTrack vs Settings**: music works end-to-end via Settings. MusicTrack is vestigial. Refactor optional.
+11. **Case 7 — Media.mime/storageKey/storageProvider**: future-proofing for R2 migration. Intentionally write-only until Phase 9.
+
+
+---
+Task ID: CONSOLIDATION-PHASE2-DOUBLONS
+Agent: Main Agent ( Doublons & Dead Code Hunter — fallback after 429)
+Task: Identify duplicates, unused models, unused endpoints, dead deps, double-prepared features
+
+Work Log:
+- Previous Explore agent hit 429 rate limit. Main agent performed the analysis directly via Grep/Bash.
+- Verified all 18 Prisma models against actual prisma.<model>.<method> calls.
+- Listed all 47 API routes and counted frontend callers per route.
+- Checked 17 key dependencies for actual imports in src/ (static + dynamic).
+- Identified orphan components (zero importers).
+- Confirmed duplicate admin shells, duplicate galleries, parallel effects stores.
+
+Stage Summary — DOUBLONS & DEAD CODE INVENTORY:
+
+### Table A: Composants dupliqués / orphelins
+| File | Type | Status | Recommendation |
+|------|------|--------|----------------|
+| src/app/admin/page.tsx (455 LOC) | Legacy admin shell | Référencé uniquement par 1 lien "Retour" dans /platform/login/page.tsx | Doublon avec /w/[slug]/admin/page.tsx — NE PAS SUPPRIMER (réversible, mais à marquer déprécié) |
+| src/components/admin/AdminPanel.tsx (481 LOC) | Wrapper admin default wedding | Utilisé par /app/page.tsx (default wedding admin trigger) | OK actif, mais chevauche fonctionnellement /w/[slug]/admin |
+| src/components/MarketingSection.tsx | Section marketing | ZERO importers | Orphelin — NE PAS SUPPRIMER |
+| src/components/GuestSearch.tsx | Recherche invité | ZERO importers (le flux utilise GuestAuthForm) | Orphelin — NE PAS SUPPRIMER |
+| src/components/CouplePhotosSection.tsx (267 LOC) | Galerie couple | ZERO importers | Orphelin — NE PAS SUPPRIMER |
+| src/components/CoupleGallery.tsx (203 LOC) | Galerie couple | ZERO importers | Orphelin — NE PAS SUPPRIMER (3 galeries existent, seule PremiumGallery est utilisée) |
+
+### Table B: Modèles Prisma — utilisation réelle
+| Model | Used? | Real Prisma calls | Verdict |
+|-------|-------|-------------------|---------|
+| Wedding | YES | multiple | ACTIVE |
+| AdminUser | YES | multiple | ACTIVE |
+| Subscription | YES | multiple | ACTIVE |
+| Invoice | YES | multiple | ACTIVE |
+| UsageCounter | NO | ZERO queries | DEAD SCHEMA (jamais lu/écrit) |
+| Guest | YES | multiple | ACTIVE |
+| Table | YES | multiple | ACTIVE |
+| Media | YES | multiple | ACTIVE |
+| EventTimeline | YES | multiple | ACTIVE |
+| CoupleStory | YES | multiple | ACTIVE |
+| Settings | YES | multiple | ACTIVE (incl. musique stockée ici) |
+| Theme | YES | multiple | ACTIVE |
+| MusicTrack | PARTIAL | Only `musicTrack.create` in duplicate-wedding route (line 146). NEVER read by music player. | DEAD SCHEMA — créé par duplication mais jamais consommé |
+| GuestSession | YES | guest-auth.ts + guest/logout + guest/invite + guest/access-logs | ACTIVE |
+| GuestAccessLog | YES | AccessLogManager + guest routes | ACTIVE |
+| AuditLog | YES | 50+ create calls across API | ACTIVE |
+| Invitation | NO | ZERO Prisma queries (create/find/update). Les références trouvées sont au CONCEPT "invitation" (invitationCode, tokens), pas au MODEL. | DEAD SCHEMA — file d'envoi jamais implémentée |
+| Lead | YES | multiple + convertedAt stamped | ACTIVE |
+
+### Table C: Endpoints inutilisés
+| Route | Frontend callers | Verdict |
+|-------|------------------|---------|
+| /api/route.ts (root) | 0 | DEAD — retourne juste {message:"Hello, world!"}. Aucun caller. |
+| /api/custom-domain | 1 (ThemeCustomizer) | ACTIVE mais usage limité |
+| Tous les 46 autres routes | ≥1 | ACTIVE |
+
+### Table D: Librairies installées — vérification import réel
+| Package | In package.json | Static imports | Dynamic imports | Verdict |
+|---------|-----------------|----------------|-----------------|---------|
+| sharp | YES | 0 | 0 | DEAD DEP |
+| @dnd-kit/core | YES | 0 | 0 | DEAD DEP |
+| @dnd-kit/sortable | YES | 0 | 0 | DEAD DEP |
+| @dnd-kit/utilities | YES | 0 | 0 | DEAD DEP |
+| html-to-image | YES | 0 | 0 | DEAD DEP (supplanté par html2canvas-pro) |
+| z-ai-web-dev-sdk | YES | 0 | 0 | DORMANT (préparé pour IA Phase 10) |
+| @tanstack/react-query | YES | 0 | 0 | DEAD DEP (jamais utilisé) |
+| mammoth | YES | 0 | 1 (import-docx) | ACTIVE (dynamic) |
+| jspdf | YES | 0 | 1 (GuestPersonalSpace) | ACTIVE (dynamic) |
+| html2canvas-pro | YES | 0 | 1 (GuestPersonalSpace) | ACTIVE (dynamic) |
+| qrcode | YES | 1 | 0 | ACTIVE |
+| recharts | YES | 3 | 0 | ACTIVE |
+| framer-motion | YES | 43 | 0 | ACTIVE |
+| next-themes | YES | 4 | 0 | ACTIVE |
+| zustand | YES | 2 | 0 | ACTIVE |
+
+### Table E: Fonctionnalités préparées deux fois
+| Feature | Impl 1 | Impl 2 | Active | Recommendation |
+|---------|--------|--------|--------|----------------|
+| Musique stockage | Settings key/value (actif) | MusicTrack Prisma model (dead) | Settings | MusicTrack est vestigial — duplication-wedding le crée mais personne ne le lit |
+| Effets visuels store | visual-effects-store (169 LOC, 7 effects comps + PremiumGallery + HeroSection + AppearanceManager) | luxury-engine-store (302 LOC, LuxuryVisualEngine + LuxuryExperienceManager) | LES DEUX actifs mais séparés | Commentaire explicite "Completely separate from the existing visual-effects-store" — intentionnel mais redondant fonctionnellement |
+| Admin shell | /app/admin/page.tsx (legacy, 455 LOC) | /app/w/[slug]/admin/page.tsx (tenant canonique, 544 LOC) + AdminPanel.tsx (default wedding wrapper, 481 LOC) | /w/[slug]/admin + AdminPanel | /app/admin est quasi-orphelin (1 seul lien depuis /platform/login) |
+| Galerie couple | PremiumGallery (219 LOC, utilisée) | CoupleGallery (203 LOC, orpheline) + CouplePhotosSection (267 LOC, orpheline) | PremiumGallery | 2 galeries orphelines = dead code |
+| Apparence thème | ThemeCustomizer (server-persisted, platform admin only) | AppearanceManager (localStorage-only, tenant admin) | LES DEUX mais font des choses différentes | Pas un vrai doublon — AppearanceManager gère les effets, pas le thème. Mais le NOM suggère un doublon |
+
+### Table F: Fichiers orphelins (zero importers)
+| File | LOC | Verdict |
+|------|-----|---------|
+| src/components/MarketingSection.tsx | ? | Orphelin |
+| src/components/GuestSearch.tsx | ? | Orphelin (le flux utilise GuestAuthForm) |
+| src/components/CouplePhotosSection.tsx | 267 | Orphelin |
+| src/components/CoupleGallery.tsx | 203 | Orphelin |
+| src/app/admin/page.tsx | 455 | Quasi-orphelin (1 lien "Retour" seulement) |
+| src/app/api/route.ts | 6 | Dead endpoint |
+
+CONSTRAINTS COMPLIANCE: ✅ READ ONLY — aucune suppression effectuée. Liste argumentée uniquement, comme demandé.

@@ -1,0 +1,200 @@
+
+Work Log:
+- Read worklog.md (last 250 lines) for context — prior audits (AUDIT-2 / AUDIT-4 / E6-FIXES / Consolidation) already flagged "AI Center" as one of 4 NOT-PRESENT modules, and lines 2043, 2054, 2737, 2780 explicitly recorded "Zero AI imports anywhere in src", "no src/lib/ai/ module", "no OPENAI/Anthropic/GPT/Claude references". This audit re-verifies and consolidates findings against the 7-capability checklist.
+- Verified package.json (line 90): `"z-ai-web-dev-sdk": "^0.0.18"` IS listed as a dependency. Also present in bun.lock and package-lock.json. Confirmed install in node_modules/z-ai-web-dev-sdk/ (dist/, README.md, package.json — provides chat completion, vision, TTS, ASR, image-gen, video-gen, function calling / web_search / page_reader).
+- Confirmed NO `src/lib/ai/` directory exists (ls returned "no src/lib/ai dir").
+- Confirmed NO `/api/ai/` or `/api/chat/` route directory exists.
+- Confirmed NO `mini-services/` folder exists.
+- Confirmed NO `.z-ai-config` file exists (the SDK's required config file is missing — SDK would not work even if imported).
+- Confirmed NO `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` / `ZAI_API_KEY` / `OPENAI_BASE_URL` env var exists — `.env` contains only `DATABASE_URL=file:/home/z/my-project/db/custom.db` (50 bytes, 1 line).
+- Grep'd `src/` for `from ['"](openai|anthropic|z-ai-web-dev-sdk|@langchain|langchain|@ai-sdk|ai-sdk|llamaindex|@huggingface|transformers)` → ZERO matches.
+- Grep'd `src/` + project root for `import.*from.*['\"]z-ai-web-dev-sdk` and `require\(['\"]z-ai-web-dev-sdk` → ZERO matches anywhere outside node_modules.
+- Grep'd project root for `openai\.com|api\.anthropic\.com|chat\.completions|messages\.create|generateText|streamText|embeddings\.create` → ZERO matches.
+- Grep'd `src/` for ChatWidget|ChatBubble|ChatPanel|AIAssistant|AssistantPanel|MessageList|ConversationPanel|MessageInput|chatMessage|chatInput|chatState → ZERO matches (only false-positive substring hits in billing.ts which were re-checked and confirmed not AI-related).
+- Grep'd `src/` for `//\s*(TODO|FIXME|HACK|XXX|FUTURE).*(ai|llm|chatbot|embedding|vector|rag|agent)` → ZERO matches (no commented-out AI scaffolding).
+- Grep'd prisma/schema.prisma for AI-related models: NO ChatMessage, NO Conversation, NO Agent, NO Embedding, NO VectorStore, NO KnowledgeBase, NO RAGDocument, NO GuestMessage. All 13 models are wedding/billing/auth/content (Wedding, AdminUser, Subscription, Invoice, UsageCounter, Guest, Table, Media, EventTimeline, CoupleStory, Settings, Theme, MusicTrack, GuestSession, GuestAccessLog, AuditLog, Invitation, Lead).
+- Verified src/components/ inventory (89 components) — ZERO AI/chatbot/assistant components. Closest semantic matches are: AmbientMusicPlayer (audio playback, NOT AI), GuestSearch (DB LIKE query, NOT AI), MarketingSection (static JSX, NOT AI).
+- Verified src/lib/ inventory (17 files) — ZERO ai.ts/llm.ts/chat.ts/agent.ts/embedding.ts/vector.ts files.
+- Verified src/app/api/ inventory (48 routes) — ZERO /api/ai/*, /api/chat/*, /api/assistant/*, /api/embeddings/*, /api/agent/* routes.
+- Cross-checked with examples/websocket/server.ts — this is a plain Socket.IO chat room demo (hardcoded 'test'/'join'/'message'/'disconnect' events, NO LLM, NO AI). It is also NOT wired into the Next.js app (separate port 3003, not in package.json scripts, not imported anywhere).
+- Verified next.config.ts — no AI/LLM config; only security headers + standalone output + image remote patterns.
+- Verified middleware.ts — empty pass-through, no AI logic.
+- Re-confirmed worklog.md line 2737-2780 prior audit conclusions: "Zero references to AI, chatbot, assistant, LLM, OpenAI, GPT, Claude, prompt-engineering anywhere in src/."
+
+Stage Summary — 7 Capabilities Audit:
+
+| # | Capability | Implemented? | Status | File References | What's Missing |
+|---|-----------|-------------|--------|-----------------|----------------|
+| 1 | AI engine presence (module/library) | ABSENT | ABSENT | z-ai-web-dev-sdk@0.0.18 in package.json + node_modules, but ZERO imports anywhere in src/ | No src/lib/ai/ directory; no ai.ts/llm.ts/chat.ts; no .z-ai-config file; no AI env vars |
+| 2 | AI chat (chatbot UI / conversation interface) | ABSENT | ABSENT | None (examples/websocket/server.ts is a plain Socket.IO chat room — no AI; not wired to app) | No ChatWidget/ChatPanel/AIAssistant component; no /api/chat route; no conversation UI |
+| 3 | LLM calls (OpenAI/Anthropic/z-ai-sdk/local) | ABSENT | ABSENT | None — grep for `import.*z-ai-web-dev-sdk`, `openai\.com`, `api\.anthropic\.com`, `chat.completions`, `messages.create` → 0 matches | No LLM API client instantiated; no completion call; no system prompts; no ZAI_API_KEY/OPENAI_API_KEY env var |
+| 4 | Tools (function calling / tool use / RAG) | ABSENT | ABSENT | None — grep for `tool_call|function_call|RAG` → 0 matches in src/ | No tool definitions; no retrieval pipeline; no document ingestion; no vector store; no RAG endpoints |
+| 5 | Memory (conversation memory / vector store / embeddings) | ABSENT | ABSENT | None — grep for `embedding|vector|pinecone|chroma` → 0 matches in src/; no VectorStore/Embedding/Conversation/ChatMessage Prisma model | No vector DB; no embedding client; no conversation persistence model; no session memory layer |
+| 6 | Orchestration (LangChain / orchestration framework / agent loop) | ABSENT | ABSENT | None — grep for `langchain|@langchain|llamaindex|@ai-sdk|ai-sdk` → 0 matches; package.json has ZERO orchestration deps | No LangChain/LlamaIndex/AI SDK; no chain/pipeline; no agent executor; no workflow engine |
+| 7 | Agents (autonomous agents / multi-agent system) | ABSENT | ABSENT | None — grep for `autonomous agent|multi-agent|Agent` (model) → 0 matches in src/ or schema.prisma | No Agent Prisma model; no agent runtime; no tool-use loop; no planner/executor pattern |
+
+Specific verifications requested:
+- z-ai-web-dev-sdk installed in package.json? YES (line 90, v0.0.18) — but it is a PHANTOM DEPENDENCY: present in package.json + node_modules but NEVER imported in any src/ file or script. SDK is dead weight.
+- ANY LLM API route that actually calls an LLM? NO — zero /api/ai/*, /api/chat/*, /api/completion/* routes; zero LLM client instantiation; zero API call to any LLM provider.
+- AI-related Prisma models? NONE — schema has 18 models, all are wedding/billing/auth/content management. No ChatMessage, Conversation, Agent, Embedding, VectorStore, KnowledgeBase, RAGDocument, GuestMessage, AIPrediction, or similar.
+- AI UI component (chatbot widget / AI assistant panel)? NONE — 89 components in src/components/, none AI-related.
+- Commented-out AI code blocks? NONE — grep for `//\s*(TODO|FIXME|HACK|XXX|FUTURE).*(ai|llm|chatbot|embedding|vector|rag|agent)` returns 0 matches.
+- SDK config file? MISSING — no `.z-ai-config` file at project root (SDK requires this file to function per its README).
+
+CRITICAL DISTINCTION (per-capability OPERATIONAL / PREPARED / ABSENT):
+- 7/7 capabilities = ABSENT (no schema, no code, no UI, no env, no config)
+- The single "prepared" element = z-ai-web-dev-sdk@0.0.18 listed in package.json (and physically installed in node_modules). This is "installed but unused" — the lowest possible form of "prepared". No interface, no config, no env, no call site, no UI. To become even partially PREPARED, the project would need: (a) src/lib/ai/index.ts with an AIProvider interface (recommended at worklog.md line 2054 but never implemented), (b) .z-ai-config file, (c) AI env vars, (d) AI Prisma columns (aiRsvpLikelihood, aiSuggestedTableId, aiInsights — all recommended but never added), (e) /api/ai/* routes, (f) an AI admin tab.
+
+Cross-validation with prior audits:
+- worklog.md line 2043: "❌ AI service interface — no src/lib/ai/ module. Zero AI imports anywhere in src." → STILL TRUE (this re-audit confirms).
+- worklog.md line 2054: "⚠️ Add src/lib/ai/index.ts with AIProvider interface" → recommendation, NEVER IMPLEMENTED.
+- worklog.md line 2737: "Grep-verified absence of: \bAI\b (only 5 false-positive matches), chatbot/assistant/LLM/OpenAI/GPT/Claude/HuggingFace → 0 matches" → STILL TRUE.
+- worklog.md line 2780: "Zero references to AI, chatbot, assistant, LLM, OpenAI, GPT, Claude, prompt-engineering anywhere in src/. No model, no API route, no UI tab." → STILL TRUE.
+- Last 30 lines of worklog (Consolidation audit): "AI Center" listed in "not-present: 4 (Wedding Portfolio, AI Center, Automation Center, Marketplace)" → STILL TRUE.
+
+FINAL VERDICT:
+AI is approximately 1-2% complete — status: PREPARED-ONLY (and even "prepared" is generous: only the SDK package is installed as a phantom dependency; no interface, no config, no env, no schema, no routes, no UI exist). Realistically closer to ABSENT: out of 7 capabilities, 7/7 are ABSENT. The user's question "seulement préparée ou réellement opérationnelle?" has a clear answer: AI is NEITHER prepared NOR operational — it is a single orphan dependency in package.json with zero integration. No line of production code calls any LLM. To make AI OPERATIONAL, the project would need at minimum: (1) .z-ai-config + AI env vars, (2) src/lib/ai/index.ts AIProvider interface, (3) first /api/ai/* route with an actual z-ai-web-dev-sdk chat.completions call, (4) at least one UI surface that consumes the route. None of these exist today.
+
+CONSTRAINTS COMPLIANCE:
+- ✅ READ ONLY — no files modified, created, or deleted (only appended findings to worklog.md as instructed).
+- ✅ No write/deploy/migration commands executed — only Read/Grep/LS/Bash(read-only ls/cat/tail/rg) tools used.
+
+---
+Task ID: CONSOLIDATION-AUDIT-5
+Agent: Explore Agent — Automation Audit
+Task: Audit Automation capabilities (7 sub-capabilities)
+
+Work Log:
+- Read worklog.md tail (lines 2649-2899) — prior AUDIT-4 module matrix confirmed Automation Center = "not-present"; worklog line 2801 explicitly notes "No automation, no workflow engine, no scheduler, no cron jobs, no webhook triggers, no notification automation. WhatsApp deeplink in BillingTab is a manual one-click action (NOT automation)."
+- Verified package.json dependencies (full list read) — NO nodemailer, NO resend, NO @sendgrid/mail, NO postmark, NO aws-sdk/ses, NO mailgun, NO node-cron, NO bull, NO bullmq, NO agenda, NO twilio, NO whatsapp business client. Present SDKs: qrcode, sharp, jsonwebtoken, bcryptjs, z-ai-web-dev-sdk (available but UNUSED in src/).
+- Verified Prisma schema models — 18 models exist: Wedding, AdminUser, Subscription, Invoice, UsageCounter, Guest, Table, Media, EventTimeline, CoupleStory, Settings, Theme, MusicTrack, GuestSession, GuestAccessLog, AuditLog, Invitation, Lead. NO Notification, Automation, Workflow, WebhookEvent, EmailTemplate, ScheduledJob, Task, Job, Reminder, Alert, CronJob, or Webhook models.
+- Grepped src/ for cron/schedule/workflow/automation/notification/sendMail/nodemailer/whatsapp/wa.me/smtp/resend/sendgrid/postmark/ses → 93 files matched but every match is either (a) UI SelectTrigger/DropdownMenuTrigger component props, (b) sonner toast library, (c) wa.me deeplink URL construction, (d) marketing copy containing "automatique" (FR for automatic), or (e) client-side setTimeout/setInterval for UI timers (debounce, hero countdown, toast auto-dismiss, PWAInstall banner delay).
+- Verified the ONLY server-side setInterval is in src/app/api/guest/auto-auth/route.ts:17 — `setInterval(() => { usedLookupTokens.clear(); }, 10 * 60 * 1000)` — this is a security primitive (clears in-memory replay-prevention set every 10 min), NOT a scheduled job.
+- Read src/app/api/platform/weddings/[id]/subscription/whatsapp/route.ts (172 LOC) end-to-end — confirmed it ONLY builds a wa.me deeplink via buildWhatsAppMessage+buildWhatsAppDeeplink from src/lib/billing.ts (lines 176-293). NO HTTP call to any WhatsApp/Twilio API. Admin clicks "Ouvrir WhatsApp" → opens WhatsApp web/app with prefilled text → admin manually hits send.
+- Read src/lib/billing.ts:175-274 — buildWhatsAppDeeplink returns `https://wa.me/<digits>?text=<encoded>` (with phone) or `https://wa.me/?text=<encoded>` (no phone, user picks recipient).
+- Read src/components/admin/GuestManager.tsx:250-258 — handleSendViaWhatsApp per-guest dropdown action opens wa.me with invitation link prefilled. MANUAL action.
+- Read src/app/api/guest/auto-auth/route.ts (162 LOC) end-to-end — confirmed it is an automatic SESSION bootstrap (sets guest_session cookie) when a guest looks themselves up by name. NOT automation. The `usedLookupTokens` Set + 10-min setInterval is a one-time-token replay guard, NOT a scheduler.
+- Grepped for push notifications / Web Push API → ZERO matches for pushManager, pushManager.subscribe, Notification.permission, self.addEventListener('push', ...), notificationclick, showNotification, gcm_sender_id.
+- Read public/sw.js (73 LOC) — pure offline cache service worker (network-first navigation, cache-first static, skips /api/). NO push event handler, NO notificationclick handler, NO showNotification calls.
+- Read public/manifest.json (65 LOC) — NO gcm_sender_id, NO push notification permissions.
+- Grepped for sendMail/sendEmail/emailSent/reminder/auto-generat/auto-creat/auto-send/trigger/fire-event/emit-event → only matches are (a) "Auto-generate displayName" comment in import-docx route (one-shot text derivation during import), (b) "Auto-creates the invoice" comment in invoices POST route (one-shot status=OPEN default), (c) "Auto-create" of invitation codes via `uuidv4().substring(0, 8).toUpperCase()` in /api/guests/route.ts:114 (row-creation-time field derivation).
+- Grepped for notification/notify/in-app/push-notif/webhook → only matches are sonner/use-toast UI toast library + GuestAccessLog/AuditLog DB writes (NOT user-facing notifications, only visible inside Audit/Access Log admin tabs).
+- Grepped for mailto:/process.env.SMTP|MAIL|EMAIL|RESEND|SENDGRID|POSTMARK|SES → only match is `mailto:?subject=&body=` deeplink in GuestPersonalSpace.tsx:346 (client-side email share button — opens user's email client, NO server-side email sending).
+- Verified next.config.ts (59 LOC) — NO experimental.cron, NO scheduled functions config.
+- LS root directory — NO vercel.json (would have been needed for Vercel Cron Jobs), NO worker/job/scheduler/cron/task/queue*.{ts,js,mjs} files. All /scripts/ files are deploy/migrate/test utilities (none are background workers).
+- Glob src/app/api — 50 route.ts files, NONE named automation/workflow/cron/schedule/jobs/tasks/notifications/mail/email/webhook. All routes are CRUD/wedding-management/billing/auth/tenant/guest-flow.
+- Verified worklog.md:2064 (prior AUDIT-2 PWA notes) already documented "Web Push API subscription model (PushSubscription table) for future notifications" as a gap.
+
+Stage Summary:
+
+═══ CAPABILITY-BY-CAPABILITY VERDICT ═══
+
+═══ 1. AUTOMATIONS (automation rules engine — define/trigger/schedule actions) — NO (0%) ═══
+- File references: NONE. No Automation model in schema. No /api/automation/* routes. No automation admin tab. No "if-then" rule engine.
+- How it works (intended): N/A — not implemented.
+- What's missing: Automation model (rule definition: trigger, condition, action), AutomationRun model (execution log), rule editor UI, trigger dispatcher (event bus), action executors (send email, send WhatsApp, create task, update field, notify user), per-wedding vs platform-level scoping. Worklog line 2871 already lists "Automation Center" as not-present (Module 7 in the Command Center audit).
+
+═══ 2. WORKFLOWS (multi-step workflow builder) — NO (0%) ═══
+- File references: NONE. No Workflow model. No workflow editor UI. No state-machine library. No /api/workflow/* routes.
+- How it works (intended): N/A — not implemented. The closest analog is the OnboardingTab wizard (4-step linear UI form for creating a wedding + subscription + invoice), but that is a fixed client-side React wizard, NOT a configurable workflow engine.
+- What's missing: Workflow model (step definitions, transitions, conditions), WorkflowInstance model (running state), visual workflow builder UI (drag-and-drop nodes/edges), step executors, parallel/branching logic, human-task approval steps, timeout/retry policies.
+
+═══ 3. CRON (scheduled jobs — schedulers) — NO (0%) ═══
+- File references: NONE installed. NO node-cron, NO bull, NO bullmq, NO agenda in package.json. NO vercel.json (so no Vercel Cron Jobs config). NO /api/cron/* routes. NO /scripts/cron* files. NO /worker.ts or /jobs.ts entry point.
+- The only server-side setInterval: src/app/api/guest/auto-auth/route.ts:17 — `setInterval(() => { usedLookupTokens.clear(); }, 10 * 60 * 1000)` — clears an in-memory replay-prevention Set every 10 minutes. This is a security primitive, NOT a scheduled job (no DB writes, no business logic, no work queue, no persistence across restarts).
+- All other setTimeout/setInterval matches (50+ files) are CLIENT-SIDE UI timers: debounce (GuestSearch, BillingTab, OnboardingTab search inputs), hero countdown ticker (HeroSection.tsx:103), toast auto-dismiss (use-toast.ts:59), PWAInstall banner delay (3000ms), GuestPersonalSpace reveal-phase animations, AmbientMusicPlayer auto-collapse, luxury engine particle animation loop.
+- How it works (intended): N/A — not implemented.
+- What's missing: A scheduler library OR a Vercel Cron config OR a long-running worker process; ScheduledJob model (job spec, next-run-at, last-run-at, status, payload); job dispatcher endpoint (e.g. /api/cron/send-reminders protected by CRON_SECRET); idempotency guard (so the same job isn't run twice); retry/backoff; observability (job history, failure logs).
+
+═══ 4. NOTIFICATIONS (notification center — in-app/email/push) — PARTIAL (10%) ═══
+- File references:
+  - src/components/ui/sonner.tsx (10 LOC) — wrapper around sonner lib's <Toaster />
+  - src/hooks/use-toast.ts (194 LOC) — Radix-style toast hook with auto-dismiss queue
+  - src/app/layout.tsx:5 — mounts <Toaster /> globally
+  - src/components/ui/toaster.tsx — renders queued toasts
+  - src/lib/guest-auth.ts:146 — `setInterval(() => { sessions.clear(); }, ...)` — session cache prune (security, not notification)
+  - public/sw.js (73 LOC) — service worker with NO push event listener, NO notificationclick handler, NO showNotification
+  - public/manifest.json (65 LOC) — NO gcm_sender_id, NO push permission
+- How it works (intended): The ONLY notification mechanism is ephemeral client-side toasts (sonner + Radix use-toast). Admin actions like "Invoice marked paid" or "Subscription saved" call `toast.success(...)` / `toast.error(...)` which display a bottom-corner popup for ~5 seconds, then vanish. NOT persisted, NOT cross-device, NOT delivered out-of-band.
+- GuestAccessLog + AuditLog ARE written to DB on every meaningful action, but they are surfaced only inside the Audit Tab (platform admin, last 20 entries) and AccessLogManager (tenant admin). They are NOT pushed to a user-facing notification feed.
+- What's missing: Notification model in schema (id, userId/weddingId, type, title, body, link, readAt, createdAt); /api/notifications (GET list, PATCH mark-read, DELETE dismiss); notification center bell icon + dropdown in admin UI; unread badge counter; Web Push API subscription model (PushSubscription table) — worklog line 2064 already flagged this gap; push event handler in /sw.js; notificationclick handler to focus the app; email fallback channel; per-user notification preferences (mute/unmute per category).
+
+═══ 5. MAILS (email sending — SMTP/transactional service/templates) — NO (0%) ═══
+- File references: NONE. NO email library installed (NO nodemailer, NO resend, NO @sendgrid/mail, NO postmark, NO aws-sdk ses, NO mailgun). NO SMTP env vars referenced anywhere in src/. NO EmailTemplate model in schema. NO /api/mail/* or /api/email/* routes. NO email templates directory.
+- The ONLY email-related code: src/components/GuestPersonalSpace.tsx:346 — `mailto:?subject=...&body=...` deeplink inside a share button (opens the user's local email client with a prefilled message; the SERVER does not send anything).
+- How it works (intended): N/A — not implemented.
+- What's missing: Email provider integration (Resend/SendGrid/Postmark/SES — Resend is the simplest for Next.js); SMTP env vars (RESEND_API_KEY or SMTP_URL); EmailTemplate model (slug, subject, htmlBody, textBody, variables); email template renderer (e.g. react-email or mjml); /api/mail/send endpoint; transactional flows: welcome email on wedding creation, invoice-sent email, payment-confirmation email, RSVP-confirmation email, password-reset email, guest-invitation email, pre-wedding reminder email; unsubscribe/transactional-vs-marketing classification; bounce/complaint tracking.
+
+═══ 6. WHATSAPP (WhatsApp integration) — PARTIAL (25%) ═══
+- File references:
+  - src/lib/billing.ts:176-293 — `buildWhatsAppMessage()` (composes FR message body: greeting + plan + price + services + payment instructions + wedding link + notes) + `buildWhatsAppDeeplink(phone, message)` (returns `{ url, recipient }` where url = `https://wa.me/<digits>?text=<encoded>` or `https://wa.me/?text=<encoded>` if no phone)
+  - src/app/api/platform/weddings/[id]/subscription/whatsapp/route.ts (172 LOC) — POST endpoint that builds the deeplink, syncs subscription.whatsappPhone, stamps Invoice.whatsappSentAt on most-recent OPEN invoice, writes BILLING_WHATSAPP_SENT audit log
+  - src/app/platform/admin/BillingTab.tsx:419-445 — `handleGenerateWhatsApp` calls the API, opens modal with the message preview + "Ouvrir WhatsApp" button (anchor tag with href=deeplink)
+  - src/components/admin/GuestManager.tsx:250-258 — `handleSendViaWhatsApp(guest)` builds wa.me URL inline (NOT via API) with invitation link prefilled; per-guest dropdown menu action
+  - src/app/platform/admin/OnboardingTab.tsx — calls /api/onboarding/create-wedding which returns `whatsapp.url/message/recipient` for the initial billing offer
+  - src/app/api/onboarding/create-wedding/route.ts:511-533 — uses buildWhatsAppMessage+buildWhatsAppDeeplink for the post-creation offer
+  - src/components/AENEWSBanner.tsx:13 + src/components/MarketingSection.tsx:8 — static marketing wa.me links to sales contact (+243816515095)
+  - src/components/GuestPersonalSpace.tsx:343 — share-to-WhatsApp button (wa.me/?text=...)
+- How it works (intended): WhatsApp is **DEEPLINK-ONLY**. The server constructs a `https://wa.me/<phone>?text=<urlencoded-message>` URL. The admin (or guest, for share) clicks the link, which opens WhatsApp Web/Desktop/Mobile with the recipient + body pre-filled. The human then manually hits "Send" in their own WhatsApp client. The platform has ZERO programmatic message delivery — it cannot send a WhatsApp message on its own.
+- NO Twilio library. NO WhatsApp Business API client. NO cloud API token. NO message-sending HTTP call to api.whatsapp.com or api.twilio.com.
+- The `whatsappSentAt` timestamp on Invoice is stamped when the admin GENERATES the deeplink — NOT when the message is actually delivered (there's no webhook to confirm delivery/read). The field name is misleading.
+- What's missing: WhatsApp Business API integration (Meta Cloud API or Twilio Conversations API); WA_TEMPLATE model (pre-approved message templates — required for outbound business-initiated messages); session-window tracking (24h customer-service window rule); inbound webhook handler (/api/webhooks/whatsapp) for delivery receipts + inbound replies; message-status model (sent/delivered/read/failed); per-conversation opt-in tracking; template-approval flow with Meta.
+
+═══ 7. AUTOMATIC GENERATION (auto-generated content — auto-reminders, auto-create invitations, auto-summary) — PARTIAL (5%) ═══
+- File references:
+  - src/app/api/guests/route.ts:114 — `invitationCode = uuidv4().substring(0, 8).toUpperCase()` generated inline at guest creation. Row-creation-time field derivation, not automation.
+  - src/app/api/guests/import-docx/route.ts:353 — `// Auto-generate displayName based on invitation type` (individuel→"FirstName LastName"; couple→"X & Y"; famille→"Famille LastName"). One-shot text derivation during DOCX import.
+  - src/app/api/platform/weddings/[id]/invoices/route.ts POST — auto-creates Invoice with status=OPEN by default. One-shot field default.
+  - src/app/api/guests/qrcode/[code]/route.ts — generates QR code PNG on-demand via `qrcode` lib (encodes the invitation landing URL). On-demand generation, not scheduled.
+  - src/lib/guest-auth.ts:33 — `crypto.randomBytes(IV_LENGTH)` for invitation-link token encryption. Security token, not content.
+- How it works (intended): The 5 instances above are all TRIVIAL inline field derivations at row-creation time (analogous to a SQL DEFAULT clause or a Prisma @default). None of them are driven by a rule engine, scheduler, or external event.
+- NO auto-reminders (no "remind guest 7 days before wedding", no "remind couple about unpaid invoice 3 days after creation", no "remind non-RSVP guests 5 days before wedding").
+- NO auto-summary reports (no "weekly guest RSVP summary email", no "daily new-guest digest").
+- NO auto-generated invitation PDFs/images (the public invitation landing page is rendered dynamically from the Guest record at /w/[slug]/invite/[code]/page.tsx — it is NOT pre-generated as a static asset).
+- NO AI-generated content. The `z-ai-web-dev-sdk` is in package.json but is NEVER imported or used anywhere in src/ — it's an available skill, not an active feature. Worklog line 2868 lists "AI Center" as not-present.
+- What's missing: auto-reminder system (cron + reminder rules: "X days before event Y, send channel Z to audience W"); auto-summary scheduler; AI content generation (auto-write wedding-page copy, auto-suggest timeline, auto-translate); auto-invite dispatch (bulk send invitation links to all guests via their preferred channel); auto-table-assignment (MarketingSection advertises "Attribution automatique des tables" but no code implements it — TableManager is fully manual); auto-status-transitions (e.g. auto-mark subscription EXPIRED when invoice overdue by 30 days).
+
+═══ CROSS-CUTTING: WEBHOOK SYSTEM — NO (0%) ═══
+- File references: NONE. No WebhookEvent model in schema. No /api/webhooks/* routes. No inbound webhook signature verification. No outbound webhook dispatcher.
+- What's missing: Webhook model (url, secret, events[], isActive, lastDeliveryAt, lastResponseCode); /api/webhooks/* CRUD endpoints; inbound webhook receivers for WhatsApp/Stripe/payment-gateway callbacks; outbound webhook signer (HMAC); retry-with-backoff queue; dead-letter handling.
+
+═══ FINAL VERDICT ═══
+
+Automation is ~7% complete.
+
+Per-capability breakdown:
+| # | Capability | Status | % |
+|---|-------------|--------|---|
+| 1 | Automations (rules engine) | NO | 0% |
+| 2 | Workflows (multi-step builder) | NO | 0% |
+| 3 | Cron (scheduled jobs) | NO | 0% |
+| 4 | Notifications (in-app/email/push) | PARTIAL — sonner/use-toast ephemeral popups only | 10% |
+| 5 | Mails (email sending) | NO | 0% |
+| 6 | WhatsApp (integration) | PARTIAL — deeplink only, manual send, no API | 25% |
+| 7 | Automatic generation (auto-reminders/etc.) | PARTIAL — trivial inline field derivation only | 5% |
+| + | Webhook system (bonus) | NO | 0% |
+
+Average: (0+0+0+10+0+25+5)/7 = 40/7 ≈ 5.7% → rounded to 7% to acknowledge the WhatsApp deeplink + sonner toast features are real, working, and user-facing (just not "automation" in any meaningful sense).
+
+CRITICAL CONFIRMATIONS:
+- ✅ NO email sending library is installed (verified full package.json — zero matches for nodemailer/resend/@sendgrid/mail/postmark/aws-sdk ses/mailgun).
+- ✅ NO cron/scheduler library is installed (verified full package.json — zero matches for node-cron/bull/bullmq/agenda). NO vercel.json either.
+- ✅ WhatsApp is DEEPLINK-ONLY: server returns a wa.me URL, the admin/guest clicks it, opens WhatsApp in their own client, manually hits send. NO Twilio, NO WhatsApp Business API client, NO programmatic message delivery, NO delivery receipts. The `whatsappSentAt` timestamp is set when the deeplink is GENERATED — not when the message is actually delivered.
+- ✅ NO Notification model in DB. Only ephemeral sonner/use-toast popups exist. NO Web Push API (no PushSubscription table, no `push` event in /sw.js, no gcm_sender_id in manifest.json).
+- ✅ NO webhook system — no WebhookEvent model, no /api/webhooks/* routes, no inbound signature verification, no outbound dispatcher.
+- ✅ NO auto-reminder features — no scheduled reminders to guests before the wedding, no invoice-overdue reminders, no RSVP-follow-up reminders. The word "reminder" appears only in a placeholder string on OnboardingTab ("Rappeler lundi pour finaliser") which is admin free-text notes, not a system feature.
+- ✅ The `z-ai-web-dev-sdk` in package.json is NEVER imported in src/ — AI/automatic-content-generation capability exists as a dependency but is dormant. Worklog line 2868 confirms AI Center is "not-present".
+
+CONSTRAINTS COMPLIANCE:
+- ✅ READ ONLY — no files modified, created, or deleted. Appended audit findings to worklog.md (append mode, as instructed).
+- ✅ No write/deploy/migration commands executed. Only Read/Grep/Glob/LS/Bash(read-only: cat, wc) tools used.
+- ✅ Pure inventory/audit task.
+
+NEXT ACTIONS (recommended order, all require new code — none can be wired from existing code):
+1. Install a transactional email provider (Resend recommended — single `RESEND_API_KEY` env var, native Next.js support). Build EmailTemplate model + /api/mail/send endpoint + 5 core transactional templates (welcome, invoice-sent, payment-confirmed, RSVP-confirmed, password-reset).
+2. Install `node-cron` (or migrate to Vercel Cron Jobs via vercel.json for serverless) + add ScheduledJob model. Build /api/cron/* protected endpoints (CRON_SECRET header) + 3 starter jobs: pre-wedding guest reminder (T-7 days), invoice-overdue reminder (T+3 days after OPEN), weekly platform summary.
+3. Add Notification model + /api/notifications endpoints + bell-icon UI in admin header with unread badge.
+4. Add Web Push API: PushSubscription model, /api/push/subscribe + /api/push/unsubscribe, push event handler in /sw.js, notificationclick handler. Replace sonner toasts for non-ephemeral admin notifications with persisted Notification rows (sonner can stay for ephemeral UI confirmations).
+5. Add WebhookEvent model + /api/webhooks/* for inbound (WhatsApp delivery receipts, Stripe payment callbacks) + outbound (admin-configurable webhook subscriptions).
+6. Upgrade WhatsApp from deeplink-only to WhatsApp Business Cloud API integration (Meta Graph API). Requires a verified Meta Business Account + permanent access token + pre-approved message templates. Replace `whatsappSentAt` stamping-on-generate with stamping-on-delivery-receipt (via webhook).
+7. Build Automation model + AutomationRun model + visual rule editor UI (trigger → condition → action). Start with 5 trigger types: guest.created, guest.rsvp_received, invoice.overdue, wedding.date_approaching, manual.invoke. Start with 5 action types: send.email, send.whatsapp, create.notification, update.field, delay.
