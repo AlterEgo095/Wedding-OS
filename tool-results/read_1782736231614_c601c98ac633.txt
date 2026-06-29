@@ -1,0 +1,872 @@
+     1→     1→'use client'
+     2→     2→
+     3→     3→import { useState } from 'react'
+     4→     4→import Link from 'next/link'
+     5→     5→import { motion } from 'framer-motion'
+     6→     6→import { useForm } from 'react-hook-form'
+     7→     7→import { zodResolver } from '@hookform/resolvers/zod'
+     8→     8→import { z } from 'zod'
+     9→     9→import { toast } from 'sonner'
+    10→    10→import {
+    11→    11→  Sparkles,
+    12→    12→  QrCode,
+    13→    13→  Users,
+    14→    14→  Wallet,
+    15→    15→  ChevronDown,
+    16→    16→  Loader2,
+    17→    17→  Send,
+    18→    18→  CheckCircle2,
+    19→    19→  Heart,
+    20→    20→  MessageCircle,
+    21→    21→  ArrowRight,
+    22→    22→} from 'lucide-react'
+    23→    23→
+    24→    24→import { Button } from '@/components/ui/button'
+    25→    25→import { Input } from '@/components/ui/input'
+    26→    26→import { Label } from '@/components/ui/label'
+    27→    27→import { Textarea } from '@/components/ui/textarea'
+    28→    28→import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+    29→    29→import { Badge } from '@/components/ui/badge'
+    30→    30→import {
+    31→    31→  Select,
+    32→    32→  SelectContent,
+    33→    33→  SelectItem,
+    34→    34→  SelectTrigger,
+    35→    35→  SelectValue,
+    36→    36→} from '@/components/ui/select'
+    37→    37→import Footer from '@/components/Footer'
+    38→    38→
+    39→    39→// ══════════════════════════════════════════════════════════════════════════════
+    40→    40→// Plan preview data — kept static (mirrors PLAN_METADATA from src/lib/types.ts)
+    41→    41→// to avoid importing server-only types in this client component.
+    42→    42→// ══════════════════════════════════════════════════════════════════════════════
+    43→    43→type PlanKey = 'TRIAL' | 'ESSENTIEL' | 'PREMIUM' | 'ELITE'
+    44→    44→
+    45→    45→interface PlanPreview {
+    46→    46→  key: PlanKey
+    47→    47→  label: string
+    48→    48→  priceFcfa: number
+    49→    49→  priceUsd: number
+    50→    50→  tagline: string
+    51→    51→  services: string[]
+    52→    52→  popular?: boolean
+    53→    53→}
+    54→    54→
+    55→    55→const PLANS_PREVIEW: PlanPreview[] = [
+    56→    56→  {
+    57→    57→    key: 'TRIAL',
+    58→    58→    label: 'Essai Libre',
+    59→    59→    priceFcfa: 0,
+    60→    60→    priceUsd: 0,
+    61→    61→    tagline: 'Pour découvrir la plateforme',
+    62→    62→    services: [
+    63→    63→      "Jusqu'à 20 invités",
+    64→    64→      '100 Mo de médias',
+    65→    65→      '1 compte staff',
+    66→    66→      'Invitation digitale de base',
+    67→    67→      'Sans domaine personnalisé',
+    68→    68→    ],
+    69→    69→  },
+    70→    70→  {
+    71→    71→    key: 'ESSENTIEL',
+    72→    72→    label: 'Essentiel',
+    73→    73→    priceFcfa: 30000,
+    74→    74→    priceUsd: 49,
+    75→    75→    tagline: 'Pour les mariages intimes',
+    76→    76→    services: [
+    77→    77→      "Jusqu'à 200 invités",
+    78→    78→      '1 Go de médias',
+    79→    79→      '2 comptes staff',
+    80→    80→      'Invitation digitale complète',
+    81→    81→      'QR code check-in',
+    82→    82→    ],
+    83→    83→  },
+    84→    84→  {
+    85→    85→    key: 'PREMIUM',
+    86→    86→    label: 'Premium',
+    87→    87→    priceFcfa: 60000,
+    88→    88→    priceUsd: 99,
+    89→    89→    tagline: 'Le plus populaire',
+    90→    90→    services: [
+    91→    91→      "Jusqu'à 500 invités",
+    92→    92→      '5 Go de médias',
+    93→    93→      '5 comptes staff',
+    94→    94→      'Invitation digitale de luxe',
+    95→    95→      'Domaine personnalisé inclus',
+    96→    96→    ],
+    97→    97→    popular: true,
+    98→    98→  },
+    99→    99→  {
+   100→   100→    key: 'ELITE',
+   101→   101→    label: 'Élite',
+   102→   102→    priceFcfa: 120000,
+   103→   103→    priceUsd: 199,
+   104→   104→    tagline: 'Sans aucune limite',
+   105→   105→    services: [
+   106→   106→      'Invités illimités',
+   107→   107→      'Médias illimités',
+   108→   108→      '10 comptes staff',
+   109→   109→      'Expérience sur mesure',
+   110→   110→      'Domaine personnalisé + support dédié',
+   111→   111→    ],
+   112→   112→  },
+   113→   113→]
+   114→   114→
+   115→   115→const WHY_US = [
+   116→   116→  {
+   117→   117→    icon: Sparkles,
+   118→   118→    title: 'Invitation digitale de luxe',
+   119→   119→    description:
+   120→   120→      'Une page de mariage élégante avec animations cinématiques, galerie premium et récit de votre histoire.',
+   121→   121→  },
+   122→   122→  {
+   123→   123→    icon: QrCode,
+   124→   124→    title: 'QR code check-in',
+   125→   125→    description:
+   126→   126→      "Chaque invité reçoit un QR code unique. Le check-in à l'entrée se fait en une seconde, sans file d'attente.",
+   127→   127→  },
+   128→   128→  {
+   129→   129→    icon: Users,
+   130→   130→    title: 'RSVP en temps réel',
+   131→   131→    description:
+   132→   132→      "Suivez les confirmations en direct. Les invités trouvent leur table en un clic depuis leur téléphone.",
+   133→   133→  },
+   134→   134→  {
+   135→   135→    icon: Wallet,
+   136→   136→    title: 'Paiement flexible',
+   137→   137→    description:
+   138→   138→      'Mobile Money (M-Pesa, Airtel Money, Orange Money), virement bancaire ou espèces. Négociez le prix avec un conseiller.',
+   139→   139→  },
+   140→   140→]
+   141→   141→
+   142→   142→// ══════════════════════════════════════════════════════════════════════════════
+   143→   143→// Form schema — zod validation
+   144→   144→// ══════════════════════════════════════════════════════════════════════════════
+   145→   145→const leadSchema = z.object({
+   146→   146→  brideName: z
+   147→   147→    .string()
+   148→   148→    .min(1, 'Le prénom de la mariée est requis')
+   149→   149→    .max(80, 'Maximum 80 caractères'),
+   150→   150→  groomName: z
+   151→   151→    .string()
+   152→   152→    .min(1, 'Le prénom du marié est requis')
+   153→   153→    .max(80, 'Maximum 80 caractères'),
+   154→   154→  weddingDate: z.string().optional().nullable(),
+   155→   155→  venueCity: z.string().max(120, 'Maximum 120 caractères').optional().nullable(),
+   156→   156→  email: z
+   157→   157→    .string()
+   158→   158→    .min(1, "L'email est requis")
+   159→   159→    .email("Format d'email invalide"),
+   160→   160→  phone: z.string().max(40, 'Maximum 40 caractères').optional().nullable(),
+   161→   161→  plan: z.enum(['TRIAL', 'ESSENTIEL', 'PREMIUM', 'ELITE'], {
+   162→   162→    errorMap: () => ({ message: 'Veuillez sélectionner un plan' }),
+   163→   163→  }),
+   164→   164→  message: z.string().max(2000, 'Maximum 2000 caractères').optional().nullable(),
+   165→   165→})
+   166→   166→
+   167→   167→type LeadFormValues = z.infer<typeof leadSchema>
+   168→   168→
+   169→   169→const PLAN_LABELS: Record<LeadFormValues['plan'], string> = {
+   170→   170→  TRIAL: 'Essai Libre',
+   171→   171→  ESSENTIEL: 'Essentiel',
+   172→   172→  PREMIUM: 'Premium',
+   173→   173→  ELITE: 'Élite',
+   174→   174→}
+   175→   175→
+   176→   176→function formatFcfa(n: number): string {
+   177→   177→  if (n === 0) return 'Gratuit'
+   178→   178→  return `${n.toLocaleString('fr-FR')} FCFA`
+   179→   179→}
+   180→   180→
+   181→   181→function formatUsd(n: number): string {
+   182→   182→  if (n === 0) return ''
+   183→   183→  return `$${n}`
+   184→   184→}
+   185→   185→
+   186→   186→// ══════════════════════════════════════════════════════════════════════════════
+   187→   187→// Main page component
+   188→   188→// ══════════════════════════════════════════════════════════════════════════════
+   189→   189→export default function OnboardingLeadPage() {
+   190→   190→  const [submitted, setSubmitted] = useState(false)
+   191→   191→
+   192→   192→  const {
+   193→   193→    register,
+   194→   194→    handleSubmit,
+   195→   195→    setValue,
+   196→   196→    watch,
+   197→   197→    reset,
+   198→   198→    formState: { errors, isSubmitting },
+   199→   199→  } = useForm<LeadFormValues>({
+   200→   200→    resolver: zodResolver(leadSchema),
+   201→   201→    defaultValues: {
+   202→   202→      brideName: '',
+   203→   203→      groomName: '',
+   204→   204→      weddingDate: '',
+   205→   205→      venueCity: '',
+   206→   206→      email: '',
+   207→   207→      phone: '',
+   208→   208→      plan: 'PREMIUM',
+   209→   209→      message: '',
+   210→   210→    },
+   211→   211→  })
+   212→   212→
+   213→   213→  const selectedPlan = watch('plan')
+   214→   214→
+   215→   215→  const scrollToForm = () => {
+   216→   216→    const el = document.getElementById('demande')
+   217→   217→    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+   218→   218→  }
+   219→   219→
+   220→   220→  const onSubmit = async (values: LeadFormValues) => {
+   221→   221→    try {
+   222→   222→      const body: Record<string, unknown> = {
+   223→   223→        brideName: values.brideName.trim(),
+   224→   224→        groomName: values.groomName.trim(),
+   225→   225→        email: values.email.trim(),
+   226→   226→        plan: values.plan,
+   227→   227→      }
+   228→   228→      if (values.weddingDate && values.weddingDate.trim()) {
+   229→   229→        body.weddingDate = values.weddingDate.trim()
+   230→   230→      }
+   231→   231→      if (values.venueCity && values.venueCity.trim()) {
+   232→   232→        body.venueCity = values.venueCity.trim()
+   233→   233→      }
+   234→   234→      if (values.phone && values.phone.trim()) {
+   235→   235→        body.phone = values.phone.trim()
+   236→   236→      }
+   237→   237→      if (values.message && values.message.trim()) {
+   238→   238→        body.message = values.message.trim()
+   239→   239→      }
+   240→   240→
+   241→   241→      const res = await fetch('/api/onboarding/leads', {
+   242→   242→        method: 'POST',
+   243→   243→        headers: { 'Content-Type': 'application/json' },
+   244→   244→        body: JSON.stringify(body),
+   245→   245→      })
+   246→   246→
+   247→   247→      // Try to parse JSON regardless of status (defensive)
+   248→   248→      let data: { ok?: boolean; error?: string; message?: string } = {}
+   249→   249→      try {
+   250→   250→        data = await res.json()
+   251→   251→      } catch {
+   252→   252→        // non-JSON response (e.g. 404 HTML page from Next.js)
+   253→   253→      }
+   254→   254→
+   255→   255→      if (res.status === 429) {
+   256→   256→        toast.error('Trop de demandes. Réessayez dans quelques minutes.')
+   257→   257→        return
+   258→   258→      }
+   259→   259→
+   260→   260→      if (!res.ok) {
+   261→   261→        const msg =
+   262→   262→          data?.error ||
+   263→   263→          data?.message ||
+   264→   264→          "Une erreur est survenue. Veuillez réessayer ou nous contacter sur WhatsApp."
+   265→   265→        toast.error(msg)
+   266→   266→        return
+   267→   267→      }
+   268→   268→
+   269→   269→      setSubmitted(true)
+   270→   270→      reset()
+   271→   271→      toast.success('Demande envoyée avec succès !')
+   272→   272→    } catch (err) {
+   273→   273→      console.error('Lead submit error:', err)
+   274→   274→      toast.error(
+   275→   275→        "Impossible d'envoyer votre demande. Vérifiez votre connexion et réessayez.",
+   276→   276→      )
+   277→   277→    }
+   278→   278→  }
+   279→   279→
+   280→   280→  return (
+   281→   281→    <div className="min-h-screen flex flex-col bg-gradient-warm">
+   282→   282→      {/* ─── HERO ─────────────────────────────────────────────────────── */}
+   283→   283→      <section className="relative overflow-hidden">
+   284→   284→        {/* Background gradient overlay on a romantic dark base */}
+   285→   285→        <div className="absolute inset-0 bg-gradient-to-br from-[oklch(0.18_0.04_290)] via-[oklch(0.22_0.06_270)] to-[oklch(0.16_0.03_300)]" />
+   286→   286→        <div className="absolute inset-0 bg-gradient-to-t from-background via-background/40 to-transparent" />
+   287→   287→
+   288→   288→        {/* Decorative golden halos */}
+   289→   289→        <div className="absolute -top-32 -left-32 w-96 h-96 rounded-full bg-gold/10 blur-3xl" />
+   290→   290→        <div className="absolute -top-20 -right-20 w-80 h-80 rounded-full bg-rose-gold/10 blur-3xl" />
+   291→   291→        <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-[60%] h-40 bg-gold/5 blur-3xl" />
+   292→   292→
+   293→   293→        <div className="relative max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 pt-24 pb-20 md:pt-32 md:pb-28 text-center">
+   294→   294→          <motion.div
+   295→   295→            initial={{ opacity: 0, y: 20 }}
+   296→   296→            animate={{ opacity: 1, y: 0 }}
+   297→   297→            transition={{ duration: 0.7 }}
+   298→   298→            className="flex justify-center mb-6"
+   299→   299→          >
+   300→   300→            <Badge
+   301→   301→              variant="outline"
+   302→   302→              className="bg-white/5 backdrop-blur-sm border-gold/30 text-gold-light px-4 py-1.5 text-xs sm:text-sm font-display tracking-wide"
+   303→   303→            >
+   304→   304→              <Sparkles className="size-3.5" />
+   305→   305→              Service premium · RDC & Afrique francophone
+   306→   306→            </Badge>
+   307→   307→          </motion.div>
+   308→   308→
+   309→   309→          <motion.h1
+   310→   310→            initial={{ opacity: 0, y: 24 }}
+   311→   311→            animate={{ opacity: 1, y: 0 }}
+   312→   312→            transition={{ duration: 0.8, delay: 0.1 }}
+   313→   313→            className="font-serif text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-bold leading-tight"
+   314→   314→          >
+   315→   315→            <span className="gold-gradient">Créez votre</span>
+   316→   316→            <br />
+   317→   317→            <span className="text-white drop-shadow-[0_2px_20px_oklch(0.72_0.12_85/30%)]">
+   318→   318→              mariage digital
+   319→   319→            </span>
+   320→   320→          </motion.h1>
+   321→   321→
+   322→   322→          <motion.p
+   323→   323→            initial={{ opacity: 0, y: 20 }}
+   324→   324→            animate={{ opacity: 1, y: 0 }}
+   325→   325→            transition={{ duration: 0.8, delay: 0.25 }}
+   326→   326→            className="mt-6 max-w-2xl mx-auto text-base sm:text-lg md:text-xl text-white/80 font-display leading-relaxed"
+   327→   327→          >
+   328→   328→            Invitations élégantes, gestion d&apos;invités, RSVP en temps réel.
+   329→   329→            <br className="hidden sm:block" />
+   330→   330→            <span className="text-gold-light font-medium">
+   331→   331→              {' '}
+   332→   332→              Un conseiller vous contacte sur WhatsApp sous 24h.
+   333→   333→            </span>
+   334→   334→          </motion.p>
+   335→   335→
+   336→   336→          <motion.div
+   337→   337→            initial={{ opacity: 0, y: 20 }}
+   338→   338→            animate={{ opacity: 1, y: 0 }}
+   339→   339→            transition={{ duration: 0.8, delay: 0.4 }}
+   340→   340→            className="mt-10 flex flex-col sm:flex-row items-center justify-center gap-3"
+   341→   341→          >
+   342→   342→            <Button
+   343→   343→              onClick={scrollToForm}
+   344→   344→              size="lg"
+   345→   345→              className="btn-premium bg-gradient-gold text-white shadow-2xl shadow-gold/30 hover:shadow-gold/50 px-8 py-6 text-base w-full sm:w-auto rounded-full"
+   346→   346→            >
+   347→   347→              <Send className="size-4" />
+   348→   348→              Demander mon mariage
+   349→   349→            </Button>
+   350→   350→            <Link
+   351→   351→              href="/"
+   352→   352→              className="text-white/70 hover:text-white text-sm font-display tracking-wide underline-offset-4 hover:underline transition-colors"
+   353→   353→            >
+   354→   354→              Voir un exemple réel →
+   355→   355→            </Link>
+   356→   356→          </motion.div>
+   357→   357→
+   358→   358→          {/* Scroll indicator */}
+   359→   359→          <motion.button
+   360→   360→            type="button"
+   361→   361→            onClick={scrollToForm}
+   362→   362→            initial={{ opacity: 0 }}
+   363→   363→            animate={{ opacity: 1, y: [0, 8, 0] }}
+   364→   364→            transition={{
+   365→   365→              opacity: { duration: 1, delay: 1 },
+   366→   366→              y: { duration: 2, repeat: Infinity, ease: 'easeInOut' },
+   367→   367→            }}
+   368→   368→            className="hidden md:flex flex-col items-center gap-1 mt-16 mx-auto text-white/40 hover:text-white/70 transition-colors"
+   369→   369→            aria-label="Faire défiler vers les offres"
+   370→   370→          >
+   371→   371→            <span className="text-[10px] uppercase tracking-[0.3em] font-display">
+   372→   372→              Découvrir
+   373→   373→            </span>
+   374→   374→            <ChevronDown className="size-5" />
+   375→   375→          </motion.button>
+   376→   376→        </div>
+   377→   377→      </section>
+   378→   378→
+   379→   379→      {/* ─── PLANS PREVIEW ────────────────────────────────────────────── */}
+   380→   380→      <section className="relative py-16 md:py-24 px-4 sm:px-6 lg:px-8">
+   381→   381→        <div className="max-w-7xl mx-auto">
+   382→   382→          <motion.div
+   383→   383→            initial={{ opacity: 0, y: 20 }}
+   384→   384→            whileInView={{ opacity: 1, y: 0 }}
+   385→   385→            viewport={{ once: true }}
+   386→   386→            transition={{ duration: 0.6 }}
+   387→   387→            className="text-center mb-12 md:mb-16"
+   388→   388→          >
+   389→   389→            <div className="section-divider max-w-md mx-auto mb-6">
+   390→   390→              <span className="flourish text-sm">✦</span>
+   391→   391→            </div>
+   392→   392→            <h2 className="font-serif text-3xl sm:text-4xl md:text-5xl font-bold gold-gradient mb-4">
+   393→   393→              Nos offres
+   394→   394→            </h2>
+   395→   395→            <p className="text-muted-foreground font-display text-sm sm:text-base max-w-2xl mx-auto">
+   396→   396→              Choisissez le format qui correspond à votre mariage. Le prix final
+   397→   397→              est négocié avec votre conseiller selon les services inclus.
+   398→   398→            </p>
+   399→   399→          </motion.div>
+   400→   400→
+   401→   401→          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+   402→   402→            {PLANS_PREVIEW.map((plan, idx) => (
+   403→   403→              <motion.div
+   404→   404→                key={plan.key}
+   405→   405→                initial={{ opacity: 0, y: 30 }}
+   406→   406→                whileInView={{ opacity: 1, y: 0 }}
+   407→   407→                viewport={{ once: true }}
+   408→   408→                transition={{ duration: 0.5, delay: idx * 0.1 }}
+   409→   409→              >
+   410→   410→                <Card
+   411→   411→                  className={`card-premium relative h-full bg-card/80 backdrop-blur-sm ${
+   412→   412→                    plan.popular
+   413→   413→                      ? 'border-gold/50 shadow-lg shadow-gold/10 gold-border'
+   414→   414→                      : 'border-border/60'
+   415→   415→                  }`}
+   416→   416→                >
+   417→   417→                  {plan.popular && (
+   418→   418→                    <div className="absolute -top-3 left-1/2 -translate-x-1/2">
+   419→   419→                      <Badge className="bg-gradient-gold text-white border-0 px-3 py-1 text-xs font-display tracking-wide shadow-md shadow-gold/30">
+   420→   420→                        <Heart className="size-3 fill-white" />
+   421→   421→                        Le plus populaire
+   422→   422→                      </Badge>
+   423→   423→                    </div>
+   424→   424→                  )}
+   425→   425→                  <CardHeader className="text-center pb-2">
+   426→   426→                    <CardTitle className="font-serif text-2xl font-bold text-foreground">
+   427→   427→                      {plan.label}
+   428→   428→                    </CardTitle>
+   429→   429→                    <CardDescription className="text-muted-foreground text-xs">
+   430→   430→                      {plan.tagline}
+   431→   431→                    </CardDescription>
+   432→   432→                  </CardHeader>
+   433→   433→                  <CardContent className="flex flex-col flex-1">
+   434→   434→                    <div className="text-center mb-4">
+   435→   435→                      <div className="font-serif text-3xl font-bold gold-gradient">
+   436→   436→                        {formatFcfa(plan.priceFcfa)}
+   437→   437→                      </div>
+   438→   438→                      {plan.priceUsd > 0 && (
+   439→   439→                        <div className="text-xs text-muted-foreground font-display mt-1">
+   440→   440→                          ≈ {formatUsd(plan.priceUsd)} / mois
+   441→   441→                        </div>
+   442→   442→                      )}
+   443→   443→                    </div>
+   444→   444→
+   445→   445→                    <ul className="space-y-2 text-sm flex-1 mb-5">
+   446→   446→                      {plan.services.map((s) => (
+   447→   447→                        <li
+   448→   448→                          key={s}
+   449→   449→                          className="flex items-start gap-2 text-foreground/80"
+   450→   450→                        >
+   451→   451→                          <CheckCircle2 className="size-4 text-gold mt-0.5 shrink-0" />
+   452→   452→                          <span>{s}</span>
+   453→   453→                        </li>
+   454→   454→                      ))}
+   455→   455→                    </ul>
+   456→   456→
+   457→   457→                    <Button
+   458→   458→                      onClick={scrollToForm}
+   459→   459→                      variant={plan.popular ? 'default' : 'outline'}
+   460→   460→                      className={`w-full rounded-full ${
+   461→   461→                        plan.popular
+   462→   462→                          ? 'bg-gradient-gold text-white hover:opacity-90'
+   463→   463→                          : 'border-gold/40 text-gold hover:bg-gold/5'
+   464→   464→                      }`}
+   465→   465→                    >
+   466→   466→                      Choisir {plan.label}
+   467→   467→                    </Button>
+   468→   468→                  </CardContent>
+   469→   469→                </Card>
+   470→   470→              </motion.div>
+   471→   471→            ))}
+   472→   472→          </div>
+   473→   473→
+   474→   474→          <p className="text-center text-xs text-muted-foreground mt-8 font-display">
+   475→   475→            💡 Tous les plans incluent une page de mariage personnalisable,
+   476→   476→            l&apos;envoi d&apos;invitations et le suivi RSVP.
+   477→   477→          </p>
+   478→   478→        </div>
+   479→   479→      </section>
+   480→   480→
+   481→   481→      {/* ─── WHY US ───────────────────────────────────────────────────── */}
+   482→   482→      <section className="relative py-16 md:py-24 px-4 sm:px-6 lg:px-8 bg-gradient-to-b from-transparent via-champagne/10 to-transparent">
+   483→   483→        <div className="max-w-7xl mx-auto">
+   484→   484→          <motion.div
+   485→   485→            initial={{ opacity: 0, y: 20 }}
+   486→   486→            whileInView={{ opacity: 1, y: 0 }}
+   487→   487→            viewport={{ once: true }}
+   488→   488→            transition={{ duration: 0.6 }}
+   489→   489→            className="text-center mb-12 md:mb-16"
+   490→   490→          >
+   491→   491→            <div className="section-divider max-w-md mx-auto mb-6">
+   492→   492→              <span className="flourish text-sm">✦</span>
+   493→   493→            </div>
+   494→   494→            <h2 className="font-serif text-3xl sm:text-4xl md:text-5xl font-bold gold-gradient mb-4">
+   495→   495→              Pourquoi Heureux Mariage ?
+   496→   496→            </h2>
+   497→   497→            <p className="text-muted-foreground font-display text-sm sm:text-base max-w-2xl mx-auto">
+   498→   498→              Une plateforme pensée pour les mariages en RDC et en Afrique
+   499→   499→              francophone — élégante, simple et accessible.
+   500→   500→            </p>
+   501→   501→          </motion.div>
+   502→   502→
+   503→   503→          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+   504→   504→            {WHY_US.map((feature, idx) => {
+   505→   505→              const Icon = feature.icon
+   506→   506→              return (
+   507→   507→                <motion.div
+   508→   508→                  key={feature.title}
+   509→   509→                  initial={{ opacity: 0, y: 30 }}
+   510→   510→                  whileInView={{ opacity: 1, y: 0 }}
+   511→   511→                  viewport={{ once: true }}
+   512→   512→                  transition={{ duration: 0.5, delay: idx * 0.1 }}
+   513→   513→                >
+   514→   514→                  <Card className="card-premium h-full bg-card/60 backdrop-blur-sm border-border/60 text-center">
+   515→   515→                    <CardHeader className="items-center">
+   516→   516→                      <div className="w-14 h-14 rounded-full bg-gradient-to-br from-gold/20 to-rose-gold/20 border border-gold/30 flex items-center justify-center mb-2">
+   517→   517→                        <Icon className="size-6 text-gold" />
+   518→   518→                      </div>
+   519→   519→                      <CardTitle className="font-serif text-lg font-semibold">
+   520→   520→                        {feature.title}
+   521→   521→                      </CardTitle>
+   522→   522→                    </CardHeader>
+   523→   523→                    <CardContent>
+   524→   524→                      <p className="text-sm text-muted-foreground font-display leading-relaxed">
+   525→   525→                        {feature.description}
+   526→   526→                      </p>
+   527→   527→                    </CardContent>
+   528→   528→                  </Card>
+   529→   529→                </motion.div>
+   530→   530→              )
+   531→   531→            })}
+   532→   532→          </div>
+   533→   533→        </div>
+   534→   534→      </section>
+   535→   535→
+   536→   536→      {/* ─── LEAD CAPTURE FORM ────────────────────────────────────────── */}
+   537→   537→      <section
+   538→   538→        id="demande"
+   539→   539→        className="relative py-16 md:py-24 px-4 sm:px-6 lg:px-8 scroll-mt-20"
+   540→   540→      >
+   541→   541→        <div className="max-w-3xl mx-auto">
+   542→   542→          <motion.div
+   543→   543→            initial={{ opacity: 0, y: 20 }}
+   544→   544→            whileInView={{ opacity: 1, y: 0 }}
+   545→   545→            viewport={{ once: true }}
+   546→   546→            transition={{ duration: 0.6 }}
+   547→   547→            className="text-center mb-10"
+   548→   548→          >
+   549→   549→            <div className="section-divider max-w-md mx-auto mb-6">
+   550→   550→              <span className="flourish text-sm">✦</span>
+   551→   551→            </div>
+   552→   552→            <h2 className="font-serif text-3xl sm:text-4xl md:text-5xl font-bold gold-gradient mb-4">
+   553→   553→              Demandez votre mariage sur mesure
+   554→   554→            </h2>
+   555→   555→            <p className="text-muted-foreground font-display text-sm sm:text-base">
+   556→   556→              Remplissez ce formulaire. Un conseiller Heureux Mariage vous
+   557→   557→              contactera sur WhatsApp sous 24h pour finaliser votre offre.
+   558→   558→            </p>
+   559→   559→          </motion.div>
+   560→   560→
+   561→   561→          {submitted ? (
+   562→   562→            <motion.div
+   563→   563→              initial={{ opacity: 0, scale: 0.95 }}
+   564→   564→              animate={{ opacity: 1, scale: 1 }}
+   565→   565→              transition={{ duration: 0.5 }}
+   566→   566→            >
+   567→   567→              <Card className="border-gold/40 gold-border bg-card/95 backdrop-blur-md">
+   568→   568→                <CardContent className="pt-8 pb-8 text-center space-y-5">
+   569→   569→                  <motion.div
+   570→   570→                    initial={{ scale: 0 }}
+   571→   571→                    animate={{ scale: 1 }}
+   572→   572→                    transition={{
+   573→   573→                      type: 'spring',
+   574→   574→                      stiffness: 200,
+   575→   575→                      damping: 15,
+   576→   576→                      delay: 0.2,
+   577→   577→                    }}
+   578→   578→                    className="mx-auto w-20 h-20 rounded-full bg-gradient-to-br from-gold/20 to-rose-gold/20 border border-gold/40 flex items-center justify-center"
+   579→   579→                  >
+   580→   580→                    <Heart className="size-10 text-gold fill-gold/30" />
+   581→   581→                  </motion.div>
+   582→   582→                  <div className="space-y-2">
+   583→   583→                    <h3 className="font-serif text-2xl md:text-3xl font-bold gold-gradient">
+   584→   584→                      Merci ! Votre demande a bien été reçue. 💍
+   585→   585→                    </h3>
+   586→   586→                    <p className="text-muted-foreground font-display text-sm md:text-base max-w-md mx-auto leading-relaxed">
+   587→   587→                      Un conseiller Heureux Mariage vous contactera sur WhatsApp
+   588→   588→                      sous 24h pour finaliser votre offre.
+   589→   589→                    </p>
+   590→   590→                  </div>
+   591→   591→                  <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
+   592→   592→                    <Button
+   593→   593→                      asChild
+   594→   594→                      className="bg-gradient-gold text-white hover:opacity-90 rounded-full px-6"
+   595→   595→                    >
+   596→   596→                      <Link href="/">
+   597→   597→                        Découvrir un exemple de mariage
+   598→   598→                        <ArrowRight className="size-4" />
+   599→   599→                      </Link>
+   600→   600→                    </Button>
+   601→   601→                    <Button
+   602→   602→                      variant="ghost"
+   603→   603→                      onClick={() => setSubmitted(false)}
+   604→   604→                      className="text-muted-foreground hover:text-foreground rounded-full"
+   605→   605→                    >
+   606→   606→                      Envoyer une autre demande
+   607→   607→                    </Button>
+   608→   608→                  </div>
+   609→   609→                </CardContent>
+   610→   610→              </Card>
+   611→   611→            </motion.div>
+   612→   612→          ) : (
+   613→   613→            <motion.div
+   614→   614→              initial={{ opacity: 0, y: 30 }}
+   615→   615→              whileInView={{ opacity: 1, y: 0 }}
+   616→   616→              viewport={{ once: true }}
+   617→   617→              transition={{ duration: 0.6 }}
+   618→   618→            >
+   619→   619→              <Card className="glass-card border-gold/20 bg-card/80 backdrop-blur-md shadow-xl shadow-gold/5">
+   620→   620→                <CardHeader>
+   621→   621→                  <CardTitle className="font-serif text-xl md:text-2xl font-bold flex items-center gap-2">
+   622→   622→                    <MessageCircle className="size-5 text-gold" />
+   623→   623→                    Formulaire de demande
+   624→   624→                  </CardTitle>
+   625→   625→                  <CardDescription className="font-display">
+   626→   626→                    Les champs marqués d&apos;un{' '}
+   627→   627→                    <span className="text-destructive">*</span> sont obligatoires.
+   628→   628→                  </CardDescription>
+   629→   629→                </CardHeader>
+   630→   630→                <CardContent>
+   631→   631→                  <form
+   632→   632→                    onSubmit={handleSubmit(onSubmit)}
+   633→   633→                    className="space-y-5"
+   634→   634→                    noValidate
+   635→   635→                  >
+   636→   636→                    {/* Couple names — side by side on md+ */}
+   637→   637→                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+   638→   638→                      <div className="space-y-2">
+   639→   639→                        <Label htmlFor="brideName" className="text-foreground">
+   640→   640→                          Prénom de la mariée{' '}
+   641→   641→                          <span className="text-destructive">*</span>
+   642→   642→                        </Label>
+   643→   643→                        <Input
+   644→   644→                          id="brideName"
+   645→   645→                          type="text"
+   646→   646→                          autoComplete="given-name"
+   647→   647→                          placeholder="Ex. Hornella"
+   648→   648→                          aria-label="Prénom de la mariée"
+   649→   649→                          aria-invalid={!!errors.brideName}
+   650→   650→                          aria-required="true"
+   651→   651→                          className="bg-background/60"
+   652→   652→                          {...register('brideName')}
+   653→   653→                        />
+   654→   654→                        {errors.brideName && (
+   655→   655→                          <p className="text-xs text-destructive font-display">
+   656→   656→                            {errors.brideName.message}
+   657→   657→                          </p>
+   658→   658→                        )}
+   659→   659→                      </div>
+   660→   660→                      <div className="space-y-2">
+   661→   661→                        <Label htmlFor="groomName" className="text-foreground">
+   662→   662→                          Prénom du marié{' '}
+   663→   663→                          <span className="text-destructive">*</span>
+   664→   664→                        </Label>
+   665→   665→                        <Input
+   666→   666→                          id="groomName"
+   667→   667→                          type="text"
+   668→   668→                          autoComplete="given-name"
+   669→   669→                          placeholder="Ex. Josué"
+   670→   670→                          aria-label="Prénom du marié"
+   671→   671→                          aria-invalid={!!errors.groomName}
+   672→   672→                          aria-required="true"
+   673→   673→                          className="bg-background/60"
+   674→   674→                          {...register('groomName')}
+   675→   675→                        />
+   676→   676→                        {errors.groomName && (
+   677→   677→                          <p className="text-xs text-destructive font-display">
+   678→   678→                            {errors.groomName.message}
+   679→   679→                          </p>
+   680→   680→                        )}
+   681→   681→                      </div>
+   682→   682→                    </div>
+   683→   683→
+   684→   684→                    {/* Wedding date + venue city */}
+   685→   685→                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+   686→   686→                      <div className="space-y-2">
+   687→   687→                        <Label htmlFor="weddingDate" className="text-foreground">
+   688→   688→                          Date du mariage{' '}
+   689→   689→                          <span className="text-muted-foreground text-xs">
+   690→   690→                            (optionnel)
+   691→   691→                          </span>
+   692→   692→                        </Label>
+   693→   693→                        <Input
+   694→   694→                          id="weddingDate"
+   695→   695→                          type="date"
+   696→   696→                          aria-label="Date du mariage"
+   697→   697→                          className="bg-background/60"
+   698→   698→                          {...register('weddingDate')}
+   699→   699→                        />
+   700→   700→                      </div>
+   701→   701→                      <div className="space-y-2">
+   702→   702→                        <Label htmlFor="venueCity" className="text-foreground">
+   703→   703→                          Ville du mariage{' '}
+   704→   704→                          <span className="text-muted-foreground text-xs">
+   705→   705→                            (optionnel)
+   706→   706→                          </span>
+   707→   707→                        </Label>
+   708→   708→                        <Input
+   709→   709→                          id="venueCity"
+   710→   710→                          type="text"
+   711→   711→                          autoComplete="address-level2"
+   712→   712→                          placeholder="Ex. Kinshasa"
+   713→   713→                          aria-label="Ville du mariage"
+   714→   714→                          className="bg-background/60"
+   715→   715→                          {...register('venueCity')}
+   716→   716→                        />
+   717→   717→                      </div>
+   718→   718→                    </div>
+   719→   719→
+   720→   720→                    {/* Email + phone */}
+   721→   721→                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+   722→   722→                      <div className="space-y-2">
+   723→   723→                        <Label htmlFor="email" className="text-foreground">
+   724→   724→                          Email <span className="text-destructive">*</span>
+   725→   725→                        </Label>
+   726→   726→                        <Input
+   727→   727→                          id="email"
+   728→   728→                          type="email"
+   729→   729→                          autoComplete="email"
+   730→   730→                          placeholder="vous@exemple.com"
+   731→   731→                          aria-label="Adresse email"
+   732→   732→                          aria-invalid={!!errors.email}
+   733→   733→                          aria-required="true"
+   734→   734→                          className="bg-background/60"
+   735→   735→                          {...register('email')}
+   736→   736→                        />
+   737→   737→                        {errors.email && (
+   738→   738→                          <p className="text-xs text-destructive font-display">
+   739→   739→                            {errors.email.message}
+   740→   740→                          </p>
+   741→   741→                        )}
+   742→   742→                      </div>
+   743→   743→                      <div className="space-y-2">
+   744→   744→                        <Label htmlFor="phone" className="text-foreground">
+   745→   745→                          Téléphone WhatsApp{' '}
+   746→   746→                          <span className="text-muted-foreground text-xs">
+   747→   747→                            (recommandé)
+   748→   748→                          </span>
+   749→   749→                        </Label>
+   750→   750→                        <Input
+   751→   751→                          id="phone"
+   752→   752→                          type="tel"
+   753→   753→                          autoComplete="tel"
+   754→   754→                          placeholder="Ex. +243 970 000 000"
+   755→   755→                          aria-label="Numéro de téléphone WhatsApp pour vous contacter rapidement"
+   756→   756→                          className="bg-background/60"
+   757→   757→                          {...register('phone')}
+   758→   758→                        />
+   759→   759→                        <p className="text-[11px] text-muted-foreground/80 font-display">
+   760→   760→                          Pour vous contacter rapidement
+   761→   761→                        </p>
+   762→   762→                      </div>
+   763→   763→                    </div>
+   764→   764→
+   765→   765→                    {/* Plan select */}
+   766→   766→                    <div className="space-y-2">
+   767→   767→                      <Label htmlFor="plan" className="text-foreground">
+   768→   768→                        Plan souhaité <span className="text-destructive">*</span>
+   769→   769→                      </Label>
+   770→   770→                      <Select
+   771→   771→                        value={selectedPlan}
+   772→   772→                        onValueChange={(val) =>
+   773→   773→                          setValue('plan', val as LeadFormValues['plan'], {
+   774→   774→                            shouldValidate: true,
+   775→   775→                          })
+   776→   776→                        }
+   777→   777→                      >
+   778→   778→                        <SelectTrigger
+   779→   779→                          id="plan"
+   780→   780→                          className="w-full bg-background/60 h-10"
+   781→   781→                          aria-label="Plan souhaité"
+   782→   782→                          aria-required="true"
+   783→   783→                        >
+   784→   784→                          <SelectValue placeholder="Sélectionnez un plan" />
+   785→   785→                        </SelectTrigger>
+   786→   786→                        <SelectContent>
+   787→   787→                          {PLANS_PREVIEW.map((p) => (
+   788→   788→                            <SelectItem key={p.key} value={p.key}>
+   789→   789→                              {p.label}
+   790→   790→                              {p.priceFcfa > 0
+   791→   791→                                ? ` — ${formatFcfa(p.priceFcfa)}`
+   792→   792→                                : ' — Gratuit'}
+   793→   793→                            </SelectItem>
+   794→   794→                          ))}
+   795→   795→                        </SelectContent>
+   796→   796→                      </Select>
+   797→   797→                      {errors.plan && (
+   798→   798→                        <p className="text-xs text-destructive font-display">
+   799→   799→                          {errors.plan.message}
+   800→   800→                        </p>
+   801→   801→                      )}
+   802→   802→                      <p className="text-[11px] text-muted-foreground/80 font-display">
+   803→   803→                        Plan sélectionné :{' '}
+   804→   804→                        <span className="text-gold font-medium">
+   805→   805→                          {PLAN_LABELS[selectedPlan]}
+   806→   806→                        </span>
+   807→   807→                      </p>
+   808→   808→                    </div>
+   809→   809→
+   810→   810→                    {/* Message */}
+   811→   811→                    <div className="space-y-2">
+   812→   812→                      <Label htmlFor="message" className="text-foreground">
+   813→   813→                        Message{' '}
+   814→   814→                        <span className="text-muted-foreground text-xs">
+   815→   815→                          (optionnel)
+   816→   816→                        </span>
+   817→   817→                      </Label>
+   818→   818→                      <Textarea
+   819→   819→                        id="message"
+   820→   820→                        rows={4}
+   821→   821→                        placeholder="Parlez-nous de votre projet : nombre d'invités estimé, style souhaité, dates importantes, etc."
+   822→   822→                        aria-label="Message — parlez-nous de votre projet"
+   823→   823→                        className="bg-background/60 resize-y min-h-24"
+   824→   824→                        {...register('message')}
+   825→   825→                      />
+   826→   826→                      {errors.message && (
+   827→   827→                        <p className="text-xs text-destructive font-display">
+   828→   828→                          {errors.message.message}
+   829→   829→                        </p>
+   830→   830→                      )}
+   831→   831→                    </div>
+   832→   832→
+   833→   833→                    {/* Submit */}
+   834→   834→                    <Button
+   835→   835→                      type="submit"
+   836→   836→                      disabled={isSubmitting}
+   837→   837→                      className="btn-premium w-full sm:w-auto bg-gradient-gold text-white hover:opacity-90 rounded-full px-8 py-6 text-base shadow-lg shadow-gold/20 disabled:opacity-60 disabled:shadow-none"
+   838→   838→                      aria-label="Envoyer ma demande"
+   839→   839→                    >
+   840→   840→                      {isSubmitting ? (
+   841→   841→                        <>
+   842→   842→                          <Loader2 className="size-4 animate-spin" />
+   843→   843→                          Envoi en cours...
+   844→   844→                        </>
+   845→   845→                      ) : (
+   846→   846→                        <>
+   847→   847→                          <Send className="size-4" />
+   848→   848→                          Envoyer ma demande
+   849→   849→                        </>
+   850→   850→                      )}
+   851→   851→                    </Button>
+   852→   852→
+   853→   853→                    <p className="text-[11px] text-muted-foreground/70 font-display leading-relaxed pt-2 border-t border-border/40">
+   854→   854→                      🔒 Vos données restent confidentielles et ne sont utilisées
+   855→   855→                      que pour vous contacter au sujet de votre mariage. Aucun
+   856→   856→                      paiement en ligne : tout se fait via WhatsApp avec votre
+   857→   857→                      conseiller.
+   858→   858→                    </p>
+   859→   859→                  </form>
+   860→   860→                </CardContent>
+   861→   861→              </Card>
+   862→   862→            </motion.div>
+   863→   863→          )}
+   864→   864→        </div>
+   865→   865→      </section>
+   866→   866→
+   867→   867→      {/* ─── FOOTER (sticky bottom via mt-auto) ──────────────────────── */}
+   868→   868→      <Footer />
+   869→   869→    </div>
+   870→   870→  )
+   871→   871→}
+   872→   872→

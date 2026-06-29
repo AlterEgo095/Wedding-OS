@@ -50,16 +50,21 @@ interface UserManagerProps {
   onSessionExpired: () => void
 }
 
-const ROLES = ['SUPER_ADMIN', 'ORGANIZER', 'RECEPTION', 'CONTROLLER']
+// Phase 3 ÉTAPE 6: list both canonical PLATFORM_ADMIN and legacy SUPER_ADMIN.
+// The UI sends PLATFORM_ADMIN by default; SUPER_ADMIN is accepted by the API
+// for backward compat with existing DB rows seeded before Phase 3.
+const ROLES = ['PLATFORM_ADMIN', 'SUPER_ADMIN', 'ORGANIZER', 'RECEPTION', 'CONTROLLER']
 
 const ROLE_LABELS: Record<string, string> = {
-  SUPER_ADMIN: 'Super Admin',
+  PLATFORM_ADMIN: 'Admin Plateforme',
+  SUPER_ADMIN: 'Super Admin (legacy)',
   ORGANIZER: 'Organisateur',
   RECEPTION: 'Réception',
   CONTROLLER: 'Contrôleur',
 }
 
 const ROLE_COLORS: Record<string, string> = {
+  PLATFORM_ADMIN: 'bg-gold/20 text-gold border-gold/30',
   SUPER_ADMIN: 'bg-gold/20 text-gold border-gold/30',
   ORGANIZER: 'bg-purple-500/20 text-purple-400 border-purple-500/30',
   RECEPTION: 'bg-teal-500/20 text-teal-400 border-teal-500/30',

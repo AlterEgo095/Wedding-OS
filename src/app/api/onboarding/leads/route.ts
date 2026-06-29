@@ -118,9 +118,13 @@ export async function POST(request: NextRequest) {
       );
     }
     if (phone !== undefined && phone !== null) {
-      if (typeof phone !== 'string' || phone.length > 30) {
+      // Phase 3 ÉTAPE 6: aligned with the wizard's zod schema (max 40 chars).
+      // Previously the backend rejected at 30 chars while the form accepted
+      // up to 40 — that mismatch silently broke submissions with long
+      // formatted phone numbers (e.g. "+243 0970 000 000" with separators).
+      if (typeof phone !== 'string' || phone.length > 40) {
         return NextResponse.json(
-          { error: 'Numéro de téléphone invalide (max 30 caractères).' },
+          { error: 'Numéro de téléphone invalide (max 40 caractères).' },
           { status: 400 },
         );
       }

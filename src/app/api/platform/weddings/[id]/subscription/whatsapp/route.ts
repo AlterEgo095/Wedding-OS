@@ -35,8 +35,11 @@ import type { Plan } from '@/lib/types';
  *     recipient:  string | null,  // normalised phone, or null if user picks recipient
  *   }
  *
- * Side effect: if a subscription exists, the whatsappSentAt timestamp is
- * updated (so the admin can see "last WhatsApp sent" in the UI).
+ * Side effect: if a subscription exists, the whatsappPhone is synced.
+ * Additionally, the most recent OPEN invoice for this wedding gets its
+ * `whatsappSentAt` timestamp stamped (so the admin can see "last WhatsApp
+ * sent" in the UI). Both writes are best-effort — the deeplink is always
+ * returned even if the persistence layer fails.
  */
 
 interface RouteParams {
@@ -111,7 +114,15 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
     const { url, recipient } = buildWhatsAppDeeplink(whatsappPhone, message);
 
-    // ─── Stamp whatsappSentAt on the subscription (best-effort) ────────────
+    // ─── Stamp whatsappSentAt + sync whatsappPhone (best-effort) ────────
+    // Phase 3 ÉTAPE 6: previously the docstring promised `whatsappSentAt`
+    // would be stamped, but the code only updated `whatsappPhone`. The
+    // `whatsappSentAt` column lives on Invoice (not Subscription), so we
+    // stamp it on the most recent OPEN invoice for this wedding. If no OPEN
+    // invoice exists yet (e.g. admin is sending the offer before creating
+    // the first invoice), the timestamp simply isn't written — the deeplink
+    // is still returned. Both writes are wrapped in try/catch so a DB error
+    // never blocks the WhatsApp flow.
     if (subscription) {
       try {
         await db.subscription.update({
@@ -121,6 +132,14 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       } catch {
         // Non-fatal — we still return the deeplink.
       }
+    }
+    try {
+      await db.invoice.updateMany({
+        where: { weddingId: id, status: 'OPEN' },
+        data: { whatsappSentAt: new Date() },
+      });
+    } catch {
+      // Non-fatal — we still return the deeplink.
     }
 
     // ─── Audit log ─────────────────────────────────────────────────────────

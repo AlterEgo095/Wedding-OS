@@ -59,6 +59,7 @@ export default function TimelineManager({ token, onSessionExpired }: TimelineMan
   const fetchEvents = async () => {
     try {
       const res = await fetch('/api/timeline')
+      if (res.status === 401) { onSessionExpired(); return }
       if (res.ok) {
         const json = await res.json()
         setEvents(json.events)
@@ -96,6 +97,7 @@ export default function TimelineManager({ token, onSessionExpired }: TimelineMan
         }),
       })
       const json = await res.json()
+      if (res.status === 401) { onSessionExpired(); return }
       if (res.ok) {
         toast.success('Événement ajouté')
         setShowAddDialog(false)
@@ -130,6 +132,7 @@ export default function TimelineManager({ token, onSessionExpired }: TimelineMan
         }),
       })
       const json = await res.json()
+      if (res.status === 401) { onSessionExpired(); return }
       if (res.ok) {
         toast.success('Événement modifié')
         setShowEditDialog(false)
@@ -154,6 +157,7 @@ export default function TimelineManager({ token, onSessionExpired }: TimelineMan
         method: 'DELETE',
         headers: { Authorization: `Bearer ${token}` },
       })
+      if (res.status === 401) { onSessionExpired(); return }
       if (res.ok) {
         toast.success('Événement supprimé')
         setShowDeleteDialog(false)
