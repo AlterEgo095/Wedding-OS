@@ -19,7 +19,11 @@ import { isValidSlug, buildCoupleLabel, type Plan, type WeddingStatus } from '@/
  * mark a wedding as default (the legacy client at "/" depends on it).
  */
 
-const VALID_STATUSES: WeddingStatus[] = ['DRAFT', 'PUBLISHED', 'ARCHIVED', 'SUSPENDED'];
+// Phase 3 ÉTAPE 6: import canonical VALID_STATUSES from shared module.
+// Previously this route had its own 4-value list missing COMPLETED (the 5th
+// status introduced in ÉTAPE 5) — that was a latent bug that would have
+// blocked programmatic wedding creation with status: 'COMPLETED'.
+import { VALID_STATUSES } from '@/lib/wedding-status';
 const VALID_PLANS: Plan[] = ['TRIAL', 'ESSENTIEL', 'PREMIUM', 'ELITE'];
 
 const WEDDING_LIST_SELECT = {

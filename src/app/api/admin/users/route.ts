@@ -58,7 +58,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Email, password, name, and role are required' }, { status: 400 });
     }
 
-    const validRoles = ['SUPER_ADMIN', 'ORGANIZER', 'RECEPTION', 'CONTROLLER'];
+    // Phase 3 ÉTAPE 6: accept the canonical PLATFORM_ADMIN name AND the legacy
+    // SUPER_ADMIN alias so the UI can use either without a 400. Both are
+    // treated identically downstream (see isPlatformAdmin() in lib/types.ts).
+    const validRoles = ['PLATFORM_ADMIN', 'SUPER_ADMIN', 'ORGANIZER', 'RECEPTION', 'CONTROLLER'];
     if (!validRoles.includes(role)) {
       return NextResponse.json({ error: 'Invalid role. Must be one of: ' + validRoles.join(', ') }, { status: 400 });
     }
@@ -144,7 +147,8 @@ export async function PUT(request: NextRequest) {
     if (!existing) return NextResponse.json({ error: 'User not found' }, { status: 404 });
 
     if (role) {
-      const validRoles = ['SUPER_ADMIN', 'ORGANIZER', 'RECEPTION', 'CONTROLLER'];
+      // Phase 3 ÉTAPE 6: accept both canonical PLATFORM_ADMIN and legacy SUPER_ADMIN.
+      const validRoles = ['PLATFORM_ADMIN', 'SUPER_ADMIN', 'ORGANIZER', 'RECEPTION', 'CONTROLLER'];
       if (!validRoles.includes(role)) {
         return NextResponse.json({ error: 'Invalid role' }, { status: 400 });
       }

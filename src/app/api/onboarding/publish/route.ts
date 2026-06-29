@@ -3,6 +3,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getAuthUser, requirePlatformAdmin } from '@/lib/auth';
 import { invalidateWeddingCache } from '@/lib/tenant-context';
+// Phase 3 ÉTAPE 6: use the shared lifecycle matrix so this route can no
+// longer bypass the transition rules (e.g. it used to allow
+// COMPLETED → PUBLISHED and ARCHIVED → PUBLISHED, which the canonical
+// /api/platform/weddings/[id] route rejects).
+import { isValidTransition, getAllowedTransitions } from '@/lib/wedding-status';
 
 /**
  * POST /api/onboarding/publish    (PLATFORM_ADMIN)
@@ -60,6 +65,22 @@ export async function POST(request: NextRequest) {
     if (wedding.status === 'PUBLISHED') {
       return NextResponse.json(
         { error: 'Ce mariage est déjà publié.' },
+        { status: 400 },
+      );
+    }
+
+    // Phase 3 ÉTAPE 6: validate the transition against the canonical matrix.
+    // The previous code unconditionally set status='PUBLISHED', which allowed
+    // illegal transitions like COMPLETED → PUBLISHED or ARCHIVED → PUBLISHED.
+    // Now we reject those with the same payload shape as the platform route.
+    if (!isValidTransition(wedding.status, 'PUBLISHED')) {
+      return NextResponse.json(
+        {
+          error: `Transition invalide: ${wedding.status} → PUBLISHED.`,
+          from: wedding.status,
+          to: 'PUBLISHED',
+          allowed: getAllowedTransitions(wedding.status),
+        },
         { status: 400 },
       );
     }
