@@ -1,0 +1,1100 @@
+     1→'use client'
+     2→
+     3→import { useState, useEffect, useRef } from 'react'
+     4→import { Card, CardContent } from '@/components/ui/card'
+     5→import { Button } from '@/components/ui/button'
+     6→import { Input } from '@/components/ui/input'
+     7→import { Label } from '@/components/ui/label'
+     8→import { Badge } from '@/components/ui/badge'
+     9→import { Skeleton } from '@/components/ui/skeleton'
+    10→import {
+    11→  Dialog,
+    12→  DialogContent,
+    13→  DialogHeader,
+    14→  DialogTitle,
+    15→  DialogFooter,
+    16→} from '@/components/ui/dialog'
+    17→import {
+    18→  Select,
+    19→  SelectContent,
+    20→  SelectItem,
+    21→  SelectTrigger,
+    22→  SelectValue,
+    23→} from '@/components/ui/select'
+    24→import {
+    25→  Table,
+    26→  TableBody,
+    27→  TableCell,
+    28→  TableHead,
+    29→  TableHeader,
+    30→  TableRow,
+    31→} from '@/components/ui/table'
+    32→import {
+    33→  DropdownMenu,
+    34→  DropdownMenuContent,
+    35→  DropdownMenuItem,
+    36→  DropdownMenuTrigger,
+    37→} from '@/components/ui/dropdown-menu'
+    38→import {
+    39→  Plus, Search, Download, Upload, QrCode, MoreHorizontal,
+    40→  Pencil, Trash2, ChevronLeft, ChevronRight, Loader2, X, Users,
+    41→  Link2, Copy, Check, Share2, Mail, FileText, AlertTriangle,
+    42→  CheckCircle2, XCircle, FileUp
+    43→} from 'lucide-react'
+    44→import { toast } from 'sonner'
+    45→
+    46→/**
+    47→ * Detect the current wedding slug from the URL path.
+    48→ * Returns null on root `/admin` (legacy SPA served at root, default wedding).
+    49→ * Returns the slug on `/w/[slug]/...` routes (per-wedding admin).
+    50→ */
+    51→function getWeddingSlug(): string | null {
+    52→  if (typeof window === 'undefined') return null
+    53→  const match = window.location.pathname.match(/^\/w\/([a-z0-9-]+)/i)
+    54→  return match?.[1] ?? null
+    55→}
+    56→
+    57→/**
+    58→ * Build the public invite URL for a guest. On the legacy root `/admin` SPA this
+    59→ * points to `/?invite=…` (default wedding). On per-wedding admin it points to
+    60→ * `/w/<slug>?invite=…` so the invitee lands on the correct tenant site.
+    61→ */
+    62→function buildInviteUrl(suffix: string): string {
+    63→  if (typeof window === 'undefined') return ''
+    64→  const origin = window.location.origin
+    65→  const slug = getWeddingSlug()
+    66→  return slug
+    67→    ? `${origin}/w/${slug}${suffix}`
+    68→    : `${origin}${suffix}`
+    69→}
+    70→
+    71→interface Guest {
+    72→  id: string
+    73→  firstName: string
+    74→  lastName: string
+    75→  phone: string | null
+    76→  email: string | null
+    77→  tableId: string | null
+    78→  seats: number
+    79→  category: string
+    80→  status: string
+    81→  invitationCode: string
+    82→  personalMessage: string | null
+    83→  checkedIn: boolean
+    84→  checkedInAt: string | null
+    85→  createdAt: string
+    86→  table: { id: string; name: string; number: number } | null
+    87→}
+    88→
+    89→interface TableInfo {
+    90→  id: string
+    91→  name: string
+    92→  number: number
+    93→  capacity: number
+    94→  guestCount: number
+    95→}
+    96→
+    97→interface ImportResult {
+    98→  tablesCreated: number
+    99→  tablesUpdated: number
+   100→  guestsCreated: number
+   101→  guestsSkipped: number
+   102→  duplicatesDetected: string[]
+   103→  errors: string[]
+   104→  details: {
+   105→    table: string
+   106→    guestsAdded: string[]
+   107→    guestsSkipped: string[]
+   108→  }[]
+   109→}
+   110→
+   111→interface GuestManagerProps {
+   112→  token: string
+   113→  onSessionExpired: () => void
+   114→}
+   115→
+   116→const CATEGORIES = ['VIP', 'FAMILLE', 'AMIS', 'SPONSORS', 'COLLEGUES']
+   117→const STATUSES = ['CONFIRMED', 'PENDING', 'DECLINED']
+   118→
+   119→const CATEGORY_LABELS: Record<string, string> = {
+   120→  VIP: 'VIP',
+   121→  FAMILLE: 'Famille',
+   122→  AMIS: 'Amis',
+   123→  SPONSORS: 'Sponsors',
+   124→  COLLEGUES: 'Collègues',
+   125→}
+   126→
+   127→const STATUS_LABELS: Record<string, string> = {
+   128→  CONFIRMED: 'Confirmé',
+   129→  PENDING: 'En attente',
+   130→  DECLINED: 'Refusé',
+   131→}
+   132→
+   133→const CATEGORY_COLORS: Record<string, string> = {
+   134→  VIP: 'bg-amber-500/20 text-amber-400 border-amber-500/30',
+   135→  FAMILLE: 'bg-rose-500/20 text-rose-400 border-rose-500/30',
+   136→  AMIS: 'bg-teal-500/20 text-teal-400 border-teal-500/30',
+   137→  SPONSORS: 'bg-purple-500/20 text-purple-400 border-purple-500/30',
+   138→  COLLEGUES: 'bg-sky-500/20 text-sky-400 border-sky-500/30',
+   139→}
+   140→
+   141→const STATUS_COLORS: Record<string, string> = {
+   142→  CONFIRMED: 'bg-green-500/20 text-green-400 border-green-500/30',
+   143→  PENDING: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30',
+   144→  DECLINED: 'bg-red-500/20 text-red-400 border-red-500/30',
+   145→}
+   146→
+   147→export default function GuestManager({ token, onSessionExpired }: GuestManagerProps) {
+   148→  const [guests, setGuests] = useState<Guest[]>([])
+   149→  const [tables, setTables] = useState<TableInfo[]>([])
+   150→  const [loading, setLoading] = useState(true)
+   151→  const [page, setPage] = useState(1)
+   152→  const [totalPages, setTotalPages] = useState(1)
+   153→  const [total, setTotal] = useState(0)
+   154→  const [search, setSearch] = useState('')
+   155→  const [filterStatus, setFilterStatus] = useState<string>('all')
+   156→  const [filterCategory, setFilterCategory] = useState<string>('all')
+   157→  const [filterTable, setFilterTable] = useState<string>('all')
+   158→
+   159→  // Couple label from settings — used in share/WhatsApp messages so we don't
+   160→  // leak "Josué & Hornella" into other weddings' comms. Generic "Mariage"
+   161→  // fallback until the settings fetch resolves.
+   162→  const [coupleLabel, setCoupleLabel] = useState<string>('Mariage')
+   163→  useEffect(() => {
+   164→    fetch('/api/settings')
+   165→      .then((r) => (r.ok ? r.json() : null))
+   166→      .then((data) => {
+   167→        const s = data?.settings
+   168→        if (s && typeof s === 'object') {
+   169→          const bride = (s.bride_name || '').trim()
+   170→          const groom = (s.groom_name || '').trim()
+   171→          if (bride && groom) setCoupleLabel(`${groom} & ${bride}`)
+   172→          else if (bride || groom) setCoupleLabel(bride || groom)
+   173→        }
+   174→      })
+   175→      .catch(() => {})
+   176→  }, [])
+   177→
+   178→  // Dialogs
+   179→  const [showAddDialog, setShowAddDialog] = useState(false)
+   180→  const [showEditDialog, setShowEditDialog] = useState(false)
+   181→  const [showDeleteDialog, setShowDeleteDialog] = useState(false)
+   182→  const [showQRDialog, setShowQRDialog] = useState(false)
+   183→  const [showImportResult, setShowImportResult] = useState(false)
+   184→  const [showImportDialog, setShowImportDialog] = useState(false)
+   185→  const [importMergeMode, setImportMergeMode] = useState<string>('merge')
+   186→  const [selectedGuest, setSelectedGuest] = useState<Guest | null>(null)
+   187→  const [qrCodeData, setQrCodeData] = useState<{ qrCode: string; guest: Guest } | null>(null)
+   188→  const [saving, setSaving] = useState(false)
+   189→  const [copiedLinkId, setCopiedLinkId] = useState<string | null>(null)
+   190→  const [importResult, setImportResult] = useState<ImportResult | null>(null)
+   191→  const [importing, setImporting] = useState(false)
+   192→
+   193→  // Generate encrypted invitation link for a guest
+   194→  const getInvitationLink = async (guest: Guest): Promise<string> => {
+   195→    try {
+   196→      const res = await fetch('/api/guest/invite', {
+   197→        method: 'POST',
+   198→        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+   199→        body: JSON.stringify({ invitationCode: guest.invitationCode }),
+   200→      })
+   201→      if (res.ok) {
+   202→        const data = await res.json()
+   203→        if (data.encryptedToken) {
+   204→          return buildInviteUrl(`?invite=${data.encryptedToken}`)
+   205→        }
+   206→      }
+   207→    } catch {
+   208→      // Fallback to simple code link
+   209→    }
+   210→    return buildInviteUrl(`?code=${guest.invitationCode}`)
+   211→  }
+   212→
+   213→  const handleCopyLink = async (guest: Guest) => {
+   214→    const link = await getInvitationLink(guest)
+   215→    try {
+   216→      await navigator.clipboard.writeText(link)
+   217→      setCopiedLinkId(guest.id)
+   218→      toast.success('Lien copié dans le presse-papiers')
+   219→      setTimeout(() => setCopiedLinkId(null), 2000)
+   220→    } catch {
+   221→      const textArea = document.createElement('textarea')
+   222→      textArea.value = link
+   223→      document.body.appendChild(textArea)
+   224→      textArea.select()
+   225→      document.execCommand('copy')
+   226→      document.body.removeChild(textArea)
+   227→      setCopiedLinkId(guest.id)
+   228→      toast.success('Lien copié')
+   229→      setTimeout(() => setCopiedLinkId(null), 2000)
+   230→    }
+   231→  }
+   232→
+   233→  const handleShareLink = async (guest: Guest) => {
+   234→    const link = await getInvitationLink(guest)
+   235→    if (navigator.share) {
+   236→      try {
+   237→        await navigator.share({
+   238→          title: `Invitation - ${guest.firstName} ${guest.lastName}`,
+   239→          text: `Voici votre invitation privée pour le mariage de ${coupleLabel}`,
+   240→          url: link,
+   241→        })
+   242→      } catch {
+   243→        // User cancelled share
+   244→      }
+   245→    } else {
+   246→      await handleCopyLink(guest)
+   247→    }
+   248→  }
+   249→
+   250→  const handleSendViaWhatsApp = async (guest: Guest) => {
+   251→    const link = await getInvitationLink(guest)
+   252→    const message = `Cher(e) ${guest.firstName} ${guest.lastName}, voici votre invitation privée pour le mariage de ${coupleLabel} : ${link}`
+   253→    const phone = guest.phone?.replace(/\s/g, '').replace(/^\+/, '')
+   254→    const url = phone
+   255→      ? `https://wa.me/${phone}?text=${encodeURIComponent(message)}`
+   256→      : `https://wa.me/?text=${encodeURIComponent(message)}`
+   257→    window.open(url, '_blank')
+   258→  }
+   259→
+   260→  // Form state
+   261→  const [form, setForm] = useState({
+   262→    firstName: '',
+   263→    lastName: '',
+   264→    displayName: '',
+   265→    invitationType: 'individuel',
+   266→    phone: '',
+   267→    email: '',
+   268→    tableId: '',
+   269→    seats: 1,
+   270→    category: 'AMIS',
+   271→    status: 'PENDING',
+   272→    personalMessage: '',
+   273→  })
+   274→
+   275→  const importRef = useRef<HTMLInputElement>(null)
+   276→  const docxImportRef = useRef<HTMLInputElement>(null)
+   277→
+   278→  const fetchGuests = async () => {
+   279→    try {
+   280→      const params = new URLSearchParams({
+   281→        page: String(page),
+   282→        limit: '15',
+   283→      })
+   284→      if (search) params.set('search', search)
+   285→      if (filterStatus !== 'all') params.set('status', filterStatus)
+   286→      if (filterCategory !== 'all') params.set('category', filterCategory)
+   287→      if (filterTable !== 'all') params.set('tableId', filterTable)
+   288→
+   289→      const res = await fetch(`/api/guests?${params}`, {
+   290→        headers: { Authorization: `Bearer ${token}` },
+   291→      })
+   292→      if (res.status === 401) { onSessionExpired(); return }
+   293→      const json = await res.json()
+   294→      if (res.ok) {
+   295→        setGuests(json.guests)
+   296→        setTotalPages(json.pagination.totalPages)
+   297→        setTotal(json.pagination.total)
+   298→      }
+   299→    } catch {
+   300→      toast.error('Erreur de chargement')
+   301→    } finally {
+   302→      setLoading(false)
+   303→    }
+   304→  }
+   305→
+   306→  const fetchTables = async () => {
+   307→    try {
+   308→      const res = await fetch('/api/tables', {
+   309→        headers: { Authorization: `Bearer ${token}` },
+   310→      })
+   311→      if (res.ok) {
+   312→        const json = await res.json()
+   313→        setTables(json.tables)
+   314→      }
+   315→    } catch {
+   316→      // silent
+   317→    }
+   318→  }
+   319→
+   320→  useEffect(() => {
+   321→    fetchGuests()
+   322→  }, [page, search, filterStatus, filterCategory, filterTable, token])
+   323→
+   324→  useEffect(() => {
+   325→    fetchTables()
+   326→  }, [token])
+   327→
+   328→  const resetForm = () => {
+   329→    setForm({
+   330→      firstName: '', lastName: '', displayName: '', invitationType: 'individuel',
+   331→      phone: '', email: '',
+   332→      tableId: '', seats: 1, category: 'AMIS', status: 'PENDING',
+   333→      personalMessage: '',
+   334→    })
+   335→  }
+   336→
+   337→  const handleAdd = async () => {
+   338→    setSaving(true)
+   339→    try {
+   340→      const res = await fetch('/api/guests', {
+   341→        method: 'POST',
+   342→        headers: {
+   343→          'Content-Type': 'application/json',
+   344→          Authorization: `Bearer ${token}`,
+   345→        },
+   346→        body: JSON.stringify({
+   347→          ...form,
+   348→          tableId: form.tableId || null,
+   349→          phone: form.phone || null,
+   350→          email: form.email || null,
+   351→          personalMessage: form.personalMessage || null,
+   352→        }),
+   353→      })
+   354→      const json = await res.json()
+   355→      if (res.ok) {
+   356→        toast.success('Invité ajouté avec succès')
+   357→        setShowAddDialog(false)
+   358→        resetForm()
+   359→        fetchGuests()
+   360→        fetchTables()
+   361→      } else {
+   362→        toast.error(json.error || 'Erreur')
+   363→      }
+   364→    } catch {
+   365→      toast.error('Erreur de connexion')
+   366→    } finally {
+   367→      setSaving(false)
+   368→    }
+   369→  }
+   370→
+   371→  const handleEdit = async () => {
+   372→    if (!selectedGuest) return
+   373→    setSaving(true)
+   374→    try {
+   375→      const res = await fetch(`/api/guests/${selectedGuest.id}`, {
+   376→        method: 'PUT',
+   377→        headers: {
+   378→          'Content-Type': 'application/json',
+   379→          Authorization: `Bearer ${token}`,
+   380→        },
+   381→        body: JSON.stringify({
+   382→          ...form,
+   383→          tableId: form.tableId || null,
+   384→          phone: form.phone || null,
+   385→          email: form.email || null,
+   386→          personalMessage: form.personalMessage || null,
+   387→        }),
+   388→      })
+   389→      const json = await res.json()
+   390→      if (res.ok) {
+   391→        toast.success('Invité modifié avec succès')
+   392→        setShowEditDialog(false)
+   393→        setSelectedGuest(null)
+   394→        resetForm()
+   395→        fetchGuests()
+   396→        fetchTables()
+   397→      } else {
+   398→        toast.error(json.error || 'Erreur')
+   399→      }
+   400→    } catch {
+   401→      toast.error('Erreur de connexion')
+   402→    } finally {
+   403→      setSaving(false)
+   404→    }
+   405→  }
+   406→
+   407→  const handleDelete = async () => {
+   408→    if (!selectedGuest) return
+   409→    setSaving(true)
+   410→    try {
+   411→      const res = await fetch(`/api/guests/${selectedGuest.id}`, {
+   412→        method: 'DELETE',
+   413→        headers: { Authorization: `Bearer ${token}` },
+   414→      })
+   415→      if (res.ok) {
+   416→        toast.success('Invité supprimé')
+   417→        setShowDeleteDialog(false)
+   418→        setSelectedGuest(null)
+   419→        fetchGuests()
+   420→        fetchTables()
+   421→      } else {
+   422→        const json = await res.json()
+   423→        toast.error(json.error || 'Erreur')
+   424→      }
+   425→    } catch {
+   426→      toast.error('Erreur de connexion')
+   427→    } finally {
+   428→      setSaving(false)
+   429→    }
+   430→  }
+   431→
+   432→  const handleExport = async () => {
+   433→    try {
+   434→      const res = await fetch('/api/guests/export', {
+   435→        headers: { Authorization: `Bearer ${token}` },
+   436→      })
+   437→      if (res.ok) {
+   438→        const blob = await res.blob()
+   439→        const url = URL.createObjectURL(blob)
+   440→        const a = document.createElement('a')
+   441→        a.href = url
+   442→        a.download = 'guests-export.xlsx'
+   443→        a.click()
+   444→        URL.revokeObjectURL(url)
+   445→        toast.success('Export réussi')
+   446→      } else {
+   447→        toast.error('Erreur d\'export')
+   448→      }
+   449→    } catch {
+   450→      toast.error('Erreur de connexion')
+   451→    }
+   452→  }
+   453→
+   454→  const handleXlsxImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+   455→    const file = e.target.files?.[0]
+   456→    if (!file) return
+   457→    try {
+   458→      const formData = new FormData()
+   459→      formData.append('file', file)
+   460→      const res = await fetch('/api/guests/import', {
+   461→        method: 'POST',
+   462→        headers: { Authorization: `Bearer ${token}` },
+   463→        body: formData,
+   464→      })
+   465→      const json = await res.json()
+   466→      if (res.ok) {
+   467→        toast.success(`${json.imported} invités importés${json.errors > 0 ? `, ${json.errors} erreurs` : ''}`)
+   468→        fetchGuests()
+   469→        fetchTables()
+   470→      } else {
+   471→        toast.error(json.error || 'Erreur d\'import')
+   472→      }
+   473→    } catch {
+   474→      toast.error('Erreur de connexion')
+   475→    }
+   476→    if (importRef.current) importRef.current.value = ''
+   477→  }
+   478→
+   479→  const handleDocxImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+   480→    const file = e.target.files?.[0]
+   481→    if (!file) return
+   482→
+   483→    setImporting(true)
+   484→    try {
+   485→      const formData = new FormData()
+   486→      formData.append('file', file)
+   487→      formData.append('mergeMode', importMergeMode)
+   488→      const res = await fetch('/api/guests/import-docx', {
+   489→        method: 'POST',
+   490→        headers: { Authorization: `Bearer ${token}` },
+   491→        body: formData,
+   492→      })
+   493→      const json = await res.json()
+   494→      if (res.ok) {
+   495→        setImportResult(json)
+   496→        setShowImportResult(true)
+   497→        setShowImportDialog(false)
+   498→        fetchGuests()
+   499→        fetchTables()
+   500→        if (json.guestsCreated > 0) {
+   501→          toast.success(`${json.guestsCreated} invités importés avec succès !`)
+   502→        }
+   503→        if (json.errors.length > 0) {
+   504→          toast.warning(`${json.errors.length} erreurs détectées`)
+   505→        }
+   506→      } else {
+   507→        toast.error(json.error || 'Erreur d\'import')
+   508→      }
+   509→    } catch {
+   510→      toast.error('Erreur de connexion au serveur')
+   511→    } finally {
+   512→      setImporting(false)
+   513→    }
+   514→    if (docxImportRef.current) docxImportRef.current.value = ''
+   515→  }
+   516→
+   517→  const handleQRCode = async (guest: Guest) => {
+   518→    try {
+   519→      const res = await fetch(`/api/guests/qrcode/${guest.invitationCode}`)
+   520→      const json = await res.json()
+   521→      if (res.ok) {
+   522→        setQrCodeData(json)
+   523→        setShowQRDialog(true)
+   524→      } else {
+   525→        toast.error(json.error || 'Erreur QR Code')
+   526→      }
+   527→    } catch {
+   528→      toast.error('Erreur de connexion')
+   529→    }
+   530→  }
+   531→
+   532→  const openEditDialog = (guest: Guest) => {
+   533→    setSelectedGuest(guest)
+   534→    setForm({
+   535→      firstName: guest.firstName,
+   536→      lastName: guest.lastName,
+   537→      displayName: guest.displayName || '',
+   538→      invitationType: (guest as Record<string, unknown>).invitationType as string || 'individuel',
+   539→      phone: guest.phone || '',
+   540→      email: guest.email || '',
+   541→      tableId: guest.tableId || '',
+   542→      seats: guest.seats,
+   543→      category: guest.category,
+   544→      status: guest.status,
+   545→      personalMessage: guest.personalMessage || '',
+   546→    })
+   547→    setShowEditDialog(true)
+   548→  }
+   549→
+   550→  const openDeleteDialog = (guest: Guest) => {
+   551→    setSelectedGuest(guest)
+   552→    setShowDeleteDialog(true)
+   553→  }
+   554→
+   555→  const GuestForm = ({ onSave, saveLabel }: { onSave: () => void; saveLabel: string }) => (
+   556→    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+   557→      <div className="space-y-2">
+   558→        <Label>Prénom *</Label>
+   559→        <Input value={form.firstName} onChange={(e) => setForm({ ...form, firstName: e.target.value })} />
+   560→      </div>
+   561→      <div className="space-y-2">
+   562→        <Label>Nom *</Label>
+   563→        <Input value={form.lastName} onChange={(e) => setForm({ ...form, lastName: e.target.value })} />
+   564→      </div>
+   565→      <div className="space-y-2">
+   566→        <Label>Type d&apos;invitation</Label>
+   567→        <Select value={form.invitationType} onValueChange={(v) => setForm({ ...form, invitationType: v })}>
+   568→          <SelectTrigger><SelectValue /></SelectTrigger>
+   569→          <SelectContent>
+   570→            <SelectItem value="individuel">Individuel</SelectItem>
+   571→            <SelectItem value="couple">Couple</SelectItem>
+   572→          </SelectContent>
+   573→        </Select>
+   574→      </div>
+   575→      <div className="space-y-2">
+   576→        <Label>Nom affiché sur l&apos;invitation</Label>
+   577→        <Input
+   578→          value={form.displayName}
+   579→          onChange={(e) => setForm({ ...form, displayName: e.target.value })}
+   580→          placeholder={form.invitationType === 'couple' ? `Couple ${form.lastName}` : `${form.firstName} ${form.lastName}`}
+   581→        />
+   582→      </div>
+   583→      <div className="space-y-2">
+   584→        <Label>Téléphone</Label>
+   585→        <Input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
+   586→      </div>
+   587→      <div className="space-y-2">
+   588→        <Label>Email</Label>
+   589→        <Input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
+   590→      </div>
+   591→      <div className="space-y-2">
+   592→        <Label>Table</Label>
+   593→        <Select value={form.tableId || 'none'} onValueChange={(v) => setForm({ ...form, tableId: v === 'none' ? '' : v })}>
+   594→          <SelectTrigger><SelectValue placeholder="Sélectionner" /></SelectTrigger>
+   595→          <SelectContent>
+   596→            <SelectItem value="none">Aucune table</SelectItem>
+   597→            {tables.map((t) => (
+   598→              <SelectItem key={t.id} value={t.id}>
+   599→                Table {t.number} - {t.name} ({t.guestCount}/{t.capacity})
+   600→              </SelectItem>
+   601→            ))}
+   602→          </SelectContent>
+   603→        </Select>
+   604→      </div>
+   605→      <div className="space-y-2">
+   606→        <Label>Places</Label>
+   607→        <Input type="number" min={1} value={form.seats} onChange={(e) => setForm({ ...form, seats: parseInt(e.target.value) || 1 })} />
+   608→      </div>
+   609→      <div className="space-y-2">
+   610→        <Label>Catégorie</Label>
+   611→        <Select value={form.category} onValueChange={(v) => setForm({ ...form, category: v })}>
+   612→          <SelectTrigger><SelectValue /></SelectTrigger>
+   613→          <SelectContent>
+   614→            {CATEGORIES.map((c) => (
+   615→              <SelectItem key={c} value={c}>{CATEGORY_LABELS[c]}</SelectItem>
+   616→            ))}
+   617→          </SelectContent>
+   618→        </Select>
+   619→      </div>
+   620→      <div className="space-y-2">
+   621→        <Label>Statut</Label>
+   622→        <Select value={form.status} onValueChange={(v) => setForm({ ...form, status: v })}>
+   623→          <SelectTrigger><SelectValue /></SelectTrigger>
+   624→          <SelectContent>
+   625→            {STATUSES.map((s) => (
+   626→              <SelectItem key={s} value={s}>{STATUS_LABELS[s]}</SelectItem>
+   627→            ))}
+   628→          </SelectContent>
+   629→        </Select>
+   630→      </div>
+   631→      <div className="space-y-2 sm:col-span-2">
+   632→        <Label>Message personnel</Label>
+   633→        <Input value={form.personalMessage} onChange={(e) => setForm({ ...form, personalMessage: e.target.value })} />
+   634→      </div>
+   635→      <div className="sm:col-span-2 flex justify-end gap-2">
+   636→        <Button variant="ghost" onClick={() => { setShowAddDialog(false); setShowEditDialog(false); resetForm() }}>
+   637→          Annuler
+   638→        </Button>
+   639→        <Button onClick={onSave} disabled={saving || !form.firstName || !form.lastName} className="bg-gradient-gold text-white">
+   640→          {saving ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+   641→          {saveLabel}
+   642→        </Button>
+   643→      </div>
+   644→    </div>
+   645→  )
+   646→
+   647→  return (
+   648→    <div className="space-y-4 p-4 md:p-6">
+   649→      {/* Header */}
+   650→      <div className="flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between">
+   651→        <div>
+   652→          <h2 className="text-xl font-bold">Gestion des Invités</h2>
+   653→          <p className="text-sm text-muted-foreground">{total} invité{total > 1 ? 's' : ''} au total</p>
+   654→        </div>
+   655→        <div className="flex gap-2 flex-wrap">
+   656→          <Button onClick={handleExport} variant="outline" size="sm" className="border-gold/30">
+   657→            <Download className="w-4 h-4 mr-1" /> Export
+   658→          </Button>
+   659→          <Button onClick={() => setShowImportDialog(true)} variant="outline" size="sm" className="border-gold/30">
+   660→            <FileUp className="w-4 h-4 mr-1" /> Import Word
+   661→          </Button>
+   662→          <Button onClick={() => importRef.current?.click()} variant="outline" size="sm" className="border-gold/30">
+   663→            <Upload className="w-4 h-4 mr-1" /> Import Excel
+   664→          </Button>
+   665→          <input ref={importRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleXlsxImport} />
+   666→          <input ref={docxImportRef} type="file" accept=".docx,.doc" className="hidden" onChange={handleDocxImport} />
+   667→          <Button onClick={() => { resetForm(); setShowAddDialog(true) }} size="sm" className="bg-gradient-gold text-white">
+   668→            <Plus className="w-4 h-4 mr-1" /> Ajouter
+   669→          </Button>
+   670→        </div>
+   671→      </div>
+   672→
+   673→      {/* Filters */}
+   674→      <Card className="glass-card gold-border border-0">
+   675→        <CardContent className="p-4">
+   676→          <div className="flex flex-col sm:flex-row gap-3">
+   677→            <div className="relative flex-1">
+   678→              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+   679→              <Input
+   680→                placeholder="Rechercher un invité..."
+   681→                value={search}
+   682→                onChange={(e) => { setSearch(e.target.value); setPage(1) }}
+   683→                className="pl-9"
+   684→              />
+   685→              {search && (
+   686→                <button onClick={() => { setSearch(''); setPage(1) }} className="absolute right-3 top-1/2 -translate-y-1/2">
+   687→                  <X className="w-4 h-4 text-muted-foreground hover:text-foreground" />
+   688→                </button>
+   689→              )}
+   690→            </div>
+   691→            <Select value={filterStatus} onValueChange={(v) => { setFilterStatus(v); setPage(1) }}>
+   692→              <SelectTrigger className="w-full sm:w-40"><SelectValue placeholder="Statut" /></SelectTrigger>
+   693→              <SelectContent>
+   694→                <SelectItem value="all">Tous les statuts</SelectItem>
+   695→                {STATUSES.map((s) => (
+   696→                  <SelectItem key={s} value={s}>{STATUS_LABELS[s]}</SelectItem>
+   697→                ))}
+   698→              </SelectContent>
+   699→            </Select>
+   700→            <Select value={filterCategory} onValueChange={(v) => { setFilterCategory(v); setPage(1) }}>
+   701→              <SelectTrigger className="w-full sm:w-40"><SelectValue placeholder="Catégorie" /></SelectTrigger>
+   702→              <SelectContent>
+   703→                <SelectItem value="all">Toutes catégories</SelectItem>
+   704→                {CATEGORIES.map((c) => (
+   705→                  <SelectItem key={c} value={c}>{CATEGORY_LABELS[c]}</SelectItem>
+   706→                ))}
+   707→              </SelectContent>
+   708→            </Select>
+   709→            <Select value={filterTable} onValueChange={(v) => { setFilterTable(v); setPage(1) }}>
+   710→              <SelectTrigger className="w-full sm:w-44"><SelectValue placeholder="Table" /></SelectTrigger>
+   711→              <SelectContent>
+   712→                <SelectItem value="all">Toutes les tables</SelectItem>
+   713→                {tables.map((t) => (
+   714→                  <SelectItem key={t.id} value={t.id}>
+   715→                    Table {t.number} - {t.name}
+   716→                  </SelectItem>
+   717→                ))}
+   718→              </SelectContent>
+   719→            </Select>
+   720→          </div>
+   721→        </CardContent>
+   722→      </Card>
+   723→
+   724→      {/* Table */}
+   725→      <Card className="glass-card gold-border border-0">
+   726→        <CardContent className="p-0">
+   727→          {loading ? (
+   728→            <div className="space-y-3 p-4">
+   729→              {Array.from({ length: 5 }).map((_, i) => (
+   730→                <Skeleton key={i} className="h-12 w-full" />
+   731→              ))}
+   732→            </div>
+   733→          ) : guests.length === 0 ? (
+   734→            <div className="py-12 text-center text-muted-foreground">
+   735→              <Users className="w-12 h-12 mx-auto mb-3 opacity-30" />
+   736→              <p>Aucun invité trouvé</p>
+   737→              <p className="text-xs mt-1">Importez un document Word ou ajoutez des invités manuellement</p>
+   738→            </div>
+   739→          ) : (
+   740→            <div className="overflow-x-auto">
+   741→              <Table>
+   742→                <TableHeader>
+   743→                  <TableRow className="border-white/10 hover:bg-transparent">
+   744→                    <TableHead className="text-xs">Nom</TableHead>
+   745→                    <TableHead className="text-xs">Table</TableHead>
+   746→                    <TableHead className="text-xs hidden sm:table-cell">Catégorie</TableHead>
+   747→                    <TableHead className="text-xs">Statut</TableHead>
+   748→                    <TableHead className="text-xs hidden md:table-cell">Code</TableHead>
+   749→                    <TableHead className="text-xs hidden lg:table-cell">Check-in</TableHead>
+   750→                    <TableHead className="text-xs w-12"></TableHead>
+   751→                  </TableRow>
+   752→                </TableHeader>
+   753→                <TableBody>
+   754→                  {guests.map((guest) => (
+   755→                    <TableRow
+   756→                      key={guest.id}
+   757→                      className="border-white/5 hover:bg-white/5 transition-colors"
+   758→                    >
+   759→                        <TableCell>
+   760→                          <div>
+   761→                            <p className="font-medium text-sm">{guest.firstName} {guest.lastName}</p>
+   762→                            <p className="text-xs text-muted-foreground">{guest.seats} place{guest.seats > 1 ? 's' : ''}</p>
+   763→                          </div>
+   764→                        </TableCell>
+   765→                        <TableCell className="text-sm">
+   766→                          {guest.table ? (
+   767→                            <span className="text-gold">T{guest.table.number} - {guest.table.name}</span>
+   768→                          ) : (
+   769→                            <span className="text-muted-foreground">—</span>
+   770→                          )}
+   771→                        </TableCell>
+   772→                        <TableCell className="hidden sm:table-cell">
+   773→                          <Badge variant="outline" className={`text-xs ${CATEGORY_COLORS[guest.category] || ''}`}>
+   774→                            {CATEGORY_LABELS[guest.category] || guest.category}
+   775→                          </Badge>
+   776→                        </TableCell>
+   777→                        <TableCell>
+   778→                          <Badge variant="outline" className={`text-xs ${STATUS_COLORS[guest.status] || ''}`}>
+   779→                            {STATUS_LABELS[guest.status] || guest.status}
+   780→                          </Badge>
+   781→                        </TableCell>
+   782→                        <TableCell className="hidden md:table-cell">
+   783→                          <code className="text-xs font-mono text-muted-foreground bg-white/5 px-2 py-0.5 rounded">
+   784→                            {guest.invitationCode}
+   785→                          </code>
+   786→                        </TableCell>
+   787→                        <TableCell className="hidden lg:table-cell">
+   788→                          {guest.checkedIn ? (
+   789→                            <Badge className="bg-green-500/20 text-green-400 text-xs">✓</Badge>
+   790→                          ) : (
+   791→                            <span className="text-muted-foreground text-xs">—</span>
+   792→                          )}
+   793→                        </TableCell>
+   794→                        <TableCell>
+   795→                          <DropdownMenu>
+   796→                            <DropdownMenuTrigger asChild>
+   797→                              <Button variant="ghost" size="icon" className="h-8 w-8">
+   798→                                <MoreHorizontal className="h-4 w-4" />
+   799→                              </Button>
+   800→                            </DropdownMenuTrigger>
+   801→                            <DropdownMenuContent align="end" className="bg-popover border-border">
+   802→                              <DropdownMenuItem onClick={() => handleQRCode(guest)}>
+   803→                                <QrCode className="w-4 h-4 mr-2" /> QR Code
+   804→                              </DropdownMenuItem>
+   805→                              <DropdownMenuItem onClick={() => handleCopyLink(guest)}>
+   806→                                {copiedLinkId === guest.id ? (
+   807→                                  <Check className="w-4 h-4 mr-2 text-green-500" />
+   808→                                ) : (
+   809→                                  <Link2 className="w-4 h-4 mr-2" />
+   810→                                )}
+   811→                                {copiedLinkId === guest.id ? 'Copié !' : 'Copier le lien'}
+   812→                              </DropdownMenuItem>
+   813→                              <DropdownMenuItem onClick={() => handleShareLink(guest)}>
+   814→                                <Share2 className="w-4 h-4 mr-2" /> Partager
+   815→                              </DropdownMenuItem>
+   816→                              {guest.phone && (
+   817→                                <DropdownMenuItem onClick={() => handleSendViaWhatsApp(guest)}>
+   818→                                  <Mail className="w-4 h-4 mr-2" /> WhatsApp
+   819→                                </DropdownMenuItem>
+   820→                              )}
+   821→                              <DropdownMenuItem onClick={() => openEditDialog(guest)}>
+   822→                                <Pencil className="w-4 h-4 mr-2" /> Modifier
+   823→                              </DropdownMenuItem>
+   824→                              <DropdownMenuItem onClick={() => openDeleteDialog(guest)} className="text-red-400">
+   825→                                <Trash2 className="w-4 h-4 mr-2" /> Supprimer
+   826→                              </DropdownMenuItem>
+   827→                            </DropdownMenuContent>
+   828→                          </DropdownMenu>
+   829→                        </TableCell>
+   830→                    </TableRow>
+   831→                  ))}
+   832→                </TableBody>
+   833→              </Table>
+   834→            </div>
+   835→          )}
+   836→
+   837→          {/* Pagination */}
+   838→          {totalPages > 1 && (
+   839→            <div className="flex items-center justify-between p-4 border-t border-white/10">
+   840→              <p className="text-xs text-muted-foreground">
+   841→                Page {page} sur {totalPages}
+   842→              </p>
+   843→              <div className="flex gap-1">
+   844→                <Button
+   845→                  variant="ghost" size="icon" className="h-8 w-8"
+   846→                  disabled={page <= 1}
+   847→                  onClick={() => setPage(page - 1)}
+   848→                >
+   849→                  <ChevronLeft className="h-4 w-4" />
+   850→                </Button>
+   851→                <Button
+   852→                  variant="ghost" size="icon" className="h-8 w-8"
+   853→                  disabled={page >= totalPages}
+   854→                  onClick={() => setPage(page + 1)}
+   855→                >
+   856→                  <ChevronRight className="h-4 w-4" />
+   857→                </Button>
+   858→              </div>
+   859→            </div>
+   860→          )}
+   861→        </CardContent>
+   862→      </Card>
+   863→
+   864→      {/* ─── Import Dialog ─── */}
+   865→      <Dialog open={showImportDialog} onOpenChange={setShowImportDialog}>
+   866→        <DialogContent className="glass-card gold-border max-w-md">
+   867→          <DialogHeader>
+   868→            <DialogTitle className="gold-gradient flex items-center gap-2">
+   869→              <FileText className="w-5 h-5" />
+   870→              Importer un document Word
+   871→            </DialogTitle>
+   872→          </DialogHeader>
+   873→          <div className="space-y-4 py-2">
+   874→            <p className="text-sm text-muted-foreground">
+   875→              Importez la liste des invités depuis un fichier Word (.docx).
+   876→              Le document doit contenir des sections &quot;Table N NOM&quot; suivies des noms des invités.
+   877→            </p>
+   878→
+   879→            <div className="space-y-2">
+   880→              <Label>Mode d&apos;importation</Label>
+   881→              <Select value={importMergeMode} onValueChange={setImportMergeMode}>
+   882→                <SelectTrigger>
+   883→                  <SelectValue />
+   884→                </SelectTrigger>
+   885→                <SelectContent>
+   886→                  <SelectItem value="merge">
+   887→                    Fusionner — Ajouter aux données existantes (recommandé)
+   888→                  </SelectItem>
+   889→                  <SelectItem value="replace">
+   890→                    Remplacer — Supprimer toutes les données actuelles
+   891→                  </SelectItem>
+   892→                </SelectContent>
+   893→              </Select>
+   894→            </div>
+   895→
+   896→            {importMergeMode === 'replace' && (
+   897→              <div className="flex items-start gap-2 p-3 rounded-lg bg-red-500/10 border border-red-500/20">
+   898→                <AlertTriangle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+   899→                <div>
+   900→                  <p className="text-xs font-medium text-red-400">Attention</p>
+   901→                  <p className="text-xs text-muted-foreground">
+   902→                    Ce mode supprimera tous les invités et tables existants avant l&apos;import.
+   903→                    Les codes d&apos;invitation existants ne fonctionneront plus.
+   904→                  </p>
+   905→                </div>
+   906→              </div>
+   907→            )}
+   908→
+   909→            <div className="flex items-center justify-center p-6 border-2 border-dashed border-gold/20 rounded-xl bg-gold/[0.02]">
+   910→              <Button
+   911→                onClick={() => docxImportRef.current?.click()}
+   912→                disabled={importing}
+   913→                className="bg-gradient-gold text-white"
+   914→              >
+   915→                {importing ? (
+   916→                  <>
+   917→                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+   918→                    Import en cours...
+   919→                  </>
+   920→                ) : (
+   921→                  <>
+   922→                    <FileUp className="w-4 h-4 mr-2" />
+   923→                    Choisir un fichier .docx
+   924→                  </>
+   925→                )}
+   926→              </Button>
+   927→            </div>
+   928→          </div>
+   929→        </DialogContent>
+   930→      </Dialog>
+   931→
+   932→      {/* ─── Import Results Dialog ─── */}
+   933→      <Dialog open={showImportResult} onOpenChange={setShowImportResult}>
+   934→        <DialogContent className="glass-card gold-border max-w-lg max-h-[80vh] overflow-y-auto">
+   935→          <DialogHeader>
+   936→            <DialogTitle className="gold-gradient flex items-center gap-2">
+   937→              <CheckCircle2 className="w-5 h-5" />
+   938→              Résultat de l&apos;import
+   939→            </DialogTitle>
+   940→          </DialogHeader>
+   941→          {importResult && (
+   942→            <div className="space-y-4">
+   943→              {/* Summary */}
+   944→              <div className="grid grid-cols-2 gap-3">
+   945→                <div className="p-3 rounded-xl bg-green-500/10 border border-green-500/20 text-center">
+   946→                  <p className="text-2xl font-bold text-green-400">{importResult.guestsCreated}</p>
+   947→                  <p className="text-xs text-muted-foreground">Invités créés</p>
+   948→                </div>
+   949→                <div className="p-3 rounded-xl bg-blue-500/10 border border-blue-500/20 text-center">
+   950→                  <p className="text-2xl font-bold text-blue-400">{importResult.tablesCreated}</p>
+   951→                  <p className="text-xs text-muted-foreground">Tables créées</p>
+   952→                </div>
+   953→                <div className="p-3 rounded-xl bg-yellow-500/10 border border-yellow-500/20 text-center">
+   954→                  <p className="text-2xl font-bold text-yellow-400">{importResult.guestsSkipped}</p>
+   955→                  <p className="text-xs text-muted-foreground">Doublons ignorés</p>
+   956→                </div>
+   957→                <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-center">
+   958→                  <p className="text-2xl font-bold text-red-400">{importResult.errors.length}</p>
+   959→                  <p className="text-xs text-muted-foreground">Erreurs</p>
+   960→                </div>
+   961→              </div>
+   962→
+   963→              {/* Details per table */}
+   964→              <div className="space-y-3">
+   965→                <h4 className="text-sm font-semibold">Détail par table</h4>
+   966→                {importResult.details.map((detail, idx) => (
+   967→                  <div key={idx} className="p-3 rounded-lg bg-white/[0.02] border border-white/5">
+   968→                    <div className="flex items-center justify-between mb-2">
+   969→                      <p className="text-sm font-medium text-gold">{detail.table}</p>
+   970→                      <Badge variant="outline" className="text-xs bg-green-500/10 text-green-400 border-green-500/20">
+   971→                        +{detail.guestsAdded.length}
+   972→                      </Badge>
+   973→                    </div>
+   974→                    {detail.guestsAdded.length > 0 && (
+   975→                      <div className="flex flex-wrap gap-1 mb-1">
+   976→                        {detail.guestsAdded.map((name, i) => (
+   977→                          <span key={i} className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-green-500/10 text-green-400 border border-green-500/20">
+   978→                            <CheckCircle2 className="w-2.5 h-2.5" />
+   979→                            {name}
+   980→                          </span>
+   981→                        ))}
+   982→                      </div>
+   983→                    )}
+   984→                    {detail.guestsSkipped.length > 0 && (
+   985→                      <div className="flex flex-wrap gap-1">
+   986→                        {detail.guestsSkipped.map((name, i) => (
+   987→                          <span key={i} className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-yellow-500/10 text-yellow-400 border border-yellow-500/20">
+   988→                            <XCircle className="w-2.5 h-2.5" />
+   989→                            {name} (doublon)
+   990→                          </span>
+   991→                        ))}
+   992→                      </div>
+   993→                    )}
+   994→                  </div>
+   995→                ))}
+   996→              </div>
+   997→
+   998→              {/* Errors */}
+   999→              {importResult.errors.length > 0 && (
+  1000→                <div className="space-y-2">
+  1001→                  <h4 className="text-sm font-semibold text-red-400">Erreurs</h4>
+  1002→                  {importResult.errors.map((err, idx) => (
+  1003→                    <p key={idx} className="text-xs text-red-400/80 bg-red-500/5 p-2 rounded-lg">{err}</p>
+  1004→                  ))}
+  1005→                </div>
+  1006→              )}
+  1007→
+  1008→              {/* Duplicates */}
+  1009→              {importResult.duplicatesDetected.length > 0 && (
+  1010→                <div className="space-y-2">
+  1011→                  <h4 className="text-sm font-semibold text-yellow-400">Doublons détectés</h4>
+  1012→                  <div className="flex flex-wrap gap-1">
+  1013→                    {importResult.duplicatesDetected.map((dup, idx) => (
+  1014→                      <span key={idx} className="text-[10px] px-2 py-0.5 rounded-full bg-yellow-500/10 text-yellow-400 border border-yellow-500/20">
+  1015→                        {dup}
+  1016→                      </span>
+  1017→                    ))}
+  1018→                  </div>
+  1019→                </div>
+  1020→              )}
+  1021→            </div>
+  1022→          )}
+  1023→        </DialogContent>
+  1024→      </Dialog>
+  1025→
+  1026→      {/* Add Dialog */}
+  1027→      <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
+  1028→        <DialogContent className="glass-card gold-border max-w-lg">
+  1029→          <DialogHeader>
+  1030→            <DialogTitle className="gold-gradient">Ajouter un invité</DialogTitle>
+  1031→          </DialogHeader>
+  1032→          <GuestForm onSave={handleAdd} saveLabel="Ajouter" />
+  1033→        </DialogContent>
+  1034→      </Dialog>
+  1035→
+  1036→      {/* Edit Dialog */}
+  1037→      <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
+  1038→        <DialogContent className="glass-card gold-border max-w-lg">
+  1039→          <DialogHeader>
+  1040→            <DialogTitle className="gold-gradient">Modifier l&apos;invité</DialogTitle>
+  1041→          </DialogHeader>
+  1042→          <GuestForm onSave={handleEdit} saveLabel="Enregistrer" />
+  1043→        </DialogContent>
+  1044→      </Dialog>
+  1045→
+  1046→      {/* Delete Dialog */}
+  1047→      <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+  1048→        <DialogContent className="glass-card gold-border max-w-sm">
+  1049→          <DialogHeader>
+  1050→            <DialogTitle>Confirmer la suppression</DialogTitle>
+  1051→          </DialogHeader>
+  1052→          <p className="text-sm text-muted-foreground">
+  1053→            Êtes-vous sûr de vouloir supprimer <strong>{selectedGuest?.firstName} {selectedGuest?.lastName}</strong> ?
+  1054→          </p>
+  1055→          <DialogFooter className="gap-2">
+  1056→            <Button variant="ghost" onClick={() => setShowDeleteDialog(false)}>Annuler</Button>
+  1057→            <Button variant="destructive" onClick={handleDelete} disabled={saving}>
+  1058→              {saving ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+  1059→              Supprimer
+  1060→            </Button>
+  1061→          </DialogFooter>
+  1062→        </DialogContent>
+  1063→      </Dialog>
+  1064→
+  1065→      {/* QR Code Dialog */}
+  1066→      <Dialog open={showQRDialog} onOpenChange={setShowQRDialog}>
+  1067→        <DialogContent className="glass-card gold-border max-w-sm">
+  1068→          <DialogHeader>
+  1069→            <DialogTitle className="gold-gradient">QR Code</DialogTitle>
+  1070→          </DialogHeader>
+  1071→          {qrCodeData && (
+  1072→            <div className="flex flex-col items-center gap-4">
+  1073→              <div className="bg-white rounded-xl p-4">
+  1074→                <img src={qrCodeData.qrCode} alt="QR Code" className="w-48 h-48" />
+  1075→              </div>
+  1076→              <div className="text-center">
+  1077→                <p className="font-medium">{qrCodeData.guest.firstName} {qrCodeData.guest.lastName}</p>
+  1078→                <p className="text-xs text-muted-foreground mt-1">Code: {qrCodeData.guest.invitationCode}</p>
+  1079→              </div>
+  1080→              <Button
+  1081→                variant="outline"
+  1082→                size="sm"
+  1083→                className="border-gold/30"
+  1084→                onClick={() => {
+  1085→                  const a = document.createElement('a')
+  1086→                  a.href = qrCodeData.qrCode
+  1087→                  a.download = `qr-${qrCodeData.guest.invitationCode}.png`
+  1088→                  a.click()
+  1089→                }}
+  1090→              >
+  1091→                <Download className="w-4 h-4 mr-1" /> Télécharger
+  1092→              </Button>
+  1093→            </div>
+  1094→          )}
+  1095→        </DialogContent>
+  1096→      </Dialog>
+  1097→    </div>
+  1098→  )
+  1099→}
+  1100→

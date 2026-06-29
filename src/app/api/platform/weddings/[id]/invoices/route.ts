@@ -184,7 +184,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           data: {
             plan,
             billingCycle: cycle,
-            currency: currency ?? subscription ? 'usd' : 'usd',
+            currency: currency ?? subscription?.currency ?? 'usd',
             amountAgreed: resolvedAmount > 0 ? resolvedAmount : null,
             status: 'PENDING_PAYMENT',
             paymentMethod: paymentMethod ?? null,

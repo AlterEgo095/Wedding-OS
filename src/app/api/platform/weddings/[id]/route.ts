@@ -4,6 +4,14 @@ import { db } from '@/lib/db';
 import { getAuthUser, requirePlatformAdmin } from '@/lib/auth';
 import { buildCoupleLabel, type Plan, type WeddingStatus } from '@/lib/types';
 import { invalidateWeddingCache } from '@/lib/tenant-context';
+// VALID_STATUSES + VALID_TRANSITIONS + isValidTransition extracted to
+// src/lib/wedding-status.ts (Phase 3 ÉTAPE 6) so other routes (publish,
+// onboarding, etc.) can reuse the same lifecycle rules without drift.
+import {
+  VALID_STATUSES,
+  VALID_TRANSITIONS,
+  isValidTransition,
+} from '@/lib/wedding-status';
 
 /**
  * Per-wedding operations for the platform admin.
@@ -22,43 +30,7 @@ import { invalidateWeddingCache } from '@/lib/tenant-context';
  * next public/admin request re-fetches fresh data from the DB.
  */
 
-const VALID_STATUSES: WeddingStatus[] = ['DRAFT', 'PUBLISHED', 'COMPLETED', 'ARCHIVED', 'SUSPENDED'];
 const VALID_PLANS: Plan[] = ['TRIAL', 'ESSENTIEL', 'PREMIUM', 'ELITE'];
-
-/**
- * Allowed status transitions (Phase 3 ÉTAPE 5 — commercial lifecycle).
- *
- * Previously, the PUT handler accepted ANY status → ANY status transition
- * (only validated that the new value was in VALID_STATUSES). This matrix
- * enforces the documented lifecycle while remaining a SUPERSET of every
- * transition the previous code allowed (DRAFT → ARCHIVED, PUBLISHED → ARCHIVED,
- * SUSPENDED → PUBLISHED, etc. are all preserved) AND adds the new COMPLETED
- * status transitions.
- *
- * Matrix:
- *   DRAFT      → PUBLISHED, ARCHIVED
- *   PUBLISHED  → COMPLETED, SUSPENDED, ARCHIVED
- *   COMPLETED  → ARCHIVED
- *   SUSPENDED  → PUBLISHED, ARCHIVED
- *   ARCHIVED   → DRAFT, PUBLISHED   (un-archive)
- *
- * Same-status transitions (e.g. PUBLISHED → PUBLISHED) are always allowed —
- * they are idempotent no-ops, not real transitions.
- */
-const VALID_TRANSITIONS: Record<string, string[]> = {
-  DRAFT: ['PUBLISHED', 'ARCHIVED'],
-  PUBLISHED: ['COMPLETED', 'SUSPENDED', 'ARCHIVED'],
-  COMPLETED: ['ARCHIVED'],
-  SUSPENDED: ['PUBLISHED', 'ARCHIVED'],
-  ARCHIVED: ['DRAFT', 'PUBLISHED'],
-};
-
-function isValidTransition(from: string, to: string): boolean {
-  if (from === to) return true; // idempotent
-  const allowed = VALID_TRANSITIONS[from];
-  if (!allowed) return false; // unknown source state — deny by default
-  return allowed.includes(to);
-}
 
 const WEDDING_DETAIL_SELECT = {
   id: true,
