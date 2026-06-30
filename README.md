@@ -387,19 +387,23 @@ docker logs wedding-app --tail 20              # init-db OK + Next.js ready
   - Communication (8 frames)
 - Frame registry (34 slots auto-détectés par convention de nommage Penpot)
 
-### Phase 3 — À venir
-- Enrichir le catalogue avec de nouvelles Collections :
-  - Royal Black, Royal Emerald
-  - White Romance, Elegant Beige
-  - Kente, Congo Prestige
-  - Pure White, Nordic
-  - Beach, Garden, Sunset
+### Phase 3 — ✅ Livrée
+- 12 Collections sur 5 catégories (LUXURY, CLASSIC, AFRICAN, MINIMAL, DESTINATION)
+- Tier gating FREE / PREMIUM / EXCLUSIVE
+- 4 luxury themes (gold, midnight, champagne, rose)
+
+### Phase 4 — ✅ Livrée
+- Lifecycle 6 états complet (BROUILLON → EN_COURS → VALIDATION → PUBLIÉ → COMMERCIALISÉ → ARCHIVÉ)
+- Designer Portal (zone isolée pour designers + directeurs artistiques)
+- Matrice des transitions par rôle (DESIGNER, ART_DIRECTOR, PLATFORM_ADMIN)
+- Gate de complétude (34 slots mappés requis pour VALIDATION/PUBLIÉ)
+- API transitions + audit log
 
 ### Phases futures
-- Designer Portal (zone isolée pour designers)
-- Lifecycle 6 états complet (BROUILLON → EN_COURS → VALIDATION → PUBLIÉ → COMMERCIALISÉ → ARCHIVÉ)
 - Marketplace UI + paiement
 - Print & Communication renderers
+- Designer onboarding (création de comptes designers)
+- Penpot auto-mapping (scan frames via convention de nommage)
 
 ---
 
