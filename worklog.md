@@ -7016,3 +7016,44 @@ Stage Summary:
 - VPS healthcheck fixed: container now healthy (was falsely unhealthy due to IPv6/IPv4 mismatch — pre-existing issue from Phase 1, now resolved).
 - CONSTRAINTS COMPLIANCE: ✅ One feature at a time (Phase 2 = module slots only). ✅ Test/validate before next (lint clean, local verified, VPS verified). ✅ Zero regression (frameId null = fallback, existing Collections/variants/themes untouched, backfill idempotent). ✅ Reuse existing systems (withPublicTenant, withAdminTenantHandler, getAuthUser, hasPermission, AuditLog, shadcn/ui Dialog/Tabs/Accordion/Progress). ✅ Architecture unchanged (additive CollectionModule table, no existing models modified).
 - STATUS: Phase 2 COMPLETE. 5 packs × 34 module slots attached to all 12 Collections. Module manager UI live in admin. Ready for next phase (Designer Portal / lifecycle 6-state / marketplace) on user signal.
+
+---
+Task ID: PLATFORM-AUDIT-POST-PHASES
+Agent: Main Agent
+Task: Nettoyer le commit accidentel tool-results, vérifier l'état entier de la plateforme après les phases 1/2/3, corriger les problèmes bloquants.
+
+Work Log:
+- Read worklog (7019 lignes) pour confirmer état Phase 1/2/3.
+- Nettoyage git: `git reset --hard origin/main` pour retirer le commit f1e30e2 (dump tool-results/read_1782838345988_64e27593c111.txt, 2002 lignes, commit accidentel). Local aligné sur origin/main (5280ab0).
+- Ajouté `/tool-results/` au .gitignore (commit 018231b) pour bloquer toute pollution future. Poussé sur GitHub: 5280ab0..018231b.
+- Vérification 3-way git sync: sandbox HEAD (018231b) == GitHub HEAD (018231b). Working tree clean.
+- Dev server sandbox: next-server v16.1.3 tourne (PID 7858). dev.log clean, 0 erreur runtime, uniquement Prisma queries normales + GET / 200 en ~50ms.
+- Lint: 61 problèmes (59 errors, 2 warnings), TOUS pré-existants (AmbientMusicPlayer, ThemeCustomizer, sync-vps-tables-only). 0 nouvelle erreur des phases 1/2/3.
+- DB locale: 12 Collections, 12 Variants (1/Collection), 408 CollectionModules (12×34 = 96 COMMUNICATION + 96 INVITATIONS + 96 PRINT + 120 WEBSITE), 2 Weddings, 12 AdminUsers, 243 Guests.
+- API sandbox: GET /api/collections → 10 Collections (TRIAL filtre 2 EXCLUSIVE), 5 catégories, 2 tiers (FREE+PREMIUM), 4 luxury themes (gold/midnight/champagne/rose). GET /api/collections/[id]/modules → 34 modules correctement répartis (10+8+8+8). GET /api/collections/[id]/completeness → rapport complet (1/34 rempli sur sandbox pour Royal Gold, 33 manquants listés avec labels FR).
+- VPS diagnose (initial): Public URL https://heureuxmariage.aenews.net/ → HTTP/2 502. Container wedding-app healthy (HTTP 200 sur :3000 interne docker), MAIS PortBindings: {} (aucun host port). nginx host config proxy_pass → http://127.0.0.1:3080 (rien écoute sur 3080). PM2 v6 tourne sur :3000 mais sert une VIEILLE version (sans /api/collections → retourne HTML 404).
+- Root cause 502: docker-compose.yml du VPS n'avait que `expose: "3000"` (interne docker), manquait `ports: ["127.0.0.1:3080:3000"]` (binding host). nginx attendait sur 3080, container inaccessible depuis host.
+- Fix VPS: Backup docker-compose.yml.bak-*. Script python3 (via SFTP) insère `ports: ["127.0.0.1:3080:3000"]` après le bloc expose. `docker compose up -d --force-recreate app`. Container recréé avec `127.0.0.1:3080->3000/tcp`. Healthy en 17s.
+- VPS vérification post-fix: curl http://127.0.0.1:3080/ → HTTP 200. curl https://heureuxmariage.aenews.net/ → HTTP/2 200 ✅. curl https://heureuxmariage.aenews.net/api/collections → 12 Collections (VPS voit tout car wedding par défaut a plan ELITE), 5 catégories, 3 tiers (FREE+PREMIUM+EXCLUSIVE), 4 luxury themes. curl https://heureuxmariage.aenews.net/api/collections/[id]/modules → 34 modules (10+8+8+8). curl /completeness → 0/34 (correct, aucun frame mappé sur VPS).
+- UI Agent Browser sandbox: 
+  * / → page rend avec hero "Josué & Hornella", sections Notre Histoire (4 milestones), Galerie, Programme (12 events), Lieu (map OSM), Trouver Mon Invitation, footer AENEWS. 0 erreur console.
+  * /w/josue-hornella/admin → login form. Login admin@josue-hornella.wedding / admin2026 → "Bienvenue, Super Admin !" toast, dashboard avec 13 tabs.
+  * Onglet Collections → 10 cartes (TRIAL filtre EXCLUSIVE), chacune avec "Appliquer" + "Voir les modules (5 packs · 34 slots)".
+  * Click Modules → modal "Modules — Royal Gold" s'ouvre, 4 tabs (Website 1/10, Invitations 0/8, Print 0/8, Communication 0/8) + accordion Pack 5 Luxury. Website tab affiche 10 inputs Penpot frame ID (1 pré-rempli "frame-hero-001"). Save buttons disabled quand pas de diff.
+- UI Agent Browser VPS: https://heureuxmariage.aenews.net/ → page rend, 0 erreur. Responsive mobile 390x844 testé: menu hamburger "Ouvrir le menu" apparaît, sections OK.
+
+Stage Summary:
+- DELIVERABLE: Audit complet + nettoyage git + correction du 502 production.
+- Nettoyage: commit f1e30e2 retiré (dump tool-results accidentel). .gitignore mis à jour pour bloquer futures pollutions. 1 nouveau commit (018231b) poussé sur GitHub.
+- VPS FIX CRITIQUE: docker-compose.yml corrigé sur VPS (ajout ports: 127.0.0.1:3080:3000). Production https://heureuxmariage.aenews.net/ repassée de 502 → HTTP/2 200. Le 502 était présent depuis Phase 1 (container jamais bindé au host port), passé inaperçu car les "vérifications" précédentes testaient le container via docker exec et non l'URL publique.
+- ÉTAT FINAL 3-WAY:
+  * Sandbox: 12 Collections × 34 modules = 408 slots, 1 frame mappé (hero=frame-hero-001 sur Royal Gold)
+  * VPS: 12 Collections × 34 modules = 408 slots, 0 frame mappé (état attendu)
+  * GitHub: HEAD 018231b, sync sandbox
+- COLLECTION ENGINE STATUS: Phase 1 (Royal Gold) ✅ + Phase 3 (catalog 12) ✅ + Phase 2 (modules 5×34) ✅ — toutes déployées et fonctionnelles sur les 3 surfaces.
+- PRE-EXISTING ISSUES (non bloquants, hors scope Collection Engine):
+  * Lint: 61 problèmes pré-existants (AmbientMusicPlayer setState in effect, sync-vps-tables-only require imports).
+  * Hero VPS affiche juste "&" au lieu de "Josué & Hornella" (datasource coupleName vide côté VPS — pré-existant, non lié aux phases).
+  * 404 /upload/couple-photo-*.jpeg/png (images manquantes, pré-existant).
+- CONSTRAINTS COMPLIANCE: ✅ Une seule correction à la fois (fix 502 production). ✅ Tester avant d'avancer (audit complet fait). ✅ Zéro régression (aucun code métier modifié, juste docker-compose.yml VPS + .gitignore). ✅ Réutiliser systèmes existants (nginx host config inchangé, container wedding-app inchangé). ✅ Architecture inchangée.
+- STATUS: Plateforme stable et synchronisée sur les 3 surfaces. Prêt pour next phase sur signal utilisateur.
