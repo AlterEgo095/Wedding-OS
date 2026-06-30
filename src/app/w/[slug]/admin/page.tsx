@@ -27,7 +27,7 @@ import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import {
   LayoutDashboard, Users, Grid3X3, Image as ImageIcon, Clock, Shield, Settings, LogOut,
-  X, Menu, FileSearch, Music, Sparkles, Crown, Loader2,
+  X, Menu, FileSearch, Music, Sparkles, Crown, Loader2, Palette, PenTool,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { isPlatformAdmin } from '@/lib/types';
@@ -43,6 +43,8 @@ import SettingsManager from '@/components/admin/SettingsManager';
 import AccessLogManager from '@/components/admin/AccessLogManager';
 import MusicManager from '@/components/admin/MusicManager';
 import AppearanceManager from '@/components/admin/AppearanceManager';
+import { ThemeCustomizer } from '@/components/admin/ThemeCustomizer';
+import { PenpotStudio } from '@/components/penpot/PenpotStudio';
 
 interface AuthUser {
   id: string
@@ -52,7 +54,7 @@ interface AuthUser {
   weddingId?: string | null
 }
 
-type TabId = 'dashboard' | 'guests' | 'tables' | 'media' | 'music' | 'timeline' | 'users' | 'settings' | 'access-logs' | 'appearance'
+type TabId = 'dashboard' | 'guests' | 'tables' | 'media' | 'music' | 'timeline' | 'users' | 'settings' | 'access-logs' | 'appearance' | 'theme' | 'studio'
 
 interface NavItem {
   id: TabId
@@ -69,6 +71,8 @@ const NAV_ITEMS: NavItem[] = [
   { id: 'media', label: 'Médias', icon: ImageIcon },
   { id: 'music', label: 'Musique', icon: Music },
   { id: 'timeline', label: 'Programme', icon: Clock },
+  { id: 'theme', label: 'Thème', icon: Palette },
+  { id: 'studio', label: 'Studio', icon: PenTool },
   { id: 'appearance', label: 'Apparence', icon: Sparkles },
   { id: 'users', label: 'Utilisateurs', icon: Shield, superAdminOnly: true },
   { id: 'settings', label: 'Paramètres', icon: Settings, superAdminOnly: true },
@@ -145,8 +149,20 @@ export default function PerWeddingAdminPage() {
         const headers = new Headers(
           init?.headers || (input instanceof Request ? input.headers : undefined)
         )
+        // Auto-attach the wedding slug for tenant scoping (existing behavior)
         if (!headers.has('X-Wedding-Slug')) {
           headers.set('X-Wedding-Slug', slug)
+        }
+        // Consolidation fix: also auto-attach the admin Bearer token from
+        // localStorage so components that don't receive an explicit `token`
+        // prop (ThemeCustomizer, PenpotStudio) can still call authenticated
+        // PUT/POST endpoints. Additive: if a component already sets
+        // Authorization (GuestManager, TableManager, etc.), we don't override.
+        if (!headers.has('Authorization')) {
+          const t = localStorage.getItem('admin_token')
+          if (t) {
+            headers.set('Authorization', `Bearer ${t}`)
+          }
         }
         init = { ...init, headers }
       }
@@ -223,6 +239,18 @@ export default function PerWeddingAdminPage() {
         return <AccessLogManager token={token} onSessionExpired={handleSessionExpired} />
       case 'settings':
         return <SettingsManager token={token} userRole={user?.role || ''} onSessionExpired={handleSessionExpired} />
+      case 'theme':
+        // Consolidation fix: mount ThemeCustomizer in the tenant admin so couples
+        // can edit their own wedding's colors + fonts. The explicit `slug` prop
+        // bypasses the platform-admin wedding picker and scopes all /api/theme
+        // calls to this wedding via the fetch interceptor installed above.
+        return <ThemeCustomizer slug={slug} />
+      case 'studio':
+        // Penpot native integration: the official design Studio of Wedding OS.
+        // Embeds Penpot via iframe, syncs design tokens with the Theme Engine,
+        // and lets couples design their invitations visually. Coexists with
+        // LuxuryVisualEngine (ambiance overlay) and ThemeInjector (token injection).
+        return <PenpotStudio slug={slug} />
       case 'appearance':
         return <AppearanceManager token={token} onSessionExpired={handleSessionExpired} />
       default:

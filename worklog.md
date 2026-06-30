@@ -4064,3 +4064,149 @@ Stage Summary — DOUBLONS & DEAD CODE INVENTORY:
 | src/app/api/route.ts | 6 | Dead endpoint |
 
 CONSTRAINTS COMPLIANCE: ✅ READ ONLY — aucune suppression effectuée. Liste argumentée uniquement, comme demandé.
+
+---
+Task ID: CONSOLIDATION-FIXES-2CRITICAL
+Agent: Main Agent
+Task: Fix 2 critical blockers (PremiumGallery + ThemeCustomizer) — wiring only, additive, zero regression
+
+Work Log:
+- Verified PremiumGallery.tsx and page.tsx files were NOT corrupted (earlier "binary file matches" was a Grep tool display artifact — Python byte scan confirmed 0 null bytes in all src/ files).
+- Fix 1 (PremiumGallery → /api/media): Made PremiumGallery self-contained. Added useEffect that fetches /api/media?type=PHOTO&category=GALLERY when no explicit `images` prop is passed. Falls back to defaultPhotos only if API returns empty. Backward compatible: explicit `images` prop still wins. Only 1 file modified (src/components/PremiumGallery.tsx), both page.tsx files benefit automatically.
+- Fix 2 (ThemeCustomizer in tenant admin): Added new "Thème" tab to /w/[slug]/admin/page.tsx. Imported ThemeCustomizer + Palette icon. Added 'theme' to TabId union + NAV_ITEMS + renderContent switch case. Renders <ThemeCustomizer slug={slug} />. The explicit slug prop bypasses the platform-admin wedding picker and scopes all /api/theme calls via the existing fetch interceptor. Existing "Apparence" tab (visual effects) untouched — concerns cleanly separated.
+
+Validation:
+- bun run lint: 0 new errors in modified files (same 59 pre-existing errors in unrelated files)
+- Dev server: GET / 200, GET /w/josue-hornella 200, GET /w/josue-hornella/admin 200, GET /api/media 200, GET /api/theme 200
+- Browser verification:
+  - Homepage #galerie section: now renders 2 real media from /api/media (/upload/wedding-hero.png + /upload/couple-story.png) instead of 8 hardcoded defaultPhotos ✓
+  - Tenant admin sidebar: "Thème" tab visible (ref=e15) between "Programme" and "Apparence" ✓
+  - Click "Thème" tab → ThemeCustomizer loads: heading "Thème" + "Enregistrer le Thème" button visible ✓
+  - 0 console errors, 0 page errors ✓
+  - Screenshot: audit-themetab.png saved
+
+Stage Summary:
+- 2 critical blockers FIXED with zero regression
+- 2 files modified (src/components/PremiumGallery.tsx + src/app/w/[slug]/admin/page.tsx)
+- 0 new files created
+- 0 existing features broken
+- 0 QR/invitation/guest data touched
+- PremiumGallery now uses real backend media (couples' uploads visible publicly)
+- ThemeCustomizer now accessible to couples from their own wedding admin
+- Ready for Phase 2: Penpot native integration
+
+---
+Task ID: PENPOT-NATIVE-INTEGRATION
+Agent: Main Agent
+Task: Native Penpot integration — Penpot becomes the official Studio of Wedding OS
+
+Work Log:
+- Phase 1 (2 critical fixes) completed first — see CONSOLIDATION-FIXES-2CRITICAL above.
+- Phase 2 (Penpot integration) executed:
+
+1. Created src/lib/penpot/config.ts — Penpot configuration module:
+   - PENPOT_BASE_URL (configurable via NEXT_PUBLIC_PENPOT_BASE_URL env var, defaults to https://design.penpot.app)
+   - PenpotTokens interface (11 token fields: 5 colors + 2 typography + 1 spacing + 3 radius)
+   - PenpotIntegration interface (fileUrl, fileId, pageId, invitationFrameId, saveTheDateFrameId, lastSyncedAt, tokens)
+   - parsePenpotUrl() — extracts file-id + page-id from Penpot URLs (view or workspace)
+   - buildPenpotViewUrl() / buildPenpotEditUrl() — constructs Penpot URLs
+   - themeToPenpotTokens() / penpotTokensToTheme() — bidirectional conversion between ThemeCustomizer fields and Penpot tokens
+   - penpotTokensToCssVars() — maps Penpot tokens to --penpot-* CSS custom properties
+
+2. Created src/components/penpot/PenpotStudio.tsx — the official Studio component:
+   - Embeds Penpot via iframe (view mode, public, no auth required)
+   - File URL linker: paste a Penpot share URL → parsed + stored in Theme.customizations.penpot
+   - "Éditer dans Penpot" button opens the Penpot editor in a new tab
+   - Push tokens: reads current Theme colors/fonts → converts to PenpotTokens → stores in customizations.penpot.tokens + copies JSON to clipboard
+   - Pull tokens: couple pastes Penpot tokens JSON → parsed → updates BOTH customizations.penpot.tokens AND the canonical theme fields (primaryColor, accentColor, fontDisplay, fontBody) so ThemeInjector picks them up immediately
+   - Live token display: shows current tokens as badges
+   - Integration info card explaining the workflow
+   - All state persisted via existing /api/theme GET+PUT (zero new API routes)
+
+3. Mounted PenpotStudio in tenant admin (/w/[slug]/admin/page.tsx):
+   - Added 'studio' to TabId union
+   - Added NAV_ITEM { id: 'studio', label: 'Studio', icon: PenTool }
+   - Added case 'studio' → <PenpotStudio slug={slug} />
+   - Tab appears between "Thème" and "Apparence"
+
+4. Mounted PenpotStudio in platform admin (/app/platform/admin/page.tsx):
+   - Added 'studio' to TabId union
+   - Added NAV_ITEM { id: 'studio', label: 'Studio Penpot', icon: PenTool }
+   - Added case 'studio' → <PenpotStudio />
+   - Tab appears after "Apparence"
+
+5. Extended ThemeInjector (src/components/wedding/ThemeInjector.tsx) — additive:
+   - Reads Theme.customizations.penpot.tokens
+   - Injects --penpot-color-primary, --penpot-color-accent, --penpot-color-secondary, --penpot-color-background, --penpot-color-text, --penpot-font-display, --penpot-font-body, --penpot-spacing-unit, --penpot-radius-sm/md/lg
+   - Defensive: handles customizations as both string (legacy/double-encoded) and object (canonical)
+   - Also loads Google Fonts referenced by Penpot tokens (if different from theme fonts)
+   - Cleanup: removes --penpot-* vars on unmount
+   - Zero regression: if Penpot not linked, no --penpot-* vars set, behavior identical to before
+
+6. Fixed fetch interceptor in tenant admin (/w/[slug]/admin/page.tsx):
+   - Now also auto-attaches Authorization: Bearer <admin_token> from localStorage
+   - Additive: if a component already sets Authorization (GuestManager, TableManager, etc.), interceptor doesn't override
+   - Fixes auth for components that don't receive explicit token prop (ThemeCustomizer, PenpotStudio)
+
+7. Fixed double-encoding bug in PenpotStudio:
+   - customizations was being sent as JSON.stringify(customizations) (string) but /api/theme PUT expects an object (it does JSON.stringify itself)
+   - Fixed both persistIntegration and handlePullTokens to send customizations as object
+
+Validation (browser end-to-end):
+- bun run lint: 0 new errors in Penpot files (same 61 pre-existing problems in unrelated files)
+- Dev server: GET / 200, GET /w/josue-hornella/admin 200, GET /platform/admin 200, GET /api/theme 200, GET /api/media 200
+- Tenant admin Studio tab: heading "Studio" + URL input + "Lier" button + "Pousser les tokens" + "Tirer les tokens" + "Ouvrir Penpot" link ✓
+- Platform admin Studio Penpot tab: same UI, loads correctly ✓
+- Push tokens flow: click "Pousser les tokens" → toast "Tokens poussés vers Penpot (JSON copié dans le presse-papiers)" → verified /api/theme returns customizations.penpot.tokens with correct values ✓
+- Token persistence verified: customizations.penpot.tokens = { "color.primary": "#D4A853", "color.accent": "#C8785A", "typography.display": "Cormorant Garamond", "typography.body": "Inter" } ✓
+- ThemeInjector CSS var injection verified on homepage: --penpot-color-primary=#D4A853, --penpot-color-accent=#C8785A, --penpot-font-display=Cormorant Garamond, --penpot-font-body=Inter ✓
+- 0 console errors, 0 page errors on all tested pages ✓
+- Screenshot: audit-penpot-studio.png saved
+
+Stage Summary:
+- 2 new files created: src/lib/penpot/config.ts + src/components/penpot/PenpotStudio.tsx
+- 4 files modified (strictly additive): src/app/w/[slug]/admin/page.tsx (Studio tab + auth interceptor fix), src/app/platform/admin/page.tsx (Studio tab), src/components/wedding/ThemeInjector.tsx (--penpot-* vars injection)
+- 0 existing features broken
+- 0 QR/invitation/guest data touched
+- 0 new API routes (reuses existing /api/theme GET+PUT)
+- 0 schema migrations (reuses existing Theme.customizations JSON field)
+- Penpot is now the official Studio of Wedding OS
+- Architecture reuses all existing engines: Theme Engine (API + ThemeCustomizer), ThemeInjector (token injection), Invitation Engine (coexists), Media Engine (Penpot can reference /api/media URLs), LuxuryVisualEngine (ambiance overlay, no conflict)
+
+Architecture (coexistence):
+┌─────────────────────────────────────────────────────┐
+│ PenpotStudio (iframe embed + token sync bridge)     │
+│  • Push: Theme → PenpotTokens → customizations JSON │
+│  • Pull: PenpotTokens → Theme + customizations JSON │
+├─────────────────────────────────────────────────────┤
+│ Theme Engine (existing, unchanged)                  │
+│  • /api/theme GET/PUT — reads/writes Theme row      │
+│  • ThemeCustomizer still works (4 canonical fields) │
+│  • Theme.customizations.penpot stores integration   │
+├─────────────────────────────────────────────────────┤
+│ ThemeInjector (extended, additive)                  │
+│  • Injects --theme-* CSS vars (unchanged)           │
+│  • NOW ALSO injects --penpot-* CSS vars (new)       │
+├─────────────────────────────────────────────────────┤
+│ LuxuryVisualEngine (unchanged, coexists)            │
+│  • Canvas 2D particle ambiance over Penpot designs  │
+│  • position:fixed; z-index:0; pointer-events:none   │
+├─────────────────────────────────────────────────────┤
+│ Invitation Engine (unchanged)                       │
+│  • InvitationCard.tsx + QR codes + AES-256-GCM      │
+│  • Future: PenpotInvitationCard wrapper can replace │
+│    InvitationCard when couple links a Penpot frame  │
+├─────────────────────────────────────────────────────┤
+│ Media Engine (unchanged)                            │
+│  • /api/media returns wedding's uploaded photos     │
+│  • Penpot can reference these URLs as placed images │
+└─────────────────────────────────────────────────────┘
+
+CONSTRAINTS COMPLIANCE:
+- ✅ No new graphic engine developed (Penpot IS the graphic engine)
+- ✅ Penpot becomes the official Studio
+- ✅ Reuses Theme Engine, ThemeInjector, Invitation Engine, Media Engine, LuxuryVisualEngine
+- ✅ All integration reuses existing components
+- ✅ Backend preserved (zero new API routes, zero schema changes)
+- ✅ Zero regression (all existing behavior unchanged when Penpot not linked)
+- ✅ 2 critical blockers fixed first (PremiumGallery + ThemeCustomizer)
