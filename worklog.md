@@ -6725,3 +6725,38 @@ Stage Summary:
 - Reuse matrix extended to 15 motors/concepts (none replaced, all additive).
 - CONSTRAINTS COMPLIANCE: ✅ READ-ONLY (no source code modified, only plan doc + worklog). ✅ No engine rebuilt. ✅ No Penpot duplication. ✅ No graphic editor. ✅ No theme builder. ✅ IA assistant only. ✅ Additive/retrocompatible/reversible. ✅ Plan provided BEFORE any code (per explicit user instruction "Avant toute implémentation, vérifie que chaque décision technique rapproche la plateforme de cette vision").
 - STATUS: Awaiting user validation to begin Phase 0 (Schema & Seed). Strict sequential execution with gates will be enforced.
+
+---
+Task ID: COLLECTION-PRODUCT-SPEC
+Agent: Main Agent
+Task: Produire la SPÉCIFICATION FONCTIONNELLE DÉFINITIVE du Collection Product Engine. Répondre aux 7 questions. NON technique (WHAT pas HOW). Aucun code, aucun schéma. Fondation pour toutes phases futures. Ordonnancement: catalogue AVANT base de données.
+
+Work Log:
+- Read user feedback: direction bonne MAIS ne pas commencer Phase 0 (Schema & Seed). Corrections stratégiques: (1) premier livrable = première Collection commercialisable, pas une table Prisma ; (2) designer travaille UNIQUEMENT dans Penpot, Wedding OS ne sait pas dessiner ; (3) préparer métier Designer (Designer 1=Luxury, Designer 2=African, etc.) ; (4) cycle de vie complet 6 états (Brouillon→En cours→Validation→Publié→Commercialisé→Archivé) ; (5) parler de "Collection Product" pas juste "Collection" — c'est un actif commercial avec nom, auteur, version, date, licence, qualité, catégorie, prix, compatibilité, historique versions.
+- User demande: produire spécification fonctionnelle définitive répondant à 7 questions (définition, création designer Penpot-only, cycle de vie, composition, déploiement auto, préparation marketplace, autonomie designer zéro-dev).
+- Wrote spec to /home/z/my-project/COLLECTION_PRODUCT_SPEC.md (~750 lines, 12 sections + glossaire + non-goals + checklist validation).
+- 7 questions couvertes:
+  * Q1 §1: Définition Collection Product (16 attributs, modèle conceptuel, différence vs thème)
+  * Q2 §2: Workflow Designer Penpot-only (9 étapes, convention nommage 34 frames auto-détectées, Designer Portal, garantie zéro-code)
+  * Q3 §3: Cycle de vie 6 états (BROUILLON/EN_COURS/VALIDATION/PUBLIÉ/COMMERCIALISÉ/ARCHIVÉ), matrice transitions, versionning semver, règles immutabilité
+  * Q4 §4: Composition 5 packs (Website 10 + Invitations 8 + Print 8 + Communication 8 + Luxury Preset 1 = 35 éléments obligatoires), variantes A/B/C/D
+  * Q5 §5: Déploiement auto 5 steps (Collection→Variante→Photos→Couleurs→Infos→auto-deploy), atomicité, idempotency, cycle de vie mariage vs Collection
+  * Q6 §6: Préparation marketplace (data-only, 2 axes orthogonaux billing tier + marketplace tier, 12 catégories, champs préparés sans UI/paiement)
+  * Q7 §7: Autonomie designer zéro-dev (8 invariants: slots figés, rendu par embed, data-driven, convention, rôle isolé, lifecycle découplé, versionning non-breaking, compatibilité déclarée), scénario Designer 2 African, modèle scaling multi-designer
+- Catalogue initial §8: 5 catégories (LUXURY/CLASSIC/AFRICAN/MINIMAL/DESTINATION), 13 Collections (Royal Gold/Black/Emerald, White Romance/Elegant Beige, Kente/Congo Prestige, Pure White/Nordic, Beach/Garden/Sunset), 5 designers. Détail complet Royal Gold comme référence. Roadmap T0→T0+24mois (4→100+ Collections).
+- Modèle rôles §9: 6 rôles (DESIGNER, ART_DIRECTOR, ADMIN, SALES, COUPLE, GUEST), matrice permissions, onboarding designer 30min zéro-dev.
+- Glossaire §10 (22 termes), Non-goals §11 (11 éléments exclus), Checklist validation §12 (7 questions ✅ + 15 principes vision ✅ + 10 décisions à valider).
+
+Stage Summary:
+- DELIVERABLE: /home/z/my-project/COLLECTION_PRODUCT_SPEC.md — spécification fonctionnelle définitive, NO code, NO schema.
+- Supplante techniquement COLLECTION_ENGINE_PLAN.md (v1) et COLLECTION_ENGINE_PLAN_V2.md (v2) qui seront révisés APRÈS validation de cette spec.
+- Changements clés vs v2:
+  * "Collection" → "Collection Product" (actif commercial, pas juste entité)
+  * Catalogue défini AVANT schema (premier livrable = Royal Gold commercialisable, pas table Prisma)
+  * Workflow designer poussé plus loin: designer travaille UNIQUEMENT dans Penpot, Wedding OS ne sait pas dessiner
+  * Ajout rôle DESIGNER + ART_DIRECTOR dédiés (isolés mariages/guests/billing)
+  * Cycle de vie 6 états explicite avec snapshots immuables + versionning semver
+  * 8 invariants d'autonomie designer pour scaling années sans dev
+  * 16 attributs Collection Product (nom, auteur, version, date, licence, qualité, catégorie, prix, compatibilité, historique, etc.)
+- CONSTRAINTS COMPLIANCE: ✅ READ-ONLY (aucun code source modifié, seulement spec doc + worklog). ✅ Aucun éditeur graphique. ✅ Aucun constructeur de thème. ✅ IA assistant only. ✅ Catalogue avant DB. ✅ Designer Penpot-only. ✅ Additif/rétrocompatible/réversible. ✅ Spécification fournie AVANT plan technique (per user instruction "Une fois cette spécification validée, seulement alors l'implémentation pourra commencer").
+- STATUS: En attente de validation utilisateur de la spécification fonctionnelle. Une fois validée, un plan technique d'implémentation sera produit (dérivé de cette spec), puis l'implémentation commencera par le catalogue (Collections en tant que produits) avant la technique (schéma, API, composants).
