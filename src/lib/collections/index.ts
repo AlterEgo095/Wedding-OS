@@ -78,6 +78,92 @@ export interface CollectionVariantPublic {
   isDefault: boolean
 }
 
+// ─── Phase 2 — Module Slots (5 packs, 34 slots) ──────────────────────────────
+
+export type ModulePack = 'WEBSITE' | 'INVITATIONS' | 'PRINT' | 'COMMUNICATION'
+
+export interface CollectionModulePublic {
+  id: string
+  pack: ModulePack
+  slot: string
+  label: string
+  frameId: string | null
+  penpotPageId: string | null
+  guestTier: string | null
+  sortOrder: number
+}
+
+export interface CompletenessReport {
+  collectionId: string
+  collectionSlug: string
+  collectionName: string
+  total: number
+  filled: number
+  missing: number
+  complete: boolean
+  byPack: Record<ModulePack, { total: number; filled: number; missing: number; complete: boolean }>
+  missingSlots: Array<{ pack: ModulePack; slot: string; label: string }>
+}
+
+/**
+ * The 34 module slots every Collection Product must declare.
+ * Pack 5 (LUXURY) is data-only (stored in Collection.luxuryPreset) — not listed here.
+ * Source: COLLECTION_PRODUCT_SPEC.md §4 (Composition d'un Collection Product).
+ */
+export const MODULE_SLOTS: ReadonlyArray<{
+  pack: ModulePack
+  slot: string
+  label: string
+  guestTier?: string
+  sortOrder: number
+}> = [
+  // Pack 1 — WEBSITE (10 slots)
+  { pack: 'WEBSITE', slot: 'hero', label: 'Section héros (titre, photo couple, date)', sortOrder: 1 },
+  { pack: 'WEBSITE', slot: 'countdown', label: 'Compte à rebours', sortOrder: 2 },
+  { pack: 'WEBSITE', slot: 'story', label: 'Notre histoire (timeline couple)', sortOrder: 3 },
+  { pack: 'WEBSITE', slot: 'gallery', label: 'Galerie photos', sortOrder: 4 },
+  { pack: 'WEBSITE', slot: 'programme', label: 'Programme de la journée', sortOrder: 5 },
+  { pack: 'WEBSITE', slot: 'rsvp', label: 'Formulaire de confirmation présence', sortOrder: 6 },
+  { pack: 'WEBSITE', slot: 'footer', label: 'Pied de page', sortOrder: 7 },
+  { pack: 'WEBSITE', slot: 'loader', label: 'Écran de chargement', sortOrder: 8 },
+  { pack: 'WEBSITE', slot: 'splash', label: 'Splash screen d\'entrée', sortOrder: 9 },
+  { pack: 'WEBSITE', slot: 'systemPages', label: 'Pages système (404, erreur, maintenance)', sortOrder: 10 },
+  // Pack 2 — INVITATIONS (8 slots, guest-tier scoped)
+  { pack: 'INVITATIONS', slot: 'standard', label: 'Invitation STANDARD', guestTier: 'STANDARD', sortOrder: 11 },
+  { pack: 'INVITATIONS', slot: 'vip', label: 'Invitation VIP', guestTier: 'VIP', sortOrder: 12 },
+  { pack: 'INVITATIONS', slot: 'famille', label: 'Invitation FAMILLE', guestTier: 'FAMILLE', sortOrder: 13 },
+  { pack: 'INVITATIONS', slot: 'couple', label: 'Invitation COUPLE', guestTier: 'COUPLE', sortOrder: 14 },
+  { pack: 'INVITATIONS', slot: 'presse', label: 'Invitation PRESSE', guestTier: 'PRESSE', sortOrder: 15 },
+  { pack: 'INVITATIONS', slot: 'sponsor', label: 'Invitation SPONSOR', guestTier: 'SPONSOR', sortOrder: 16 },
+  { pack: 'INVITATIONS', slot: 'numerique', label: 'Invitation numérique (QR)', sortOrder: 17 },
+  { pack: 'INVITATIONS', slot: 'impression', label: 'Invitation imprimable (PDF)', sortOrder: 18 },
+  // Pack 3 — PRINT (8 slots)
+  { pack: 'PRINT', slot: 'badge', label: 'Badge d\'accès invité', sortOrder: 19 },
+  { pack: 'PRINT', slot: 'qr', label: 'Carte QR (code d\'authentification)', sortOrder: 20 },
+  { pack: 'PRINT', slot: 'parking', label: 'Carte de parking', sortOrder: 21 },
+  { pack: 'PRINT', slot: 'floorPlan', label: 'Plan de salle', sortOrder: 22 },
+  { pack: 'PRINT', slot: 'tableNumber', label: 'Numéro de table', sortOrder: 23 },
+  { pack: 'PRINT', slot: 'placeCard', label: 'Marque-place individuel', sortOrder: 24 },
+  { pack: 'PRINT', slot: 'remerciement', label: 'Carte de remerciement', sortOrder: 25 },
+  { pack: 'PRINT', slot: 'livreOr', label: 'Page livre d\'or', sortOrder: 26 },
+  // Pack 4 — COMMUNICATION (8 slots)
+  { pack: 'COMMUNICATION', slot: 'whatsapp', label: 'Message WhatsApp save-the-date', sortOrder: 27 },
+  { pack: 'COMMUNICATION', slot: 'facebook', label: 'Post Facebook', sortOrder: 28 },
+  { pack: 'COMMUNICATION', slot: 'instagram', label: 'Post Instagram (carré + story)', sortOrder: 29 },
+  { pack: 'COMMUNICATION', slot: 'story', label: 'Story animée', sortOrder: 30 },
+  { pack: 'COMMUNICATION', slot: 'email', label: 'Template email', sortOrder: 31 },
+  { pack: 'COMMUNICATION', slot: 'banner', label: 'Bannière web', sortOrder: 32 },
+  { pack: 'COMMUNICATION', slot: 'affiche', label: 'Affiche A3/A2', sortOrder: 33 },
+  { pack: 'COMMUNICATION', slot: 'rollup', label: 'Roll-up 85×200cm', sortOrder: 34 },
+] as const
+
+export const MODULE_PACK_LABELS: Record<ModulePack, string> = {
+  WEBSITE: 'Pack 1 — Website',
+  INVITATIONS: 'Pack 2 — Invitations',
+  PRINT: 'Pack 3 — Supports Imprimés',
+  COMMUNICATION: 'Pack 4 — Communication',
+}
+
 // ─── Tier gating (additive — coexists with PLAN_LIMITS) ──────────────────────
 
 const TIER_ACCESS: Record<string, Plan[]> = {
@@ -597,7 +683,40 @@ export async function ensureCollectionsSeeded(): Promise<void> {
       where: { slug: seed.slug },
       select: { id: true },
     })
-    if (existing) continue
+
+    if (existing) {
+      // Phase 2 backfill: ensure the 34 module slots exist for Collections seeded
+      // before Phase 2 (e.g. Royal Gold from Phase 1, 11 others from Phase 3).
+      // Idempotent — only creates slots that are missing.
+      const existingModuleCount = await db.collectionModule.count({
+        where: { collectionId: existing.id },
+      })
+      if (existingModuleCount < MODULE_SLOTS.length) {
+        const existingSlots = await db.collectionModule.findMany({
+          where: { collectionId: existing.id },
+          select: { pack: true, slot: true },
+        })
+        const existingKeys = new Set(existingSlots.map((m) => `${m.pack}|${m.slot}`))
+        const missing = MODULE_SLOTS.filter(
+          (s) => !existingKeys.has(`${s.pack}|${s.slot}`)
+        )
+        if (missing.length > 0) {
+          await db.collectionModule.createMany({
+            data: missing.map((s) => ({
+              collectionId: existing.id,
+              pack: s.pack,
+              slot: s.slot,
+              label: s.label,
+              frameId: null,
+              penpotPageId: null,
+              guestTier: s.guestTier ?? null,
+              sortOrder: s.sortOrder,
+            })),
+          })
+        }
+      }
+      continue
+    }
 
     const { fileId, pageId } = seed.penpotFileUrl
       ? parsePenpotUrl(seed.penpotFileUrl)
@@ -625,6 +744,18 @@ export async function ensureCollectionsSeeded(): Promise<void> {
             paletteOverride: v.paletteOverride ? JSON.stringify(v.paletteOverride) : null,
             penpotPageId: v.penpotPageId ?? pageId,
             isDefault: v.isDefault,
+          })),
+        },
+        // Phase 2 — seed all 34 module slots (frameId null = unmapped, falls back to existing component)
+        modules: {
+          create: MODULE_SLOTS.map((s) => ({
+            pack: s.pack,
+            slot: s.slot,
+            label: s.label,
+            frameId: null,
+            penpotPageId: null,
+            guestTier: s.guestTier ?? null,
+            sortOrder: s.sortOrder,
           })),
         },
       },
@@ -911,5 +1042,171 @@ export class ApplyError extends Error {
     super(message)
     this.statusCode = statusCode
     this.name = 'ApplyError'
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Phase 2 — Module Slots API
+// ══════════════════════════════════════════════════════════════════════════════
+
+function toPublicModule(row: {
+  id: string
+  pack: string
+  slot: string
+  label: string
+  frameId: string | null
+  penpotPageId: string | null
+  guestTier: string | null
+  sortOrder: number
+}): CollectionModulePublic {
+  return {
+    id: row.id,
+    pack: row.pack as ModulePack,
+    slot: row.slot,
+    label: row.label,
+    frameId: row.frameId,
+    penpotPageId: row.penpotPageId,
+    guestTier: row.guestTier,
+    sortOrder: row.sortOrder,
+  }
+}
+
+/**
+ * List all module slots for a Collection, grouped by pack.
+ * Auto-seeds missing slots if needed (defensive — ensureCollectionsSeeded should
+ * have already done this, but this guards against manually-created Collections).
+ */
+export async function listModules(
+  collectionId: string
+): Promise<CollectionModulePublic[]> {
+  await ensureCollectionsSeeded()
+
+  const rows = await db.collectionModule.findMany({
+    where: { collectionId },
+    orderBy: { sortOrder: 'asc' },
+  })
+  return rows.map(toPublicModule)
+}
+
+/**
+ * Update the Penpot frameId mapping for a single module slot.
+ * Used by the CollectionModulesManager admin UI to let designers/admins map
+ * Penpot frames to module slots.
+ *
+ * Setting frameId to null "unmaps" the slot — the renderer falls back to the
+ * existing component (zero regression).
+ */
+export async function updateModule(params: {
+  collectionId: string
+  pack: ModulePack
+  slot: string
+  frameId: string | null
+  penpotPageId?: string | null
+}): Promise<CollectionModulePublic> {
+  const { collectionId, pack, slot, frameId } = params
+
+  // Validate the slot exists in the canonical MODULE_SLOTS registry
+  const canonical = MODULE_SLOTS.find(
+    (s) => s.pack === pack && s.slot === slot
+  )
+  if (!canonical) {
+    throw new ApplyError(
+      `Slot "${slot}" in pack "${pack}" n'existe pas dans le registre des modules`,
+      400
+    )
+  }
+
+  // Verify the Collection exists
+  const collection = await db.collection.findUnique({
+    where: { id: collectionId },
+    select: { id: true },
+  })
+  if (!collection) {
+    throw new ApplyError('Collection introuvable', 404)
+  }
+
+  const updated = await db.collectionModule.update({
+    where: {
+      collectionId_pack_slot: { collectionId, pack, slot },
+    },
+    data: {
+      frameId: frameId && frameId.trim() !== '' ? frameId.trim() : null,
+      penpotPageId: params.penpotPageId ?? null,
+    },
+  })
+
+  // Audit log
+  await db.auditLog.create({
+    data: {
+      weddingId: null,
+      action: 'UPDATE_COLLECTION_MODULE',
+      details: `Module ${pack}/${slot} → frameId=${frameId || '(unmapped)'}`,
+    },
+  })
+
+  return toPublicModule(updated)
+}
+
+/**
+ * Completeness validation per §4.8 of the spec.
+ * A Collection is "complete" when all 34 module slots have a frameId mapped.
+ *
+ * Returns a detailed report: total/filled/missing counts, per-pack breakdown,
+ * and the list of missing slots (for the admin UI to highlight).
+ *
+ * Note: Pack 5 (LUXURY) is data-only and validated separately via the
+ * Collection.luxuryPreset field — not included in this report's `total`.
+ */
+export async function validateCompleteness(
+  collectionId: string
+): Promise<CompletenessReport> {
+  await ensureCollectionsSeeded()
+
+  const collection = await db.collection.findUnique({
+    where: { id: collectionId },
+    select: { id: true, slug: true, name: true },
+  })
+  if (!collection) {
+    throw new ApplyError('Collection introuvable', 404)
+  }
+
+  const modules = await db.collectionModule.findMany({
+    where: { collectionId },
+    orderBy: { sortOrder: 'asc' },
+  })
+
+  // Build per-pack breakdown
+  const packs: ModulePack[] = ['WEBSITE', 'INVITATIONS', 'PRINT', 'COMMUNICATION']
+  const byPack = {} as CompletenessReport['byPack']
+  const missingSlots: CompletenessReport['missingSlots'] = []
+
+  for (const pack of packs) {
+    const packModules = modules.filter((m) => m.pack === pack)
+    const filled = packModules.filter((m) => m.frameId !== null && m.frameId !== '')
+    const missing = packModules.filter((m) => !m.frameId || m.frameId === '')
+    byPack[pack] = {
+      total: packModules.length,
+      filled: filled.length,
+      missing: missing.length,
+      complete: missing.length === 0 && packModules.length > 0,
+    }
+    for (const m of missing) {
+      missingSlots.push({ pack: m.pack as ModulePack, slot: m.slot, label: m.label })
+    }
+  }
+
+  const total = modules.length
+  const filled = modules.filter((m) => m.frameId !== null && m.frameId !== '').length
+
+  return {
+    collectionId: collection.id,
+    collectionSlug: collection.slug,
+    collectionName: collection.name,
+    total,
+    filled,
+    missing: total - filled,
+    complete: total > 0 && filled === total,
+    byPack,
+    missingSlots,
   }
 }

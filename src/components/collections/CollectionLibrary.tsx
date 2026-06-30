@@ -12,9 +12,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Crown, Sparkles, Check, Loader2, Lock } from 'lucide-react';
+import { Crown, Sparkles, Check, Loader2, Lock, Puzzle } from 'lucide-react';
 import { toast } from 'sonner';
 import type { CollectionPublic, CollectionVariantPublic } from '@/lib/collections';
+import { CollectionModulesManager } from './CollectionModulesManager';
 
 interface CollectionLibraryProps {
   /** Optional slug — when set, the fetch interceptor on /w/[slug]/admin attaches
@@ -42,6 +43,12 @@ export function CollectionLibrary({ slug }: CollectionLibraryProps) {
   const [applying, setApplying] = useState<string | null>(null);
   const [selectedVariant, setSelectedVariant] = useState<Record<string, string>>({});
   const [appliedCollectionSlug, setAppliedCollectionSlug] = useState<string | null>(null);
+  // Phase 2 — Modules modal state (which Collection's modules to show)
+  const [modulesCollection, setModulesCollection] = useState<{
+    id: string;
+    name: string;
+    slug: string;
+  } | null>(null);
 
   // Load catalog
   const loadCollections = useCallback(async () => {
@@ -185,10 +192,28 @@ export function CollectionLibrary({ slug }: CollectionLibraryProps) {
                 setSelectedVariant((prev) => ({ ...prev, [collection.id]: variantId }))
               }
               onApply={() => handleApply(collection)}
+              onModules={() =>
+                setModulesCollection({
+                  id: collection.id,
+                  name: collection.name,
+                  slug: collection.slug,
+                })
+              }
             />
           ))}
         </div>
       )}
+
+      {/* Phase 2 — Modules modal (5 packs × 34 slots) */}
+      <CollectionModulesManager
+        collectionId={modulesCollection?.id ?? null}
+        collectionName={modulesCollection?.name}
+        collectionSlug={modulesCollection?.slug}
+        open={!!modulesCollection}
+        onOpenChange={(open) => {
+          if (!open) setModulesCollection(null);
+        }}
+      />
     </div>
   );
 }
@@ -202,6 +227,7 @@ interface CollectionCardProps {
   selectedVariantId: string | undefined;
   onVariantChange: (variantId: string) => void;
   onApply: () => void;
+  onModules: () => void;
 }
 
 function CollectionCard({
@@ -211,6 +237,7 @@ function CollectionCard({
   selectedVariantId,
   onVariantChange,
   onApply,
+  onModules,
 }: CollectionCardProps) {
   const { themeSeed, luxuryPreset, variants } = collection;
 
@@ -328,30 +355,40 @@ function CollectionCard({
           </div>
         )}
 
-        {/* Apply button */}
-        <Button
-          onClick={onApply}
-          disabled={applying || isApplied}
-          className="w-full"
-          variant={isApplied ? 'secondary' : 'default'}
-        >
-          {applying ? (
-            <>
-              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-              Application…
-            </>
-          ) : isApplied ? (
-            <>
-              <Check className="w-4 h-4 mr-2" />
-              Appliquée
-            </>
-          ) : (
-            <>
-              <Crown className="w-4 h-4 mr-2" />
-              Appliquer cette Collection
-            </>
-          )}
-        </Button>
+        {/* Buttons: Apply + Modules */}
+        <div className="flex gap-2">
+          <Button
+            onClick={onApply}
+            disabled={applying || isApplied}
+            className="flex-1"
+            variant={isApplied ? 'secondary' : 'default'}
+          >
+            {applying ? (
+              <>
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                Application…
+              </>
+            ) : isApplied ? (
+              <>
+                <Check className="w-4 h-4 mr-2" />
+                Appliquée
+              </>
+            ) : (
+              <>
+                <Crown className="w-4 h-4 mr-2" />
+                Appliquer
+              </>
+            )}
+          </Button>
+          <Button
+            onClick={onModules}
+            variant="outline"
+            size="icon"
+            title="Voir les modules (5 packs · 34 slots)"
+          >
+            <Puzzle className="w-4 h-4" />
+          </Button>
+        </div>
       </CardContent>
     </Card>
   );

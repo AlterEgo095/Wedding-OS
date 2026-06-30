@@ -491,6 +491,7 @@ model Collection {
   updatedAt       DateTime @updatedAt
 
   variants        CollectionVariant[]
+  modules         CollectionModule[]
   weddings        Wedding[]
 }
 
@@ -507,5 +508,39 @@ model CollectionVariant {
   createdAt       DateTime @default(now())
 
   @@unique([collectionId, code])
+  @@index([collectionId])
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Collection Engine — Phase 2: Module Slots (5 packs × 34 slots)
+// ══════════════════════════════════════════════════════════════════════════════
+// Each Collection Product must declare 34 module slots across 5 packs:
+//   Pack 1 — WEBSITE      (10 slots: hero, countdown, story, gallery, programme, rsvp, footer, loader, splash, systemPages)
+//   Pack 2 — INVITATIONS  (8 slots: standard, vip, famille, couple, presse, sponsor, numerique, impression)
+//   Pack 3 — PRINT        (8 slots: badge, qr, parking, floorPlan, tableNumber, placeCard, remerciement, livreOr)
+//   Pack 4 — COMMUNICATION(8 slots: whatsapp, facebook, instagram, story, email, banner, affiche, rollup)
+//   Pack 5 — LUXURY       (1 composite, stored in Collection.luxuryPreset — no row needed here)
+//
+// Each slot maps to a Penpot frame ID. When frameId is null, the slot is
+// "unmapped" and the renderer falls back to the existing component (zero regression).
+// Completeness validation (§4.8): a Collection can be PUBLIÉ only when all 34 slots are mapped.
+model CollectionModule {
+  id              String   @id @default(cuid())
+  collectionId    String
+  collection      Collection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  pack            String   // "WEBSITE" | "INVITATIONS" | "PRINT" | "COMMUNICATION"
+  slot            String   // e.g. "hero", "vip", "badge", "whatsapp"
+  label           String   // human-readable label, e.g. "Section héros"
+  // Penpot frame reference — null means "unmapped" (renderer falls back to existing component)
+  frameId         String?
+  penpotPageId    String?
+  // For INVITATIONS pack only: which guest tier this slot serves (STANDARD/VIP/FAMILLE/COUPLE/PRESSE/SPONSOR)
+  // null for all other packs.
+  guestTier       String?
+  sortOrder       Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([collectionId, pack, slot])
   @@index([collectionId])
 }

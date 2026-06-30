@@ -209,6 +209,25 @@ async function createTables() {
         CONSTRAINT "CollectionVariant_collectionId_code_key" UNIQUE ("collectionId", "code")
       )`
     },
+    // ─── Collection Engine (Phase 2 — Module Slots: 5 packs × 34 slots) ───
+    {
+      name: 'CollectionModule',
+      sql: `CREATE TABLE IF NOT EXISTS "CollectionModule" (
+        "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(9)))),
+        "collectionId" TEXT NOT NULL,
+        "pack" TEXT NOT NULL,
+        "slot" TEXT NOT NULL,
+        "label" TEXT NOT NULL,
+        "frameId" TEXT,
+        "penpotPageId" TEXT,
+        "guestTier" TEXT,
+        "sortOrder" INTEGER NOT NULL DEFAULT 0,
+        "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "CollectionModule_collectionId_fkey" FOREIGN KEY ("collectionId") REFERENCES "Collection"("id") ON DELETE CASCADE,
+        CONSTRAINT "CollectionModule_collectionId_pack_slot_key" UNIQUE ("collectionId", "pack", "slot")
+      )`
+    },
   ];
 
   // Create tables in order (respecting foreign keys: Table before Guest)
@@ -228,6 +247,8 @@ async function createTables() {
     'CREATE INDEX IF NOT EXISTS "GuestSession_guestId_idx" ON "GuestSession"("guestId")',
     'CREATE INDEX IF NOT EXISTS "GuestAccessLog_guestId_idx" ON "GuestAccessLog"("guestId")',
     'CREATE INDEX IF NOT EXISTS "AuditLog_userId_idx" ON "AuditLog"("userId")',
+    // ─── Collection Engine (Phase 2 — Module Slots index) ───
+    'CREATE INDEX IF NOT EXISTS "CollectionModule_collectionId_idx" ON "CollectionModule"("collectionId")',
   ];
 
   for (const idxSql of indexes) {
