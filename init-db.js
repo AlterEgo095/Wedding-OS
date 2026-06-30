@@ -196,6 +196,9 @@ async function createTables() {
         "publishedAt" DATETIME,
         "commercializedAt" DATETIME,
         "archivedAt" DATETIME,
+        "penpotTokenId" TEXT,
+        "lastFrameSyncAt" DATETIME,
+        "qualityScore" INTEGER,
         "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
         "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
         CONSTRAINT "Collection_slug_key" UNIQUE ("slug"),
@@ -228,6 +231,8 @@ async function createTables() {
         "label" TEXT NOT NULL,
         "frameId" TEXT,
         "penpotPageId" TEXT,
+        "frameName" TEXT,
+        "autoMapped" BOOLEAN NOT NULL DEFAULT false,
         "guestTier" TEXT,
         "sortOrder" INTEGER NOT NULL DEFAULT 0,
         "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -285,6 +290,12 @@ async function createTables() {
     'ALTER TABLE "Collection" ADD COLUMN "publishedAt" DATETIME',
     'ALTER TABLE "Collection" ADD COLUMN "commercializedAt" DATETIME',
     'ALTER TABLE "Collection" ADD COLUMN "archivedAt" DATETIME',
+    // ─── Collection Engine (Phase 5 — Penpot Collection Builder) ───
+    'ALTER TABLE "Collection" ADD COLUMN "penpotTokenId" TEXT',
+    'ALTER TABLE "Collection" ADD COLUMN "lastFrameSyncAt" DATETIME',
+    'ALTER TABLE "Collection" ADD COLUMN "qualityScore" INTEGER',
+    'ALTER TABLE "CollectionModule" ADD COLUMN "frameName" TEXT',
+    'ALTER TABLE "CollectionModule" ADD COLUMN "autoMapped" BOOLEAN NOT NULL DEFAULT false',
   ];
 
   for (const alterSql of alterStatements) {

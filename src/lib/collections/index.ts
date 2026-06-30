@@ -66,6 +66,10 @@ export interface CollectionPublic {
   themeSeed: ThemeSeed
   luxuryPreset: LuxuryPreset | null
   penpotFileUrl: string | null
+  /** Phase 5 — last auto-detect timestamp (ISO string) or null = never synced. */
+  lastFrameSyncAt: string | null
+  /** Phase 5 — cached quality score (0-100) or null = never computed. */
+  qualityScore: number | null
   variants: CollectionVariantPublic[]
 }
 
@@ -89,6 +93,10 @@ export interface CollectionModulePublic {
   label: string
   frameId: string | null
   penpotPageId: string | null
+  /** Phase 5 — original frame name as authored in Penpot (for diagnostics + drift detection). */
+  frameName: string | null
+  /** Phase 5 — true when the mapping was set by auto-detection, false when manually overridden. */
+  autoMapped: boolean
   guestTier: string | null
   sortOrder: number
 }
@@ -777,6 +785,8 @@ function toPublicCollection(row: {
   themeSeed: string
   luxuryPreset: string | null
   penpotFileUrl: string | null
+  lastFrameSyncAt: Date | null
+  qualityScore: number | null
   variants: Array<{
     id: string
     code: string
@@ -798,6 +808,8 @@ function toPublicCollection(row: {
     themeSeed: JSON.parse(row.themeSeed) as ThemeSeed,
     luxuryPreset: row.luxuryPreset ? (JSON.parse(row.luxuryPreset) as LuxuryPreset) : null,
     penpotFileUrl: row.penpotFileUrl,
+    lastFrameSyncAt: row.lastFrameSyncAt ? row.lastFrameSyncAt.toISOString() : null,
+    qualityScore: row.qualityScore,
     variants: row.variants.map((v) => ({
       id: v.id,
       code: v.code,
@@ -1060,6 +1072,8 @@ function toPublicModule(row: {
   label: string
   frameId: string | null
   penpotPageId: string | null
+  frameName: string | null
+  autoMapped: boolean
   guestTier: string | null
   sortOrder: number
 }): CollectionModulePublic {
@@ -1070,6 +1084,8 @@ function toPublicModule(row: {
     label: row.label,
     frameId: row.frameId,
     penpotPageId: row.penpotPageId,
+    frameName: row.frameName,
+    autoMapped: row.autoMapped,
     guestTier: row.guestTier,
     sortOrder: row.sortOrder,
   }
@@ -1106,6 +1122,10 @@ export async function updateModule(params: {
   slot: string
   frameId: string | null
   penpotPageId?: string | null
+  /** Phase 5 — optional original frame name (set when the designer manually overrides). */
+  frameName?: string | null
+  /** Phase 5 — manual override from Designer Portal sets this to false (preserved on re-sync). */
+  autoMapped?: boolean
 }): Promise<CollectionModulePublic> {
   const { collectionId, pack, slot, frameId } = params
 
@@ -1136,6 +1156,9 @@ export async function updateModule(params: {
     data: {
       frameId: frameId && frameId.trim() !== '' ? frameId.trim() : null,
       penpotPageId: params.penpotPageId ?? null,
+      frameName: params.frameName ?? null,
+      // Manual update from Designer Portal = NOT auto-mapped (preserved on re-sync)
+      autoMapped: params.autoMapped ?? false,
     },
   })
 
@@ -1144,7 +1167,7 @@ export async function updateModule(params: {
     data: {
       weddingId: null,
       action: 'UPDATE_COLLECTION_MODULE',
-      details: `Module ${pack}/${slot} → frameId=${frameId || '(unmapped)'}`,
+      details: `Module ${pack}/${slot} → frameId=${frameId || '(unmapped)'} (autoMapped=${params.autoMapped ?? false})`,
     },
   })
 
@@ -1467,4 +1490,264 @@ export async function listAllCollectionsForDesigner(): Promise<CollectionDesigne
   })
 }
 
+// ══════════════════════════════════════════════════════════════════════════════
+// Phase 5 — Penpot Collection Builder (auto-detection → auto-map)
+// ══════════════════════════════════════════════════════════════════════════════
+// These helpers consume a DetectionReport (produced by `detectFramesFromPenpotFile`
+// in src/lib/penpot/autoDetect.ts) and bulk-write the matched frame IDs to the
+// CollectionModule table.
+//
+// Design principles:
+// - Idempotent: re-running autoMapModules on the same report is a no-op.
+// - Preserves manual overrides: slots whose autoMapped=false are NOT touched
+//   by re-sync (the designer's manual override wins).
+// - Audit-logged: each bulk sync emits one AUTO_MAP_COLLECTION_MODULES entry.
+// - Atomic: uses a Prisma transaction — either all slots update or none.
+// ══════════════════════════════════════════════════════════════════════════════
 
+/**
+ * Shape of a single entry consumed by autoMapModules.
+ * Matches DetectionEntry from src/lib/penpot/autoDetect.ts but redeclared here
+ * to avoid a circular import (autoDetect.ts imports MODULE_SLOTS from this file).
+ */
+export interface AutoMapEntry {
+  frameId: string
+  frameName: string
+  pageId: string | null
+  matched: boolean
+  pack?: ModulePack
+  slot?: string
+}
+
+/**
+ * Result of an auto-map pass.
+ */
+export interface AutoMapResult {
+  collectionId: string
+  /** Number of slots that were updated (autoMapped=true). */
+  updated: number
+  /** Number of slots skipped because they had a manual override (autoMapped=false). */
+  preserved: number
+  /** Number of slots that were unmapped (no matching frame in the report). */
+  unmapped: number
+  /** Total slots in the registry (always 34). */
+  total: number
+  /** Whether all 34 slots are now mapped. */
+  complete: boolean
+  /** Updated lastFrameSyncAt timestamp (ISO string). */
+  syncedAt: string
+}
+
+/**
+ * Bulk-write auto-detected frame mappings to a Collection's module slots.
+ *
+ * Behavior:
+ * - For each (pack, slot) in the registry:
+ *   - If the report has a matching entry → update frameId/frameName/penpotPageId,
+ *     set autoMapped=true.
+ *   - If no matching entry AND the current row is autoMapped=true → unmap
+ *     (frameId=null, frameName=null) — the frame was removed from the Penpot file.
+ *   - If no matching entry AND the current row is autoMapped=false → preserve
+ *     the manual override (do nothing).
+ *
+ * @param collectionId Target Collection
+ * @param entries Matched entries from the DetectionReport (filter matched=true
+ *   upstream, OR pass all entries — non-matched ones are ignored here).
+ * @param options.overrideManual When true, manual overrides are also overwritten.
+ *   Default false — designers must explicitly opt-in to override their manual edits.
+ */
+export async function autoMapModules(
+  collectionId: string,
+  entries: readonly AutoMapEntry[],
+  options: { overrideManual?: boolean } = {},
+): Promise<AutoMapResult> {
+  const overrideManual = options.overrideManual ?? false
+
+  // Verify the Collection exists
+  const collection = await db.collection.findUnique({
+    where: { id: collectionId },
+    select: { id: true },
+  })
+  if (!collection) {
+    throw new ApplyError('Collection introuvable', 404)
+  }
+
+  // Build a lookup: `${pack}/${slot}` → best entry (last-matching wins per spec)
+  const matchBySlot = new Map<string, AutoMapEntry>()
+  for (const e of entries) {
+    if (!e.matched || !e.pack || !e.slot) continue
+    matchBySlot.set(`${e.pack}/${e.slot}`, e)
+  }
+
+  // Fetch existing rows so we can preserve manual overrides
+  const existingRows = await db.collectionModule.findMany({
+    where: { collectionId },
+  })
+  const existingBySlot = new Map(
+    existingRows.map((r) => [`${r.pack}/${r.slot}`, r]),
+  )
+
+  const syncedAt = new Date()
+  let updated = 0
+  let preserved = 0
+  let unmapped = 0
+
+  await db.$transaction(async (tx) => {
+    for (const slotDef of MODULE_SLOTS) {
+      const key = `${slotDef.pack}/${slotDef.slot}`
+      const match = matchBySlot.get(key)
+      const existing = existingBySlot.get(key)
+
+      if (!existing) {
+        // Slot row doesn't exist (shouldn't happen — ensureCollectionsSeeded creates
+        // all 34 slots, but defensive). Skip — listModules will re-seed on next read.
+        continue
+      }
+
+      const isManualOverride = !existing.autoMapped && existing.frameId !== null
+
+      if (match) {
+        // Frame found in Penpot → update mapping
+        if (isManualOverride && !overrideManual) {
+          // Preserve designer's manual override
+          preserved++
+          continue
+        }
+        await tx.collectionModule.update({
+          where: { id: existing.id },
+          data: {
+            frameId: match.frameId,
+            frameName: match.frameName,
+            penpotPageId: match.pageId,
+            autoMapped: true,
+          },
+        })
+        updated++
+      } else {
+        // No matching frame in the report
+        if (isManualOverride && !overrideManual) {
+          // Preserve manual override even when no match
+          preserved++
+          continue
+        }
+        if (existing.autoMapped && existing.frameId !== null) {
+          // Auto-mapped previously but frame disappeared → unmap
+          await tx.collectionModule.update({
+            where: { id: existing.id },
+            data: {
+              frameId: null,
+              frameName: null,
+              autoMapped: true,
+            },
+          })
+          unmapped++
+        }
+        // else: already unmapped → no-op
+      }
+    }
+
+    // Update Collection's lastFrameSyncAt
+    await tx.collection.update({
+      where: { id: collectionId },
+      data: { lastFrameSyncAt: syncedAt },
+    })
+  })
+
+  // Audit log (outside transaction — best-effort)
+  await db.auditLog.create({
+    data: {
+      weddingId: null,
+      action: 'AUTO_MAP_COLLECTION_MODULES',
+      details: `Auto-map ${collectionId}: ${updated} updated, ${preserved} preserved, ${unmapped} unmapped`,
+    },
+  })
+
+  // Compute completeness (post-write)
+  const filled = (await db.collectionModule.findMany({
+    where: { collectionId, frameId: { not: null } },
+    select: { id: true },
+  })).length
+
+  return {
+    collectionId,
+    updated,
+    preserved,
+    unmapped,
+    total: MODULE_SLOTS.length,
+    complete: filled === MODULE_SLOTS.length,
+    syncedAt: syncedAt.toISOString(),
+  }
+}
+
+/**
+ * Link a Penpot file URL to a Collection (sets penpotFileUrl + penpotFileId).
+ * Idempotent — re-linking with the same URL is a no-op.
+ *
+ * @param collectionId Target Collection
+ * @param fileUrl Penpot URL (view/share/editor — parsePenpotUrl accepts all)
+ * @param tokenId Optional designer-scoped Penpot API token (stored on Collection)
+ */
+export async function linkPenpotFile(params: {
+  collectionId: string
+  fileUrl: string
+  tokenId?: string | null
+}): Promise<{ collectionId: string; fileId: string | null; pageId: string | null }> {
+  const { collectionId, fileUrl } = params
+
+  // Use parsePenpotUrl from penpot/config (lazy import to avoid circular deps)
+  const { parsePenpotUrl } = await import('@/lib/penpot/config')
+  const { fileId, pageId } = parsePenpotUrl(fileUrl)
+
+  const updated = await db.collection.update({
+    where: { id: collectionId },
+    data: {
+      penpotFileUrl: fileUrl,
+      penpotFileId: fileId,
+      penpotTokenId: params.tokenId ?? null,
+    },
+    select: { id: true, penpotFileId: true },
+  })
+
+  await db.auditLog.create({
+    data: {
+      weddingId: null,
+      action: 'LINK_PENPOT_FILE',
+      details: `Collection ${collectionId} linked to Penpot file ${fileId || '(invalid URL)'}`,
+    },
+  })
+
+  return {
+    collectionId: updated.id,
+    fileId: updated.penpotFileId,
+    pageId,
+  }
+}
+
+/**
+ * Unlink a Penpot file from a Collection.
+ * Sets penpotFileUrl + penpotFileId + penpotTokenId to null.
+ * Does NOT touch CollectionModule rows — auto-mapped slots remain mapped
+ * (the designer can re-sync or manually unmap them).
+ */
+export async function unlinkPenpotFile(
+  collectionId: string,
+): Promise<{ collectionId: string }> {
+  await db.collection.update({
+    where: { id: collectionId },
+    data: {
+      penpotFileUrl: null,
+      penpotFileId: null,
+      penpotTokenId: null,
+    },
+  })
+
+  await db.auditLog.create({
+    data: {
+      weddingId: null,
+      action: 'UNLINK_PENPOT_FILE',
+      details: `Collection ${collectionId} unlinked from Penpot`,
+    },
+  })
+
+  return { collectionId }
+}

@@ -12,10 +12,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Crown, Sparkles, Check, Loader2, Lock, Puzzle } from 'lucide-react';
+import { Crown, Sparkles, Check, Loader2, Lock, Wand2 } from 'lucide-react';
 import { toast } from 'sonner';
 import type { CollectionPublic, CollectionVariantPublic } from '@/lib/collections';
-import { CollectionModulesManager } from './CollectionModulesManager';
 
 interface CollectionLibraryProps {
   /** Optional slug — when set, the fetch interceptor on /w/[slug]/admin attaches
@@ -43,12 +42,8 @@ export function CollectionLibrary({ slug }: CollectionLibraryProps) {
   const [applying, setApplying] = useState<string | null>(null);
   const [selectedVariant, setSelectedVariant] = useState<Record<string, string>>({});
   const [appliedCollectionSlug, setAppliedCollectionSlug] = useState<string | null>(null);
-  // Phase 2 — Modules modal state (which Collection's modules to show)
-  const [modulesCollection, setModulesCollection] = useState<{
-    id: string;
-    name: string;
-    slug: string;
-  } | null>(null);
+  // Phase 5 — Designer Portal handles module mapping via Penpot auto-detect.
+  // The couple-facing catalog no longer mounts the manual frame ID mapper.
 
   // Load catalog
   const loadCollections = useCallback(async () => {
@@ -192,28 +187,10 @@ export function CollectionLibrary({ slug }: CollectionLibraryProps) {
                 setSelectedVariant((prev) => ({ ...prev, [collection.id]: variantId }))
               }
               onApply={() => handleApply(collection)}
-              onModules={() =>
-                setModulesCollection({
-                  id: collection.id,
-                  name: collection.name,
-                  slug: collection.slug,
-                })
-              }
             />
           ))}
         </div>
       )}
-
-      {/* Phase 2 — Modules modal (5 packs × 34 slots) */}
-      <CollectionModulesManager
-        collectionId={modulesCollection?.id ?? null}
-        collectionName={modulesCollection?.name}
-        collectionSlug={modulesCollection?.slug}
-        open={!!modulesCollection}
-        onOpenChange={(open) => {
-          if (!open) setModulesCollection(null);
-        }}
-      />
     </div>
   );
 }
@@ -227,7 +204,6 @@ interface CollectionCardProps {
   selectedVariantId: string | undefined;
   onVariantChange: (variantId: string) => void;
   onApply: () => void;
-  onModules: () => void;
 }
 
 function CollectionCard({
@@ -237,7 +213,6 @@ function CollectionCard({
   selectedVariantId,
   onVariantChange,
   onApply,
-  onModules,
 }: CollectionCardProps) {
   const { themeSeed, luxuryPreset, variants } = collection;
 
@@ -332,6 +307,32 @@ function CollectionCard({
           </span>
         </div>
 
+        {/* Phase 5 — Quality score badge (couple-facing indicator) */}
+        {collection.qualityScore !== null && collection.qualityScore !== undefined && (
+          <div className="flex items-center gap-1.5 text-xs">
+            <span className="text-muted-foreground">Qualité:</span>
+            <Badge
+              variant="outline"
+              className={`text-[10px] font-bold gap-0.5 ${
+                collection.qualityScore >= 80
+                  ? 'border-emerald-300 text-emerald-700'
+                  : collection.qualityScore >= 50
+                  ? 'border-amber-300 text-amber-700'
+                  : 'border-rose-300 text-rose-700'
+              }`}
+            >
+              <Sparkles className="h-2.5 w-2.5" />
+              {collection.qualityScore}/100
+            </Badge>
+            {collection.penpotFileUrl && (
+              <Badge variant="outline" className="text-[10px] gap-0.5 border-blue-300 text-blue-700">
+                <Wand2 className="h-2.5 w-2.5" />
+                Penpot
+              </Badge>
+            )}
+          </div>
+        )}
+
         {/* Variant picker (only if more than 1 variant) */}
         {variants.length > 1 && (
           <div className="space-y-1.5">
@@ -355,7 +356,7 @@ function CollectionCard({
           </div>
         )}
 
-        {/* Buttons: Apply + Modules */}
+        {/* Buttons: Apply only (Phase 5 — couples no longer manage module mappings) */}
         <div className="flex gap-2">
           <Button
             onClick={onApply}
@@ -379,14 +380,6 @@ function CollectionCard({
                 Appliquer
               </>
             )}
-          </Button>
-          <Button
-            onClick={onModules}
-            variant="outline"
-            size="icon"
-            title="Voir les modules (5 packs · 34 slots)"
-          >
-            <Puzzle className="w-4 h-4" />
           </Button>
         </div>
       </CardContent>

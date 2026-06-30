@@ -1,7 +1,8 @@
 export const dynamic = 'force-dynamic';
 import { NextRequest, NextResponse } from 'next/server';
 import { withPublicTenant, withAdminTenantHandler } from '@/lib/tenant-context';
-import { getAuthUser, hasPermission } from '@/lib/auth';
+import { getAuthUser } from '@/lib/auth';
+import { hasRole } from '@/lib/types';
 import {
   listModules,
   updateModule,
@@ -33,11 +34,17 @@ export const GET = withPublicTenant(async (req: NextRequest) => {
 /**
  * PATCH /api/collections/[id]/modules — update a single module slot's frameId.
  *
- * Body: { pack: ModulePack, slot: string, frameId: string | null, penpotPageId?: string | null }
+ * Body: {
+ *   pack: ModulePack,
+ *   slot: string,
+ *   frameId: string | null,
+ *   penpotPageId?: string | null,
+ *   frameName?: string | null,    // Phase 5 — original Penpot frame name
+ *   autoMapped?: boolean          // Phase 5 — false = manual override (preserved on re-sync)
+ * }
  *
- * Auth: PLATFORM_ADMIN only (designers/admins map Penpot frames to module slots;
- * couples don't do this — they pick a Collection, the mapping is pre-set by the
- * Collection author).
+ * Auth: DESIGNER+ (Phase 5 — opened to designers + art directors per spec §2.4.
+ * PLATFORM_ADMIN + SUPER_ADMIN also allowed via role hierarchy).
  *
  * Setting frameId to null unmaps the slot (renderer falls back to existing
  * component — zero regression).
@@ -46,9 +53,10 @@ export async function PATCH(request: NextRequest) {
   try {
     const user = await getAuthUser(request)
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    if (!hasPermission(user.role, ['PLATFORM_ADMIN'])) {
+    // Phase 5 — DESIGNER+ (covers ART_DIRECTOR, PLATFORM_ADMIN, SUPER_ADMIN via hierarchy)
+    if (!hasRole(user.role, ['DESIGNER'])) {
       return NextResponse.json(
-        { error: 'Forbidden — réservé aux administrateurs plateforme' },
+        { error: 'Forbidden — réservé aux designers, directeurs artistiques et administrateurs plateforme' },
         { status: 403 }
       )
     }
@@ -56,11 +64,13 @@ export async function PATCH(request: NextRequest) {
     return withAdminTenantHandler(request, user, async () => {
       const id = request.nextUrl.pathname.split('/').slice(-2, -1)[0] as string
       const body = await request.json()
-      const { pack, slot, frameId, penpotPageId } = body as {
+      const { pack, slot, frameId, penpotPageId, frameName, autoMapped } = body as {
         pack?: ModulePack
         slot?: string
         frameId?: string | null
         penpotPageId?: string | null
+        frameName?: string | null
+        autoMapped?: boolean
       }
 
       if (!pack || !slot || typeof pack !== 'string' || typeof slot !== 'string') {
@@ -77,6 +87,8 @@ export async function PATCH(request: NextRequest) {
           slot,
           frameId: frameId ?? null,
           penpotPageId: penpotPageId ?? null,
+          frameName: frameName ?? null,
+          autoMapped: autoMapped ?? false,
         })
         return NextResponse.json({ module: updated })
       } catch (e) {
