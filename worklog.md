@@ -6868,3 +6868,69 @@ Stage Summary:
 - DEPLOY WORKFLOW ESTABLISHED for future phases: sandbox → commit → `git push origin main` → SFTP upload (deploy-collection-engine.mjs or similar) → docker rebuild → verify.
 - CONSTRAINTS COMPLIANCE: ✅ Zero regression (no existing code broken). ✅ All prior work preserved (58 commits rebased cleanly). ✅ VPS unchanged functionally (already deployed in prior session). ✅ README accurate (reflects actual state, not aspirational).
 - STATUS: Phase 1 fully delivered on all 3 surfaces (sandbox, VPS, GitHub). Ready for Phase 2 on user signal.
+
+---
+Task ID: COLLECTION-ENGINE-PHASE3-CATALOG-ENRICHMENT
+Agent: Main Agent
+Task: Lancer la Phase 3 — Enrichir le catalogue avec de nouvelles Collections. Passer de 1 Collection (Royal Gold) à 12 Collections sur 5 catégories, avec tier gating, déployer sur VPS + GitHub.
+
+Work Log:
+- Read worklog.md (6870 lines) to confirm Phase 1 complete + deployed. Phase 3 = catalog enrichment per COLLECTION_PRODUCT_SPEC.md §8 (5 categories, 13 Collections target — Royal Gold already done = 11 new).
+- Read current src/lib/collections/index.ts to understand ROYAL_GOLD_SEED structure + ensureRoyalGoldSeeded function.
+- Designed 12 Collections across 5 categories with thoughtful tier distribution:
+  * LUXURY (3): Royal Gold (FREE), Royal Black (PREMIUM), Royal Emerald (EXCLUSIVE)
+  * CLASSIC (2): White Romance (FREE), Elegant Beige (FREE)
+  * AFRICAN (2): Kente (PREMIUM), Congo Prestige (EXCLUSIVE)
+  * MINIMAL (2): Pure White (FREE), Nordic (FREE)
+  * DESTINATION (3): Beach (FREE), Garden (FREE), Sunset (PREMIUM)
+  * Tier distribution: FREE (7) + PREMIUM (3) + EXCLUSIVE (2) = 12
+- Each Collection crafted with: unique themeSeed (colors + fonts + layout), luxuryPreset (theme + 7 effects + intensity/density/speed/haloCount), 1 default variant.
+- Luxury theme distribution: gold (4), champagne (4), midnight (2), rose (2) — all 4 themes represented.
+- Edited src/lib/collections/index.ts:
+  * Added CollectionSeed interface (typed)
+  * Created COLLECTION_SEEDS array (12 entries, as const)
+  * Replaced ensureRoyalGoldSeeded → ensureCollectionsSeeded (iterates all seeds, idempotent — skips existing slugs)
+  * Kept ROYAL_GOLD_SEED export as COLLECTION_SEEDS[0] (backward-compat)
+  * Updated listCollections + getCollection call sites
+  * Royal Gold seed data IDENTICAL to Phase 1 (zero regression for existing weddings)
+- Edited src/components/collections/CollectionLibrary.tsx:
+  * Added tier badge on card preview (top-right corner)
+  * EXCLUSIVE → amber bg with Crown icon
+  * PREMIUM → purple bg with Crown icon
+  * FREE → no badge (clean visual)
+  * Preserved existing name + category overlay + Appliquée badge
+- Ran `bun run lint`: ZERO new errors from Phase 3 files (verified by grep — no hits for collections/CollectionLibrary/COLLECTION_SEEDS/ensureCollections).
+- Verified local DB: 12 Collections seeded (all 12 slugs present, each with 1 variant, correct tier + category distribution).
+- Verified local /api/collections via Agent Browser (TRIAL plan):
+  * Returns 10 Collections (7 FREE + 3 PREMIUM, 0 EXCLUSIVE — correctly filtered)
+  * 5 categories represented
+  * 4 luxury themes represented (gold/midnight/champagne/rose)
+  * Tier gating works: Royal Emerald + Congo Prestige hidden (require ELITE)
+- Committed: `feat(collection-engine): Phase 3 — enrich catalog with 12 Collections` (fe9e470, +538/-83).
+- Pushed to GitHub: 0782a6c..fe9e470.
+- Deployed to VPS:
+  * Built phase3-sync.tar.gz (341K, 271 files — full src/ + prisma/ + init-db.js + package.json)
+  * SFTP uploaded + extracted to /opt/wedding-platform
+  * Verified files on VPS: royal-black (1 hit), congo-prestige (1 hit), COLLECTION_SEEDS (4 hits)
+  * Triggered no-cache Docker rebuild via /tmp/rebuild-collection-engine.sh
+  * Monitored build: npm install (156s) → copy node_modules → prisma generate → next build (62s) → runner image (chown) → export → up -d
+  * DEPLOY_SUCCESS at Tue Jun 30 18:36:50 CEST 2026
+  * Container wedding-app Up (healthy)
+- Verified VPS catalog:
+  * HTTP 200 on /
+  * /api/collections returns all 12 slugs (royal-gold, royal-black, royal-emerald, white-romance, elegant-beige, kente, congo-prestige, pure-white, nordic, beach, garden, sunset)
+  * VPS sees all 12 because default wedding has higher plan (ELITE sees everything)
+  * 10504 bytes response (full catalog with variants + themeSeeds + luxuryPresets)
+- MD5 sync verification (sandbox ↔ VPS):
+  * src/lib/collections/index.ts: d2050146... IDENTICAL
+  * src/components/collections/CollectionLibrary.tsx: 0606122d... IDENTICAL
+
+Stage Summary:
+- DELIVERABLE: Phase 3 complete — catalog enriched from 1 to 12 Collections, deployed on all 3 surfaces (sandbox, VPS, GitHub).
+- 1 commit: fe9e470 (feat: Phase 3, 2 files, +538/-83).
+- Catalog: 12 Collections, 5 categories (LUXURY/CLASSIC/AFRICAN/MINIMAL/DESTINATION), 3 tiers (FREE:7 + PREMIUM:3 + EXCLUSIVE:2), 4 luxury themes (gold/midnight/champagne/rose).
+- Tier gating verified: TRIAL sees 10 (FREE+PREMIUM), ELITE sees 12 (all). canAccessCollection helper reused unchanged.
+- Zero-regression: Royal Gold seed data unchanged. ensureCollectionsSeeded skips existing slugs (no overwrite). Existing weddings unaffected.
+- 3-WAY SYNC CONFIRMED: sandbox git HEAD (fe9e470) == GitHub HEAD (fe9e470) == VPS deployed code (MD5-verified on 2 key files).
+- CONSTRAINTS COMPLIANCE: ✅ One feature at a time (Phase 3 = catalog enrichment only). ✅ Test/validate before next (lint clean, local verified, VPS verified). ✅ Zero regression (Royal Gold unchanged, existing weddings unaffected). ✅ Reuse existing systems (canAccessCollection, ensureCollectionsSeeded pattern, CollectionLibrary component extended not rebuilt). ✅ Architecture unchanged (no new models, no new API routes — just more seed data + UI badge).
+- STATUS: Phase 3 COMPLETE. Catalog enriched from 1 → 12 Collections. Ready for Phase 2 (attach modules: Website, Invitations, Print, Communication) or future marketplace phases on user signal.
