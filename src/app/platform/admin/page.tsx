@@ -92,6 +92,7 @@ import {
 import { PLAN_METADATA, type Plan, type WeddingStatus } from '@/lib/types'
 import { BillingTab } from './BillingTab'
 import { OnboardingTab } from './OnboardingTab'
+import { CollectionsFactoryTab } from './CollectionsFactoryTab'
 import { ThemeCustomizer } from '@/components/admin/ThemeCustomizer'
 import { PenpotStudio } from '@/components/penpot/PenpotStudio'
 
@@ -212,7 +213,7 @@ interface PaginatedUsers {
   limit: number
 }
 
-type TabId = 'dashboard' | 'weddings' | 'users' | 'audit' | 'billing' | 'onboarding' | 'appearance' | 'studio'
+type TabId = 'dashboard' | 'weddings' | 'users' | 'audit' | 'billing' | 'onboarding' | 'appearance' | 'studio' | 'collections'
 
 interface NavItem {
   id: TabId
@@ -229,6 +230,7 @@ const NAV_ITEMS: NavItem[] = [
   { id: 'audit', label: "Journal d'audit", icon: ScrollText },
   { id: 'appearance', label: 'Apparence', icon: Palette },
   { id: 'studio', label: 'Studio Penpot', icon: PenTool },
+  { id: 'collections', label: 'Collections Premium', icon: Crown },
 ]
 
 const WEDDING_STATUSES: WeddingStatus[] = ['DRAFT', 'PUBLISHED', 'COMPLETED', 'ARCHIVED', 'SUSPENDED']
@@ -2205,6 +2207,8 @@ export default function PlatformAdminPage() {
         // The PenpotStudio component reads the active wedding from the ThemeCustomizer
         // wedding picker (same X-Wedding-Slug header pattern).
         return <PenpotStudio />
+      case 'collections':
+        return <CollectionsFactoryTab />
       default:
         return <DashboardTab fetchWithAuth={fetchWithAuth} />
     }
