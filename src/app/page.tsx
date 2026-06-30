@@ -23,6 +23,7 @@ import AmbientMusicPlayer from '@/components/AmbientMusicPlayer'
 import VisualEffectsLayer from '@/components/effects/VisualEffectsLayer'
 import LuxuryVisualEngine from '@/components/luxury/LuxuryVisualEngine'
 import { ThemeInjector } from '@/components/wedding/ThemeInjector'
+import CollectionsShowcase from '@/components/collections/CollectionsShowcase'
 
 interface CoupleStory {
   id: string
@@ -278,6 +279,9 @@ function HomeContent() {
 
       {/* AENEWS Premium Banner */}
       <AENEWSBanner variant="homepage" />
+
+      {/* Premium Collections Showcase — Phase 6 */}
+      <CollectionsShowcase />
     </>
   )
 
