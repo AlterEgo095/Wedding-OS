@@ -28,7 +28,23 @@ export async function GET(request: NextRequest) {
 
     return withAdminTenantHandler(request, user, async () => {
       const collections = await listAllCollectionsForDesigner();
-      return NextResponse.json({ collections, count: collections.length });
+      // Phase 5 — for each Collection, also return qualityScore (cached) + lastFrameSyncAt + penpotFileUrl
+      const { db } = await import('@/lib/db');
+      const enriched = await Promise.all(
+        collections.map(async (c) => {
+          const row = await db.collection.findUnique({
+            where: { id: c.id },
+            select: { qualityScore: true, lastFrameSyncAt: true, penpotFileUrl: true },
+          });
+          return {
+            ...c,
+            qualityScore: row?.qualityScore ?? null,
+            lastFrameSyncAt: row?.lastFrameSyncAt ? row.lastFrameSyncAt.toISOString() : null,
+            penpotFileUrl: row?.penpotFileUrl ?? null,
+          };
+        })
+      );
+      return NextResponse.json({ collections: enriched, count: enriched.length });
     });
   } catch (error) {
     console.error('Designer collections list error:', error);

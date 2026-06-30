@@ -508,6 +508,19 @@ model Collection {
   commercializedAt DateTime? // PUBLIE → COMMERCIALISE
   archivedAt      DateTime? // * → ARCHIVE
 
+  // ─── Phase 5 — Penpot Collection Builder (auto-detection cache) ──────────
+  // Designer-scoped Penpot API token (encrypted at rest in a future hardening
+  // pass; for now stored as plaintext like other config). When null, the
+  // global PENPOT_API_TOKEN env var is used.
+  penpotTokenId   String?
+  // Last time auto-detection ran successfully (cache for 304 short-circuit +
+  // UI freshness indicator). Null = never synced.
+  lastFrameSyncAt DateTime?
+  // Cached quality score (0-100). Computed by computeQualityScore() and
+  // refreshed on each auto-detect / module update / transition. Null = never
+  // computed (legacy Collections from Phase 1-4 have null until first compute).
+  qualityScore    Int?
+
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
@@ -555,6 +568,13 @@ model CollectionModule {
   // Penpot frame reference — null means "unmapped" (renderer falls back to existing component)
   frameId         String?
   penpotPageId    String?
+  // Phase 5 — original frame name as authored in Penpot (for diagnostics +
+  // drift detection: if the designer renames the frame, autoMapped=false rows
+  // surface the mismatch on next sync).
+  frameName       String?
+  // Phase 5 — true when the mapping was set by auto-detection, false when the
+  // designer manually overrode it. Manual overrides are preserved on re-sync.
+  autoMapped      Boolean  @default(false)
   // For INVITATIONS pack only: which guest tier this slot serves (STANDARD/VIP/FAMILLE/COUPLE/PRESSE/SPONSOR)
   // null for all other packs.
   guestTier       String?

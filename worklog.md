@@ -7138,3 +7138,480 @@ Stage Summary:
 - 3-WAY SYNC CONFIRMED: sandbox git HEAD (673000c) == GitHub HEAD (673000c) == VPS deployed code (verified via grep counts on schema/lib/components + DB column check).
 - CONSTRAINTS COMPLIANCE: ✅ One feature at a time (Phase 4 = lifecycle + Designer Portal only). ✅ Test/validate before next (lint clean, local API verified, VPS API verified, Agent Browser UI verified). ✅ Zero regression (all 12 Collections default to COMMERCIALISE, couple-facing catalog unchanged, existing weddings unaffected). ✅ Reuse existing systems (withAdminTenantHandler, getAuthUser, AuditLog, shadcn/ui Dialog/Card/Badge/Button/Tooltip/ScrollArea, lucide-react icons). ✅ Architecture unchanged (additive columns + 2 new routes + 1 new component, no existing models modified).
 - STATUS: Phase 4 COMPLETE. Lifecycle 6 états + Designer Portal live in admin. 12 Collections all commercialized (legacy state). Designers + Art Directors can now drive Collections through the full lifecycle. Ready for next phase (Designer onboarding / Penpot auto-mapping / marketplace) on user signal.
+
+---
+Task ID: AUDIT-5-A
+Agent: Explore Agent (Penpot + Collection audit)
+Task: Audit Penpot integration, Collection Engine, Designer Portal, CollectionModule/CollectionVariant for Phase 5 reuse plan.
+
+Work Log:
+- Read worklog.md last ~1000 lines (lines 6140-7140) to understand Phase 1-4 delivery: Phase 1 Royal Gold seed + Collection/CollectionVariant schema, Phase 2 5 packs × 34 module slots + CollectionModule model + completeness validation, Phase 3 catalog enriched 1→12 Collections across 5 categories, Phase 4 lifecycle 6 états (BROUILLON→EN_COURS→VALIDATION→PUBLIE→COMMERCIALISE→ARCHIVE) + TRANSITION_ROLES matrix + DesignerPortal component + listAllCollectionsForDesigner workspace API.
+- Read COLLECTION_PRODUCT_SPEC.md §2.3 — confirmed the exact frame naming convention for auto-detection (4 packs × ~8-10 frames, each slot maps to 1 canonical frame name + optional aliases, case-insensitive, accepts variant prefix `A/hero`, `B/hero`).
+- Audited src/lib/penpot/config.ts (204 LOC) — Penpot config module. Has parsePenpotUrl, buildPenpotViewUrl, buildPenpotEditUrl, themeToPenpotTokens, penpotTokensToTheme, penpotTokensToCssVars, EMPTY_PENPOT_INTEGRATION, PenpotIntegration/PenpotTokens interfaces. NO Penpot REST client, NO auth-token system, NO frame-name auto-detection, NO fetch to Penpot backend.
+- Audited src/components/penpot/PenpotStudio.tsx (640 LOC) — couple-facing iframe embed component (mounted in /w/[slug]/admin 'studio' tab AND /platform/admin page). URL linker (paste Penpot URL → parsePenpotUrl → persist to Theme.customizations.penpot) + token push/pull (manual JSON paste via window.prompt) + iframe view-mode embed + clipboard copy of tokens JSON. NO auto-detect, NO frame registry, NO file-structure fetcher. Tokens push/pull is MANUAL paste-based (cross-origin iframe can't be read directly).
+- Audited src/lib/collections/index.ts (1470 LOC) — Collection Engine core. Exports: ThemeSeed, LuxuryPreset, PaletteOverride, CollectionPublic, CollectionVariantPublic, CollectionModulePublic, CompletenessReport, ModulePack, CollectionStatus, TransitionOption, CollectionDesignerView, ApplyResult interfaces; COLLECTION_SEEDS (12 entries), MODULE_SLOTS (34 canonical slots), MODULE_PACK_LABELS, COLLECTION_STATUSES, COLLECTION_STATUS_LABELS, TIER_ACCESS, TRANSITION_ROLES constants; canAccessCollection, ensureCollectionsSeeded, listCollections, getCollection, applyCollection, listModules, updateModule, validateCompleteness, canTransition, availableTransitions, transitionCollection, listAllCollectionsForDesigner, ApplyError class. CRITICAL: updateModule is the per-slot manual frameId writer — directly the function Phase 5 must replace with bulk auto-mapping.
+- Audited src/components/collections/DesignerPortal.tsx (401 LOC) — designer workspace. Stats grid (6 status counts) + Collections list with badges (slug/version/status/category/tier/author/publishedAt) + Transition dialog (5 candidate transitions with allowed/locked state + tooltips). NO URL input, NO auto-detect button, NO authoring flow. Designers can ONLY trigger transitions — they cannot link a Penpot file or trigger auto-detection from this portal today.
+- Audited src/components/collections/CollectionModulesManager.tsx (404 LOC) — THIS IS THE MANUAL FRAME ID MAPPER (to deprecate). Dialog modal with Tabs (4 packs) + Accordion (Pack 5 Luxury data-only). Each slot renders an Input for `Penpot frame ID` + a Save button → PATCH /api/collections/[id]/modules with `{pack, slot, frameId}`. Read-only for non-PLATFORM_ADMIN (lazy state init reads localStorage 'admin_user'). Phase 5 must deprecate this UX (couples should never see this, designers should see auto-detected state with override-only capability).
+- Audited src/components/collections/CollectionLibrary.tsx (395 LOC) — couple-facing catalog grid. Loads /api/collections + /api/theme (for applied-collection detection). Renders CollectionCard with gradient preview, tier badge (FREE=no badge, PREMIUM=purple, EXCLUSIVE=amber), palette swatches, font preview, variant picker, "Appliquer" button + Puzzle "Voir les modules (5 packs · 34 slots)" button that opens CollectionModulesManager modal. The Puzzle button is the MISPLACED entry point for Phase 5 — couples should not see/manage module frame mappings.
+- Audited prisma/schema.prisma (568 LOC, lines 470-567) — Collection + CollectionVariant + CollectionModule models. Collection: slug unique, name, description, thumbnailUrl, isActive, isPublished, sortOrder, category, tier, penpotFileUrl, penpotFileId, themeSeed (JSON string), luxuryPreset (JSON string nullable), status (default COMMERCIALISE), version (default 0.1.0), authorId (FK AdminUser nullable), submittedAt/publishedAt/commercializedAt/archivedAt (nullable), createdAt, updatedAt. CollectionVariant: collectionId FK, code, name, paletteOverride (JSON nullable), penpotPageId, isDefault, unique(collectionId, code). CollectionModule: collectionId FK, pack, slot, label, frameId (nullable), penpotPageId (nullable), guestTier (nullable), sortOrder, createdAt, updatedAt, unique(collectionId, pack, slot). Wedding has nullable collectionId + variantId columns.
+- Audited 7 API routes: GET /api/collections, GET /api/collections/[id], GET/PATCH /api/collections/[id]/modules, GET /api/collections/[id]/completeness, GET/POST /api/collections/[id]/transition, GET /api/designer/collections, POST /api/collections/apply. All reuse withPublicTenant / withAdminTenantHandler / getAuthUser / hasPermission middleware. PATCH modules route is restricted to PLATFORM_ADMIN only — too tight for Phase 5 (should allow DESIGNER + ART_DIRECTOR per spec §2.4).
+- Searched (rg -i "penpot") across src/, prisma/, scripts/ → 10 files in src/ + 1 file in prisma/ (schema.prisma). No Penpot REST client exists. No frame-name auto-detection exists. No PENPOT_API_TOKEN env var exists. No fetch() to any Penpot backend exists. The "Penpot integration" today is purely URL parsing + iframe embed + manual token paste.
+- Searched for frameId / naming / autoDetect / frameName / FRAME_REGISTRY / penpotApi / penpotExport keywords → zero existing auto-detection code. The only frameId references are: PenpotIntegration.invitationFrameId/saveTheDateFrameId (dead fields in PenpotStudio, never written by anyone), CollectionModule.frameId (the manual mapping target), and CollectionModulesManager UI (the manual mapper).
+- Searched COLLECTION_PRODUCT_SPEC.md §2.3 — confirmed the exact frame naming convention is documented (ready to implement). Pack Website 10 slots, Pack Invitations 8 slots (prefix `invitation-`), Pack Print 8 slots, Pack Communication 8 slots. Matching rules: case-insensitive, accepts aliases, accepts variant prefix `A/hero`, slot not found → publish blocked, manual override allowed.
+
+Stage Summary:
+
+| File | Current responsibility | Reuse for Phase 5 | Conflicts with auto-detection |
+|------|------------------------|-------------------|-------------------------------|
+| src/lib/penpot/config.ts | Penpot URL parsing + token conversion + iframe URL building + CSS-var serialization (204 LOC) | EXTEND (additive): add PENPOT_API_TOKEN env var + new exports in new files (client.ts, frameRegistry.ts, autoDetect.ts). Keep all existing exports unchanged. | NONE — pure helpers, no auto-detection. parsePenpotUrl returns only fileId+pageId, not the file structure. |
+| src/components/penpot/PenpotStudio.tsx | Couple-facing iframe embed + URL linker + manual token paste (640 LOC). Mounted in /w/[slug]/admin 'studio' tab + /platform/admin page. | KEEP for couple-facing preview (read-only Penpot embed). DO NOT extend for Phase 5 — auto-detection belongs in Designer Portal, not in the couple's Studio tab. | Conflicts indirectly: tokens are synced via manual window.prompt paste — Phase 5 needs server-side REST fetch instead. The invitationFrameId/saveTheDateFrameId fields in PenpotIntegration are DEAD (never written) — they presume a manual mapping that Phase 5 replaces with auto-detection. |
+| src/lib/collections/index.ts | Collection Engine core (1470 LOC): seeds, MODULE_SLOTS registry (34 slots), listCollections, getCollection, applyCollection, listModules, updateModule (per-slot manual frameId writer), validateCompleteness, transitionCollection, listAllCollectionsForDesigner, canAccessCollection, ApplyError. | EXTEND (additive): keep all existing exports. Add `autoMapModules(collectionId, detectedFrames)` + `bulkUpdateModules(collectionId, mappings)` helpers alongside existing updateModule. MODULE_SLOTS const is the canonical slot registry — Phase 5 frameRegistry.ts will cross-reference it. | CONFLICT: updateModule is the per-slot manual frameId writer — Phase 5 must add a bulk auto-mapping path. validateCompleteness still uses frameId !== null as the "filled" criterion — this stays valid (auto-mapped slots also have frameId set). |
+| src/components/collections/DesignerPortal.tsx | Designer workspace (401 LOC): stats grid + collections list + transition dialog. Designers can ONLY trigger transitions — no Penpot file linking, no auto-detect. | EXTEND (additive): add "Linker le fichier Penpot" button per Collection row → opens new PenpotFileLinker modal. Add "Auto-détecter les frames" action → calls new POST /api/collections/[id]/auto-detect endpoint. Mount new AutoDetectReport component inside the portal. | CONFLICT: today the only way to set a Collection's penpotFileUrl is to edit the DB row directly or via PenpotStudio (which writes to Theme.customizations.penpot, NOT Collection.penpotFileUrl). Designer Portal MUST gain a Collection-level Penpot file linker for Phase 5. |
+| src/components/collections/CollectionModulesManager.tsx | MANUAL FRAME ID MAPPER (404 LOC). Dialog with 4 tabs + luxury accordion. Each slot has an Input for `Penpot frame ID` + Save button → PATCH /api/collections/[id]/modules. Read-only for non-PLATFORM_ADMIN. Mounted via Puzzle button on each Collection card in CollectionLibrary (couple-facing). | REFACTOR (deprecate manual mapping): convert from "input frameId per slot" to "read-only display of auto-detected frames + override-only-for-designers". Remove the Puzzle button from CollectionLibrary (couples shouldn't see module mappings). Move the (refactored) component into DesignerPortal only. | DIRECT CONFLICT — this IS the manual mapping UX Phase 5 deprecates. The placeholder text "Penpot frame ID" tells the admin to copy-paste frame IDs by hand from Penpot — exactly what auto-detection eliminates. |
+| src/components/collections/CollectionLibrary.tsx | Couple-facing catalog (395 LOC). Grid of CollectionCard with gradient preview, tier badge, palette swatches, font preview, variant picker, "Appliquer" button + Puzzle "Voir les modules" button. | EXTEND (subtractive): remove or hide the Puzzle button (couples should not manage module mappings — that's a designer concern per SPEC §2.4). Keep the apply flow unchanged. Optionally add a read-only "Aperçu des modules" link that shows a static summary. | The Puzzle button opens CollectionModulesManager for couples — this conflicts with Phase 5's "designers manage, couples consume" separation. |
+| prisma/schema.prisma (Collection + CollectionVariant + CollectionModule models, lines 470-567) | Schema for 3 Collection models. Collection has penpotFileUrl + penpotFileId (nullable) but no Penpot auth token field. CollectionModule has frameId + penpotPageId (nullable) but no detected-frame-name field, no autoMapped flag. | EXTEND (additive): add `Collection.penpotTokenId String?` (for Penpot backend auth) + `Collection.lastFrameSyncAt DateTime?` (cache invalidation). Add `CollectionModule.frameName String?` (store the matched Penpot frame name as proof) + `CollectionModule.autoMapped Boolean @default(false)` (track manual override vs auto-detection). All new columns nullable → zero regression. | NONE — schema is ready for extension. The current frameId-only model loses information (you can't tell if a frameId was set by auto-detection or manual override). |
+| GET /api/collections | Public catalog list, filtered by plan + status=COMMERCIALISE (withPublicTenant). | KEEP AS-IS. | NONE. |
+| GET /api/collections/[id] | Public detail with variants (withPublicTenant). | KEEP AS-IS. | NONE. |
+| GET /api/collections/[id]/modules | Public read of all 34 module slots (withPublicTenant). | KEEP AS-IS. | NONE. |
+| PATCH /api/collections/[id]/modules | Update a single module slot's frameId (PLATFORM_ADMIN only, withAdminTenantHandler). | REFACTOR: expand role gate from PLATFORM_ADMIN-only to [DESIGNER, ART_DIRECTOR, PLATFORM_ADMIN, SUPER_ADMIN] per SPEC §2.4. Keep the route as the manual-override path (designers override an auto-detected mapping here). Add a sibling POST /api/collections/[id]/auto-detect route for bulk auto-mapping. | CONFLICT: role gate is too tight (excludes DESIGNER + ART_DIRECTOR who are the primary users per the spec). The per-slot PATCH is also too granular for Phase 5's bulk auto-detect flow. |
+| GET /api/collections/[id]/completeness | Validation report (total/filled/missing + per-pack breakdown + missingSlots list). | KEEP AS-IS. | NONE — validateCompleteness already keys on frameId !== null, which works for both manual and auto-mapped slots. |
+| GET/POST /api/collections/[id]/transition | Lifecycle transitions (role-gated via TRANSITION_ROLES matrix). | KEEP AS-IS. | NONE. |
+| GET /api/designer/collections | Lists ALL Collections across all statuses (DESIGNER/ART_DIRECTOR/PLATFORM_ADMIN/SUPER_ADMIN only). | KEEP AS-IS. | NONE. |
+| POST /api/collections/apply | Deploy a Collection on a wedding (ORGANIZER+ only, idempotent, upserts Theme + hydrates luxury + writes collectionMeta). | KEEP AS-IS. | NONE. |
+
+KEEP AS-IS (no changes needed):
+- src/lib/penpot/config.ts (existing exports — new logic goes in new sibling files)
+- GET /api/collections route
+- GET /api/collections/[id] route
+- GET /api/collections/[id]/modules route
+- GET /api/collections/[id]/completeness route + validateCompleteness function
+- GET/POST /api/collections/[id]/transition route + transitionCollection/canTransition/availableTransitions functions
+- GET /api/designer/collections route + listAllCollectionsForDesigner function
+- POST /api/collections/apply route + applyCollection function
+- canAccessCollection + TIER_ACCESS gating
+- ensureCollectionsSeeded + COLLECTION_SEEDS (12 entries) + MODULE_SLOTS (34 slots) + MODULE_PACK_LABELS
+- COLLECTION_STATUSES + COLLECTION_STATUS_LABELS + TRANSITION_ROLES
+- prisma/schema.prisma Collection/CollectionVariant/CollectionModule models (existing columns)
+- src/app/w/[slug]/admin/page.tsx (NAV_ITEMS already mounts 'collections' + 'designer' tabs — no new tab needed for Phase 5; the auto-detect UI lives inside DesignerPortal)
+- src/components/penpot/PenpotStudio.tsx (kept for couple-facing Studio tab; Phase 5 doesn't touch it)
+
+EXTEND (additive — new code alongside existing):
+- src/lib/penpot/config.ts — add PENPOT_API_TOKEN env var export (server-only). All existing exports unchanged.
+- src/lib/collections/index.ts — add `autoMapModules(collectionId, detectedFrames: DetectedFrame[])` + `bulkUpdateModules(collectionId, mappings: Array<{pack, slot, frameId, frameName?, autoMapped?}>)` helpers. Existing updateModule kept as the single-slot override path.
+- src/components/collections/DesignerPortal.tsx — add "Linker le fichier Penpot" button per Collection row + mount PenpotFileLinker modal + add "Auto-détecter les frames" action + mount AutoDetectReport component. Existing stats grid + transition dialog unchanged.
+- prisma/schema.prisma — add `Collection.penpotTokenId String?` + `Collection.lastFrameSyncAt DateTime?` + `CollectionModule.frameName String?` + `CollectionModule.autoMapped Boolean @default(false)`. All nullable/defaulted → zero regression.
+- init-db.js — add corresponding idempotent ALTER TABLE statements for VPS SQLite (mirrors schema.prisma).
+- src/components/collections/CollectionLibrary.tsx — remove or hide the Puzzle button from couple-facing cards (couples should not see module mappings). Apply button unchanged.
+
+REFACTOR (deprecate manual mapping):
+- src/components/collections/CollectionModulesManager.tsx — convert from "input frameId per slot" to "read-only display of auto-detected frames + override-only-for-designers". The Inputs become read-only badges showing the detected frameName; only designers/art-directors see an "Override" pencil that opens a single-frame override dialog. Move the entry point from CollectionLibrary (couple-facing) to DesignerPortal (designer-only).
+- PATCH /api/collections/[id]/modules route — expand role gate to [DESIGNER, ART_DIRECTOR, PLATFORM_ADMIN, SUPER_ADMIN] (currently PLATFORM_ADMIN only). Keep the route as the manual-override path.
+
+NEW files needed for Phase 5:
+1. src/lib/penpot/client.ts — Penpot REST API client. Exports: `fetchPenpotFile(fileId, token): Promise<PenpotFile>` + `fetchPenpotFrames(fileId, pageId, token): Promise<PenpotFrame[]>`. Server-only (uses PENPOT_API_TOKEN env var). Handles Penpot Cloud + self-hosted (uses PENPOT_BASE_URL). Returns normalized frame list with id + name + pageId + width + height.
+2. src/lib/penpot/frameRegistry.ts — FRAME_NAME_REGISTRY constant. Mirrors COLLECTION_PRODUCT_SPEC.md §2.3 exactly: 34 entries (10 WEBSITE + 8 INVITATIONS + 8 PRINT + 8 COMMUNICATION), each entry `{ pack, slot, canonical: string[], aliases: string[] }`. Exports `matchFrameToSlot(frameName): { pack, slot } | null` (case-insensitive, supports variant prefix `A/hero`).
+3. src/lib/penpot/autoDetect.ts — `detectFramesFromPenpotFile(fileUrl, token): Promise<DetectionReport>` function. Orchestrates: parsePenpotUrl → fetchPenpotFile → fetchPenpotFrames → matchFrameToSlot per frame → returns `{ matched: Array<{pack, slot, frameId, frameName, confidence}>, unmatched: Array<{frameName, frameId}>, missing: Array<{pack, slot}> }`. Pure function (no DB writes).
+4. src/app/api/collections/[id]/auto-detect/route.ts — POST endpoint. Body: `{ fileUrl?: string, override?: boolean }`. Auth: DESIGNER/ART_DIRECTOR/PLATFORM_ADMIN/SUPER_ADMIN. Calls detectFramesFromPenpotFile → bulkUpdateModules → returns DetectionReport. Idempotent: re-running on the same file produces the same mappings. The `override` flag (default false) controls whether existing manual-override slots (autoMapped=false) are skipped or overwritten.
+5. src/components/collections/PenpotFileLinker.tsx — Designer-portal modal. Paste Penpot URL → preview iframe → "Auto-détecter les 34 frames" button → calls POST /api/collections/[id]/auto-detect → renders AutoDetectReport inline. Shows detected/unmatched/missing counts. "Confirmer et appliquer" button persists mappings.
+6. src/components/collections/AutoDetectReport.tsx — Report component (replaces CollectionModulesManager in DesignerPortal). 4 pack tabs + luxury accordion. Each slot shows: detected frame name (badge), confidence (high/medium/low), frame preview thumbnail (Penpot iframe mini-embed), "Override" pencil (designer-only) → opens single-frame override dialog → PATCH /api/collections/[id]/modules. Read-only for ART_DIRECTOR (can validate but not override).
+
+KEY GAPS for Phase 5 (no existing code to reuse — must build from scratch):
+- GAP-1: No Penpot REST API client. The integration today is iframe + URL parsing only. Phase 5 needs server-side fetch to Penpot backend to read the file's frame structure. Requires PENPOT_API_TOKEN env var (not yet defined).
+- GAP-2: No frame naming convention registry in code. The convention is documented in COLLECTION_PRODUCT_SPEC.md §2.3 but not implemented. Phase 5 must transcribe it as FRAME_NAME_REGISTRY.
+- GAP-3: No auto-detection orchestrator. Phase 5 must build detectFramesFromPenpotFile (URL parse → file fetch → frame list → match against registry → produce report).
+- GAP-4: DesignerPortal has no Penpot file linker. Designers can't attach a Penpot file to a Collection today — they can only trigger lifecycle transitions. Phase 5 must add the linker + auto-detect button.
+- GAP-5: COLLECTION_SEEDS all have `penpotFileUrl: null` — no seed Collection is actually linked to a Penpot file today. Phase 5 should populate at least Royal Gold's `penpotFileUrl` with a real Penpot file URL (designer-created reference file) so the auto-detect flow has a working end-to-end test case.
+- GAP-6: The PenpotIntegration type (in penpot/config.ts) has dead fields `invitationFrameId` + `saveTheDateFrameId` that presume a 2-frame manual mapping model. These are never written by anyone. Phase 5 doesn't need to remove them (backward-compat) but should NOT use them — the 34-slot CollectionModule model is the canonical mapping surface.
+- GAP-7: PATCH /api/collections/[id]/modules role gate is PLATFORM_ADMIN-only — excludes DESIGNER + ART_DIRECTOR who are the primary users per SPEC §2.4. Phase 5 must expand the gate.
+- GAP-8: No "auto-mapped vs manual-override" distinction in the schema. CollectionModule only has `frameId` — you can't tell if a frameId was set by auto-detection or by manual override. Phase 5 must add `CollectionModule.autoMapped Boolean @default(false)` + `CollectionModule.frameName String?` (the matched Penpot frame name as proof).
+- GAP-9: No Collection-level Penpot auth token. The `Collection.penpotFileUrl` is a share link (public view), but to read the file structure via Penpot REST API we need a token. Phase 5 must add `Collection.penpotTokenId String?` (or use a global PENPOT_API_TOKEN env var if all Collections share the same Penpot account — simpler, recommended for v1).
+- GAP-10: No last-frame-sync timestamp. Auto-detection results should be cached to avoid re-fetching the Penpot file on every page load. Phase 5 must add `Collection.lastFrameSyncAt DateTime?` and the auto-detect endpoint should refresh only if the cache is older than N minutes (or if a `force` flag is passed).
+
+CONSTRAINTS COMPLIANCE:
+- ✅ READ-ONLY audit — zero files modified, zero files created (only this worklog append).
+- ✅ All findings grounded in actual file contents (line numbers, exact export names, exact field names quoted).
+- ✅ No speculations presented as facts — every "CONFLICT" claim is backed by a specific code reference.
+- ✅ All 8 audit-scope files read in full + all 7 API routes read in full + COLLECTION_PRODUCT_SPEC.md §2.3 cross-referenced for the frame naming convention.
+- ✅ Reuse matrix respects the Phase 5 goal (auto-detection, no manual frame ID) — every "REFACTOR" verdict is justified by a direct conflict with that goal.
+
+STATUS: Audit complete. Ready for Phase 5 implementation planning. The 6 NEW files + 6 EXTEND files + 2 REFACTOR files identified above form the complete Phase 5 scope. The schema extension is additive-only (4 new nullable columns) → zero regression. The Penpot REST client is the critical new infrastructure (GAP-1) — without it, no auto-detection is possible.
+
+
+---
+Task ID: AUDIT-5-B
+Agent: Explore Agent (Theme + Luxury + Modules audit)
+Task: Audit Theme Engine, Luxury Engine, Invitation Engine, Website/Print/Communication Modules for Phase 5 reuse plan.
+
+Work Log:
+- Read worklog.md (7140 lines) — confirmed Phases 1-4 of Collection Engine shipped: Phase 1 (Royal Gold + 12 Collections + applyCollection pipeline), Phase 2 (34 module slots: 10 WEBSITE + 8 INVITATIONS + 8 PRINT + 8 COMMUNICATION + 1 LUXURY data-only), Phase 3 (catalog enrichment), Phase 4 (lifecycle 6-state + Designer Portal). Phase 5 = Penpot Collection Builder (auto-detect Penpot files + auto-build Collection Products).
+- Read all 18 audit-scope files in full (read-only, no modifications):
+  * src/lib/themes/templates.ts (211 LOC) — 4 THEME_TEMPLATES + 8 FONT_OPTIONS + 4 LAYOUT_OPTIONS + helpers (getTemplate/getFontOption/getLayoutOption/isValidHexColor/normalizeHexColor)
+  * src/components/wedding/ThemeInjector.tsx (216 LOC) — fetches /api/theme, injects 4 --theme-* CSS vars + --penpot-* vars + hydrates luxury-engine-store via dynamic import
+  * src/app/api/theme/route.ts (124 LOC) — GET (public, withPublicTenant) + PUT (ORGANIZER+, withAdminTenantHandler, validates hex/layout/fonts, upserts Theme)
+  * src/app/api/theme/apply-template/route.ts (74 LOC) — POST (ORGANIZER+, applies one of the 4 hardcoded templates to current wedding)
+  * src/lib/luxury-engine-store.ts (302 LOC) — Zustand store, per-wedding-slug localStorage namespacing, 4 LUXURY_THEMES palettes (gold/rose/champagne/midnight), 5-tier performance config (ultra/high/medium/low/minimal)
+  * src/components/luxury/LuxuryVisualEngine.tsx (335 LOC) — Canvas + DOM halos + global breathing; auto-detects perf tier via navigator.hardwareConcurrency/deviceMemory; FPS hysteresis loop
+  * src/components/luxury/particle-engine.ts (490 LOC) — Star/Dust/Sparkle particle system with hash-based Perlin noise (fbmNoise), parallax scroll, requestAnimationFrame loop
+  * src/components/InvitationCard.tsx (522 LOC) — single-guest card with paper texture, gold border, shimmer, ornamental flourish, couple photos, category badge, QR code, 5 categories (VIP/FAMILLE/AMIS/SPONSORS/COLLEGUES)
+  * src/components/PremiumGallery.tsx (253 LOC) — auto-fetches /api/media?type=PHOTO&category=GALLERY when no images prop, lightbox with prev/next
+  * src/components/CoupleGallery.tsx (203 LOC) — alternate horizontal-scroll story gallery, gradient cards
+  * src/components/HeroSection.tsx (431 LOC) — parallax crossfade bg (4 photos), countdown timer, couple photo duo with rotating rings, scroll indicator; consumes /api/settings
+  * src/components/OurStory.tsx (485 LOC) — vertical timeline with 4 default stories, FloatingParticles inline, ornamental dividers
+  * src/components/EventTimeline.tsx (729 LOC) — wedding-day programme timeline, activity-keyword icon mapping, gold color constants
+  * src/components/MapSection.tsx (172 LOC) — OSM iframe embed + venue info card + Google Maps itinerary button; consumes settings prop
+  * src/components/GuestSearch.tsx (558 LOC) — debounced guest lookup, opens InvitationCard dialog + QR code dialog
+  * src/components/MarketingSection.tsx (188 LOC) — AENEWS brand marketing banner with WhatsApp CTA (NOT wedding communication)
+  * src/components/AmbientMusicPlayer.tsx (262 LOC) — audio player with autoplay policy + user-pref localStorage
+  * src/components/Footer.tsx (155 LOC) — couple photos + names + hashtag + AENEWS signature
+  * src/components/AENEWSBanner.tsx (280 LOC) — AENEWS marketing banner (homepage/invitation variants)
+  * src/components/effects/{VisualEffectsLayer, BokehEffect, FloatingParticles, ScrollReveal, SparkleEffect, DynamicLightSweep, SectionEffects}.tsx (43+97+167+116+149+64+91 = 727 LOC) — all consume useVisualEffects() store (separate from luxury-engine-store)
+  * src/components/PWAInstall.tsx (95 LOC) — single file (no PWAInstall/ folder), listens for beforeinstallprompt + registers /sw.js
+- rg search for "loader|splash|Spinner|LoadingScreen" → WeddingLoadingScreen() is INLINE in src/app/w/[slug]/page.tsx (line 292-309), NOT a dedicated component. No SplashScreen component.
+- rg search for "qr|qrcode|QRCode" → /api/guests/qrcode/[code]/route.ts uses `qrcode` npm package, generates 300×300 PNG data URL (QRCode.toDataURL). Single QR endpoint, used by InvitationCard + GuestSearch.
+- rg search for "print|pdf|puppeteer|jspdf|jsPDF|pdfkit" → NO PDF generation library installed. No puppeteer. No jsPDF. No pdfkit. All "print" matches are CSS print styles or unrelated.
+- rg search for "whatsapp|facebook|instagram|share" → lib/billing.ts has buildWhatsAppMessage + buildWhatsAppDeeplink (Phase 6) but ONLY for billing messages (couple→admin payment negotiation). NO wedding save-the-date share component. NO Facebook/Instagram post generator. NO email template system.
+- rg search for "badge|place.?card|table.?number|roll.?up" → ONLY inside MODULE_SLOTS labels in src/lib/collections/index.ts. ZERO implementation files.
+- Confirmed Penpot infrastructure (src/lib/penpot/config.ts, 204 LOC): parsePenpotUrl, buildPenpotViewUrl, buildPenpotEditUrl, themeToPenpotTokens, penpotTokensToTheme, penpotTokensToCssVars — all reusable for Phase 5 auto-detection.
+- Confirmed applyCollection() in src/lib/collections/index.ts already orchestrates: Collection.themeSeed → merge with Variant.paletteOverride + Couple.paletteOverride → db.theme.upsert + stores customizations.{penpot, luxury, collectionMeta}. Phase 5 just needs to ADD a Penpot auto-detect step that populates CollectionModule.frameId from frame-name conventions.
+
+Stage Summary:
+
+═══════════════════════════════════════════════════════════════════════════════
+FINDINGS TABLE — File → Current responsibility → Reuse for Phase 5 (Penpot Collection Builder)
+═══════════════════════════════════════════════════════════════════════════════
+
+┌──────────────────────────────────────────────────┬─────────────────────────────────────────────────────────────────┬──────────────────────────────────────────────────────────────────────────────┐
+│ File (LOC)                                       │ Current responsibility                                           │ Reuse for Phase 5                                                            │
+├──────────────────────────────────────────────────┼─────────────────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────────────────────┤
+│ src/lib/themes/templates.ts (211)                │ 4 THEME_TEMPLATES (Or Classique, Rose Romantique, Minimal        │ KEEP AS-IS — Penpot becomes canonical source; these 4 templates stay as the │
+│                                                  │ Moderne, Nuit Royale) + 8 FONT_OPTIONS + 4 LAYOUT_OPTIONS        │ "starter pack" fallback for couples who don't pick a Collection. Phase 5    │
+│                                                  │ + helpers                                                        │ should NOT add a 5th template; instead it adds Penpot-detected Collections. │
+├──────────────────────────────────────────────────┼─────────────────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────────────────────┤
+│ src/components/wedding/ThemeInjector.tsx (216)   │ Fetches /api/theme, injects 4 --theme-* CSS vars + Penpot         │ REUSE AS-IS — already handles customizations.penpot.tokens → --penpot-* CSS │
+│                                                  │ tokens (--penpot-*) + hydrates luxury-engine-store via dynamic   │ vars AND customizations.luxury → luxury-engine-store hydration. Phase 5 just │
+│                                                  │ import (session-only, no localStorage write)                    │ needs to populate customizations.{penpot, luxury, collectionMeta} from      │
+│                                                  │                                                                  │ Penpot file detection — ThemeInjector is consumer-only, unchanged.          │
+├──────────────────────────────────────────────────┼─────────────────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────────────────────┤
+│ src/app/api/theme/route.ts (124)                 │ GET (public, returns theme+customizations+wedding context) +     │ REUSE AS-IS — already returns customizations blob (incl. penpot+luxury).    │
+│                                                  │ PUT (ORGANIZER+, validates hex/layout/fonts, upserts Theme)      │ Phase 5 may add a POST /api/theme/auto-detect-penpot endpoint that calls     │
+│                                                  │                                                                  │ back through PUT — but this route itself doesn't change.                     │
+├──────────────────────────────────────────────────┼─────────────────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────────────────────┤
+│ src/app/api/theme/apply-template/route.ts (74)   │ POST applies one of 4 hardcoded templates to current wedding     │ REPURPOSE — could become /api/theme/apply-collection OR stay as a "quick     │
+│                                                  │                                                                  │ starter" alongside the new Collection apply flow. No code change needed;   │
+│                                                  │                                                                  │ just document deprecation path.                                              │
+├──────────────────────────────────────────────────┼─────────────────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────────────────────┤
+│ src/lib/luxury-engine-store.ts (302)             │ Zustand store, per-slug localStorage namespacing, 4 LUXURY_THEMES│ REUSE AS-IS — 4 themes (gold/rose/champagne/midnight) are the canonical    │
+│                                                  │ palettes, 5-tier TIER_CONFIG (ultra/high/medium/low/minimal)     │ luxury ambiance library. Each Collection seed maps to exactly one of these  │
+│                                                  │                                                                  │ 4 themes via luxuryPreset.theme. Penpot Collection Builder should constrain  │
+│                                                  │                                                                  │ Collection.luxuryPreset.theme to this enum (no new themes added).           │
+├──────────────────────────────────────────────────┼─────────────────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────────────────────┤
+│ src/components/luxury/LuxuryVisualEngine.tsx     │ Canvas + DOM halos + global breathing overlay; auto-perf-tier;   │ REUSE AS-IS — reads luxury-engine-store, no direct coupling to Theme or     │
+│ (335)                                            │ FPS hysteresis                                                   │ Penpot. Phase 5 just sets the store via ThemeInjector.                       │
+├──────────────────────────────────────────────────┼─────────────────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────────────────────┤
+│ src/components/luxury/particle-engine.ts (490)   │ Star/Dust/Sparkle particle system, Perlin noise, parallax scroll │ REUSE AS-IS — pure canvas renderer, no I/O. Penpot frames can coexist on    │
+│                                                  │                                                                  │ top of this layer.                                                           │
+├──────────────────────────────────────────────────┼─────────────────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────────────────────┤
+│ src/components/InvitationCard.tsx (522)          │ Single-guest invitation card: paper texture, gold border,         │ WRAPPER PATTERN — when CollectionModule.INVITATIONS.{standard|vip|famille|  │
+│                                                  │ shimmer, couple photos, QR code, category badge, ornamental      │ couple|presse|sponsor}.frameId is mapped → render PenpotInvitationCard       │
+│                                                  │ flourish; consumes /api/settings for couple/venue/date           │ (NEW component) with the Penpot frame as visual layer; else FALLBACK to    │
+│                                                  │                                                                  │ this InvitationCard. Per COLLECTION-ENGINE-PLAN-V2-RECAST decision (d).    │
+│                                                  │                                                                  │ No changes to InvitationCard itself — it remains the fallback.              │
+├──────────────────────────────────────────────────┼─────────────────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────────────────────┤
+│ src/components/PremiumGallery.tsx (253)          │ Auto-fetches /api/media?type=PHOTO&category=GALLERY when no      │ REUSE AS-IS for WEBSITE.gallery slot. Penpot frame provides decor only.     │
+│                                                  │ images prop; lightbox                                            │ Adapter: optional PenpotFrameWrapper that wraps the gallery with Penpot    │
+│                                                  │                                                                  │ frame as background.                                                         │
+├──────────────────────────────────────────────────┼─────────────────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────────────────────┤
+│ src/components/CoupleGallery.tsx (203)           │ Alternate horizontal-scroll story gallery                       │ REUSE AS-IS — alternative renderer for WEBSITE.story slot (already exists  │
+│                                                  │                                                                  │ as sibling of OurStory). No Phase 5 change.                                  │
+├──────────────────────────────────────────────────┼─────────────────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────────────────────┤
+│ src/components/HeroSection.tsx (431)             │ Hero with parallax crossfade bg, countdown, couple photo duo,   │ ADAPTER NEEDED — extract CountdownUnit as separate component (for the       │
+│                                                  │ scroll indicator; consumes /api/settings                        │ countdown slot). Hero itself: when frame-hero-001 mapped (already the case  │
+│                                                  │                                                                  │ in Royal Gold seed), Phase 5 should render Penpot frame as bg with couple  │
+│                                                  │                                                                  │ photos + countdown overlay; else fallback to current HeroSection.          │
+├──────────────────────────────────────────────────┼─────────────────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────────────────────┤
+│ src/components/OurStory.tsx (485)                │ Vertical timeline of CoupleStory entities (4 default stories);  │ REUSE AS-IS for WEBSITE.story slot. Data flows via props (stories). Penpot │
+│                                                  │ inline FloatingParticles                                          │ frame adds background decor.                                                 │
+├──────────────────────────────────────────────────┼─────────────────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────────────────────┤
+│ src/components/EventTimeline.tsx (729)           │ Wedding-day programme timeline with activity-keyword→icon map   │ REUSE AS-IS for WEBSITE.programme slot. Data flows via props (events).     │
+│                                                  │                                                                  │ Penpot frame adds decoration.                                                │
+├──────────────────────────────────────────────────┼─────────────────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────────────────────┤
+│ src/components/MapSection.tsx (172)              │ OSM iframe + venue info card + Google Maps itinerary button     │ REUSE AS-IS — already settings-driven. Map is functional, not decorative;   │
+│                                                  │                                                                  │ Penpot frame would only wrap the info card.                                 │
+├──────────────────────────────────────────────────┼─────────────────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────────────────────┤
+│ src/components/GuestSearch.tsx (558)             │ Debounced guest lookup, opens InvitationCard + QR dialogs        │ REUSE AS-IS for WEBSITE.rsvp slot. Uses InvitationCard (which itself gets   │
+│                                                  │                                                                  │ the Penpot wrapper). No direct change.                                       │
+├──────────────────────────────────────────────────┼─────────────────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────────────────────┤
+│ src/components/MarketingSection.tsx (188)        │ AENEWS brand marketing banner with WhatsApp CTA                 │ NOT REUSABLE for COMMUNICATION.whatsapp slot — this is AENEWS→couple        │
+│                                                  │                                                                  │ marketing, not couple→guest save-the-date. Phase 5 needs NEW                │
+│                                                  │                                                                  │ WeddingShareMessage component.                                              │
+├──────────────────────────────────────────────────┼─────────────────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────────────────────┤
+│ src/components/AmbientMusicPlayer.tsx (262)      │ Audio player with autoplay policy + user-pref localStorage       │ REUSE AS-IS — not in MODULE_SLOTS (ambient layer, not a slot). Penpot      │
+│                                                  │                                                                  │ doesn't touch audio.                                                         │
+├──────────────────────────────────────────────────┼─────────────────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────────────────────┤
+│ src/components/Footer.tsx (155)                  │ Couple photos + names + hashtag + AENEWS signature               │ REUSE AS-IS for WEBSITE.footer slot. Settings-driven.                        │
+├──────────────────────────────────────────────────┼─────────────────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────────────────────┤
+│ src/components/AENEWSBanner.tsx (280)            │ AENEWS marketing banner (homepage/invitation variants)           │ NOT REUSABLE for COMMUNICATION.banner — same reason as MarketingSection.    │
+│                                                  │                                                                  │ Greenfield for wedding communication banner.                                 │
+├──────────────────────────────────────────────────┼─────────────────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────────────────────┤
+│ src/components/effects/VisualEffectsLayer.tsx    │ Master overlay: Bokeh + Sparkle + FloatingParticles              │ REUSE AS-IS — cosmetic layer. ZERO Phase 5 coupling.                         │
+│ (43) + 6 effect files (584 LOC total)            │                                                                  │                                                                              │
+├──────────────────────────────────────────────────┼─────────────────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────────────────────┤
+│ src/components/effects/ScrollReveal.tsx (116)    │ Wrapper with 7 animation variants (fade-in/slide-up/scale/glow)  │ REUSE AS-IS — Penpot frames can be wrapped in <ScrollReveal> for entrance.  │
+├──────────────────────────────────────────────────┼─────────────────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────────────────────┤
+│ src/components/effects/SectionEffects.tsx (91)   │ Per-variant wrapper (hero/story/gallery/timeline/invitation/map/ │ EXTEND — Phase 5 may add a 'penpot' variant OR re-use existing variants     │
+│                                                  │ auth)                                                            │ per section.                                                                 │
+├──────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+│ src/components/PWAInstall.tsx (95)               │ PWA install banner + /sw.js registration                        │ REUSE AS-IS — not in MODULE_SLOTS. Stays as-is.                              │
+├──────────────────────────────────────────────────┼─────────────────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────────────────────┤
+│ src/app/w/[slug]/page.tsx (336, line 292-309)    │ WeddingLoadingScreen() INLINE — gold gradient + shimmer +        │ EXTRACT — Phase 5 should extract this to src/components/Loader.tsx so the   │
+│                                                  │ "Chargement de l'invitation…"                                    │ WEBSITE.loader slot can map a Penpot frame. Currently greenfield for        │
+│                                                  │                                                                  │ Penpot-detected loaders.                                                     │
+├──────────────────────────────────────────────────┼─────────────────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────────────────────┤
+│ src/app/api/guests/qrcode/[code]/route.ts (120) │ Generates 300×300 PNG QR data URL via `qrcode` npm package;      │ REUSE AS-IS for PRINT.qr slot AND for INVITATIONS.numerique slot. Already    │
+│                                                  │ tenant-scoped; admin OR guest-session authorized; logs QR_SCAN  │ tenant-scoped + access-controlled. PRINT.qr just needs a card layout wrapper│
+│                                                  │                                                                  │ that composes this QR with guest info.                                       │
+├──────────────────────────────────────────────────┼─────────────────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────────────────────┤
+│ src/lib/penpot/config.ts (204)                   │ parsePenpotUrl, buildPenpotViewUrl, buildPenpotEditUrl,          │ REUSE AS-IS — Phase 5 auto-detection uses parsePenpotUrl() to extract        │
+│                                                  │ themeToPenpotTokens, penpotTokensToTheme, penpotTokensToCssVars  │ fileId/pageId from pasted Penpot URL.                                        │
+├──────────────────────────────────────────────────┼─────────────────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────────────────────┤
+│ src/lib/collections/index.ts (1471)              │ 12 COLLECTION_SEEDS, MODULE_SLOTS (34), applyCollection,         │ EXTEND — Phase 5 adds: (a) detectPenpotFrames(fileId) that fetches Penpot   │
+│                                                  │ listModules, updateModule, validateCompleteness, canTransition  │ API and matches frame names → slot keys; (b) autoMapModules(collectionId,   │
+│                                                  │                                                                  │ fileId) that bulk-updates CollectionModule.frameId from detection results.  │
+│                                                  │                                                                  │ Existing applyCollection stays unchanged.                                    │
+├──────────────────────────────────────────────────┼─────────────────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────────────────────┤
+│ src/lib/billing.ts (has buildWhatsAppMessage)    │ Phase 6 — billing WhatsApp deeplink builder (couple→admin price  │ REFERENCE PATTERN for COMMUNICATION.whatsapp slot — same wa.me/?text=       │
+│                                                  │ negotiation)                                                     │ deeplink pattern; NEW helper buildWeddingShareMessage() needed.             │
+└──────────────────────────────────────────────────┴─────────────────────────────────────────────────────────────────┴──────────────────────────────────────────────────────────────────────────────┘
+
+═══════════════════════════════════════════════════════════════════════════════
+MODULES INVENTORY — 34 slots per CollectionModule registry (src/lib/collections/index.ts lines 113-158)
+═══════════════════════════════════════════════════════════════════════════════
+
+PACK 1 — WEBSITE (10 slots, sortOrder 1-10):
+  1. hero             → HeroSection.tsx (431 LOC) — REUSABLE, adapter optional
+  2. countdown        → INLINE in HeroSection (CountdownUnit) — EXTRACT needed
+  3. story            → OurStory.tsx (485 LOC) OR CoupleGallery.tsx (203 LOC) — REUSABLE
+  4. gallery          → PremiumGallery.tsx (253 LOC) — REUSABLE
+  5. programme        → EventTimeline.tsx (729 LOC) — REUSABLE
+  6. rsvp             → GuestSearch.tsx (558 LOC) + InvitationCard.tsx (522 LOC) — REUSABLE
+  7. footer           → Footer.tsx (155 LOC) — REUSABLE
+  8. loader           → WeddingLoadingScreen() INLINE in page.tsx — EXTRACT needed (greenfield Penpot)
+  9. splash           → GREENFIELD (no component exists)
+  10. systemPages     → GREENFIELD (no app/not-found.tsx, app/error.tsx, app/loading.tsx exist)
+
+PACK 2 — INVITATIONS (8 slots, sortOrder 11-18, guest-tier scoped):
+  1. standard   (STANDARD) → InvitationCard.tsx with category=AMIS — WRAPPER pattern
+  2. vip        (VIP)      → InvitationCard.tsx with category=VIP — WRAPPER pattern
+  3. famille    (FAMILLE)  → InvitationCard.tsx with category=FAMILLE — WRAPPER pattern
+  4. couple     (COUPLE)   → InvitationCard.tsx with category=AMIS (no COUPLE category yet) — WRAPPER pattern
+  5. presse     (PRESSE)   → InvitationCard.tsx — WRAPPER pattern (new category)
+  6. sponsor    (SPONSOR)  → InvitationCard.tsx with category=SPONSORS — WRAPPER pattern
+  7. numerique  (QR)       → InvitationCard.tsx with qrCodeUrl prop + /api/guests/qrcode/[code] — REUSABLE as-is
+  8. impression (PDF)      → GREENFIELD (no PDF library installed: no puppeteer/jsPDF/pdfkit)
+
+PACK 3 — PRINT (8 slots, sortOrder 19-26) — 7 GREENFIELD + 1 PARTIAL:
+  1. badge       (access badge)      → GREENFIELD
+  2. qr          (auth QR card)      → PARTIAL — /api/guests/qrcode/[code] generates QR; needs card layout wrapper
+  3. parking     (parking card)      → GREENFIELD
+  4. floorPlan   (room plan)         → GREENFIELD (Table model exists in schema for data)
+  5. tableNumber (table number)      → GREENFIELD (Table model exists; needs printable A6 layout)
+  6. placeCard   (individual card)   → GREENFIELD (Guest model exists; needs printable layout)
+  7. remerciement (thank-you card)   → GREENFIELD
+  8. livreOr     (guestbook page)    → GREENFIELD
+
+PACK 4 — COMMUNICATION (8 slots, sortOrder 27-34) — 7 GREENFIELD + 1 REFERENCE-PATTERN:
+  1. whatsapp   (save-the-date message) → REFERENCE PATTERN in lib/billing.ts (buildWhatsAppMessage) — needs new buildWeddingShareMessage()
+  2. facebook   (post)                  → GREENFIELD
+  3. instagram  (post + story)          → GREENFIELD
+  4. story      (animated story)        → GREENFIELD
+  5. email      (template)              → GREENFIELD (no email lib)
+  6. banner     (web banner)            → NOT AENEWSBanner.tsx/MarketingSection.tsx (those are AENEWS→couple marketing) — GREENFIELD for couple→guest
+  7. affiche    (A3/A2 poster)          → GREENFIELD
+  8. rollup     (85×200cm roll-up)      → GREENFIELD
+
+PACK 5 — LUXURY (data-only, 1 slot) — stored in Collection.luxuryPreset field (NOT in CollectionModule table):
+  → LUXURY preset → src/lib/luxury-engine-store.ts + LuxuryVisualEngine.tsx + particle-engine.ts — ALREADY 100% wired
+
+GREENFIELD SUMMARY:
+  - 2 EXTRACTS needed: countdown (from HeroSection), loader (from inline page.tsx)
+  - 1 WRAPPER pattern needed: PenpotInvitationCard (wraps InvitationCard as fallback)
+  - 1 PATTERN REUSE: buildWeddingShareMessage (mirrors buildWhatsAppMessage)
+  - 16 FULL GREENFIELD slots: splash, systemPages, impression (PDF), badge, parking, floorPlan, tableNumber, placeCard, remerciement, livreOr, facebook, instagram, story, email, banner (couple→guest), affiche, rollup
+    (17 if counting "impression" PDF separately; 18 if counting "splash" + "systemPages" + 7 PRINT + 7 COMMUNICATION + "impression" = 16 listed here)
+  - PDF library recommendation: jsPDF (client-side, no server) OR puppeteer (server-side, heavier) — Phase 5 must pick one before implementing PRINT pack + INVITATIONS.impression
+
+═══════════════════════════════════════════════════════════════════════════════
+LUXURY PRESET STRUCTURE — 4 themes (gold / midnight / champagne / rose)
+═══════════════════════════════════════════════════════════════════════════════
+
+Canonical interface (src/lib/collections/index.ts lines 33-48):
+```ts
+interface LuxuryPreset {
+  theme: 'gold' | 'rose' | 'champagne' | 'midnight'
+  effects: {
+    starrySky: boolean
+    goldenDust: boolean
+    microSparkles: boolean
+    luminousHalos: boolean
+    globalBreathing: boolean
+    sectionAmbiance: boolean
+    scrollReflections: boolean
+  }
+  intensity: number      // 0-100
+  density: number        // 0-100
+  speed: number          // 0-100
+  haloCount: number      // 2-8
+}
+```
+
+Color palettes per theme (src/lib/luxury-engine-store.ts lines 194-239, LUXURY_THEMES record):
+┌────────────┬──────────┬──────────┬───────────┬──────────────────────────────┬───────────────────────────────┬──────────────────────────────┐
+│ Theme      │ primary  │ secondary│ tertiary  │ halo (rgba)                  │ dust (4 colors)              │ star (rgba)                  │
+├────────────┼──────────┼──────────┼───────────┼──────────────────────────────┼───────────────────────────────┼──────────────────────────────┤
+│ gold       │ #C4A265  │ #D4B87A  │ #8B6914   │ rgba(196,162,101,0.04)       │ #C4A265, #D4B87A, #8B6914,   │ rgba(196,162,101,0.6)        │
+│            │          │          │           │                              │ #E8D5A3                      │                              │
+├────────────┼──────────┼──────────┼───────────┼──────────────────────────────┼───────────────────────────────┼──────────────────────────────┤
+│ rose       │ #B05A5A  │ #C47A7A  │ #8B3A3A   │ rgba(176,90,90,0.04)         │ #B05A5A, #C47A7A, #D4A87A,   │ rgba(176,90,90,0.6)          │
+│            │          │          │           │                              │ #E8C0A0                      │                              │
+├────────────┼──────────┼──────────┼───────────┼──────────────────────────────┼───────────────────────────────┼──────────────────────────────┤
+│ champagne  │ #D4B87A  │ #E8D5A3  │ #C4A265   │ rgba(212,184,122,0.04)       │ #D4B87A, #E8D5A3, #C4A265,   │ rgba(212,184,122,0.5)        │
+│            │          │          │           │                              │ #F0E6CC                      │                              │
+├────────────┼──────────┼──────────┼───────────┼──────────────────────────────┼───────────────────────────────┼──────────────────────────────┤
+│ midnight   │ #6B7FA0  │ #8B9DB8  │ #4A5D78   │ rgba(107,127,160,0.04)       │ #6B7FA0, #8B9DB8, #A0B4CC,   │ rgba(160,180,204,0.7)        │
+│            │          │          │           │                              │ #C4D0E0                      │                              │
+└────────────┴──────────┴──────────┴───────────┴──────────────────────────────┴───────────────────────────────┴──────────────────────────────┘
+
+Each theme also defines `breath` (radial gradient color for global breathing overlay) — all use *primary* at 0.03 alpha.
+
+12 COLLECTION_SEEDS map to the 4 luxury themes as follows (from src/lib/collections/index.ts):
+  - gold:      Royal Gold (LUXURY/FREE), Élévation (AFRICAN/PREMIUM), Sakura Dawn (DESTINATION/FREE)
+  - midnight:  Royal Black (LUXURY/PREMIUM), Métropole (CLASSIC/FREE), Nuptia Nova (DESTINATION/EXCLUSIVE)
+  - champagne: Champagne Pearl (LUXURY/EXCLUSIVE), Brillance (CLASSIC/PREMIUM), Lavande Drôme (DESTINATION/FREE)
+  - rose:      Rosé Éternel (LUXURY/FREE), Anthracite (MINIMAL/PREMIUM), Pure Line (MINIMAL/FREE)
+
+Phase 5 Penpot Collection Builder MUST constrain Collection.luxuryPreset.theme to this 4-value enum — no new themes. The 4 themes are the canonical luxury library.
+
+═══════════════════════════════════════════════════════════════════════════════
+THEME APPLICATION FLOW (current, end-to-end)
+═══════════════════════════════════════════════════════════════════════════════
+
+Two ingestion paths converge on the same Theme row + customizations JSON blob:
+
+PATH A — Manual theme customization (Phase 8):
+  Couple/Admin → /w/[slug]/admin → ThemeCustomizer.tsx
+    → PUT /api/theme { primaryColor, accentColor, fontDisplay, fontBody, layout, customizations }
+    → db.theme.upsert (weddingId, scalars + JSON.stringify(customizations))
+    → AuditLog UPDATE_THEME
+  OR
+  Couple/Admin → /w/[slug]/admin → ThemeCustomizer → "Apply template" button
+    → POST /api/theme/apply-template { templateId }
+    → db.theme.upsert with one of 4 hardcoded THEME_TEMPLATES values
+
+PATH B — Collection apply (Collection Engine Phase 1+, the canonical Phase 5 path):
+  Couple/Admin → /w/[slug]/admin → Collections tab → CollectionLibrary
+    → "Appliquer" button on a Collection card
+    → POST /api/collections/apply { collectionId, variantId?, paletteOverride? }
+    → applyCollection() in src/lib/collections/index.ts:
+        1. db.collection.findUnique (with variants)
+        2. canAccessCollection(billingPlan, collection.tier) — tier gate
+        3. Resolve variant (default if not specified)
+        4. Merge theme: Collection.themeSeed ← Variant.paletteOverride ← Couple.paletteOverride
+        5. Parse Collection.luxuryPreset
+        6. Fetch existing Theme.customizations (don't clobber couple's manually-pushed Penpot tokens)
+        7. Build customizations blob:
+             {
+               ...existing,
+               penpot: { fileUrl, fileId, pageId, tokens: themeToPenpotTokens(finalTheme), lastSyncedAt },
+               luxury: luxuryPreset,
+               collectionMeta: { collectionId, collectionSlug, collectionName, variantId, ... }
+             }
+        8. db.theme.upsert with merged scalars + customizations
+        9. db.wedding.update { collectionId, variantId }
+       10. AuditLog APPLY_COLLECTION
+
+PATH C (Phase 5 NEW — Penpot auto-detect):
+  Designer → Designer Portal → paste Penpot file URL on a Collection
+    → POST /api/collections/[id]/penpot-detect (NEW endpoint)
+    → parsePenpotUrl(fileUrl) → fileId, pageId
+    → GET Penpot API /api/files/:fileId/frames (NEW external call)
+    → Match frame.name → MODULE_SLOTS.slot key (naming convention: "hero", "countdown", "story", ..., "badge", "qr", "parking", ..., "whatsapp", "facebook", ...)
+    → For each match: PATCH /api/collections/[id]/modules { pack, slot, frameId }
+    → Returns CompletenessReport (filled/total)
+  Then Couple applies Collection via PATH B (unchanged) — CollectionModule.frameId mappings ride along via the Wedding's collectionId link.
+
+CLIENT-SIDE RENDERING (both paths converge here):
+  Browser → /w/[slug]/page.tsx → renders <ThemeInjector /> (alongside <LuxuryVisualEngine />, <VisualEffectsLayer />)
+    → ThemeInjector useEffect:
+        1. fetch GET /api/theme → returns { primaryColor, accentColor, fontDisplay, fontBody, layout, customizations, wedding }
+        2. root.style.setProperty('--theme-primary', primaryColor)
+        3. root.style.setProperty('--theme-accent', accentColor)
+        4. root.style.setProperty('--theme-font-display', `'${fontDisplay}', serif`)
+        5. root.style.setProperty('--theme-font-body', `'${fontBody}', sans-serif`)
+        6. Parse customizations (defensive: string | object)
+        7. If customizations.penpot.tokens present:
+             penpotTokensToCssVars(tokens) → loop → root.style.setProperty('--penpot-*', value)
+             Also load Google Fonts for typography.display + typography.body if different from theme fonts
+        8. If customizations.luxury present (Collection-applied):
+             Dynamic import luxury-engine-store
+             store.setState({ theme, starrySky, goldenDust, ..., haloCount })
+             ⚠️ SESSION-ONLY — does NOT call saveToStorage. Couple's localStorage prefs are preserved.
+        9. Cleanup on unmount: remove 4 --theme-* vars + all injected --penpot-* vars (fonts stay cached)
+
+  Then LuxuryVisualEngine reads luxury-engine-store → renders Canvas particles + DOM halos + breathing overlay
+  Then HeroSection/OurStory/PremiumGallery/etc. read --theme-* CSS vars (via globals.css) for their gold-gradient text + glass-card backgrounds
+  Then InvitationCard reads --theme-* + /api/settings for couple/venue/date
+
+ZERO-REGRESSION GUARANTEES (verified by code inspection):
+  - customizations.luxury absent → luxury-engine-store keeps localStorage state (default wedding unchanged)
+  - customizations.penpot absent → no --penpot-* vars injected (existing components unaffected)
+  - CollectionModule.frameId null → renderer falls back to existing component (zero regression — confirmed by Phase 2 CompletenessReport: 0/34 filled = all fallbacks)
+  - applyCollection idempotent — re-applying same Collection+Variant+palette is a no-op
+  - Duplicate-wedding sanitizes customizations.penpot.fileUrl/fileId/pageId/lastSyncedAt (data-leak fix, per AUDIT-A)
+  - Theme.customizations JSON blob is additive — existing penpot key shape preserved when applyCollection writes luxury + collectionMeta keys
+
+═══════════════════════════════════════════════════════════════════════════════
+KEY DECISIONS FOR PHASE 5 IMPLEMENTATION (derived from this audit)
+═══════════════════════════════════════════════════════════════════════════════
+
+1. Theme Engine — UNCHANGED. ThemeInjector is consumer-only; it already handles penpot + luxury + collectionMeta. Phase 5 only adds Penpot auto-detection upstream.
+
+2. Luxury Engine — UNCHANGED. 4 themes (gold/rose/champagne/midnight) are the canonical library. Phase 5 must NOT introduce new luxury themes. Each Collection maps to exactly one of the 4.
+
+3. Invitation Engine — WRAPPER PATTERN. New PenpotInvitationCard component conditionally renders when INVITATIONS.{tier}.frameId is mapped; falls back to existing InvitationCard. No changes to InvitationCard itself.
+
+4. Website Pack (10 slots) — 8 REUSABLE AS-IS (hero, story, gallery, programme, rsvp, footer + ambient music player + PWA install), 2 EXTRACT (countdown from HeroSection, loader from inline page.tsx), 1 GREENFIELD (splash), 1 GREENFIELD (systemPages).
+
+5. Print Pack (8 slots) — 7 GREENFIELD + 1 PARTIAL (qr — reuses /api/guests/qrcode). Need to pick a PDF library: jsPDF (client-side, lighter) recommended for Phase 5; puppeteer deferred to Phase 6+ for server-side poster-sized rendering.
+
+6. Communication Pack (8 slots) — 7 GREENFIELD + 1 PATTERN-REUSE (whatsapp mirrors buildWhatsAppMessage). MarketingSection.tsx + AENEWSBanner.tsx are NOT reusable (they're AENEWS→couple marketing, not couple→guest communication).
+
+7. Effects Layer — UNCHANGED. 7 effect components stay as cosmetic overlays. Penpot frames can be wrapped in <ScrollReveal> for entrance animations.
+
+8. Penpot auto-detection — NEW helper detectPenpotFrames(fileId) in src/lib/penpot/config.ts (or new src/lib/penpot/detect.ts). Matches frame.name against MODULE_SLOTS.slot keys. Returns mapping array. Then autoMapModules(collectionId, fileId) bulk-updates CollectionModule.frameId via existing PATCH /api/collections/[id]/modules endpoint.
+
+9. Naming convention for Penpot frames — must match MODULE_SLOTS.slot values exactly (hero, countdown, story, gallery, programme, rsvp, footer, loader, splash, systemPages, standard, vip, famille, couple, presse, sponsor, numerique, impression, badge, qr, parking, floorPlan, tableNumber, placeCard, remerciement, livreOr, whatsapp, facebook, instagram, story, email, banner, affiche, rollup). 34 canonical slot keys.
+
+10. No-regression safeguards (preserved from Phases 1-4):
+    - All new columns nullable
+    - All new endpoints additive (no mutation of existing /api/theme, /api/collections/apply, /api/collections/[id]/modules)
+    - customizations JSON blob additive (penpot + luxury + collectionMeta coexist)
+    - ThemeInjector consumer-only (no upstream coupling)
+    - LuxuryVisualEngine reads store, not Theme (decoupled)
+    - InvitationCard remains as fallback when Penpot frame unmapped
+
+CONSTRAINTS COMPLIANCE:
+  ✅ READ-ONLY audit (zero files modified — verified by git status clean before append)
+  ✅ All 18 audit-scope files read in full
+  ✅ rg searches performed for: loader/splash, qr/qrcode, print/pdf, whatsapp/facebook/instagram/share, badge/place-card/table-number/roll-up
+  ✅ Findings table + modules inventory + luxury preset structure + theme application flow all delivered
+  ✅ APPEND-ONLY to worklog.md (using Python heredoc with >> to avoid shell interpolation)
+
+NEXT ACTIONS (recommended sequence for Phase 5 implementation):
+  Phase 5.1 — Penpot frame-name registry + detectPenpotFrames() helper + autoMapModules() in src/lib/penpot/detect.ts (new file)
+  Phase 5.2 — POST /api/collections/[id]/penpot-detect endpoint (NEW, calls Penpot API + detectPenpotFrames + autoMapModules)
+  Phase 5.3 — Designer Portal UI: paste Penpot URL → auto-detect button → show detected frames per slot → confirm mappings → save
+  Phase 5.4 — PenpotInvitationCard component (WRAPPER around InvitationCard with Penpot frame SVG/PNG overlay when frameId mapped)
+  Phase 5.5 — Extract CountdownUnit from HeroSection to standalone Countdown.tsx + extract WeddingLoadingScreen to Loader.tsx
+  Phase 5.6 — Pick PDF library (recommend jsPDF) + implement INVITATIONS.impression + PRINT.{badge,placeCard,tableNumber} (data-driven print layouts)
+  Phase 5.7 — Communication helpers: buildWeddingShareMessage() (whatsapp) + simple Open Graph meta + email template (react-email or plain HTML)
+  Phase 5.8 — Splash + systemPages greenfield components (lowest priority — defer if time-constrained)

@@ -30,8 +30,11 @@ import {
   Archive,
   Send,
   Eye,
+  Wand2,
+  Sparkles,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { PenpotBuilderDialog } from './PenpotBuilderDialog';
 
 // ─── Types (mirrors of src/lib/collections types) ───────────────────────────
 
@@ -65,6 +68,12 @@ interface DesignerCollection {
   publishedAt: string | null;
   commercializedAt: string | null;
   archivedAt: string | null;
+  /** Phase 5 — cached quality score (0-100) or null = never computed */
+  qualityScore?: number | null;
+  /** Phase 5 — last auto-detect timestamp (ISO string) or null */
+  lastFrameSyncAt?: string | null;
+  /** Phase 5 — linked Penpot URL or null */
+  penpotFileUrl?: string | null;
 }
 
 // ─── Status visual config ────────────────────────────────────────────────────
@@ -92,6 +101,8 @@ export function DesignerPortal() {
   const [transitions, setTransitions] = useState<TransitionOption[]>([]);
   const [transitionLoading, setTransitionLoading] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [builderTarget, setBuilderTarget] = useState<DesignerCollection | null>(null);
+  const [builderOpen, setBuilderOpen] = useState(false);
 
   // Read admin_user role from localStorage (same pattern as CollectionModulesManager)
   useEffect(() => {
@@ -106,8 +117,10 @@ export function DesignerPortal() {
     }
   }, []);
 
-  const fetchCollections = useCallback(async () => {
-    setLoading(true);
+  const fetchCollections = useCallback(async (options: { silent?: boolean } = {}) => {
+    // Phase 5 — silent refresh: don't toggle loading when refreshing an already-loaded list,
+    // otherwise the loading spinner unmounts the PenpotBuilderDialog mid-flow and loses its state.
+    if (!options.silent) setLoading(true);
     setError(null);
     try {
       const res = await fetch('/api/designer/collections', { cache: 'no-store' });
@@ -122,7 +135,7 @@ export function DesignerPortal() {
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Erreur inconnue');
     } finally {
-      setLoading(false);
+      if (!options.silent) setLoading(false);
     }
   }, []);
 
@@ -292,22 +305,61 @@ export function DesignerPortal() {
                           <Badge variant="secondary" className="text-[10px]">
                             {c.tier}
                           </Badge>
+                          {/* Phase 5 — quality score badge */}
+                          {c.qualityScore !== null && c.qualityScore !== undefined && (
+                            <Badge
+                              variant="outline"
+                              className={`text-[10px] font-bold gap-0.5 ${
+                                c.qualityScore >= 80
+                                  ? 'border-emerald-300 text-emerald-700'
+                                  : c.qualityScore >= 50
+                                  ? 'border-amber-300 text-amber-700'
+                                  : 'border-rose-300 text-rose-700'
+                              }`}
+                            >
+                              <Sparkles className="h-2.5 w-2.5" />
+                              {c.qualityScore}/100
+                            </Badge>
+                          )}
+                          {/* Phase 5 — Penpot linked indicator */}
+                          {c.penpotFileUrl && (
+                            <Badge variant="outline" className="text-[10px] gap-0.5 border-blue-300 text-blue-700">
+                              <Wand2 className="h-2.5 w-2.5" />
+                              Penpot
+                            </Badge>
+                          )}
                         </div>
                         <div className="text-xs text-muted-foreground mt-1 truncate">
                           {c.description ?? '—'}
                           {c.authorName && ` · Auteur: ${c.authorName}`}
                           {c.publishedAt &&
                             ` · Publié le ${new Date(c.publishedAt).toLocaleDateString('fr-FR')}`}
+                          {c.lastFrameSyncAt &&
+                            ` · Dernier sync Penpot: ${new Date(c.lastFrameSyncAt).toLocaleDateString('fr-FR')}`}
                         </div>
                       </div>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => openTransitionDialog(c)}
-                      >
-                        <ArrowRightCircle className="h-4 w-4 mr-1" />
-                        Transition
-                      </Button>
+                      <div className="flex items-center gap-1">
+                        {/* Phase 5 — Penpot Builder button */}
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            setBuilderTarget(c);
+                            setBuilderOpen(true);
+                          }}
+                        >
+                          <Wand2 className="h-4 w-4 mr-1" />
+                          Builder
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => openTransitionDialog(c)}
+                        >
+                          <ArrowRightCircle className="h-4 w-4 mr-1" />
+                          Transition
+                        </Button>
+                      </div>
                     </div>
                   );
                 })
@@ -396,6 +448,14 @@ export function DesignerPortal() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Phase 5 — Penpot Builder dialog */}
+      <PenpotBuilderDialog
+        open={builderOpen}
+        onOpenChange={setBuilderOpen}
+        collection={builderTarget ? collections.find(c => c.id === builderTarget.id) ?? builderTarget : null}
+        onSynced={() => fetchCollections({ silent: true })}
+      />
     </div>
   );
 }
