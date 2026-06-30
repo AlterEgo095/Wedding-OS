@@ -15,6 +15,28 @@ interface ThemeData {
 }
 
 /**
+ * Shape of the luxury preset stored in Theme.customizations.luxury.
+ * Mirrors LuxuryPreset from src/lib/collections/index.ts (kept inline to avoid
+ * a circular import — the store is client-only, the collections lib is shared).
+ */
+interface LuxuryPreset {
+  theme: 'gold' | 'rose' | 'champagne' | 'midnight';
+  effects: {
+    starrySky: boolean;
+    goldenDust: boolean;
+    microSparkles: boolean;
+    luminousHalos: boolean;
+    globalBreathing: boolean;
+    sectionAmbiance: boolean;
+    scrollReflections: boolean;
+  };
+  intensity: number;
+  density: number;
+  speed: number;
+  haloCount: number;
+}
+
+/**
  * ThemeInjector — fetches the wedding theme from /api/theme and injects
  * CSS variables + Google Fonts into the document.
  *
@@ -28,6 +50,14 @@ interface ThemeData {
  *   without affecting existing components that use --theme-* vars.
  *   Zero regression: if Penpot is not linked, no --penpot-* vars are set
  *   and behavior is identical to before.
+ *
+ * Collection Engine (Phase 1 — additive):
+ *   If `customizations.luxury` is present (set when a Collection is applied),
+ *   the luxury-engine-store is hydrated with the Collection's luxury preset.
+ *   This is a SESSION-LEVEL hydration — we use the store's set() directly
+ *   WITHOUT calling saveToStorage, so the couple's localStorage preferences
+ *   are not clobbered. If `customizations.luxury` is absent, the store keeps
+ *   its localStorage behavior unchanged (zero regression).
  */
 export function ThemeInjector() {
   useEffect(() => {
@@ -53,13 +83,7 @@ export function ThemeInjector() {
         root.style.setProperty('--theme-font-display', `'${data.fontDisplay}', serif`);
         root.style.setProperty('--theme-font-body', `'${data.fontBody}', sans-serif`);
 
-        // ─── Penpot token injection (additive) ────────────────────────────
-        // Read tokens from Theme.customizations.penpot.tokens and inject them
-        // as --penpot-* CSS vars. These coexist with --theme-* vars: Penpot-
-        // designed components reference --penpot-*, existing components keep
-        // using --theme-*. Both sets stay in sync via the Studio's push/pull.
-        // Defensive: customizations may come back as a string (if double-encoded
-        // by an older PUT) or as an object (canonical). Handle both.
+        // ─── Parse customizations (defensive: string | object) ──────────────
         let customizationsObj: Record<string, unknown> | null = null
         if (data.customizations) {
           try {
@@ -71,6 +95,8 @@ export function ThemeInjector() {
             customizationsObj = null
           }
         }
+
+        // ─── Penpot token injection (additive) ────────────────────────────
         const penpotTokens = customizationsObj?.penpot
           ? (customizationsObj.penpot as PenpotIntegration)?.tokens
           : null
@@ -80,6 +106,16 @@ export function ThemeInjector() {
             root.style.setProperty(varName, value)
             injectedPenpotVars.push(varName)
           }
+        }
+
+        // ─── Luxury preset hydration (Collection Engine — additive) ───────
+        // If a Collection has been applied, customizations.luxury holds the
+        // preset. We hydrate the luxury-engine-store IN-PLACE (session-only,
+        // no localStorage write) so the LuxuryVisualEngine renders the right
+        // ambiance. If absent, the store keeps its localStorage state.
+        const luxuryPreset = customizationsObj?.luxury as LuxuryPreset | undefined
+        if (luxuryPreset && typeof luxuryPreset === 'object') {
+          hydrateLuxuryStore(luxuryPreset)
         }
 
         // Load Google Fonts for display + body fonts
@@ -135,4 +171,46 @@ export function ThemeInjector() {
   }, []);
 
   return null;
+}
+
+/**
+ * Hydrate the luxury-engine-store from a Collection's luxury preset.
+ *
+ * CRITICAL: this is a SESSION-LEVEL hydration. We import the store dynamically
+ * (so this file doesn't pull the store into the server bundle) and call the
+ * store's set() directly — NOT the action helpers that persist to localStorage.
+ * This means:
+ *   - The Collection's ambiance is applied immediately on page load.
+ *   - The couple's localStorage preferences are NOT clobbered.
+ *   - If the couple toggles an effect via AppearanceManager, that override is
+ *     persisted to localStorage and wins on subsequent loads (until they
+ *     re-apply the Collection).
+ *
+ * Zero-regression: if the store can't be loaded (SSR, error), this is a no-op.
+ */
+async function hydrateLuxuryStore(preset: LuxuryPreset): Promise<void> {
+  try {
+    // Dynamic import — luxury-engine-store is client-only (uses localStorage)
+    const { useLuxuryEngine } = await import('@/lib/luxury-engine-store')
+    const store = useLuxuryEngine as unknown as {
+      setState: (partial: Record<string, unknown>) => void
+    }
+    // Set the preset values directly via setState (no persistence)
+    store.setState({
+      theme: preset.theme,
+      starrySky: preset.effects.starrySky,
+      goldenDust: preset.effects.goldenDust,
+      microSparkles: preset.effects.microSparkles,
+      luminousHalos: preset.effects.luminousHalos,
+      globalBreathing: preset.effects.globalBreathing,
+      sectionAmbiance: preset.effects.sectionAmbiance,
+      scrollReflections: preset.effects.scrollReflections,
+      intensity: preset.intensity,
+      density: preset.density,
+      speed: preset.speed,
+      haloCount: preset.haloCount,
+    })
+  } catch {
+    // Silent fail — luxury is cosmetic
+  }
 }

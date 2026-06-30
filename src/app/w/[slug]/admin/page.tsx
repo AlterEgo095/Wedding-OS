@@ -27,7 +27,7 @@ import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import {
   LayoutDashboard, Users, Grid3X3, Image as ImageIcon, Clock, Shield, Settings, LogOut,
-  X, Menu, FileSearch, Music, Sparkles, Crown, Loader2, Palette, PenTool,
+  X, Menu, FileSearch, Music, Sparkles, Crown, Loader2, Palette, PenTool, Layers,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { isPlatformAdmin } from '@/lib/types';
@@ -45,6 +45,7 @@ import MusicManager from '@/components/admin/MusicManager';
 import AppearanceManager from '@/components/admin/AppearanceManager';
 import { ThemeCustomizer } from '@/components/admin/ThemeCustomizer';
 import { PenpotStudio } from '@/components/penpot/PenpotStudio';
+import { CollectionLibrary } from '@/components/collections/CollectionLibrary';
 
 interface AuthUser {
   id: string
@@ -54,7 +55,7 @@ interface AuthUser {
   weddingId?: string | null
 }
 
-type TabId = 'dashboard' | 'guests' | 'tables' | 'media' | 'music' | 'timeline' | 'users' | 'settings' | 'access-logs' | 'appearance' | 'theme' | 'studio'
+type TabId = 'dashboard' | 'collections' | 'guests' | 'tables' | 'media' | 'music' | 'timeline' | 'users' | 'settings' | 'access-logs' | 'appearance' | 'theme' | 'studio'
 
 interface NavItem {
   id: TabId
@@ -65,6 +66,7 @@ interface NavItem {
 
 const NAV_ITEMS: NavItem[] = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { id: 'collections', label: 'Collections', icon: Layers },
   { id: 'guests', label: 'Invités', icon: Users },
   { id: 'tables', label: 'Tables', icon: Grid3X3 },
   { id: 'access-logs', label: 'Accès', icon: FileSearch },
@@ -223,6 +225,12 @@ export default function PerWeddingAdminPage() {
     switch (activeTab) {
       case 'dashboard':
         return <Dashboard token={token} onSessionExpired={handleSessionExpired} />
+      case 'collections':
+        // Collection Engine (Phase 1) — the couple-facing Collection Product catalog.
+        // Lists all Collections accessible to the wedding's billing plan and lets
+        // the couple apply one. The fetch interceptor installed above attaches
+        // X-Wedding-Slug + Authorization headers transparently.
+        return <CollectionLibrary slug={slug} />
       case 'guests':
         return <GuestManager token={token} onSessionExpired={handleSessionExpired} />
       case 'tables':
