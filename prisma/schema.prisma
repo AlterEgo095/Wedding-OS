@@ -34,6 +34,14 @@ model Wedding {
   updatedAt       DateTime      @updatedAt
   publishedAt     DateTime?
 
+  // ─── Collection Engine (Phase 1 — additive, nullable for zero regression) ───
+  // When a couple picks a Collection Product, the Wedding is linked to it so the
+  // ThemeInjector + LuxuryVisualEngine hydrate from the Collection's seeds.
+  // Nullable: existing weddings have collectionId = null → behavior unchanged.
+  collectionId    String?
+  collection      Collection?   @relation(fields: [collectionId], references: [id])
+  variantId       String?
+
   // Relations — every tenant-scoped entity points back to its Wedding
   admins          AdminUser[]
   guests          Guest[]
@@ -428,4 +436,76 @@ model Lead {
 
   @@index([status])
   @@index([createdAt])
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// COLLECTION ENGINE — Phase 1 (AENEWS Wedding OS Enterprise)
+// ══════════════════════════════════════════════════════════════════════════════
+// A Collection Product is a commercial product that encapsulates a complete
+// wedding design (theme seed + luxury preset + Penpot file reference) ready to
+// be deployed automatically on a new wedding.
+//
+// Design principles (per validated spec):
+//   - Wedding OS does NOT design — Penpot is the Studio. The Collection only
+//     references Penpot files + stores the seed data.
+//   - Additive only: every field is nullable or has a default. Existing
+//     weddings have collectionId = null → behavior unchanged (DEFAULT_THEME).
+//   - The Collection Engine ORCHESTRATES existing motors (Theme Engine,
+//     ThemeInjector, LuxuryVisualEngine, PenpotStudio) — it does NOT replace
+//     them.
+//
+// Phase 1 scope (minimal, immediately useful):
+//   - Collection exists and can be selected/associated with a wedding
+//   - Apply flow upserts Theme row + hydrates luxury preset
+//   - Royal Gold is the first seeded Collection
+//   - Modules (34 slots), Designer Portal, lifecycle 6-state, marketplace UI
+//     are deferred to later phases (per user's phased recommendation).
+// ══════════════════════════════════════════════════════════════════════════════
+
+model Collection {
+  id              String   @id @default(cuid())
+  slug            String   @unique // e.g. "royal-gold" — used in catalog URLs
+  name            String   // display name, e.g. "Royal Gold"
+  description     String?
+  thumbnailUrl    String?
+  isActive        Boolean  @default(true) // visible in catalog when true
+  isPublished     Boolean  @default(true) // published/commercialized gate (Phase 1: always true for seed)
+  sortOrder       Int      @default(0)
+  category        String   @default("LUXURY") // LUXURY, CLASSIC, AFRICAN, MINIMAL, DESTINATION, ...
+  tier            String   @default("FREE") // marketplace tier: FREE, PREMIUM, EXCLUSIVE, ENTERPRISE, ...
+
+  // Penpot master file reference (the design source of truth lives in Penpot)
+  penpotFileUrl   String?
+  penpotFileId    String?
+
+  // Theme seed — applied to the Wedding's Theme row on deployment.
+  // JSON shape: { primaryColor, accentColor, fontDisplay, fontBody, layout }
+  themeSeed       String   // JSON string (SQLite has no native Json type — stored as text)
+
+  // Luxury preset — hydrates LuxuryVisualEngine via ThemeInjector.
+  // JSON shape: { theme: 'gold'|'rose'|'champagne'|'midnight', effects: {...}, intensity, density, speed, haloCount }
+  // Nullable: when null, the LuxuryVisualEngine falls back to its localStorage behavior (unchanged).
+  luxuryPreset    String?
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  variants        CollectionVariant[]
+  weddings        Wedding[]
+}
+
+model CollectionVariant {
+  id              String   @id @default(cuid())
+  collectionId    String
+  collection      Collection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  code            String   // "A" | "B" | "C" | "D"
+  name            String   // display name, e.g. "Version A — Soirée"
+  // JSON shape: { primaryColor?, accentColor?, fontDisplay?, fontBody? } — overrides Collection.themeSeed
+  paletteOverride String?
+  penpotPageId    String?  // Penpot page ID specific to this variant
+  isDefault       Boolean  @default(false)
+  createdAt       DateTime @default(now())
+
+  @@unique([collectionId, code])
+  @@index([collectionId])
 }

@@ -144,7 +144,33 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     }
 
     // ─── 7. Copy Theme (1:1 relation) ────────────────────────────────────────
+    // Collection Engine patch: clear the Penpot file reference + collectionMeta
+    // in the copied customizations so the new wedding doesn't point to the
+    // source wedding's Penpot master file (data-leak fix). The luxury preset
+    // is preserved (it's a transferable ambiance config, not wedding-specific).
+    // The new wedding's collectionId stays null — the couple re-chooses a
+    // Collection via the Collections tab.
     if (source.theme) {
+      let sanitizedCustomizations: string | null = source.theme.customizations;
+      if (sanitizedCustomizations) {
+        try {
+          const parsed = JSON.parse(sanitizedCustomizations) as Record<string, unknown>;
+          // Clear Penpot file reference (keep tokens — they're cosmetic)
+          if (parsed.penpot && typeof parsed.penpot === 'object') {
+            const penpot = { ...(parsed.penpot as Record<string, unknown>) };
+            delete penpot.fileUrl;
+            delete penpot.fileId;
+            delete penpot.pageId;
+            delete penpot.lastSyncedAt;
+            parsed.penpot = penpot;
+          }
+          // Clear collectionMeta (the new wedding is not linked to a Collection yet)
+          delete parsed.collectionMeta;
+          sanitizedCustomizations = JSON.stringify(parsed);
+        } catch {
+          // If parsing fails, keep the original (defensive — don't block duplicate)
+        }
+      }
       await db.theme.create({
         data: {
           weddingId: newWedding.id,
@@ -153,7 +179,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           fontDisplay: source.theme.fontDisplay,
           fontBody: source.theme.fontBody,
           layout: source.theme.layout,
-          customizations: source.theme.customizations,
+          customizations: sanitizedCustomizations,
         },
       });
     }
