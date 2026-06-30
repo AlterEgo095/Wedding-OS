@@ -232,6 +232,17 @@ function CollectionCard({
           <Sparkles className="absolute top-4 right-4 w-6 h-6 text-white/70" />
           <Sparkles className="absolute bottom-6 left-6 w-4 h-4 text-white/50" />
         </div>
+        {/* Tier badge (top-right) — marketplace positioning */}
+        {collection.tier !== 'FREE' && (
+          <div className={`absolute top-2 right-2 text-xs px-2 py-1 rounded-full flex items-center gap-1 shadow backdrop-blur-sm ${
+            collection.tier === 'EXCLUSIVE'
+              ? 'bg-amber-500/90 text-white'
+              : 'bg-purple-500/90 text-white'
+          }`}>
+            <Crown className="w-3 h-3" />
+            {collection.tier}
+          </div>
+        )}
         <div className="relative text-center px-4">
           <div
             className="text-2xl font-serif text-white drop-shadow-lg"
