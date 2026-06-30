@@ -4210,3 +4210,2475 @@ CONSTRAINTS COMPLIANCE:
 - ✅ Backend preserved (zero new API routes, zero schema changes)
 - ✅ Zero regression (all existing behavior unchanged when Penpot not linked)
 - ✅ 2 critical blockers fixed first (PremiumGallery + ThemeCustomizer)
+
+---
+Task ID: AUDIT-B
+Agent: Explore Agent (READ-ONLY)
+Task: Audit Invitation Engine + Media Engine + LuxuryVisualEngine — inventory for Collection Engine planning (Penpot as Template Factory)
+
+Work Log:
+- Read previous worklog (Tasks 1, CONSOLIDATION-PHASE2-DOUBLONS, CONSOLIDATION-FIXES-2CRITICAL, PENPOT-NATIVE-INTEGRATION) to understand prior work.
+- Read all 9 mandated files in full: InvitationCard.tsx, prisma/schema.prisma, src/lib/guest-auth.ts, src/app/api/guests/qrcode/[code]/route.ts, src/components/PremiumGallery.tsx, src/app/api/media/route.ts, src/components/luxury/LuxuryVisualEngine.tsx, src/lib/luxury-engine-store.ts, src/lib/visual-effects-store.ts, src/components/admin/AppearanceManager.tsx.
+- Cross-checked: src/app/api/guest/invite/route.ts (token validation), src/app/w/[slug]/invite/[code]/page.tsx (auto-auth landing), src/components/GuestPersonalSpace.tsx (PDF/PNG/JPG export with jspdf + html2canvas-pro — this is where export buttons actually live, NOT in InvitationCard.tsx).
+- Confirmed via Glob: NO /api/invitations/** directory exists. The Invitation Prisma model has ZERO prisma queries (confirmed by previous CONSOLIDATION-PHASE2 audit, Table B).
+- Verified Guest model fields exhaustively, including invitationType and category — no tier/type field for VIP/Standard/Family/Couple/Press/Sponsor beyond the existing `category` enum-like string.
+
+CONSTRAINTS COMPLIANCE: ✅ READ-ONLY — no files modified.
+
+═══════════════════════════════════════════════════════════════════════════════
+AUDIT REPORT — Invitation Engine + Media Engine + LuxuryVisualEngine
+(for Collection Engine / Penpot Template Factory planning)
+═══════════════════════════════════════════════════════════════════════════════
+
+## 1. InvitationCard component (`src/components/InvitationCard.tsx`, 523 LOC)
+
+### Data contract (props) — `InvitationCardProps`:
+```ts
+interface InvitationCardProps {
+  guestName: string          // guest.display_name OR firstName + " " + lastName
+  tableName: string          // guest.table.name
+  tableNumber: number        // guest.table.number
+  seats: number              // guest.seats
+  category: string           // guest.category (VIP|FAMILLE|AMIS|SPONSORS|COLLEGUES)
+  invitationCode: string     // guest.invitationCode
+  personalMessage?: string | null  // guest.personalMessage
+  qrCodeUrl?: string         // base64 data URL from /api/guests/qrcode/[code]
+  onClose?: () => void       // optional close callback
+}
+```
+→ **8 guest-related props** (matches the spec's "8 guest fields").
+
+### Wedding settings (NOT props — fetched internally via `fetch('/api/settings')`):
+The component calls `useEffect(() => fetch('/api/settings'))` and consumes these keys:
+1. `venue_name`
+2. `venue_address`
+3. `venue_reference`
+4. `site_subtitle` (used as the date display)
+5. `groom_name`
+6. `bride_name`
+7. `couple_photo_1` (path string)
+8. `couple_photo_2` (path string)
+9. `invitation_message` (computed fallback when absent)
+
+→ **8 wedding settings + 1 derived** (`invitation_message` has a fallback built from coupleLabel).
+
+### Design approach
+**SINGLE FIXED DESIGN — NO template/variant system.** The card is one hardcoded JSX structure:
+- aspect ratio: `3 / 4.2` (portrait card)
+- `max-w-sm` width
+- Section order: ornamental flourish → "ont l'honneur" → couple photos (overlapping circles) → couple names → small divider → guest name → table/seats → category badge + invitation code → optional personalMessage (in a gold-tinted box with Quote icons) → bottom section (date, venue, QR code, watermark)
+- Animations are hardcoded Framer Motion `delay` values (0.3s → 1.8s sequence)
+- Color theming is via Tailwind utility classes (`gold-gradient`, `text-gold`, `bg-amber-50`, etc.) — NOT via CSS variables that could be swapped at runtime
+
+### Category config (hardcoded in component)
+5 categories are hardcoded inline in `categoryConfig: Record<string, {bg, text, border, icon, label}>`:
+- `VIP` (amber, Gem icon)
+- `FAMILLE` (rose, Heart icon)
+- `AMIS` (emerald, Users icon, also the default fallback)
+- `SPONSORS` (purple, Gem icon)
+- `COLLEGUES` (teal, Users icon)
+
+NOTE: `PRESS` is NOT in the list. If a guest has `category='PRESS'`, the badge silently falls back to the AMIS config (line 115: `categoryConfig[category] || categoryConfig.AMIS`).
+
+### QR code rendering
+QR is rendered as a plain `<img>` (line 481-486) inside a white rounded box. The src is `qrCodeUrl` (a base64 data URL provided by the parent). NO QR library is imported in InvitationCard.tsx itself — the QR is generated server-side at `/api/guests/qrcode/[code]`.
+
+### Export buttons (PDF/PNG/JPG)
+**InvitationCard.tsx has ZERO export buttons.** The export functionality lives in `src/components/GuestPersonalSpace.tsx` (a sibling component), which:
+- Renders a SECOND, separate "download-ready" invitation JSX (lines 357+) at `position: fixed; left: -9999px` (hidden off-screen, canvas-friendly: solid colors, emoji icons, no Framer Motion, no backgroundClip:text)
+- Uses `downloadRef` to point at this off-screen node
+- `handleDownload(format: 'png' | 'jpg' | 'pdf')` dynamically imports `html2canvas-pro` and `jspdf`, calls `html2canvas(downloadEl, {scale:2, backgroundColor:'#FAF6EE', useCORS:true, allowTaint:true})`, then either saves the PNG/JPG or wraps it in a jsPDF landscape doc
+- The visible button (line 727) opens a dropdown with three options: "PDF HD", "PNG HD", "JPG"
+
+**Implication for Collection Engine**: The system currently has TWO invitation designs hard-coded in parallel — `InvitationCard.tsx` (on-screen, animated) and the inline `downloadInvitation` JSX inside `GuestPersonalSpace.tsx` (off-screen, canvas-renderable). Both must be regenerated when a couple picks a Penpot template.
+
+---
+
+## 2. Invitation API routes
+
+**There is NO `/api/invitations/**` directory.** Glob returned 0 files. The Invitation Prisma model is dead schema (confirmed by previous CONSOLIDATION-PHASE2 audit, Table B: "ZERO Prisma queries").
+
+Actual invitation-related endpoints live under `/api/guest/` and `/api/guests/`:
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/api/guest/invite?token=ENCRYPTED` | GET | Auto-auth guest from QR/SMS link. Decrypts token → finds guest by `invitationCode` → returns `{success, authenticated, guest:{...}}` + sets `guest_session` cookie (30d). |
+| `/api/guest/invite` | POST | Admin-only. Body `{invitationCode | guestId}` → returns `{encryptedToken, guest:{id,firstName,lastName,invitationCode}}`. Used by GuestManager to generate shareable links. |
+| `/api/guests/qrcode/[code]` | GET | Returns `{guest:{...}, qrCode, qrUrl}`. `qrCode` is a base64 data URL (300×300 PNG, 2-unit margin, black-on-white). Access controlled: admin OR guest_session matching the guest.id. |
+
+Other guest APIs (auth, RSVP, lookup, me, access-logs, logout) exist under `/api/guest/*` but are not invitation-specific.
+
+---
+
+## 3. Token / QR logic (AES-256-GCM + JWT)
+
+### File: `src/lib/guest-auth.ts` (428 LOC)
+
+#### Encryption (used for invitation link tokens)
+```ts
+const ENCRYPTION_ALGORITHM = 'aes-256-gcm';
+const IV_LENGTH = 16;
+const TAG_LENGTH = 16;
+
+function getEncryptionKey(): Buffer {
+  return crypto.createHash('sha256').update(ENCRYPTION_KEY).digest(); // derives 32-byte key
+}
+
+export function encryptId(id: string): string {
+  const key = getEncryptionKey();
+  const iv = crypto.randomBytes(IV_LENGTH);
+  const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
+  let encrypted = cipher.update(id, 'utf8', 'hex');
+  encrypted += cipher.final('hex');
+  const tag = cipher.getAuthTag();
+  // Format: iv:tag:encrypted (all hex)
+  return `${iv.toString('hex')}:${tag.toString('hex')}:${encrypted}`;
+}
+```
+- `ENCRYPTION_KEY` env var (falls back to `JWT_SECRET` or `'dev-encryption-key'`)
+- IV is 16 bytes random per encryption (not reused)
+- Auth tag is 16 bytes
+- Format: `iv_hex:tag_hex:ciphertext_hex` (string, URL-safe via `encodeURIComponent`)
+
+**What is encoded**: the `invitationCode` string (e.g. `JOS-001` or whatever the couple configured). NOT the guestId, NOT any session data. The token is a stateless, tamper-evident proof that "someone with this invitationCode wants to authenticate."
+
+#### Token pair (separate from encryption)
+- `generateInvitationLinkToken(invitationCode)` → `encryptId(invitationCode)` (alias)
+- `decryptInvitationLinkToken(token)` → `decryptId(token)` (returns null on any failure)
+
+#### JWT (used for session tokens, separate from invitation link tokens)
+- `generateGuestToken({guestId, sessionId, code, fingerprint})` → `jwt.sign(payload, GUEST_JWT_SECRET, {expiresIn:'30d'})`
+- `GUEST_JWT_SECRET = (process.env.JWT_SECRET || 'dev-only-secret') + '-guest-session'`
+- Stored in `guest_session` cookie (httpOnly, sameSite:lax, 30-day maxAge)
+
+#### QR code generation (server-side, `/api/guests/qrcode/[code]/route.ts`)
+Library: `qrcode` npm package (`import QRCode from 'qrcode'`)
+```ts
+const qrDataUrl = await QRCode.toDataURL(qrUrl, {
+  width: 300, margin: 2,
+  color: { dark: '#000000', light: '#FFFFFF' },
+});
+```
+**What is encoded in the QR**: a full URL, NOT the raw invitationCode.
+- Default wedding: `${baseUrl}/?invite=${encryptedToken}`
+- Tenant wedding: `${baseUrl}/w/${slug}/invite/${encryptedToken}`
+
+The encrypted token is the AES-256-GCM-encrypted invitationCode. The `/w/[slug]/invite/[code]/page.tsx` page receives it, calls `/api/guest/invite?token=...`, and auto-authenticates.
+
+#### Brute-force protection
+- In-memory `Map<string, BruteForceEntry>` (resets on server restart — OK for SQLite-scale)
+- `MAX_LOGIN_ATTEMPTS_PER_HOUR` = 10 (env override)
+- `BRUTE_FORCE_BAN_MINUTES` = 60 (env override)
+- Cleanup interval: every 10 minutes
+- Cleanup is per-IP-subnet key (first 3 octets of IPv4)
+
+#### Fingerprint
+`generateFingerprint(userAgent, ip)` = SHA-256 of `${userAgent}|${first3octets of IP}` → first 16 hex chars. Used to detect session hijacking (warns but does NOT block on mismatch — logs `FINGERPRINT_MISMATCH` action).
+
+---
+
+## 4. Guest model schema (`prisma/schema.prisma` lines 178-214)
+
+ALL fields:
+```prisma
+model Guest {
+  id                  String   @id @default(cuid())
+  weddingId           String   // NOT NULL since Phase 2 — tenant FK
+  wedding             Wedding  @relation(...)
+  firstName           String
+  lastName            String
+  displayName         String?  // Exact display name as shown on invitation
+  invitationType      String   @default("individuel") // couple, individuel
+  phone               String?
+  email               String?
+  tableId             String?
+  seats               Int      @default(1)
+  category            String   @default("AMIS") // VIP, FAMILLE, AMIS, SPONSORS, COLLEGUES
+  status              String   @default("PENDING") // CONFIRMED, PENDING, DECLINED
+  invitationCode      String   // unique within wedding
+  personalMessage     String?
+  checkedIn           Boolean  @default(false)
+  checkedInAt         DateTime?
+  invitationViewed    Boolean  @default(false)
+  invitationViewedAt  DateTime?
+  invitationViewCount Int      @default(0)
+  lastAccessAt        DateTime?
+  rsvpAt              DateTime?
+  rsvpMessage         String?
+  rsvpPlusOne         Boolean  @default(false)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+  table               Table?   @relation(...)
+  sessions            GuestSession[]
+  accessLogs          GuestAccessLog[]
+
+  @@unique([weddingId, invitationCode])
+  @@index([weddingId, status])
+  @@index([weddingId, category])
+  @@index([weddingId, tableId])
+}
+```
+
+### Tier / type / category field analysis
+- `category` (default `"AMIS"`) — Comment lists 5 values: `VIP, FAMILLE, AMIS, SPONSORS, COLLEGUES`. This is the closest thing to a "tier" but is really a category-of-guest, not a tier of prestige.
+- `invitationType` (default `"individuel"`) — Comment: `couple, individuel`. This distinguishes a single-seater from a couple invitation. NOT a prestige tier.
+- **NO `tier`, NO `type` (other than invitationType), NO `press`/`sponsor` boolean, NO `plusOne` field (rsvpPlusOne is RSVP-only).**
+
+### GAP for Collection Engine
+- There is **no field** to distinguish a "Press kit" recipient from a "VIP guest" from a "Family member" in a way the InvitationCard renders differently per tier.
+- `category` is overloaded — it currently drives the Badge color/icon in InvitationCard (and the emoji/border-color in the download-ready version). A Collection Engine "Invitation Pack" with tier-specific templates would either:
+  (a) reuse `category` as the tier discriminator (cheap, but limited to 5 hardcoded values), or
+  (b) require a NEW schema field like `tier` or `packType` to drive which Penpot template is bound to which guest.
+
+### Related models
+
+**GuestSession** (lines 334-351): `id, weddingId, guestId, token (unique), userAgent, ipAddress, fingerprint, deviceInfo (JSON), isActive, createdAt, expiresAt, lastAccessedAt`. One-to-many with Guest. Used for JWT validation + cross-tenant isolation.
+
+**GuestAccessLog** (lines 353-370): `id, weddingId, guestId (nullable), action (LOGIN, VIEW_INVITATION, ACCESS_DENIED, LOGOUT, QR_SCAN, LINK_VISIT, SEARCH_BLOCKED, FINGERPRINT_MISMATCH), details, userAgent, ipAddress, referrer, fingerprint, deviceInfo, createdAt`. Append-only audit trail.
+
+**Invitation** (lines 390-402): `id, weddingId, channel (SMS, EMAIL, WHATSAPP, QR), recipient, guestId?, status (PENDING, SENT, DELIVERED, FAILED, OPENED), sentAt, createdAt`. **DEAD SCHEMA — zero prisma queries anywhere in codebase.** This is the would-be "invitation sending queue" but the sending infra (SMS/email/WhatsApp gateways) was never built. The Collection Engine's "invitation pack" concept could either resurrect this model or replace it with a new `InvitationPack` model.
+
+---
+
+## 5. Media model schema (`prisma/schema.prisma` lines 232-251)
+
+ALL fields:
+```prisma
+model Media {
+  id              String   @id @default(cuid())
+  weddingId       String   // tenant FK
+  wedding         Wedding  @relation(...)
+  type            String   // PHOTO, VIDEO, LOGO, DOCUMENT
+  storageProvider String   @default("LOCAL") // LOCAL, R2 (Phase 9)
+  storageKey      String?  // path or R2 key (e.g. "slug/123-abc.jpeg")
+  url             String   // public URL (e.g. "/uploads/slug/123-abc.jpeg")
+  title           String?
+  description     String?
+  category        String?  // GALLERY, COUPLE_STORY, DOCUMENT, OTHER
+  sizeBytes       Int      @default(0)  // persisted for plan-limit enforcement
+  mime            String?
+  order           Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([weddingId, category])
+  @@index([weddingId, type])
+}
+```
+
+### `type` enum values (validated server-side in POST /api/media line 71)
+- `PHOTO` (default when not specified in form data)
+- `VIDEO`
+- `LOGO`
+- `DOCUMENT`
+
+### `category` enum values (validated server-side in POST /api/media line 75)
+- `GALLERY` (default when not specified in form data)
+- `COUPLE_STORY`
+- `DOCUMENT`
+- `OTHER`
+
+### Media "usage" concept
+- **There is NO `usage` field** for hero/story/invitation-background. The `category` field is the closest discriminator but only 4 values are allowed.
+- A `GALLERY` photo is implicitly used by PremiumGallery (which fetches `?type=PHOTO&category=GALLERY`).
+- A `COUPLE_STORY` photo would feed the OurStory component (not verified in this audit).
+- There is NO `INVITATION_BACKGROUND`, NO `HERO`, NO `PRINT` category — couples cannot currently mark a media as "use this on the invitation card" or "use this as hero background" via the Media API.
+
+### GAP for Collection Engine
+- Adding categories like `INVITATION_BG`, `HERO`, `PRINT_PACK`, `SAVE_THE_DATE` would let the Penpot Template Factory pick up wedding-specific assets by category rather than by hardcoded path.
+- The schema is permissive enough (category is `String?`, type is `String`) that the API validation is the only blocker — adding new enum values is a 1-line code change in route.ts (lines 71, 75).
+
+### Storage
+- `storageProvider: "LOCAL"` (default). `R2` is reserved for Phase 9 but unused.
+- Filesystem path: `public/uploads/${slug}/${timestamp}-${random}${ext}` (per-wedding subdirectory).
+- URL stored: `/uploads/${slug}/${uniqueName}` (relative, served by Next.js static handler).
+- DELETE also removes the file from disk (best-effort, continues if file missing).
+
+---
+
+## 6. `/api/media` route (`src/app/api/media/route.ts`, 192 LOC)
+
+### GET — public, returns wedding media
+- Handler: `withPublicTenant(async (request, _ctx) => ...)`. Wedding is resolved from `X-Wedding-Slug` header or subdomain (public tenant resolution).
+- Query params supported:
+  - `type` (filters by `Media.type`, exact match — e.g. `?type=PHOTO`)
+  - `category` (filters by `Media.category`, exact match — e.g. `?category=GALLERY`)
+- Sorting: `orderBy: { order: 'asc' }` (couples can reorder via the `order` int field)
+- Response shape: `{ media: Media[] }` (always an array, possibly empty)
+- `weddingId` is auto-injected by the tenant Prisma extension
+
+### POST — admin-only, uploads new media
+- Auth: `getAuthUser` + `hasPermission(user.role, ['ORGANIZER'])`
+- Body: multipart/form-data with fields: `file` (File), `title?`, `description?`, `type?` (default PHOTO), `category?` (default GALLERY), `order?` (default 0)
+- Validation:
+  - Max file size: 10 MB
+  - Allowed extensions: `.jpg, .jpeg, .png, .gif, .webp, .svg, .mp4, .webm, .pdf`
+  - Allowed MIME types: image/jpeg, image/png, image/gif, image/webp, image/svg+xml, video/mp4, video/webm, application/pdf
+  - `type` must be one of: PHOTO, VIDEO, LOGO, DOCUMENT
+  - `category` must be one of: GALLERY, COUPLE_STORY, DOCUMENT, OTHER
+- Plan limit enforcement via `checkMediaLimit(weddingId, buffer.byteLength)` — returns 403 with limit metadata if exceeded. Failure of the limit check itself is logged but does NOT block the upload (defensive).
+- Writes file to `public/uploads/${slug}/${uniqueName}`, persists Media row.
+- Audit logged: `UPLOAD_MEDIA` action.
+
+### DELETE — admin-only, removes media by `?id=`
+- Removes file from disk (best-effort), deletes DB row.
+- Audit logged: `DELETE_MEDIA` action.
+
+### Response shape from GET (consumed by PremiumGallery)
+```json
+{
+  "media": [
+    {
+      "id": "cuid",
+      "weddingId": "cuid",
+      "type": "PHOTO",
+      "storageProvider": "LOCAL",
+      "storageKey": "josue-hornella/123-abc.jpeg",
+      "url": "/uploads/josue-hornella/123-abc.jpeg",
+      "title": "Notre moment",
+      "description": null,
+      "category": "GALLERY",
+      "sizeBytes": 1234567,
+      "mime": "image/jpeg",
+      "order": 0,
+      "createdAt": "...",
+      "updatedAt": "..."
+    }
+  ]
+}
+```
+
+---
+
+## 7. PremiumGallery (`src/components/PremiumGallery.tsx`, 254 LOC)
+
+### Props
+```ts
+interface GalleryImage {
+  id: string
+  url: string
+  title?: string | null
+  description?: string | null
+  category?: string | null
+}
+interface PremiumGalleryProps {
+  images?: GalleryImage[]  // optional
+}
+```
+
+### Self-fetch logic (added in CONSOLIDATION-FIXES-2CRITICAL)
+- `useEffect` fires when `images` prop is undefined or empty.
+- Fetches `/api/media?type=PHOTO&category=GALLERY` (auto-scoped by tenant interceptor).
+- Maps response to `GalleryImage[]` (defensively filters entries with no `url`).
+- Falls back to `defaultPhotos` (8 hardcoded `/uploads/...` and `/photos/...` paths) only if API returns empty array OR fetch fails.
+- Backward compat: explicit `images` prop always wins (no fetch).
+
+### Media[] shape consumed
+PremiumGallery only consumes 5 fields per media item: `id, url, title, description, category`. It does NOT use `type, sizeBytes, mime, order, storageKey` — those are stripped in the map.
+
+### Layout
+- Masonry-style grid (`grid-cols-2 md:grid-cols-3 lg:grid-cols-4`)
+- Items at index 0 and 5 are `col-span-2 row-span-2` (large feature tiles)
+- Click opens a full-screen lightbox with prev/next/counter
+
+### Visual effects integration
+- Uses `useVisualEffects().premiumButtons` to apply `btn-premium gold-shimmer-hover` classes
+- Renders a `<DynamicLightSweep duration={18} opacity={0.03} direction="left-to-right" />` background
+- Reads from `visual-effects-store` (NOT luxury-engine-store)
+
+---
+
+## 8. LuxuryVisualEngine (`src/components/luxury/LuxuryVisualEngine.tsx`, 336 LOC)
+
+### Overlay mechanism — CONFIRMED
+```tsx
+<div
+  className="fixed inset-0 pointer-events-none overflow-hidden"
+  style={{ zIndex: 0 }}
+  aria-hidden="true"
+>
+```
+- `position: fixed` ✓
+- `inset: 0` (full viewport) ✓
+- `pointer-events: none` ✓ (lets clicks pass through to content beneath)
+- `zIndex: 0` ✓ (sits behind content with `z-10` or higher)
+- `aria-hidden="true"` (accessibility — hidden from screen readers)
+
+### Config source — CONFIRMED
+- Reads from `useLuxuryEngine()` Zustand store (`luxury-engine-store.ts`)
+- Store persists to `localStorage` under key `wedding_luxury_engine_${slug}` (or `_default` on root)
+- **Does NOT read from Theme model, does NOT call /api/theme, does NOT sync to DB**
+- One-time backward-compat migration: legacy `wedding_luxury_engine` key is copied to `wedding_luxury_engine_default` for the default wedding only
+
+### The 7 effect names (from `LuxuryEngineState` interface, lines 46-53)
+1. `starrySky` — Canvas particles (stars with twinkle cycles)
+2. `goldenDust` — Canvas particles (drifting dust with Perlin-like noise)
+3. `microSparkles` — Canvas particles (random flashes)
+4. `luminousHalos` — DOM `motion.div` (radial gradient, blurred, animated via Framer Motion)
+5. `globalBreathing` — DOM `motion.div` (full-screen radial gradient pulsing 0→0.4→0 opacity over 25s)
+6. `sectionAmbiance` — declared in store but NOT rendered in LuxuryVisualEngine.tsx (no usage in current file; likely future hook)
+7. `scrollReflections` — declared in store but NOT rendered in LuxuryVisualEngine.tsx (same)
+
+So: **5 effects are actually rendered** (starrySky, goldenDust, microSparkles share one canvas; luminousHalos are DOM; globalBreathing is DOM). `sectionAmbiance` and `scrollReflections` are store-level toggles that currently have NO visual implementation in LuxuryVisualEngine.tsx — they exist as future-proofing and are referenced in `TIER_CONFIG` (enableSectionAmbiance, enableScrollReflections) but never consumed.
+
+### The 4 theme options — CONFIRMED
+```ts
+export type LuxuryTheme = 'gold' | 'rose' | 'champagne' | 'midnight'
+```
+Each theme defines 7 color slots: `primary, secondary, tertiary, halo, dust[], star, breath`.
+
+| Theme | primary | secondary | Dust palette |
+|-------|---------|-----------|--------------|
+| gold | `#C4A265` | `#D4B87A` | gold tones |
+| rose | `#B05A5A` | `#C47A7A` | rose + peach |
+| champagne | `#D4B87A` | `#E8D5A3` | champagne + cream |
+| midnight | `#6B7FA0` | `#8B9DB8` | blue-grey |
+
+### Performance tier system
+5 tiers: `ultra, high, medium, low, minimal`. Each tier caps `maxStars, maxDust, maxSparkles, maxHalos` and toggles `enableBreathing, enableSectionAmbiance, enableScrollReflections, canvasPixelRatio`. Auto-detected from `navigator.hardwareConcurrency`, `navigator.deviceMemory`, and mobile UA. FPS-based hysteresis: 3 consecutive low-FPS readings (<25) downgrades one tier (never below `low`); 5 consecutive high-FPS readings (>50) upgrades one tier.
+
+### Important: LuxuryVisualEngine is INDEPENDENT from visual-effects-store
+The store file explicitly states (line 4-5): "Completely separate from the existing visual-effects-store." This is a parallel system — see Section 9.
+
+---
+
+## 9. Two parallel stores
+
+### Store A: `luxury-engine-store.ts` (302 LOC, Zustand + localStorage)
+- Storage key: `wedding_luxury_engine_${slug}` (tenant-scoped)
+- Master toggle: `enabled`
+- 7 effect toggles: `starrySky, goldenDust, luminousHalos, globalBreathing, sectionAmbiance, scrollReflections, microSparkles`
+- 4 numeric controls: `intensity (0-100), density (0-100), speed (0-100), haloCount (2-8)`
+- 1 theme selector: `'gold' | 'rose' | 'champagne' | 'midnight'`
+- 2 performance fields: `performanceTier ('ultra'|'high'|'medium'|'low'|'minimal'), autoPerformance (bool)`
+- 1 non-persisted field: `currentFps` (runtime only, deleted before saveToStorage)
+- Actions: `toggle, setValue, setTheme, setPerformanceTier, enableAll, disableAll, resetToDefaults`
+- Consumers: `LuxuryVisualEngine.tsx`, `LuxuryExperienceManager.tsx` (admin)
+- Replaces nothing — additive overlay; when `enabled=false`, site reverts to pre-Luxury state
+
+### Store B: `visual-effects-store.ts` (170 LOC, Zustand + localStorage)
+- Storage key: `wedding_visual_effects_${slug}` (tenant-scoped, same naming pattern)
+- NO master toggle (no `enabled` field)
+- 12 effect toggles: `sparkles, particles, parallax, dynamicLight, glowEffects, bokeh, floatingElements, microAnimations, glassmorphism, premiumButtons, scrollReveal, music`
+- 3 numeric controls: `sparkleIntensity (0-100), particleCount (0-100), animationSpeed (25-200)`
+- NO theme selector (effects are not themed — they use Tailwind gold classes)
+- NO performance tier (no auto-detection)
+- Actions: `toggle, setValue, resetToDefaults, enableAll, disableAll`
+- Consumers: `AppearanceManager.tsx` (admin), `PremiumGallery.tsx` (premiumButtons), `HeroSection.tsx`, plus 7 effect components in `src/components/effects/` (BokehEffect, FloatingParticles, VisualEffectsLayer, ScrollReveal, SparkleEffect, SectionEffects, DynamicLightSweep)
+
+### Functional overlap (intentional per the prior worklog Table E)
+- Both stores toggle visual ambiance
+- `luxury-engine-store.particles` ≈ `visual-effects-store.particles` (golden dust vs floating particles — different implementations, similar visual role)
+- They coexist by design: Luxury is a Canvas-based cinematic overlay; visual-effects is a DOM/CSS-based per-component enhancement layer
+
+### GAP / consideration for Collection Engine
+- Neither store syncs to DB. A Collection Engine "Invitation Pack" template that wants to carry luxury theme settings (e.g. "this template looks best with the Rose luxury theme") cannot persist that recommendation server-side today. Either:
+  (a) extend `Theme.customizations` JSON to hold a recommended `luxuryTheme`, or
+  (b) add a parallel `LuxuryConfig` Prisma model mirroring the store, or
+  (c) leave luxury config as a per-browser preference and let Penpot templates declare color tokens instead.
+
+---
+
+## 10. AppearanceManager (`src/components/admin/AppearanceManager.tsx`, 229 LOC)
+
+### Confirms: manages visual EFFECTS, not theme
+- Imports `useVisualEffects` from `@/lib/visual-effects-store` (Store B)
+- ZERO imports from `@/lib/themes/*` or `@/app/api/theme` — does NOT touch the Theme Prisma model
+- Header text: "Apparence & Animations" + "Contrôlez les effets visuels du site"
+- Subtitle of header section: "Contrôlez les effets visuels du site"
+
+### What it manages
+12 effect toggles (matching `EFFECT_TOGGLES` array, lines 31-44):
+1. `sparkles` — Étincelles
+2. `particles` — Particules
+3. `parallax` — Parallax
+4. `dynamicLight` — Lumière dynamique
+5. `glowEffects` — Glow
+6. `bokeh` — Bokeh
+7. `floatingElements` — Floating
+8. `microAnimations` — Micro-animations
+9. `glassmorphism` — Verre premium
+10. `premiumButtons` — Boutons premium
+11. `scrollReveal` — Scroll reveal
+12. `music` — Musique d'ambiance
+
+3 sliders (advanced settings card):
+- `sparkleIntensity` (10-100, step 5)
+- `particleCount` (10-100, step 5)
+- `animationSpeed` (25-200, step 25)
+
+3 bulk actions: "Tout activer" (enableAll), "Tout désactiver" (disableAll), "Réinitialiser" (resetToDefaults)
+
+### What it does NOT manage
+- Theme colors / fonts / layout (these live in `ThemeCustomizer.tsx` which talks to `/api/theme` + Theme Prisma model)
+- Luxury engine (that lives in `LuxuryExperienceManager.tsx` which talks to `luxury-engine-store`)
+
+### Naming confusion noted by prior audit
+The previous CONSOLIDATION-PHASE2 audit (Table E, last row) flagged: "AppearanceManager (localStorage-only, tenant admin) … Mais le NOM suggère un doublon" with ThemeCustomizer. Confirmed: NOT a real duplication — AppearanceManager = visual effects, ThemeCustomizer = theme colors/fonts. The name is misleading but the implementation is correctly scoped.
+
+---
+
+## 11. GAPS identified for the Collection Engine
+
+### GAP-1: No Guest.tier field (HIGH PRIORITY for Invitation Pack)
+The Guest model has `category` (5 values: VIP, FAMILLE, AMIS, SPONSORS, COLLEGUES) and `invitationType` (2 values: couple, individuel) but NO dedicated `tier` field. The InvitationCard renders the same design for every guest — only the badge color/icon changes.
+
+**Implication**: A Collection Engine that wants to ship a "VIP Pack" (premium invitation template + printed card + WhatsApp sticker) vs a "Standard Pack" (basic template + email only) needs a tier discriminator. Options:
+- (a) Reuse `category` — quick but conflates guest relationship with prestige tier (a sponsor might be a VIP, a colleague might be VIP)
+- (b) Add `tier` enum field to Guest (`STANDARD | VIP | PRESS | SPONSOR | FAMILY`) — cleanest, requires Prisma migration
+- (c) Use a junction table `GuestInvitationPack` linking guests to packs — most flexible
+
+### GAP-2: Single fixed InvitationCard design (HIGH PRIORITY)
+InvitationCard.tsx is ONE hardcoded JSX tree. There is no `templateId` prop, no template registry, no variant switch. The download-ready version in GuestPersonalSpace.tsx is ALSO a separate hardcoded JSX (different layout: 54%/46% split with side-by-side photos vs the on-screen vertical card).
+
+**Implication**: A Penpot Template Factory needs a render dispatcher — e.g. `<InvitationCardRenderer templateId="royal-gold" guest={...} settings={...} />` that picks among Penpot-backed templates (or falls back to the current fixed design). The current InvitationCard would become the "legacy" template.
+
+### GAP-3: No invitation template concept in DB
+- No `InvitationTemplate` Prisma model exists
+- No `templateId` field on Guest or Wedding
+- Theme.customizations JSON currently stores `penpot: { fileUrl, fileId, pageId, invitationFrameId, saveTheDateFrameId, lastSyncedAt, tokens }` (per PENPOT-NATIVE-INTEGRATION worklog) but this is a SINGLE template per wedding — not per-guest-tier
+
+**Implication**: Need either a new `InvitationTemplate` model (id, weddingId, name, tier, penpotFileId, penpotFrameId, tokens) OR extend `Theme.customizations.penpot` to be an array of templates keyed by tier.
+
+### GAP-4: Dead Invitation model blocks "sent pack" tracking
+The `Invitation` Prisma model (lines 390-402) has the right shape (`channel, recipient, guestId, status, sentAt`) for tracking "which guest received which pack via which channel" — but it has ZERO queries in the codebase. The sending infrastructure (SMS/EMAIL/WHATSAPP gateways) was never built.
+
+**Implication**: The Collection Engine's "Invitation Pack" dispatch flow needs to either:
+- (a) Resurrect the `Invitation` model by wiring it to a new sending service, or
+- (b) Replace it with a richer `InvitationPackDelivery` model that tracks pack template + tier + channel + status + per-channel metadata.
+
+### GAP-5: Media.category enum lacks Collection-Engine-relevant values
+Current allowed categories: `GALLERY, COUPLE_STORY, DOCUMENT, OTHER`. Missing:
+- `INVITATION_BG` — for template-bound background images
+- `HERO` — for hero section backgrounds (currently the hero uses hardcoded `/couple-hero.png`)
+- `SAVE_THE_DATE` — for save-the-date graphic assets
+- `PRINT_PACK` — for print-resolution assets (300+ DPI) distinct from screen-resolution gallery photos
+- `LOGO_MONOGRAM` — for couple monogram used on invitations
+
+**Implication**: Adding new enum values is a 2-line change in `/api/media/route.ts` lines 71 and 75. The schema itself is permissive (`category String?`) so no migration is needed — just update the validation array.
+
+### GAP-6: Two parallel visual-config stores, neither synced to DB
+- `luxury-engine-store` and `visual-effects-store` both live in localStorage keyed by wedding slug
+- Neither persists to the Theme model or any other Prisma table
+- A Collection Engine "Pack" that bundles a luxury theme + effect presets with an invitation template cannot ship those presets to other devices/browsers for the same wedding
+
+**Implication**: Either accept that visual ambiance is per-browser (couples reconfigure on each device) or extend Theme.customizations JSON to optionally hold luxury + effects presets that hydrate the stores on first load.
+
+### GAP-7: No "Collection" or "Pack" abstraction
+There is no Prisma model for a "Collection" (a bundle of templates + assets + settings). The Penpot integration (per prior worklog) is per-wedding, single-template. To support multiple packs per wedding (Invitation Pack, Print Pack, Save-the-Date Pack, Thank-You Card Pack), the schema needs a new model:
+
+```prisma
+model CollectionPack {
+  id           String   @id @default(cuid())
+  weddingId    String
+  type         String   // INVITATION, PRINT, SAVE_THE_DATE, THANK_YOU
+  name         String
+  templateId   String?  // references a Penpot frame
+  tier         String?  // STANDARD, VIP, PRESS, etc.
+  assets       String?  // JSON: { mediaIds: [], tokens: {}, ... }
+  status       String   @default("DRAFT") // DRAFT, PUBLISHED, ARCHIVED
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+```
+
+This would be the spine of the Collection Engine.
+
+### GAP-8: Export pipeline is hardcoded to ONE design
+`GuestPersonalSpace.tsx` has `downloadRef` pointing at an inline JSX tree (lines 357+) that is the ONLY thing html2canvas will capture. There is no way to point the export at a different template.
+
+**Implication**: For a Collection Engine that produces multiple pack artifacts (invitation PDF, save-the-date PNG, table card PDF), the export pipeline needs to be refactored into a reusable function: `exportPackArtifact(templateId, guest, settings, format)` that renders the right template off-screen and captures it. Currently this logic is inlined in a single component.
+
+---
+
+## Summary table — file inventory
+
+| File | LOC | Role | Collection Engine relevance |
+|------|-----|------|------------------------------|
+| `src/components/InvitationCard.tsx` | 523 | On-screen fixed invitation card | Will become "legacy template" — needs render dispatcher |
+| `src/components/GuestPersonalSpace.tsx` | 787 | Hosts InvitationCard + hidden download-ready JSX + export buttons | Export pipeline needs refactor to support multiple templates |
+| `src/lib/guest-auth.ts` | 428 | AES-256-GCM token + JWT session + brute-force protection | Stable — Collection Engine can reuse `generateInvitationLinkToken` as-is |
+| `src/app/api/guest/invite/route.ts` | 193 | Auto-auth endpoint (decrypts token, creates session) | Stable — Collection Engine can reuse as-is |
+| `src/app/api/guests/qrcode/[code]/route.ts` | 120 | Generates QR data URL with encrypted invitationCode | Stable — Collection Engine can reuse as-is |
+| `prisma/schema.prisma` (Guest) | 36 fields | Guest data + category + invitationType | NEEDS `tier` field (or use category as tier) |
+| `prisma/schema.prisma` (Media) | 14 fields | Uploaded assets with type + category | NEEDS new category enum values (INVITATION_BG, HERO, PRINT_PACK, etc.) |
+| `prisma/schema.prisma` (Invitation) | DEAD | Would-be sending queue | Resurrect or replace with `CollectionPackDelivery` |
+| `src/app/api/media/route.ts` | 192 | GET/POST/DELETE for media | NEEDS new category enum values in validation array |
+| `src/components/PremiumGallery.tsx` | 254 | Self-fetches GALLERY photos from /api/media | Stable — can serve as reference for Collection Engine asset consumption |
+| `src/components/luxury/LuxuryVisualEngine.tsx` | 336 | Canvas+DOM cinematic overlay (z:0, pointer-events:none) | Stable — coexists with Penpot designs |
+| `src/lib/luxury-engine-store.ts` | 302 | Zustand+localStorage, 7 effects + 4 themes + 5 tiers | Optional: sync to DB for cross-device preset shipping |
+| `src/lib/visual-effects-store.ts` | 170 | Zustand+localStorage, 12 effects + 3 sliders | Optional: same as above |
+| `src/components/admin/AppearanceManager.tsx` | 229 | Admin UI for visual-effects-store (EFFECTS only, NOT theme) | Confirmed: no theme overlap; naming misleading but correct scoping |
+
+---
+
+## Recommendations for Collection Engine planning
+
+1. **Schema-first**: Add `CollectionPack` model + `tier` field on Guest + new Media category values. One Prisma migration unblocks the whole engine.
+
+2. **Render dispatcher**: Replace direct `<InvitationCard />` usage in GuestPersonalSpace.tsx with `<InvitationRenderer packId={...} guest={...} settings={...} />` that switches between the legacy fixed design and Penpot-backed templates.
+
+3. **Export refactor**: Extract `handleDownload` from GuestPersonalSpace into a shared `exportPackArtifact(templateId, guest, format)` utility so the same pipeline serves invitation PDFs, save-the-date PNGs, and table cards.
+
+4. **Token reuse**: The AES-256-GCM + JWT infrastructure is solid and tenant-scoped — Collection Engine packs can reuse `generateInvitationLinkToken` and `/api/guest/invite` unchanged. New `?pack={packId}` query param can be added to the QR URL to track which pack the guest scanned.
+
+5. **Media category extension**: 2-line change in `/api/media/route.ts` lines 71/75 to add `INVITATION_BG`, `HERO`, `SAVE_THE_DATE`, `PRINT_PACK`, `LOGO_MONOGRAM`. No schema migration needed.
+
+6. **Visual config sync (optional)**: If Penpot templates should ship with luxury theme + effects presets, extend `Theme.customizations` JSON to hold `luxuryTheme` + `effectsProfile` that hydrate the two stores on first load.
+
+7. **Resurrect or replace Invitation model**: Decide whether to wire the dead `Invitation` model to a real sending service or replace it with `CollectionPackDelivery`. The current schema shape is close but missing `packId` and `tier` fields.
+
+Stage Summary:
+- 9 mandated files read in full + 3 cross-reference files (api/guest/invite, invite page, GuestPersonalSpace) read partially.
+- READ-ONLY audit completed — zero files modified.
+- 8 GAPS identified, prioritized by impact on Collection Engine.
+- All claims verified against actual source code (line numbers cited).
+- Report ready to feed the Collection Engine planning document.
+
+---
+Task ID: AUDIT-A
+Agent: Explore (READ-ONLY Audit)
+Task: Audit Theme Engine + Penpot integration — DETAILED technical inventory for Collection Engine planning
+
+Work Log:
+- Read worklog (last 300 lines + Task IDs 4-PHASE1, 5-PHASE2, 3-B, CONSOLIDATION-PHASE2-DOUBLONS, CONSOLIDATION-FIXES-2CRITICAL, PENPOT-NATIVE-INTEGRATION) to understand prior context.
+- Read fully: prisma/schema.prisma (432 lines), src/lib/penpot/config.ts (204 lines), src/components/penpot/PenpotStudio.tsx (640 lines), src/components/wedding/ThemeInjector.tsx (139 lines), src/components/admin/ThemeCustomizer.tsx (616 lines), src/app/api/theme/route.ts (124 lines), src/lib/themes/templates.ts (212 lines), src/app/api/theme/apply-template/route.ts (75 lines), src/app/api/platform/weddings/route.ts (226 lines), src/app/api/platform/weddings/[id]/duplicate/route.ts (235 lines), src/app/api/onboarding/create-wedding/route.ts (547 lines), src/app/globals.css (864 lines, sampled key sections).
+- Grep'd for template|preset|collection|variant in schema + src (4 hits, all in templates.ts and its consumers — no schema-level concept exists).
+- Grep'd for theme.create|theme.upsert|db.theme to enumerate every DB write path (3 paths found: route.ts PUT upsert, apply-template upsert, duplicate-wedding create).
+- Grep'd for --theme-* / --penpot-* / theme.layout consumers to determine which canonical fields are actually applied.
+- READ-ONLY audit: zero source files modified. Worklog append is the only write.
+
+═══════════════════════════════════════════════════════════════════════════════
+AUDIT REPORT — THEME ENGINE + PENPOT INTEGRATION (for Collection Engine planning)
+═══════════════════════════════════════════════════════════════════════════════
+
+### 1. Theme Model schema (prisma/schema.prisma lines 301–313)
+
+```prisma
+model Theme {
+  id              String   @id @default(cuid())
+  weddingId       String   @unique          // ← 1:1 with Wedding (enforced)
+  wedding         Wedding  @relation(fields: [weddingId], references: [id], onDelete: Cascade)
+  primaryColor    String   @default("#D4A853")
+  accentColor     String   @default("#C8785A")
+  fontDisplay     String   @default("Cormorant Garamond")
+  fontBody        String   @default("Inter")
+  layout          String   @default("classic")  // classic, modern, minimalist, royal
+  customizations  String?  // JSON: { heroStyle, animationIntensity, ... }   ← STALE COMMENT
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+```
+
+**All fields + types**:
+| Field | Type | Default | Notes |
+|---|---|---|---|
+| id | String | cuid() | PK |
+| weddingId | String | — | UNIQUE, FK→Wedding.id, onDelete: Cascade |
+| primaryColor | String | "#D4A853" | hex color, validated by isValidHexColor (#RRGGBB or #RGB) |
+| accentColor | String | "#C8785A" | hex color, same validation |
+| fontDisplay | String | "Cormorant Garamond" | Google Font family name, validated against FONT_OPTIONS whitelist |
+| fontBody | String | "Inter" | Google Font family name, validated against FONT_OPTIONS whitelist |
+| layout | String | "classic" | enum string, validated by getLayoutOption() against LAYOUT_OPTIONS |
+| customizations | String? | null | JSON-stringified blob. Comment claims `{heroStyle, animationIntensity, ...}` but actual runtime shape is `{ penpot: PenpotIntegration }` |
+| createdAt | DateTime | now() | |
+| updatedAt | DateTime | @updatedAt | auto-updated by Prisma |
+
+**Relations**: Theme.wedding is the only relation; back-referenced by Wedding.theme (Theme?, 0..1).
+**Indexes**: weddingId is `@unique` (acts as both unique index + FK). No other indexes.
+
+⚠️ **Schema comment is stale**: `// JSON: { heroStyle, animationIntensity, ... }` does NOT match actual runtime content. Actual shape is documented in section 9.
+
+---
+
+### 2. Penpot config.ts exports (src/lib/penpot/config.ts, 204 lines)
+
+**Constants**:
+- `PENPOT_BASE_URL: string` — `process.env.NEXT_PUBLIC_PENPOT_BASE_URL || 'https://design.penpot.app'`
+- `PENPOT_ENABLED: boolean = true` — hardcoded (no env gate yet)
+- `EMPTY_PENPOT_INTEGRATION: PenpotIntegration` — all-null default
+
+**Interfaces**:
+
+```ts
+interface PenpotTokens {            // 11 optional fields, dotted-key names
+  'color.primary'?:     string
+  'color.accent'?:      string
+  'color.secondary'?:   string
+  'color.background'?:  string
+  'color.text'?:        string
+  'typography.display'?: string
+  'typography.body'?:   string
+  'spacing.unit'?:      string
+  'radius.sm'?:         string
+  'radius.md'?:         string
+  'radius.lg'?:         string
+}
+
+interface PenpotIntegration {       // 7 fields, all optional/nullable
+  fileUrl?:             string | null
+  fileId?:              string | null
+  pageId?:              string | null
+  invitationFrameId?:   string | null     // ← reserved for InvitationCard SVG export (NOT yet consumed)
+  saveTheDateFrameId?:  string | null     // ← reserved, NOT yet consumed
+  lastSyncedAt?:        string | null     // ISO timestamp string
+  tokens?:              PenpotTokens | null
+}
+```
+
+**Functions**:
+
+| Signature | Behavior |
+|---|---|
+| `parsePenpotUrl(url: string): { fileId: string\|null; pageId: string\|null }` | Extracts file-id and page-id from Penpot hash-based URLs. Looks for `#/` in URL, slices after it, finds `?`, then uses URLSearchParams. Returns nulls if no hash or no query. Handles `#/view?...` and `#/workspace?...`. Try/catch returns nulls on failure. |
+| `buildPenpotViewUrl(fileId: string, pageId: string\|null): string` | `${PENPOT_BASE_URL}/#/view?file-id=...&page-id=...` (embeddable, no auth) |
+| `buildPenpotEditUrl(fileId: string, pageId: string\|null): string` | `${PENPOT_BASE_URL}/#/workspace?file-id=...&page-id=...` (opens in new tab, requires auth) |
+| `themeToPenpotTokens(theme: { primaryColor?, accentColor?, fontDisplay?, fontBody? }): PenpotTokens` | Maps 4 canonical theme fields → 4 token keys. Coerces empty string to `undefined` via `||`. **Only populates color.primary, color.accent, typography.display, typography.body** — leaves 7 other tokens untouched. |
+| `penpotTokensToTheme(tokens: PenpotTokens): { primaryColor, accentColor, fontDisplay, fontBody }` | Inverse of above. Coerces missing to `null`. **Only 4 fields are mapped back** — the 7 extended tokens (color.secondary, color.background, color.text, spacing.unit, radius.*) are stored in customizations but NOT consumed by the renderer. Comment explicitly calls this out: "future enhancement". |
+| `penpotTokensToCssVars(tokens: PenpotTokens): Record<string, string>` | Maps all 11 possible tokens → `--penpot-*` CSS custom properties: `--penpot-color-primary`, `--penpot-color-accent`, `--penpot-color-secondary`, `--penpot-color-background`, `--penpot-color-text`, `--penpot-font-display`, `--penpot-font-body`, `--penpot-spacing-unit`, `--penpot-radius-sm`, `--penpot-radius-md`, `--penpot-radius-lg`. Skips missing/empty values. |
+
+---
+
+### 3. PenpotStudio component (src/components/penpot/PenpotStudio.tsx, 640 lines)
+
+**Props**:
+```ts
+interface PenpotStudioProps {
+  slug?: string                                       // for X-Wedding-Slug header
+  onIntegrationChange?: (integration: PenpotIntegration) => void
+}
+```
+Note: `slug` is declared but the current code does NOT use it to set headers (the fetch interceptor in the admin shell already attaches X-Wedding-Slug + Authorization). It's reserved for future standalone use.
+
+**State**:
+| Name | Type | Purpose |
+|---|---|---|
+| loading | boolean | Initial fetch |
+| saving | boolean | PUT in flight (link/unlink/push) |
+| syncing | 'push' \| 'pull' \| null | Token sync in flight |
+| integration | PenpotIntegration | Current Penpot state (init EMPTY_PENPOT_INTEGRATION) |
+| theme | { primaryColor?, accentColor?, fontDisplay?, fontBody? } | Mirror of canonical theme fields |
+| fileUrlInput | string | Controlled input for the Penpot URL |
+| iframeRef | useRef<HTMLIFrameElement> | Reference to embedded Penpot iframe (not actively used post-mount) |
+
+**Flows**:
+
+1. **Initial fetch (`fetchTheme` on mount)** — `GET /api/theme` → reads `data.theme || data` → sets theme + parses `customizations.penpot` (defensively handles string OR object) → restores `integration` state.
+
+2. **`persistIntegration(next)`** — Used by link/unlink/push. Re-fetches `/api/theme` (avoids clobbering concurrent edits), merges `next` into `customizations.penpot` only (additive), then `PUT /api/theme` with body `{ primaryColor, accentColor, fontDisplay, fontBody, layout, customizations }` — sends `customizations` as OBJECT (route does JSON.stringify itself). Returns boolean success. **All 4 canonical theme fields are re-sent from the freshly fetched theme to avoid wiping them.**
+
+3. **`handleLinkFile`** — Trim URL → validate starts with PENPOT_BASE_URL → `parsePenpotUrl` → require fileId → build new integration with `{ fileUrl, fileId, pageId, lastSyncedAt: new Date().toISOString() }` → persist → toast.
+
+4. **`handleUnlink`** — Reset to EMPTY_PENPOT_INTEGRATION but **keep `tokens`** (preserves pushed tokens even after unlinking the file). Clear fileUrlInput. Persist.
+
+5. **`handlePushTokens` (Wedding OS → Penpot)** — `themeToPenpotTokens(theme)` → persist with `tokens` + lastSyncedAt → `navigator.clipboard.writeText(JSON.stringify(tokens, null, 2))` for paste-into-Penpot → toast "Tokens poussés vers Penpot (JSON copié dans le presse-papiers)".
+
+6. **`handlePullTokens` (Penpot → Wedding OS)** — `window.prompt(...)` for pasted JSON → JSON.parse → `penpotTokensToTheme(tokens)` → GET /api/theme → merge → `PUT /api/theme` with **BOTH** the new tokens in `customizations.penpot.tokens` AND the 4 canonical theme fields updated from tokens (so ThemeInjector picks them up immediately via --theme-*). Updates local `integration` + `theme` state. Toast "Tokens Penpot → Thème synchronisés".
+
+**Render structure**:
+- Header card (palette icon + "Lié"/"Non lié" badge + "Éditer dans Penpot" button when linked)
+- File Linker card (URL input + Lier/Délier button + file-id/page-id/last-sync display)
+- Token Sync Bridge card (2-column grid: Push button | Pull button + current tokens as badges)
+- Penpot Embed card (iframe view mode, 60vh, allow="clipboard-read; clipboard-write; fullscreen", lazy) — OR a "no file linked" empty state with "Ouvrir Penpot" CTA
+- Integration info card (6-step workflow explanation + coexistence note about LuxuryVisualEngine)
+
+**Persistence shape**: writes to `Theme.customizations.penpot` (additive merge — never clobbers other customizations keys). Reuses existing `/api/theme` GET+PUT. **Zero new API routes. Zero schema changes.**
+
+---
+
+### 4. ThemeInjector (src/components/wedding/ThemeInjector.tsx, 139 lines)
+
+**Mechanism**: side-effect-only component (renders null). Single `useEffect` on mount.
+
+**ThemeData interface** (inline):
+```ts
+interface ThemeData {
+  primaryColor: string
+  accentColor: string
+  fontDisplay: string
+  fontBody: string
+  layout: string
+  customizations?: { penpot?: PenpotIntegration } | null
+}
+```
+
+**Flow**:
+1. `fetch('/api/theme')` (no headers — relies on tenant fetch interceptor on /w/[slug] pages, or resolvePublicTenant default-wedding fallback on root /)
+2. Sets 4 canonical CSS vars on `document.documentElement`:
+   - `--theme-primary` = data.primaryColor
+   - `--theme-accent` = data.accentColor
+   - `--theme-font-display` = `'${data.fontDisplay}', serif`
+   - `--theme-font-body` = `'${data.fontBody}', sans-serif`
+3. **Penpot token injection (additive)**:
+   - Parses `data.customizations` defensively: `typeof === 'string' ? JSON.parse(...) : data.customizations` (handles legacy double-encoding)
+   - Extracts `customizationsObj.penpot.tokens`
+   - If tokens is an object, calls `penpotTokensToCssVars(tokens)` → loops entries → `root.style.setProperty(varName, value)` → records each name in `injectedPenpotVars` for cleanup
+4. **Google Fonts loading**:
+   - Resolves `data.fontDisplay` + `data.fontBody` via `getFontOption()` → collects googleFontUrls in a Set
+   - Also collects Penpot tokens' typography.display + typography.body if different from theme fonts
+   - For each URL: creates `<link rel="stylesheet">` with id `theme-font-${btoa(url)}` (idempotent — skips if already present)
+5. **Cleanup** (on unmount): `cancelled = true` flag, removes 4 `--theme-*` vars, loops `injectedPenpotVars` and removes each. Fonts stay cached (intentional — performance).
+
+**Failure mode**: silent catch — theme is cosmetic, never breaks the page.
+
+**Coexistence with globals.css**: globals.css declares 4 theme-aware bridges — `--gold/gold-light/gold-dark = var(--theme-primary, fallback)`, `--rose-gold = var(--theme-accent, fallback)`, `--primary = var(--theme-primary, fallback)`, `--accent = var(--theme-accent, fallback)`, `--ring = var(--theme-primary, fallback)`, `--font-display = var(--theme-font-display, var(--font-cormorant))`, `--font-body = var(--theme-font-body, var(--font-geist-sans))`. So the 4 --theme-* vars cascade into ~7 downstream design tokens.
+
+**--penpot-* vars are NOT referenced in globals.css** — they're only consumed by Penpot-aware components (currently none exist; the invitationFrameId path is reserved but unimplemented).
+
+---
+
+### 5. ThemeCustomizer (src/components/admin/ThemeCustomizer.tsx, 616 lines)
+
+**4 canonical fields** (the only theme fields it edits):
+- `primaryColor` — hex string, edited via `<input type="color">` + `<input>` text mirror
+- `accentColor` — hex string, same dual-input pattern
+- `fontDisplay` — Google Font family name, `<Select>` populated from `FONT_OPTIONS`
+- `fontBody` — Google Font family name, `<Select>` populated from `FONT_OPTIONS`
+
+**Plus** `layout` — `<button>` grid populated from `LAYOUT_OPTIONS` (classic/modern/minimalist/royal). NOTE: layout is selected but ThemeCustomizer does NOT itself cause layout-based rendering differences (see section 10 — layout is dead-code at the renderer level).
+
+**Props**:
+```ts
+interface ThemeCustomizerProps {
+  slug?: string       // explicit slug (tenant admin context)
+                     // if absent → platform admin context → wedding picker dropdown
+}
+```
+
+**State**: theme (ThemeData), domain (CustomDomainData), loading, saving, applyingTemplate, domainInput, savingDomain, coupleLabel, weddingOptions, selectedSlug.
+
+**API calls**:
+| Action | Method | Endpoint | Body |
+|---|---|---|---|
+| Load theme | GET | `/api/theme` (headers: X-Wedding-Slug) | — |
+| Load domain | GET | `/api/custom-domain` (headers: X-Wedding-Slug) | — |
+| Load couple label | GET | `/api/settings` (headers: X-Wedding-Slug) | — (reads bride_name/groom_name) |
+| Load wedding picker | GET | `/api/platform/weddings?limit=100` (credentials: include) | — (platform admin only) |
+| Save theme | PUT | `/api/theme` (headers: X-Wedding-Slug + Content-Type) | `{ primaryColor, accentColor, fontDisplay, fontBody, layout }` — **no customizations sent** |
+| Apply template | POST | `/api/theme/apply-template` | `{ templateId }` |
+| Set domain | PUT | `/api/custom-domain` | `{ domain }` |
+| Clear domain | DELETE | `/api/custom-domain` | — |
+
+**Save flow oddity**: `handleSaveTheme` does NOT send `customizations` — only the 5 scalar fields. So saving a theme via ThemeCustomizer never touches the Penpot integration. ✅ Safe coexistence with PenpotStudio.
+
+**Templates UI**: 4 cards in a responsive grid (`grid-cols-1 md:grid-cols-2 lg:grid-cols-4`). Each card shows preview swatches + name + description in the template's font. Active template detected by `theme.primaryColor.toUpperCase() === template.primaryColor.toUpperCase()` (rough match — doesn't check accent or fonts). Click → `handleApplyTemplate` → POST → toast.
+
+---
+
+### 6. /api/theme route (src/app/api/theme/route.ts, 124 lines)
+
+**GET** — wrapped in `withPublicTenant` (public, resolves wedding via X-Wedding-Slug header or default):
+```ts
+const theme = await db.theme.findUnique({ where: { weddingId: ctx.weddingId } })
+return {
+  primaryColor:  theme?.primaryColor  ?? DEFAULT_THEME.primaryColor,
+  accentColor:   theme?.accentColor   ?? DEFAULT_THEME.accentColor,
+  fontDisplay:   theme?.fontDisplay   ?? DEFAULT_THEME.fontDisplay,
+  fontBody:      theme?.fontBody      ?? DEFAULT_THEME.fontBody,
+  layout:        theme?.layout        ?? DEFAULT_THEME.layout,
+  customizations: theme?.customizations ? JSON.parse(theme.customizations) : null,
+  wedding: { slug, isDefault, status, plan }   // ← tenant context metadata
+}
+```
+**Key behavior**: returns DEFAULT_THEME constants if no Theme row exists (no 404). Returns parsed customizations (object) or null.
+
+**PUT** — manual auth check (`getAuthUser` + `hasPermission(role, ['PLATFORM_ADMIN', 'ORGANIZER'])`) then `withAdminTenantHandler`:
+- Body fields validated individually:
+  - `primaryColor` / `accentColor`: `isValidHexColor` regex `^#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})$`
+  - `layout`: `getLayoutOption(layout)` must return a value
+  - `fontDisplay` / `fontBody`: `getFontOption(...)` must return a value
+  - `customizations`: **NO shape validation** — accepts any `Record<string, unknown>`
+- Builds `updateData` dict (only includes fields that were `!== undefined`)
+- `customizations` is `JSON.stringify`'d before storage (string in DB)
+- `db.theme.upsert({ where: { weddingId }, update: updateData, create: { weddingId, ...defaults } })`
+- Writes `AuditLog` action=`UPDATE_THEME`, details=`Theme updated: ${Object.keys(updateData).join(', ')}`
+- Returns the updated theme with `customizations` JSON.parse'd back to object
+
+**Critical detail**: route uses raw `db` (NOT `tenantDb`). Safe because `weddingId` is `@unique` and the `ctx.weddingId` is enforced by `withAdminTenantHandler` (locks non-platform-admins to their own wedding). Platform admins can edit any wedding.
+
+**customizations string vs object handling**:
+- **Storage**: always string (`JSON.stringify`) — DB column is `String?`
+- **GET response**: parsed back to object via `JSON.parse(theme.customizations)`
+- **PUT request body**: expects object (`Record<string, unknown>`) — never a pre-stringified string (PenpotStudio was previously double-encoding; fixed in PENPOT-NATIVE-INTEGRATION task)
+- **Defensive consumers** (ThemeInjector, PenpotStudio): both handle `typeof === 'string'` legacy fallback in case an old PUT wrote a double-encoded value
+
+---
+
+### 7. templates.ts — 4 presets (src/lib/themes/templates.ts, 212 lines)
+
+**ThemeTemplate interface**:
+```ts
+interface ThemeTemplate {
+  id: string
+  name: string
+  description: string
+  primaryColor: string
+  accentColor: string
+  fontDisplay: string
+  fontBody: string
+  layout: 'classic' | 'modern' | 'minimalist' | 'royal'
+  preview: { bg: string; text: string; swatch: string[] }
+}
+```
+
+**THEME_TEMPLATES** (4 entries — Collection Engine seed candidates):
+
+| id | name | primary | accent | fontDisplay | fontBody | layout | preview.bg |
+|---|---|---|---|---|---|---|---|
+| `classic-gold` | Or Classique | `#D4A853` | `#C8785A` | Cormorant Garamond | Inter | classic | `#1a1410` |
+| `romantic-rose` | Rose Romantique | `#E8B4B8` | `#C08497` | Playfair Display | Lato | modern | `#2a1a1e` |
+| `minimal-modern` | Minimal Moderne | `#525252` | `#A3A3A3` | Marcellus | Montserrat | minimalist | `#1c1c1c` |
+| `royal-night` | Nuit Royale | `#C9A14A` | `#1B1B3A` | Italiana | Lora | royal | `#0f0f1e` |
+
+**DEFAULT_THEME** = `{ primaryColor: '#D4A853', accentColor: '#C8785A', fontDisplay: 'Cormorant Garamond', fontBody: 'Inter', layout: 'classic' }` — identical to `classic-gold` template values.
+
+**Other exports**:
+- `FONT_OPTIONS: FontOption[]` — 8 entries (Cormorant Garamond, Playfair Display, Marcellus, Lora, Inter, Lato, Montserrat, Italiana) with `category: 'serif'|'sans-serif'|'display'` + `googleFontUrl`
+- `LAYOUT_OPTIONS: LayoutOption[]` — 4 entries (classic/modern/minimalist/royal) with French labels + descriptions
+- `getTemplate(id): ThemeTemplate | undefined`
+- `getFontOption(family): FontOption | undefined`
+- `getLayoutOption(id): LayoutOption | undefined`
+- `isValidHexColor(color): boolean` — regex `^#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})$`
+- `normalizeHexColor(color): string` — expands #RGB → #RRGGBB, uppercases, fallback `'#D4A853'`
+
+---
+
+### 8. globals.css token categories (864 lines, sampled)
+
+**Categories** (no need to enumerate all 65+ tokens — categories + key examples):
+
+1. **Tailwind v4 `@theme inline` mapping** (lines 6–59): aliases that bind Tailwind utility classes to raw CSS vars. Examples: `--color-primary: var(--primary)`, `--color-gold: var(--gold)`, `--font-display: var(--font-cormorant)`, `--radius-sm/md/lg/xl`, `--animate-fade-in/slide-up/float/shimmer/pulse-gold/spin-slow`.
+
+2. **`:root` Light Mode tokens** (lines 65–124):
+   - `--radius: 0.75rem`
+   - **Wedding palette** (theme-aware): `--gold`, `--gold-light`, `--gold-dark` all = `var(--theme-primary, oklch fallback)`; `--rose-gold` = `var(--theme-accent, oklch fallback)`; `--champagne`, `--cream` (static oklch)
+   - **Semantic tokens**: `--background`, `--foreground`, `--card`, `--card-foreground`, `--popover`, `--popover-foreground`, `--primary` (= `var(--theme-primary, ...)`), `--primary-foreground`, `--secondary`, `--muted`, `--accent` (= `var(--theme-accent, ...)`), `--destructive`, `--border`, `--input`, `--ring` (= `var(--theme-primary, ...)`)
+   - **Chart palette**: `--chart-1` through `--chart-5` (static oklch warm tones)
+   - **Sidebar palette**: `--sidebar`, `--sidebar-foreground`, `--sidebar-primary`, `--sidebar-accent`, `--sidebar-border`, `--sidebar-ring` (all static)
+   - **Theme-aware fonts**: `--font-display: var(--theme-font-display, var(--font-cormorant))`, `--font-body: var(--theme-font-body, var(--font-geist-sans))`
+
+3. **`.dark` Dark Mode tokens** (lines 130–181): same token set, dark-mode oklch values. **Dark mode does NOT re-bridge to `--theme-*`** — dark mode hardcodes `--gold: oklch(0.72 0.12 85)` etc. So `--theme-*` only overrides in light mode. ⚠️ Latent inconsistency: if a couple sets primaryColor to red, light mode turns red but dark mode stays gold.
+
+4. **Keyframe animations** (lines 186+): `@keyframes fadeIn`, `slideUp`, `slideDown`, `float`, `shimmer`, `pulse-gold`, `spin-slow`.
+
+5. **No `--penpot-*` references in globals.css** — those vars are injected at runtime by ThemeInjector on `document.documentElement.style` only.
+
+**Theme-aware bridging summary** (the ONLY 4 --theme-* vars consumed by globals.css):
+- `--theme-primary` → consumed by `--gold`, `--gold-light`, `--gold-dark`, `--primary`, `--ring` (5 downstream)
+- `--theme-accent` → consumed by `--rose-gold`, `--accent` (2 downstream)
+- `--theme-font-display` → consumed by `--font-display` (1 downstream)
+- `--theme-font-body` → consumed by `--font-body` (1 downstream)
+
+---
+
+### 9. Theme.customizations EXACT current shape
+
+**Canonical shape** (written by `PenpotStudio.persistIntegration` and `handlePullTokens`):
+
+```json
+{
+  "penpot": {
+    "fileUrl": "https://design.penpot.app/#/view?file-id=abc-123&page-id=def-456",
+    "fileId": "abc-123",
+    "pageId": "def-456",
+    "invitationFrameId": null,
+    "saveTheDateFrameId": null,
+    "lastSyncedAt": "2026-06-27T14:32:11.000Z",
+    "tokens": {
+      "color.primary": "#D4A853",
+      "color.accent": "#C8785A",
+      "typography.display": "Cormorant Garamond",
+      "typography.body": "Inter"
+    }
+  }
+}
+```
+
+**Notes**:
+- The top-level key is `penpot` (singular). No other top-level keys are written by any current code path.
+- `tokens` only ever has 4 keys populated by `themeToPenpotTokens` (the 7 extended token slots — color.secondary, color.background, color.text, spacing.unit, radius.sm/md/lg — are defined in the `PenpotTokens` interface but never auto-populated by Wedding OS code; they can only be populated by a manual JSON paste via `handlePullTokens`).
+- `invitationFrameId` and `saveTheDateFrameId` are declared in the interface but NEVER set by any UI today — they're reserved for the future InvitationCard SVG export feature.
+- The schema's inline comment `// JSON: { heroStyle, animationIntensity, ... }` is **STALE** and does NOT match reality.
+- Stored as `String?` in SQLite — JSON.stringify'd on write, JSON.parse'd on read.
+- Defensive parsing in 3 places (route GET, ThemeInjector, PenpotStudio) handles the legacy case where the value might be double-encoded (a string containing a JSON string).
+
+---
+
+### 10. Existing template/preset/collection/variant concepts
+
+| Concept | Exists? | Where | Notes |
+|---|---|---|---|
+| **Template** | ✅ YES | `src/lib/themes/templates.ts` (THEME_TEMPLATES, ThemeTemplate interface, getTemplate helper); `src/app/api/theme/apply-template/route.ts` (POST endpoint); `src/components/admin/ThemeCustomizer.tsx` (UI consumer) | 4 hardcoded theme templates. **In-code only — NOT in DB schema.** No `Template` Prisma model. Adding a template requires a code deploy. |
+| **Preset** | ❌ NO | — | Zero matches in schema or src. |
+| **Collection** | ❌ NO | — | Zero matches in schema or src. This is the greenfield the Collection Engine will fill. |
+| **Variant** | ❌ NO (as domain concept) | — | The only match is `@custom-variant dark` in globals.css line 4 — that's Tailwind v4 CSS-engine syntax (defines a CSS variant for the `dark` class), NOT a domain concept. |
+
+**Implication for Collection Engine**: there is NO existing data model for templates/collections. The Collection Engine will need to introduce either (a) a new Prisma model (e.g. `Template` or `Collection` with seeded rows), OR (b) extend the in-code `THEME_TEMPLATES` array, OR (c) reuse the existing `Theme.customizations` JSON to reference a collection ID. The 4 current templates are the obvious seed candidates.
+
+---
+
+### 11. Wedding → Theme relation cardinality
+
+**Cardinality: 1:1 (strict, optional on Theme side)**
+
+Evidence:
+- `schema.prisma` line 303: `weddingId String @unique` (Theme side — UNIQUE constraint)
+- `schema.prisma` line 45: `theme Theme?` (Wedding side — optional 0..1)
+- `/api/theme/route.ts` line 11: `db.theme.findUnique({ where: { weddingId: ctx.weddingId } })` — findUnique by unique field
+- `/api/theme/route.ts` line 88: `db.theme.upsert({ where: { weddingId: ctx.weddingId } })` — upsert by unique field
+- `/api/platform/weddings/[id]/duplicate/route.ts` line 148: `db.theme.create({ data: { weddingId: newWedding.id, ... } })` — single create per duplicate
+
+**Consequences for Collection Engine**:
+- A wedding has AT MOST ONE active theme at any time. There is NO concept of "theme variants per wedding" or "draft vs published theme" — the single row IS the source of truth.
+- Switching themes = UPDATE in place (preserves weddingId). The old theme values are lost unless audited via AuditLog.
+- A "Collection" of multiple themes per wedding would require schema change (e.g. new `ThemeVariant` model with `weddingId + isActive` or `weddingId + status`).
+
+---
+
+### 12. How wedding creation sets the theme
+
+**3 entry points** (no `/api/weddings/route.ts` exists — the brief was speculative):
+
+#### (a) `/api/platform/weddings` POST — basic admin CRUD
+- Creates Wedding row only (slug, brideName, groomName, coupleLabel, weddingDate, timezone, venueName, venueCity, status, plan, isDefault=false, publishedAt)
+- **Does NOT create a Theme row.**
+- **Does NOT create a Settings row.**
+- First `GET /api/theme` will return `DEFAULT_THEME` constants (classic-gold values) with `customizations: null` because `db.theme.findUnique` returns null.
+- Theme row is created lazily on first `PUT /api/theme` (upsert create branch) or first `POST /api/theme/apply-template`.
+
+#### (b) `/api/platform/weddings/[id]/duplicate` POST — duplication
+- Copies source Wedding → new Wedding (DRAFT, TRIAL, isDefault=false)
+- Copies Settings (key/value pairs verbatim)
+- **Copies Theme row** (`db.theme.create({ data: { weddingId, primaryColor, accentColor, fontDisplay, fontBody, layout, customizations } })`) — **`customizations` is copied verbatim, including any `penpot` integration blob from the source.**
+- Copies MusicTrack (URL reference, no file copy)
+- Copies EventTimeline + CoupleStory (text + image URLs, no file copy)
+- Does NOT copy: guests, tables, media files, access logs, audit logs, subscriptions, invoices, invitations
+
+⚠️ **Subtle data leak**: duplicating a wedding duplicates its `customizations.penpot` blob, so the new wedding's PenpotStudio will show the source wedding's Penpot file as "Lié". The new couple would need to manually unlink + relink their own Penpot file. The Collection Engine should consider clearing/nullifying `customizations.penpot.fileId` + `fileUrl` on duplication (keep `tokens` only).
+
+#### (c) `/api/onboarding/create-wedding` POST — onboarding wizard (transactional)
+- Atomic `db.$transaction` creating 6 entities: Wedding, 15 essential Settings rows, AdminUser (ORGANIZER), Subscription (PENDING_PAYMENT), Invoice (OPEN), 3 AuditLogs
+- **Does NOT create a Theme row.**
+- Seeds Settings `primary_color: '#D4A853'` (legacy Setting, NOT the Theme table)
+- Seeds Settings `music_enabled: 'false'`, `music_volume: '0.30'`
+- The Settings `primary_color` is NOT consumed by /api/theme (which reads from the Theme table, not Settings). It's a vestigial Setting from the pre-Phase-1 single-tenant era.
+- Onboarded wedding's `GET /api/theme` returns DEFAULT_THEME (classic-gold) until the organizer opens ThemeCustomizer and either saves or applies a template.
+
+**Summary**: NONE of the 3 wedding-creation routes pre-create a Theme row. The Theme row is created lazily on first theme edit. This means **the 4 THEME_TEMPLATES are NOT auto-applied at wedding creation** — the default wedding "looks like" classic-gold only because DEFAULT_THEME constants happen to match classic-gold's values.
+
+**Implication for Collection Engine**: there is a clear insertion point — wedding creation (any of the 3 routes) could accept a `templateId` / `collectionId` param and pre-create the Theme row with that template's values + link the corresponding Penpot file. This would make the "Penpot as Template Factory" workflow seamless: pick a collection at onboarding → wedding starts with both the canonical theme fields AND a pre-linked Penpot file ID.
+
+═══════════════════════════════════════════════════════════════════════════════
+COLLECTION ENGINE PLANNING IMPLICATIONS (synthesis)
+═══════════════════════════════════════════════════════════════════════════════
+
+1. **No schema concept exists** for template/collection/variant — Collection Engine is greenfield. Either introduce a Prisma model or extend in-code `THEME_TEMPLATES`.
+
+2. **4 seed candidates ready** in `THEME_TEMPLATES` (classic-gold, romantic-rose, minimal-modern, royal-night) — each already has preview swatches + descriptions. These can seed a `Collection` table directly.
+
+3. **Theme row is created lazily** — wedding-creation routes do NOT pre-create it. Collection Engine should hook into the 3 creation routes (platform POST, duplicate POST, onboarding POST) to pre-create Theme with a chosen collection's values + pre-linked Penpot file.
+
+4. **1:1 Wedding↔Theme cardinality** blocks multi-variant-per-wedding without schema change. If Collection Engine needs "draft vs published" or "A/B test" themes, a new `ThemeVariant` model is required (with `weddingId + isActive:boolean` or `weddingId + status:enum`).
+
+5. **Penpot integration is already wired** end-to-end: parsePenpotUrl → store fileId/pageId/tokens in `customizations.penpot` → ThemeInjector injects `--penpot-*` CSS vars → Penpot iframe embeds via view URL. The Collection Engine can leverage this by pre-populating `customizations.penpot.fileId` from a catalog of pre-built Penpot template files.
+
+6. **Penpot file linking is per-wedding, not per-template** — there is no "template → Penpot file" mapping today. Collection Engine would need to introduce this mapping (e.g. a `Collection.penpotFileId` column or a `PENPOT_TEMPLATE_FILES` const map in config.ts).
+
+7. **7 of 11 PenpotTokens are unused** — only color.primary, color.accent, typography.display, typography.body are populated/consumed. The 7 extended tokens (color.secondary, color.background, color.text, spacing.unit, radius.sm/md/lg) are defined in the interface but never populated by code. Collection Engine could expand token usage to leverage these.
+
+8. **invitationFrameId + saveTheDateFrameId are reserved but unimplemented** — Collection Engine could be the trigger to implement the PenpotInvitationCard renderer that consumes these frame IDs.
+
+9. **Layout field is dead-code at the renderer level** — `Theme.layout` is stored and selected in ThemeCustomizer but NO renderer reads it (per Task CONSOLIDATION-PHASE2-DOUBLONS Case 3). Collection Engine could either (a) wire layout to actual rendering variants, or (b) ignore it and use Penpot layouts instead.
+
+10. **Dark mode does NOT respect --theme-* overrides** — globals.css `.dark` block hardcodes gold values instead of re-bridging. If Collection Engine supports dark-mode collections, this is a latent bug to fix.
+
+11. **Duplicate-wedding copies Penpot integration verbatim** — data leak risk. Collection Engine should add a `clearPenpotLinkOnDuplicate` step or at minimum null out `fileId`/`fileUrl` while keeping `tokens`.
+
+12. **Schema comment on `Theme.customizations` is stale** — should be updated to reflect actual `{ penpot: PenpotIntegration }` shape (or future `{ collection: {...}, penpot: {...} }` shape) when Collection Engine lands.
+
+CONSTRAINTS COMPLIANCE:
+- ✅ READ-ONLY audit — zero source files modified (only this worklog append)
+- ✅ All 8 specified files read fully (schema, config, PenpotStudio, ThemeInjector, ThemeCustomizer, /api/theme route, templates, globals.css)
+- ✅ All 6 specific questions answered with quoted code/schema lines
+- ✅ Synthesis provided for Collection Engine planning
+
+---
+Task ID: AUDIT-C
+Agent: Explore Agent (READ-ONLY)
+Task: Audit Wedding Workspace (tenant admin) + multi-tenant architecture + wedding creation flow — DETAILED technical inventory for Collection Engine planning
+
+Work Log:
+- Read previous worklog tail (Tasks CONSOLIDATION-PHASE2-DOUBLONS, CONSOLIDATION-FIXES-2CRITICAL, PENPOT-NATIVE-INTEGRATION, AUDIT-A, AUDIT-B) to understand prior context — especially AUDIT-A's findings on the 3 wedding-creation routes and the lazily-created Theme row.
+- Read in full: src/app/w/[slug]/admin/page.tsx (573 LOC), src/app/api/platform/weddings/route.ts (226 LOC), src/app/api/onboarding/create-wedding/route.ts (547 LOC), src/app/api/onboarding/publish/route.ts (117 LOC), src/app/api/platform/weddings/[id]/duplicate/route.ts (235 LOC), prisma/schema.prisma (432 LOC), src/lib/db.ts (47 LOC), src/lib/tenant-context.ts (374 LOC), src/lib/prisma-extensions/tenant-scoped.ts (175 LOC), src/lib/auth.ts (322 LOC), src/lib/wedding-status.ts (77 LOC), src/lib/themes/templates.ts (212 LOC), src/app/api/theme/route.ts (125 LOC), src/app/api/theme/apply-template/route.ts (75 LOC), src/app/w/[slug]/wedding-context.tsx (61 LOC), src/app/w/[slug]/layout.tsx (128 LOC), src/app/w/[slug]/admin/login/page.tsx (254 LOC), src/app/api/admin/login/route.ts (84 LOC), src/app/api/platform/login/route.ts (131 LOC), src/app/api/onboarding/leads/route.ts (280 LOC), src/app/api/onboarding/leads/[id]/convert/route.ts (129 LOC), src/app/onboarding/page.tsx (871 LOC), src/components/admin/ThemeCustomizer.tsx (615 LOC, partial — first 200 lines), src/app/platform/admin/page.tsx (2,449 LOC, partial — header, NAV_ITEMS, render switch), src/app/platform/admin/OnboardingTab.tsx (2,151 LOC, partial — wizard state + steps).
+- Verified there is NO /api/weddings/route.ts file (the user-supplied path is incorrect). Wedding creation is split across /api/platform/weddings POST, /api/onboarding/create-wedding POST, and /api/platform/weddings/[id]/duplicate POST.
+- Cross-checked tenant-scoped Prisma extension model list against actual schema — 12 models in the extension's `TENANT_SCOPED_MODELS` Set, matching 12 schema tables with NOT NULL weddingId (excluding AuditLog nullable + AdminUser nullable).
+
+CONSTRAINTS COMPLIANCE: ✅ READ-ONLY — zero source files modified (only this worklog append).
+
+═══════════════════════════════════════════════════════════════════════════════
+AUDIT-C REPORT — Wedding Workspace + Multi-Tenant + Wedding Creation Flow
+═══════════════════════════════════════════════════════════════════════════════
+
+## 1. Tenant admin tab structure (`src/app/w/[slug]/admin/page.tsx`)
+
+**File**: `src/app/w/[slug]/admin/page.tsx` — 573 LOC, the canonical tenant admin shell (per CONSOLIDATION-PHASE2 audit, this is the canonical admin; the legacy `/app/admin/page.tsx` is quasi-orphan).
+
+**TabId union** (line 57):
+```ts
+type TabId = 'dashboard' | 'guests' | 'tables' | 'media' | 'music' | 'timeline' | 'users' | 'settings' | 'access-logs' | 'appearance' | 'theme' | 'studio'
+```
+12 distinct tab IDs.
+
+**NAV_ITEMS** (lines 66–79, render order is the order in this array):
+| # | id | label | icon | superAdminOnly? |
+|---|----|-------|------|-----------------|
+| 1 | `dashboard` | Dashboard | `LayoutDashboard` | no |
+| 2 | `guests` | Invités | `Users` | no |
+| 3 | `tables` | Tables | `Grid3X3` | no |
+| 4 | `access-logs` | Accès | `FileSearch` | no |
+| 5 | `media` | Médias | `Image as ImageIcon` | no |
+| 6 | `music` | Musique | `Music` | no |
+| 7 | `timeline` | Programme | `Clock` | no |
+| 8 | `theme` | Thème | `Palette` | no — added by CONSOLIDATION-FIXES-2CRITICAL |
+| 9 | `studio` | Studio | `PenTool` | no — added by PENPOT-NATIVE-INTEGRATION |
+| 10 | `appearance` | Apparence | `Sparkles` | no |
+| 11 | `users` | Utilisateurs | `Shield` | YES |
+| 12 | `settings` | Paramètres | `Settings` | YES |
+
+The `superAdminOnly` filter at line 216–218 keeps tabs 11+12 hidden unless `isPlatformAdmin(user.role)` returns true (accepts both `PLATFORM_ADMIN` and legacy `SUPER_ADMIN`).
+
+**Slug usage**: `const slug = params.slug` (line 97) from `useParams<{ slug: string }>()`. The slug is consumed in 3 places:
+  - `useLayoutEffect` fetch interceptor (lines 139–175) — auto-attaches `X-Wedding-Slug: <slug>` header on every `/api/*` request.
+  - `useEffect` redirect-to-login guard (lines 179–184) — sends unauthenticated users to `/w/${slug}/admin/login`.
+  - `<ThemeCustomizer slug={slug} />` (line 247) and `<PenpotStudio slug={slug} />` (line 253) — explicit prop bypasses the wedding picker those components render when no slug is provided (platform-admin context).
+
+**Fetch interceptor** (lines 139–175, `useLayoutEffect`):
+- Runs once per slug change, BEFORE child component useEffects fire (so the header is in place by the time Dashboard/GuestManager/etc. issue their first `/api/*` request).
+- Wraps `window.fetch` globally.
+- For any URL starting with `/api/`, it:
+  1. Builds a fresh `Headers` object from `init?.headers` (or from the input `Request`'s headers).
+  2. If `X-Wedding-Slug` header is NOT already present, sets it to the current `slug`.
+  3. **Consolidation fix (PENPOT-NATIVE-INTEGRATION)**: If `Authorization` header is NOT already present, reads `localStorage.getItem('admin_token')` and sets `Authorization: Bearer <token>`. This additive behavior lets ThemeCustomizer + PenpotStudio (which don't receive an explicit `token` prop) call authenticated PUT/POST endpoints without changing their code.
+  4. Restores the original `window.fetch` on cleanup.
+- Cleanup return runs when `slug` changes or the component unmounts.
+
+**Render content switch** (lines 220–259): straightforward `switch (activeTab)` mapping each TabId to its component. Each component receives `token={token}` and `onSessionExpired={handleSessionExpired}` props, except `theme` and `studio` which receive `slug={slug}` instead (they use the fetch interceptor for auth).
+
+**Loading screen** (lines 264–283): shown during SSR, hydration, or missing-token window. Uses `useSyncExternalStore(emptySubscribe, getTrue, getFalse)` (line 105) to detect client hydration safely without triggering the `react-hooks/set-state-in-effect` lint rule.
+
+**Auth state init** (lines 112–128): lazy `useState` initializers read `localStorage.getItem('admin_token')` and `localStorage.getItem('admin_user')` on the client only (guarded by `typeof window !== 'undefined'`). Server renders null. No hydration mismatch because the loading screen is rendered until `mounted` flips true.
+
+## 2. Wedding creation API
+
+⚠️ **The user's brief assumes a file at `src/app/api/weddings/route.ts` — that file does NOT exist.** There are 3 distinct wedding-creation routes, none at that path:
+
+### (a) `POST /api/platform/weddings` — bare wedding create (platform admin only)
+**File**: `src/app/api/platform/weddings/route.ts` (lines 110–225).
+
+**Required body fields**:
+- `slug` (string, validated by `isValidSlug` — 3-32 lowercase alphanumeric/hyphen, no reserved words). 400 if invalid.
+- `brideName` (string, must be `!== undefined`)
+- `groomName` (string, must be `!== undefined`)
+
+**Optional body fields**:
+- `weddingDate` (ISO string → `new Date()`)
+- `timezone` (defaults to `'Africa/Kinshasa'`)
+- `venueName`, `venueCity` (passed through)
+- `status` (validated against `VALID_STATUSES` = DRAFT/PUBLISHED/COMPLETED/ARCHIVED/SUSPENDED; defaults to `'DRAFT'`)
+- `plan` (validated against `VALID_PLANS` = TRIAL/ESSENTIEL/PREMIUM/ELITE; defaults to `'TRIAL'`)
+
+**Behavior**:
+- Uniqueness check on slug (409 if taken).
+- Computes `coupleLabel` via `buildCoupleLabel(brideName, groomName)` from `@/lib/types`.
+- Calls `db.wedding.create({ data: { slug, brideName, groomName, coupleLabel, weddingDate, timezone, venueName, venueCity, status, plan, isDefault: false, publishedAt: status==='PUBLISHED' ? new Date() : null } })`.
+- Writes a platform-level AuditLog (`weddingId: null`, action `CREATE_WEDDING`).
+- **DOES NOT create a Theme row, Settings rows, MusicTrack row, or any other tenant-scoped entity.** This is a bare-bones wedding — the organizer must configure everything post-creation via the tenant admin tabs.
+
+### (b) `POST /api/onboarding/create-wedding` — transactional onboarding wizard (platform admin only)
+**File**: `src/app/api/onboarding/create-wedding/route.ts` (lines 93–546).
+
+This is the **canonical couple-onboarding route** invoked by the OnboardingTab wizard (see §10 below).
+
+**Required body fields** (all validated with explicit error messages in French):
+- `brideName` (1–100 chars), `groomName` (1–100 chars)
+- `organizerName` (1–100 chars)
+- `slug` (validated by `isValidSlug`)
+- `plan` (TRIAL/ESSENTIEL/PREMIUM/ELITE via `isValidPlan`)
+- `billingCycle` (MONTHLY/ANNUAL/ONE_TIME via `isValidBillingCycle`)
+- `organizerEmail` (RFC email regex)
+- `organizerPassword` (min 8 chars)
+
+**Optional body fields**:
+- `weddingDate` (ISO string), `timezone` (default `'Africa/Kinshasa'`)
+- `venueName`, `venueCity` (strings)
+- `amountAgreed` (USD cents, integer 0–1,000,000; if omitted uses plan default via `resolveAmountUsdCents`)
+- `paymentMethod` (MOBILE_MONEY/BANK_TRANSFER/CASH/OTHER)
+- `whatsappPhone` (max 30 chars)
+- `notes` (max 5000 chars)
+- `leadId` (string — links the lead for auto-conversion)
+- `publish` (boolean — true → status=PUBLISHED + publishedAt=now; false/omitted → status=DRAFT)
+
+**Atomic `$transaction` (lines 320–506) creates, in order**:
+1. **Wedding** (DRAFT or PUBLISHED based on `publish`; isDefault=false; plan=body.plan)
+2. **15 essential Settings rows** (lines 365–396):
+   - `bride_name`, `groom_name`
+   - `site_title` = `"Mariage {coupleLabel}"`
+   - `site_subtitle` = localized French date string (or empty)
+   - `wedding_date` = ISO yyyy-mm-dd
+   - `wedding_time` = `'21:30'` (hardcoded default)
+   - `venue_time` = `'21H30'` (hardcoded default)
+   - `venue_name`, `venue_city`, `venue_address` (empty)
+   - `hashtag` = `#{bride}Et{groom}{year}` (regex-sanitized)
+   - `welcome_message`, `invitation_message` (template strings)
+   - `primary_color` = `'#D4A853'` ⚠️ **vestigial** — see below
+   - `music_enabled` = `'false'`, `music_volume` = `'0.30'`
+3. **AdminUser** (role=ORGANIZER, weddingId=newWedding.id, bcrypt-hashed password via `hashPassword`)
+4. **Subscription** (status=PENDING_PAYMENT, plan=body.plan, amountAgreed, currency='usd', billingCycle, paymentMethod, whatsappPhone, notes, trialEndsAt=null)
+5. **Invoice** (status=OPEN, amountDue=resolvedAmountUsdCents, amountPaid=0, currency='usd', billingCycle, paymentMethod, whatsappPhone, notes)
+6. **(Optional) Lead conversion** (if `leadId` provided — sets Lead.status=CONVERTED + convertedWeddingId + convertedAt)
+7. **3 platform-level AuditLogs** (CREATE_WEDDING, CREATE_USER, BILLING_INVOICE_CREATED)
+
+**Post-transaction side effects**:
+- `invalidateWeddingCache(normalizedSlug)` — clears the 60s in-memory wedding cache.
+- Builds WhatsApp message + deeplink via `buildWhatsAppMessage` + `buildWhatsAppDeeplink` (from `@/lib/billing`).
+
+**Response 201** returns: `{ wedding, organizer, subscription, invoice, whatsapp: { url, recipient, message }, lead }`.
+
+⚠️ **CRITICAL GAP for Collection Engine**:
+- **NO Theme row is created.** The Settings row `primary_color: '#D4A853'` is vestigial — it is NOT consumed by `/api/theme` GET (which reads only from the `Theme` table, falling back to `DEFAULT_THEME` constants when no Theme row exists). The `primary_color` Setting is leftover from the pre-Phase-1 single-tenant era.
+- **NO MusicTrack row is created.** The Settings `music_enabled`/`music_volume` are read by the music player directly (MusicTrack is dead per CONSOLIDATION-PHASE2 audit).
+- **NO EventTimeline, NO CoupleStory, NO Media are created.**
+- Until the organizer opens the Thème tab and either saves a custom theme or clicks "Appliquer" on a template, the public `/api/theme` returns the `DEFAULT_THEME` constant (classic-gold values: primaryColor=#D4A853, accentColor=#C8785A, fontDisplay=Cormorant Garamond, fontBody=Inter, layout=classic).
+
+### (c) `POST /api/platform/weddings/[id]/duplicate` — duplicate wedding
+**File**: `src/app/api/platform/weddings/[id]/duplicate/route.ts` (lines 29–234). See §3 below.
+
+## 3. Duplicate wedding route — what gets copied
+
+**File**: `src/app/api/platform/weddings/[id]/duplicate/route.ts` (235 LOC).
+
+**Body**: `{ newSlug: string, newBrideName?: string, newGroomName?: string }`. All optional except `newSlug`.
+
+**Behavior** (11 numbered steps in the source):
+1. Fetches source wedding with `include: { settings, theme, music, timeline, stories }`.
+2. Validates `newSlug` (isValidSlug + uniqueness check).
+3. Resolves final bride/groom names (falls back to source's values if not provided).
+4. Creates new wedding: copies `weddingDate`, `timezone`, all 6 venue fields (`venueName`, `venueAddress`, `venueCity`, `venueLat`, `venueLng`, `venueReference`), forces `status='DRAFT'`, `plan='TRIAL'`, `isDefault=false`, `publishedAt=null`. Does NOT copy `customDomain`.
+5. **Copies Settings** via `createMany` (key/value pairs verbatim, including the vestigial `primary_color` Setting).
+6. **Copies Theme** (1:1 relation) — copies `primaryColor`, `accentColor`, `fontDisplay`, `fontBody`, `layout`, `customizations` (the JSON string including any `penpot` integration blob).
+7. **Copies MusicTrack** (1:1) — copies `storageProvider`, `storageKey`, `url`, `title`, `volume`; forces `enabled=false` + `autoplay=false`. The file URL is NOT re-hosted (couples can replace it later).
+8. **Copies EventTimeline** via `createMany`.
+9. **Copies CoupleStory** via `createMany` (text + image URLs — image files NOT copied, URLs still point to source wedding's `/uploads/<source-slug>/...` paths).
+10. Writes platform-level AuditLog (`action: DUPLICATE_WEDDING`).
+11. Calls `invalidateWeddingCache(normalizedSlug)` for safety.
+
+**Response 201**: `{ wedding: { id, slug, coupleLabel, status } }`.
+
+**What is NOT copied**:
+- Guests (intentional — GDPR/PII protection)
+- Tables
+- Media files (only CoupleStory image URLs are referenced, not copied)
+- GuestSession, GuestAccessLog
+- AuditLog
+- Subscription, Invoice
+- Invitation
+- AdminUser accounts
+- `customDomain` (Premium/Élite feature — must be re-attached manually)
+
+⚠️ **Data leak risk flagged by AUDIT-A**: the `customizations.penpot` blob is copied verbatim — the new wedding's PenpotStudio will show the source wedding's Penpot file as "Lié" until manually unlinked. The Collection Engine should clear/nullify `customizations.penpot.fileId` + `fileUrl` on duplication while keeping `tokens`.
+
+## 4. Wedding model schema (all fields)
+
+**File**: `prisma/schema.prisma` lines 15–54.
+
+```prisma
+model Wedding {
+  id              String        @id @default(cuid())
+  slug            String        @unique
+  brideName       String        @default("")
+  groomName       String        @default("")
+  coupleLabel     String        @default("")
+  weddingDate     DateTime?
+  timezone        String        @default("Africa/Kinshasa")
+  venueName       String?
+  venueAddress    String?
+  venueCity       String?
+  venueLat        String?
+  venueLng        String?
+  venueReference  String?
+  status          String        @default("DRAFT")  // DRAFT, PUBLISHED, COMPLETED, ARCHIVED, SUSPENDED
+  plan            String        @default("TRIAL")  // TRIAL, ESSENTIEL, PREMIUM, ELITE
+  customDomain    String?       @unique
+  isDefault       Boolean       @default(false)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  publishedAt     DateTime?
+
+  // Relations — 14 tenant-scoped child models
+  admins          AdminUser[]
+  guests          Guest[]
+  tables          Table[]
+  media           Media[]
+  timeline        EventTimeline[]
+  stories         CoupleStory[]
+  settings        Settings[]
+  theme           Theme?
+  music           MusicTrack?
+  auditLogs       AuditLog[]
+  guestSessions   GuestSession[]
+  guestAccessLogs GuestAccessLog[]
+  subscription    Subscription?
+  usageCounters   UsageCounter[]
+  invitations     Invitation[]
+  invoices        Invoice[]
+}
+```
+
+**Field inventory (20 scalar columns + 16 relations)**:
+- Identity: `id` (cuid), `slug` (unique — used in `/w/{slug}` routing)
+- Couple: `brideName`, `groomName`, `coupleLabel` (computed via `buildCoupleLabel` at insert time)
+- Event: `weddingDate` (nullable), `timezone` (default Africa/Kinshasa)
+- Venue: `venueName`, `venueAddress`, `venueCity`, `venueLat`, `venueLng`, `venueReference` (all nullable — lat/lng stored as String, not Float)
+- Lifecycle: `status` (5 values, default DRAFT), `plan` (4 values, default TRIAL), `publishedAt` (nullable, set when transitioning to PUBLISHED)
+- Platform: `customDomain` (unique, nullable — Premium/Élite only), `isDefault` (boolean — only the migration script may set true; protected legacy client at `/`)
+- Timestamps: `createdAt`, `updatedAt`
+
+**Status lifecycle** (`src/lib/wedding-status.ts` lines 43–49):
+```
+DRAFT      → PUBLISHED, ARCHIVED
+PUBLISHED  → COMPLETED, SUSPENDED, ARCHIVED
+COMPLETED  → ARCHIVED
+SUSPENDED  → PUBLISHED, ARCHIVED
+ARCHIVED   → DRAFT, PUBLISHED   (un-archive)
+```
+Same-status transitions are idempotent no-ops (always allowed). Per CONSOLIDATION-PHASE2 audit Case 14, COMPLETED + ARCHIVED have NO UI buttons yet (only DRAFT/PUBLISHED/SUSPENDED are wired in the platform admin).
+
+## 5. User model schema (all fields + role field)
+
+**File**: `prisma/schema.prisma` lines 62–76. The model is named `AdminUser` (kept for backward compat — Phase 3 plan was to alias to `User` but the rename never happened).
+
+```prisma
+model AdminUser {
+  id           String     @id @default(cuid())
+  email        String     @unique
+  password     String                                     // bcrypt hash (12 rounds — see auth.ts hashPassword)
+  name         String
+  role         String     @default("CONTROLLER")          // SUPER_ADMIN, PLATFORM_ADMIN, ORGANIZER, CONTROLLER, RECEPTION
+  weddingId    String?                                    // null for SUPER_ADMIN/PLATFORM_ADMIN (platform-wide); set for ORGANIZER/STAFF
+  lastLoginAt  DateTime?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  wedding      Wedding?   @relation(fields: [weddingId], references: [id], onDelete: Cascade)
+  auditLogs    AuditLog[]
+  @@index([weddingId])
+}
+```
+
+**Role field**: `role` is a free-form `String` (no Prisma enum). Defaults to `'CONTROLLER'`. Valid values per `src/lib/types.ts` (line 61): `'PLATFORM_ADMIN' | 'SUPER_ADMIN' | 'ORGANIZER' | 'RECEPTION' | 'CONTROLLER'`.
+
+**Role hierarchy** (`src/lib/auth.ts` lines 147–156, `roleLevel` function):
+- PLATFORM_ADMIN = 4
+- SUPER_ADMIN = 4 (legacy alias — treated identically to PLATFORM_ADMIN by `isPlatformAdmin()`)
+- ORGANIZER = 3
+- RECEPTION = 2
+- CONTROLLER = 1
+
+**Role normalization** (`src/lib/types.ts` line 75, `normalizeRole`): maps SUPER_ADMIN → PLATFORM_ADMIN on creation. Legacy DB rows keep their original value.
+
+**weddingId semantics**:
+- NULL for PLATFORM_ADMIN / SUPER_ADMIN (platform-wide access; can manage any wedding)
+- NON-NULL for ORGANIZER / RECEPTION / CONTROLLER (locked to their wedding via `resolveAdminTenant` — see §7)
+
+## 6. Multi-tenant tables (with weddingId)
+
+Per Phase 2 worklog (line 188), the **8 tables originally made `weddingId NOT NULL`** in Phase 2 (the "core content" tables):
+1. `Guest` (line 180) — `@@unique([weddingId, invitationCode])`
+2. `Table` (line 218) — `@@unique([weddingId, number])`
+3. `Media` (line 234)
+4. `EventTimeline` (line 255)
+5. `CoupleStory` (line 271)
+6. `Settings` (line 290) — `@@unique([weddingId, key])`
+7. `GuestSession` (line 336)
+8. `GuestAccessLog` (line 355)
+
+**Additional tables added in later phases with NOT NULL weddingId** (total is 12, not 8):
+9. `Theme` (line 303) — `@unique` (1:1 with Wedding)
+10. `MusicTrack` (line 317) — `@unique` (1:1 with Wedding)
+11. `Invitation` (line 392) — added in Phase 7 (per schema comment)
+12. `UsageCounter` (line 163) — `@@unique([weddingId, metric, period])`
+
+**Billing tables with NOT NULL weddingId**:
+13. `Subscription` (line 94) — `@unique` (1:1 with Wedding)
+14. `Invoice` (line 130) — denormalized `weddingId` for direct platform-wide queries (also has `subscriptionId` relation)
+
+**Tables with NULLABLE weddingId** (NOT strictly tenant-scoped):
+- `AdminUser.weddingId` — nullable (null for SUPER_ADMIN/PLATFORM_ADMIN per §5)
+- `AuditLog.weddingId` — nullable (null for platform-level events like CREATE_WEDDING, PLATFORM_LOGIN, DUPLICATE_WEDDING, etc.)
+
+**Tables with NO weddingId at all**:
+- `Lead` — has `convertedWeddingId String?` as a denormalized pointer (no FK to avoid cascade complexity, per schema comment line 424)
+
+The tenant-scoped Prisma extension (§7 below) explicitly lists 12 models in its `TENANT_SCOPED_MODELS` Set — the 12 above (excluding Subscription/Invoice which are billing-handled separately, and excluding AuditLog/AdminUser which have nullable weddingId).
+
+## 7. Multi-tenant mechanism (AsyncLocalStorage + Prisma extension)
+
+### Architecture overview
+```
+Request → extractSlugFromRequest() → resolveWeddingBySlug() → buildTenantContext()
+       → runWithTenant(ctx, () => handler())    ← sets AsyncLocalStorage
+              → tenantDb.model.findMany()       ← Prisma extension reads ALS, auto-injects weddingId
+```
+
+### (a) `src/lib/tenant-context.ts` (374 LOC)
+
+**AsyncLocalStorage** (line 43):
+```ts
+const tenantAls = new AsyncLocalStorage<TenantContext>();
+```
+
+**`TenantContext` interface** (lines 28–39):
+```ts
+export interface TenantContext {
+  weddingId: string;     // never null when context is active
+  slug: string;
+  status: string;        // snapshot at resolution time (gates PUBLISHED/DRAFT)
+  plan: string;          // snapshot at resolution time (for billing limits — Phase 6)
+  isDefault: boolean;    // marks the legacy wedding served at "/"
+}
+```
+
+**`runWithTenant(ctx, fn)`** (line 55): thin wrapper around `tenantAls.run(ctx, fn)`. All Prisma queries inside `fn` (and any awaited continuations) inherit the context via ALS propagation.
+
+**`getTenantContext()`** (line 64): returns the active context or `undefined` if called outside a `runWithTenant()` scope. The Prisma extension reads this on every query.
+
+**`requireTenantWeddingId()`** (line 72): fail-loud accessor — throws if called outside `runWithTenant()`.
+
+**Slug → Wedding resolution + 60s in-memory cache** (lines 100–158):
+- `WEDDING_CACHE_TTL_MS = 60 * 1000`
+- `weddingCache = new Map<string, CachedWedding>()`
+- `resolveWeddingBySlug(slug)` — cache-first lookup, falls back to `db.wedding.findUnique({ where: { slug } })` and caches the result.
+- `resolveDefaultWedding()` — convenience wrapper that throws if `DEFAULT_WEDDING_SLUG` (`'josue-hornella'` per `src/lib/types.ts` line 125) is missing from DB.
+- `invalidateWeddingCache(slug?)` — clears one entry or the entire cache. Called by /api/onboarding/create-wedding, /api/onboarding/publish, /api/platform/weddings/[id]/duplicate, and any route that mutates wedding identity/status/plan.
+
+**Request → tenant resolution** (3 entry points):
+
+1. **`extractSlugFromRequest(request)`** (line 170) — priority: `X-Wedding-Slug` header → `?wedding=slug` query → undefined.
+2. **`resolvePublicTenant(request)`** (line 202) — for unauthenticated requests. Falls back to `DEFAULT_WEDDING_SLUG` if no slug provided. Returns 404 if slug unknown. **Gates by status**: DRAFT weddings are 404 (except the default), SUSPENDED weddings return 403. PUBLISHED/COMPLETED/ARCHIVED are visible.
+3. **`resolveAdminTenant(request, user)`** (line 268) — for authenticated requests.
+   - Non-platform admin: IGNORES the X-Wedding-Slug header — locks to `user.weddingId` to prevent cross-tenant access. Fetches the wedding by ID, builds context.
+   - Platform admin: respects X-Wedding-Slug header (or falls back to default wedding) so platform admins can operate on any wedding.
+
+**Higher-Order route wrappers** (lines 326–373):
+- `withPublicTenant(handler)` — wraps a public route. Calls `resolvePublicTenant`, returns 404 on unknown slug, otherwise runs `handler` inside `runWithTenant`.
+- `withAdminTenantHandler(request, user, handler)` — wraps an admin route. Caller must first authenticate the user (via `getAuthUser`) and pass it in. Calls `resolveAdminTenant`, runs `handler` inside `runWithTenant`.
+
+### (b) `src/lib/prisma-extensions/tenant-scoped.ts` (175 LOC)
+
+**`TENANT_SCOPED_MODELS` Set** (lines 45–58) — 12 models:
+```ts
+const TENANT_SCOPED_MODELS = new Set<string>([
+  'Guest', 'Table', 'Media', 'EventTimeline', 'CoupleStory', 'Settings',
+  'GuestSession', 'GuestAccessLog', 'Theme', 'MusicTrack', 'Invitation', 'UsageCounter',
+]);
+```
+Excluded intentionally:
+- `AuditLog` — allows null weddingId for platform-level events.
+- `AdminUser` — SUPER_ADMIN has null weddingId.
+- `Subscription`, `Invoice`, `Lead` — billing/admin-managed separately.
+
+**Auto-injection rules** (lines 60–127):
+| Operation | Auto-injects? | Where |
+|-----------|---------------|-------|
+| `findMany`, `findFirst`, `count`, `groupBy`, `aggregate` | YES | `args.where.weddingId = ctx.weddingId` |
+| `updateMany`, `deleteMany` | YES | `args.where.weddingId = ctx.weddingId` |
+| `create` | YES | `args.data.weddingId = ctx.weddingId` |
+| `createMany`, `createManyAndReturn` | YES | each item in `args.data[]` gets `weddingId` |
+| `findUnique`, `update`, `delete`, `upsert` | **NO** | callers must add weddingId explicitly OR use composite unique key (e.g. `weddingId_key`) |
+
+**Backward compat** (lines 96–99): when no context is active (outside `runWithTenant`), the extension passes through queries unchanged. Legacy code paths that still use `db` directly (e.g. the platform admin wedding CRUD that needs cross-tenant queries) work as before.
+
+**`assertTenantOwned(model, id, weddingId)`** helper (lines 153–171) — for findUnique/update/delete that bypass auto-injection. Looks up entity by id, returns 404-equivalent if not found OR if `entity.weddingId !== weddingId` (no information leak about cross-tenant existence).
+
+### (c) `src/lib/db.ts` (47 LOC)
+
+Two exports:
+- `db` — raw Prisma client. Used for: platform-level operations (Wedding CRUD), auth lookups, AuditLog writes (null weddingId), cross-tenant super-admin queries. **WARNING in source comment**: when using `db` directly against tenant-scoped models, callers MUST manually add `weddingId` to all `where` clauses.
+- `tenantDb = db.$extends(tenantScopedExtension)` — tenant-scoped client. Used inside `runWithTenant()` for auto-scoped queries.
+
+Both are cached on `globalThis` in non-production to survive Next.js hot-reload.
+
+### (d) Where the AsyncLocalStorage gets populated
+
+The ALS is populated ONLY by `runWithTenant(ctx, fn)` calls. The 3 entry points that invoke it:
+
+1. **`withPublicTenant` HOC** (tenant-context.ts line 332) — wraps public GET routes like `/api/theme` GET, `/api/media` GET, `/api/settings` GET, etc. The slug is extracted from the `X-Wedding-Slug` header (set by the client fetch interceptor in `/w/[slug]/admin/page.tsx` AND by the `useTenantFetch()` hook in `/w/[slug]/wedding-context.tsx`).
+
+2. **`withAdminTenantHandler` HOC** (tenant-context.ts line 360) — wraps authenticated admin routes. Caller first authenticates via `getAuthUser(request)` then passes the user. Used by `/api/theme` PUT, `/api/theme/apply-template` POST, `/api/settings` PUT, `/api/guests` POST, etc.
+
+3. **Direct `runWithTenant` calls** — rare; not found in audited routes. All audited routes go through the HOCs.
+
+**On the client side**, the ALS context is "shadowed" by the X-Wedding-Slug header pattern:
+- `/w/[slug]/layout.tsx` (server component) resolves the wedding by slug, provides it via `<WeddingContextProvider>` (React Context).
+- `/w/[slug]/wedding-context.tsx` exposes `useWedding()` (read identity) and `useTenantFetch()` (returns a fetch wrapper that sets `X-Wedding-Slug: slug`).
+- `/w/[slug]/admin/page.tsx` installs a GLOBAL fetch interceptor (useLayoutEffect, see §1) that sets `X-Wedding-Slug` on every `/api/*` call so all existing admin components work unchanged.
+
+## 8. Platform admin structure (tabs + wedding picker)
+
+**File**: `src/app/platform/admin/page.tsx` (2,449 LOC — single-file behemoth).
+
+**TabId union** (line 215):
+```ts
+type TabId = 'dashboard' | 'weddings' | 'users' | 'audit' | 'billing' | 'onboarding' | 'appearance' | 'studio'
+```
+
+**NAV_ITEMS** (lines 223–232, 8 tabs in this order):
+| # | id | label | icon |
+|---|----|-------|------|
+| 1 | `dashboard` | Vue d'ensemble | `LayoutDashboard` |
+| 2 | `weddings` | Mariages | `Heart` |
+| 3 | `billing` | Facturation | `Wallet` |
+| 4 | `onboarding` | Onboarding | `Rocket` |
+| 5 | `users` | Utilisateurs | `UsersIcon` |
+| 6 | `audit` | Journal d'audit | `ScrollText` |
+| 7 | `appearance` | Apparence | `Palette` |
+| 8 | `studio` | Studio Penpot | `PenTool` |
+
+Note: ALL 8 tabs are visible to platform admins (no `superAdminOnly` filter — platform admin is by definition the highest role).
+
+**Render content switch** (lines 2188–2210):
+```ts
+case 'dashboard': return <DashboardTab fetchWithAuth={fetchWithAuth} />
+case 'weddings':  return <WeddingsTab fetchWithAuth={fetchWithAuth} />
+case 'billing':   return <BillingTab fetchWithAuth={fetchWithAuth} />
+case 'onboarding':return <OnboardingTab fetchWithAuth={fetchWithAuth} />
+case 'users':     return <UsersTab fetchWithAuth={fetchWithAuth} />
+case 'audit':     return <AuditTab fetchWithAuth={fetchWithAuth} />
+case 'appearance':return <ThemeCustomizer />     // ← no slug prop!
+case 'studio':    return <PenpotStudio />         // ← no slug prop!
+default:          return <DashboardTab fetchWithAuth={fetchWithAuth} />
+```
+
+**`fetchWithAuth` helper** (lines 311–342) — used by all *Tab components except appearance/studio. Reads token from localStorage via `getToken()`, attaches `Authorization: Bearer <token>` header, handles 401 by calling `onSessionExpired` (clears localStorage + redirects to `/platform/login`).
+
+### Wedding picker — how platform admin selects which wedding to manage
+
+⚠️ **There is NO top-level wedding picker on the platform admin shell.** Instead, the wedding selection is **delegated to each per-wedding component**:
+
+**ThemeCustomizer** (`src/components/admin/ThemeCustomizer.tsx` lines 71–127):
+- Accepts an optional `slug` prop.
+- When `slug` is omitted (platform admin context — `<ThemeCustomizer />` in renderContent line 2201), it:
+  1. Fetches `/api/platform/weddings?limit=100` with `credentials: 'include'` (uses the httpOnly `auth_token` cookie set by `/api/platform/login` — NOT the Bearer token from localStorage).
+  2. Stores the list in `weddingOptions` state.
+  3. Defaults `selectedSlug` to the first wedding in the list (line 121: `setSelectedSlug((prev) => prev || opts[0]?.slug || '')`) — explicitly NOT defaulting to `'josue-hornella'` (Phase 3 ÉTAPE 6 fix to prevent silent cross-tenant theme edits).
+  4. Renders a `<Select>` dropdown (lines 277–301) listing each wedding as `<coupleLabel> — /w/<slug>`.
+  5. The selected slug drives ALL subsequent API calls via `const headers = { 'X-Wedding-Slug': slug }` (line 95).
+
+**PenpotStudio** (`src/components/penpot/PenpotStudio.tsx`) — same pattern: optional `slug` prop, internal wedding picker when omitted. (Not re-read in this audit — already documented in AUDIT-A.)
+
+**Other platform-admin tabs (Dashboard, Weddings, Billing, Onboarding, Users, Audit)** — these are platform-wide aggregations, NOT per-wedding. They do not need a wedding picker because they query across all weddings via `/api/platform/*` endpoints.
+
+### Differences from tenant admin
+| Aspect | Tenant admin (`/w/[slug]/admin`) | Platform admin (`/platform/admin`) |
+|--------|----------------------------------|------------------------------------|
+| Auth | `admin_token` in localStorage + Bearer header (via fetch interceptor) | `admin_token` in localStorage + `auth_token` httpOnly cookie (set by /api/platform/login) |
+| Tenant scoping | Implicit via `X-Wedding-Slug` header (locked to URL slug) | Per-component wedding picker (no global lock — platform admins can switch weddings freely) |
+| Tab count | 12 | 8 |
+| Tabs | dashboard, guests, tables, access-logs, media, music, timeline, theme, studio, appearance, users, settings | dashboard, weddings, billing, onboarding, users, audit, appearance, studio |
+| Lead/billing visibility | NO | YES (billing + onboarding are platform-only) |
+| Audit log visibility | Only own wedding's logs (via access-logs tab) | Platform-wide (weddingId-null events too) |
+| Couples management | NO | YES (weddings tab: list, edit, delete, duplicate, suspend) |
+| Per-wedding couple label in sidebar | YES (from `wedding.coupleLabel`) | NO (platform-level user.name only) |
+
+## 9. Auth mechanism
+
+**File**: `src/lib/auth.ts` (322 LOC).
+
+**Stack**: Custom JWT (8h expiry) + bcrypt (12 rounds). NOT NextAuth.
+
+### Token generation & verification
+- `getJwtSecret()` (lines 12–30): lazy init. Reads `process.env.JWT_SECRET`. If missing in production, logs a warning but does NOT crash — falls back to a hardcoded dev secret. This is intentional so the module loads even without the env var.
+- `generateToken(user: AuthUser)` (lines 62–76): signs JWT with claims `{ id, email, name, role, weddingId, isPlatformAdmin }`. `isPlatformAdmin` is a derived boolean from `isPlatformAdmin(user.role)` for fast RBAC checks in middleware.
+- `verifyToken(token)` (lines 78–91): verifies signature, returns the `AuthUser` payload (without `isPlatformAdmin` — that's recomputed server-side).
+- Token expiry: `8h` (line 74).
+
+### Two parallel auth channels
+1. **Tenant admin** (`/api/admin/login` route, `src/app/api/admin/login/route.ts`):
+   - Returns `{ token, user }` JSON in the response body.
+   - Does NOT set any cookie.
+   - Client (`/w/[slug]/admin/login/page.tsx` lines 99–100) stores in localStorage:
+     ```ts
+     localStorage.setItem('admin_token', data.token);
+     localStorage.setItem('admin_user', JSON.stringify(data.user));
+     ```
+   - Subsequent API calls: client manually attaches `Authorization: Bearer <token>` header. **The fetch interceptor in `/w/[slug]/admin/page.tsx` does this automatically** (see §1) so individual components don't have to.
+
+2. **Platform admin** (`/api/platform/login` route, `src/app/api/platform/login/route.ts`):
+   - Same JWT generation, same `{ user, token }` JSON response.
+   - ADDITIONALLY calls `setAuthCookie(response, token)` (line 121) which sets an `auth_token` httpOnly cookie (maxAge 8h, secure in production, sameSite=lax, path=/).
+   - The cookie is consumed by server components via `getServerAuthUser()` (auth.ts lines 232–245) and by the ThemeCustomizer's wedding-picker fetch with `credentials: 'include'` (ThemeCustomizer.tsx line 108).
+
+### Token verification on every request
+- `getAuthUser(request)` (lines 102–117): reads token from EITHER `Authorization: Bearer` header OR `auth_token` cookie (line 98). Verifies signature, then re-fetches the user from DB to refresh `role` + `weddingId` (prevents stale-claim attacks — e.g. user was demoted but token still valid).
+- `getServerAuthUser()` (lines 232–245): SSR-friendly variant that reads only the cookie (no NextRequest needed). Used in server components like `/platform/layout.tsx`.
+
+### RBAC helpers
+- `hasPermission(role, requiredRoles[])` (line 139) — role-level comparison (PLATFORM_ADMIN=4, SUPER_ADMIN=4, ORGANIZER=3, RECEPTION=2, CONTROLLER=1). Any required role with level ≤ user level grants access.
+- `requireRole(user, requiredRoles[])` (line 186) — returns null if granted, 401/403 NextResponse if denied.
+- `requirePlatformAdmin(user)` (line 209) — sugar for `requireRole(user, ['PLATFORM_ADMIN'])`. Used to guard all `/api/platform/*` routes.
+- `assertWeddingAccess(user, weddingId)` (line 170) — returns true if platform admin OR `user.weddingId === weddingId`. Used after `withAdminTenantHandler` resolves the context.
+- `ROLE_LABELS` (lines 272–278) — French display names for each role.
+
+### Rate limiting
+- `checkLoginRateLimit(email)` (lines 301–317) — 5 attempts / 15 min per email. In-memory Map (single-instance only — comment notes Redis needed for Phase 9+ multi-instance).
+- `resetLoginRateLimit(email)` (line 319) — clears on successful login.
+- Additional IP-based rate limit (10/15min) enforced in the login route handlers via `getRateLimitKey(request)` + `checkRateLimit` from `@/lib/rate-limit`.
+
+### Fetch interceptor behavior summary
+In `/w/[slug]/admin/page.tsx` (lines 139–175), the interceptor attaches TWO headers on every `/api/*` call (additive — never overrides existing headers):
+1. `X-Wedding-Slug: <url-slug>` — for tenant scoping via `extractSlugFromRequest()`.
+2. `Authorization: Bearer <localStorage.admin_token>` — for JWT auth via `getTokenFromRequest()`.
+
+This dual-header pattern is what lets ThemeCustomizer and PenpotStudio (which receive only `slug` as prop, no `token`) call authenticated PUT/POST endpoints successfully from the tenant admin shell.
+
+## 10. Current wedding creation UX
+
+### Two distinct flows
+
+**Flow A — Couple-initiated (lead capture only, no wedding created)**:
+- URL: `/onboarding` (file: `src/app/onboarding/page.tsx`, 871 LOC).
+- Single-page form with hero + plans preview + form.
+- Form fields: brideName, groomName, weddingDate (date input), venueCity, email (required), phone, plan (default PREMIUM), message.
+- Uses `react-hook-form` + `zod` resolver.
+- Submits POST `/api/onboarding/leads` (public, rate-limited 5/15min per IP).
+- On success: shows a thank-you screen, NO wedding is created, NO account is created. The couple is told the platform team will contact them.
+- The Lead lands in the platform admin's Onboarding tab with status `NEW`.
+
+**Flow B — Platform-admin-initiated (the actual wedding creation)**:
+- URL: `/platform/admin` → Onboarding tab → click "Créer un mariage" button OR click a lead's "Ouvrir le wizard" dropdown item.
+- File: `src/app/platform/admin/OnboardingTab.tsx` (2,151 LOC).
+- Opens a 5-step wizard dialog.
+
+### The 5-step wizard (`OnboardingTab.tsx`)
+
+**WIZARD_STEPS** (lines 279–285):
+```ts
+const WIZARD_STEPS = [
+  { id: 1, label: 'Couple' },
+  { id: 2, label: 'Plan' },
+  { id: 3, label: 'Tarifs' },
+  { id: 4, label: 'Organisateur' },
+  { id: 5, label: 'Vérification' },
+]
+```
+
+**WizardFormState** (lines 291–316) — full field list:
+- Step 1 (Couple): `brideName`, `groomName`, `weddingDate` (yyyy-mm-dd), `timezone` (default `'Africa/Kinshasa'`), `venueName`, `venueCity`, `slug`, `slugTouched` (boolean — drives auto-slug generation).
+- Step 2 (Plan): `plan` (default `'PREMIUM'`).
+- Step 3 (Pricing): `billingCycle` (default `'MONTHLY'`), `amountAgreed` (string, USD cents), `paymentMethod` (`'' | MOBILE_MONEY | BANK_TRANSFER | CASH | OTHER`), `whatsappPhone`, `notes`.
+- Step 4 (Organizer): `organizerName`, `organizerEmail`, `organizerPassword`, `showPassword` (boolean).
+- Step 5 (Options): `publish` (boolean, default `true`).
+
+**Step components** (lines 1466+):
+- `CoupleStep` (line 1471) — form fields + auto-slug generation from bride+groom names + live slug availability check via `/api/platform/weddings?search=`.
+- `PlanStep` (line 1641) — 4 plan cards (TRIAL/ESSENTIEL/PREMIUM/ELITE) with static pricing metadata (mirrors PLAN_METADATA + PLAN_LIMITS).
+- `PricingStep` (line 1731) — billing cycle select, custom amount input, payment method select, WhatsApp phone, notes textarea. Live price preview.
+- `OrganizerStep` (line 1878) — name/email/password fields with "Générer un mot de passe" button (calls `generateRandomPassword(12)`).
+- `ReviewStep` (line 1975) — read-only summary of all 4 previous steps + final WhatsApp message preview + `publish` toggle.
+
+**Step validation** (`validateStep`, lines 595–614): only steps 1 and 4 are validated (couple names + slug for step 1; organizer name/email/password for step 4). Steps 2, 3, 5 have no validation gates.
+
+**Submit** (`handleSubmit`, lines 630–692): POST `/api/onboarding/create-wedding` with the assembled payload. On success: closes the wizard, opens a success dialog showing the WhatsApp message + a "Copier le message" button + a deeplink URL to open WhatsApp.
+
+### Default theme source
+
+**There is NO "choose theme/template" step in the wizard.** The wizard creates:
+- Wedding (DRAFT or PUBLISHED per `publish` flag)
+- 15 essential Settings rows (including vestigial `primary_color: '#D4A853'` — NOT consumed by `/api/theme`)
+- AdminUser (ORGANIZER)
+- Subscription + Invoice
+- 3 AuditLogs
+
+**The Theme row is NOT created.** The wedding starts with NO Theme row. The public `/api/theme` GET falls back to `DEFAULT_THEME` constants from `src/lib/themes/templates.ts` lines 167–173:
+```ts
+export const DEFAULT_THEME = {
+  primaryColor: '#D4A853',
+  accentColor: '#C8785A',
+  fontDisplay: 'Cormorant Garamond',
+  fontBody: 'Inter',
+  layout: 'classic' as const,
+};
+```
+These values happen to match the `classic-gold` template (one of the 4 `THEME_TEMPLATES`), so the wedding "looks like" classic-gold until the organizer opens the Thème tab and either saves a custom theme or clicks "Appliquer" on one of the 4 templates.
+
+The 4 templates are applied via `/api/theme/apply-template` POST (file: `src/app/api/theme/apply-template/route.ts`) which upserts the Theme row with the template's `primaryColor`, `accentColor`, `fontDisplay`, `fontBody`, `layout`.
+
+## 11. Onboarding gaps & where a "Choose Collection" step would fit
+
+### Current gaps
+1. **No theme/collection step in the wizard.** The 5 steps cover Couple → Plan → Tarifs → Organizer → Vérification, with zero visual/branding choices. The couple gets a default-look wedding and must manually configure the theme post-creation.
+
+2. **Theme row is lazily created** — only on first PUT `/api/theme` or POST `/api/theme/apply-template`. Until then, `/api/theme` returns `DEFAULT_THEME` constants.
+
+3. **No "starter content" is seeded** beyond the 15 essential Settings rows. EventTimeline, CoupleStory, Media, MusicTrack — all empty. The couple starts with a blank canvas.
+
+4. **No post-creation redirect for the organizer.** After the wizard completes, the platform admin sees a success dialog with the WhatsApp message. The newly-created organizer account receives NO email, NO welcome screen, NO "first steps" guide. The organizer must be told (out of band, via WhatsApp) to log in at `/w/{slug}/admin/login`.
+
+5. **No "starter pack" concept** — there's no notion of a Collection / Pack / Template that bundles theme + sample timeline + sample couple stories + media library + Penpot file link. Each wedding starts from zero and the organizer builds everything from scratch.
+
+6. **Lead → Wedding conversion is all-or-nothing** — the wizard creates the wedding atomically with all 6 entities (Wedding + Settings + AdminUser + Subscription + Invoice + AuditLog) but does NOT let the admin preview what the wedding will look like before publishing. The `publish` flag is binary; there's no "preview as couple" mode.
+
+7. **No A/B testing or multi-variant themes** — `Theme.weddingId` is `@unique` (1:1), so each wedding has exactly one Theme. If the Collection Engine wants "draft vs published" or "try multiple collections", a schema change is needed (new `ThemeVariant` model with `weddingId + isActive:boolean`).
+
+### Where "Choose Collection" would fit
+
+Three plausible insertion points, in order of intrusiveness:
+
+**Option 1 — New step in the existing wizard (least disruptive)**:
+- Insert a new "Collection" step between Step 1 (Couple) and Step 2 (Plan), making it the new Step 2 of 6.
+- The step renders a grid of Collection cards (initially the 4 `THEME_TEMPLATES`, later a `Collection` table if introduced).
+- Each card shows: name, description, color swatches, font preview, layout badge, optional Penpot file thumbnail.
+- Selected `collectionId` is passed to `/api/onboarding/create-wedding` as a new body field.
+- The API route adds a 7th transaction step: `db.theme.create({ data: { weddingId, ...templateValues, customizations: { penpot: { fileId: collection.penpotFileId } } } })`.
+- Effort: ~1 day (1 new wizard step component + 1 API param + 1 transaction step + 1 Collection catalog file).
+
+**Option 2 — Replace Step 1 with a Collection-first flow (more disruptive, more product-y)**:
+- The wizard opens with a Collection gallery as Step 1 ("Choisissez votre univers").
+- Step 2 collects couple info (current Step 1 fields).
+- Steps 3-6 unchanged (Plan, Tarifs, Organizer, Vérification).
+- Rationale: couples pick a "vibe" before entering their names — more emotional, less form-like.
+- Effort: ~2 days (reorder steps + design Collection gallery + handle "no collection chosen yet" state in the Stepper).
+
+**Option 3 — Post-creation redirect (zero wizard changes)**:
+- The wizard completes as today (no theme created).
+- The success dialog adds a "Configurer l'apparence" button that deep-links the organizer to `/w/{slug}/admin?tab=theme` (with a new query-param-driven tab opener).
+- The organizer lands on the Thème tab and is prompted to pick a Collection.
+- Effort: ~4 hours (1 button + 1 URL param parser in `/w/[slug]/admin/page.tsx` + 1 Collection gallery component on the Thème tab).
+- Trade-off: laziest path; doesn't solve the "blank canvas" feeling for the first 5 minutes after onboarding.
+
+### Recommended companion changes (any option)
+
+1. **Seed EventTimeline + CoupleStory from the Collection** — when a Collection is chosen, copy its sample timeline + sample stories into the new wedding. This gives the couple a starting point to edit rather than an empty list. Pattern: same as `/api/platform/weddings/[id]/duplicate` steps 8–9 but sourced from a Collection template instead of another wedding.
+
+2. **Pre-link the Penpot file** — store a `penpotFileId` + `penpotPageId` on each Collection. On wedding creation, populate `Theme.customizations.penpot = { fileId, pageId, tokens: collection.tokens }`. The couple's PenpotStudio tab will show the file as "Lié" with tokens ready to pull.
+
+3. **Fix the duplicate-wedding Penpot leak** — when duplicating, null out `customizations.penpot.fileId` + `customizations.penpot.fileUrl` (keep `tokens` only). Flagged by AUDIT-A.
+
+4. **Add a `Collection` Prisma model** OR keep collections as in-code constants. Schema sketch (if model):
+   ```prisma
+   model Collection {
+     id            String   @id @default(cuid())
+     slug          String   @unique
+     name          String
+     description   String?
+     primaryColor  String   @default("#D4A853")
+     accentColor   String   @default("#C8785A")
+     fontDisplay   String   @default("Cormorant Garamond")
+     fontBody      String   @default("Inter")
+     layout        String   @default("classic")
+     penpotFileUrl String?  // Penpot share URL — parsed at apply time
+     penpotTokens  String?  // JSON string of PenpotTokens
+     previewImage  String?  // /uploads/collections/<slug>.png
+     isFeatured    Boolean  @default(false)
+     sortOrder     Int      @default(0)
+     createdAt     DateTime @default(now())
+     updatedAt     DateTime @updatedAt
+   }
+   ```
+   This avoids touching the existing `Theme` 1:1 cardinality and gives the Collection Engine its own table for metadata, preview images, and Penpot file mapping.
+
+5. **Reuse the duplicate-wedding code path** — `/api/platform/weddings/[id]/duplicate` already implements the "copy Settings + Theme + MusicTrack + EventTimeline + CoupleStory" pattern. A new `/api/collections/apply` route can reuse the same pattern with a Collection source instead of a Wedding source. ~50% code overlap potential.
+
+═══════════════════════════════════════════════════════════════════════════════
+QUICK REFERENCE — KEY FILE PATHS & LINE NUMBERS
+═══════════════════════════════════════════════════════════════════════════════
+
+| Concern | File | Key lines |
+|---------|------|-----------|
+| Tenant admin tab structure | `src/app/w/[slug]/admin/page.tsx` | TabId: 57, NAV_ITEMS: 66-79, fetch interceptor: 139-175, render switch: 220-259 |
+| Bare wedding create | `src/app/api/platform/weddings/route.ts` | POST handler: 110-225 |
+| Onboarding wizard create | `src/app/api/onboarding/create-wedding/route.ts` | POST handler: 93-546, Settings seed: 365-396 |
+| Publish wedding | `src/app/api/onboarding/publish/route.ts` | full file 32-116 |
+| Duplicate wedding | `src/app/api/platform/weddings/[id]/duplicate/route.ts` | full file 29-234 |
+| Wedding model | `prisma/schema.prisma` | 15-54 |
+| AdminUser model | `prisma/schema.prisma` | 62-76 |
+| All tenant-scoped tables | `prisma/schema.prisma` | Guest 178-214, Table 216-230, Media 232-251, EventTimeline 253-267, CoupleStory 269-282, Settings 288-299, Theme 301-313, MusicTrack 315-328, GuestSession 334-351, GuestAccessLog 353-370, AuditLog 372-384, Invitation 390-402, UsageCounter 161-172, Subscription 92-124, Invoice 126-159 |
+| Lead model | `prisma/schema.prisma` | 411-431 |
+| Raw Prisma client (`db`) | `src/lib/db.ts` | 19-23 |
+| Tenant Prisma client (`tenantDb`) | `src/lib/db.ts` | 39-41 |
+| AsyncLocalStorage + tenant context | `src/lib/tenant-context.ts` | ALS: 43, runWithTenant: 55, resolvePublicTenant: 202, resolveAdminTenant: 268, withPublicTenant HOC: 332, withAdminTenantHandler HOC: 360 |
+| Tenant-scoped Prisma extension | `src/lib/prisma-extensions/tenant-scoped.ts` | TENANT_SCOPED_MODELS: 45-58, $allOperations: 89-133, assertTenantOwned: 153-171 |
+| Auth (JWT + bcrypt + RBAC) | `src/lib/auth.ts` | generateToken: 62, verifyToken: 78, getAuthUser: 102, hasPermission: 139, requirePlatformAdmin: 209, setAuthCookie: 251, getServerAuthUser: 232 |
+| Tenant admin login | `src/app/api/admin/login/route.ts` | full file 7-83 (NO cookie set) |
+| Platform admin login | `src/app/api/platform/login/route.ts` | full file 25-130 (cookie set line 121) |
+| Tenant admin login UI | `src/app/w/[slug]/admin/login/page.tsx` | localStorage setItem: 99-100 |
+| Wedding status lifecycle | `src/lib/wedding-status.ts` | VALID_STATUSES: 28-34, VALID_TRANSITIONS: 43-49 |
+| Theme templates (4) | `src/lib/themes/templates.ts` | THEME_TEMPLATES: 102-163, DEFAULT_THEME: 167-173 |
+| Theme API | `src/app/api/theme/route.ts` | GET (withPublicTenant): 9-36, PUT (withAdminTenantHandler): 39-124, upsert with DEFAULT_THEME fallback: 88-100 |
+| Theme apply-template API | `src/app/api/theme/apply-template/route.ts` | full file 9-74 |
+| Wedding context (client) | `src/app/w/[slug]/wedding-context.tsx` | useWedding: 38, useTenantFetch: 50 |
+| Public wedding layout (slug → context) | `src/app/w/[slug]/layout.tsx` | resolveWeddingBySlug: 82, status gating: 89-106 |
+| Platform admin tab structure | `src/app/platform/admin/page.tsx` | TabId: 215, NAV_ITEMS: 223-232, renderContent: 2188-2210 |
+| Onboarding wizard UI | `src/app/platform/admin/OnboardingTab.tsx` | WIZARD_STEPS: 279-285, WizardFormState: 291-316, validateStep: 595-614, handleSubmit: 630-692, CoupleStep: 1471, ReviewStep: 1975 |
+| Public lead capture form | `src/app/onboarding/page.tsx` | onSubmit: 220-278 |
+| ThemeCustomizer (wedding picker) | `src/components/admin/ThemeCustomizer.tsx` | Props: 56-63, wedding picker fetch: 100-127 |
+
+Stage Summary:
+- 24 source files read in full or partially (line numbers cited for every claim).
+- READ-ONLY audit completed — zero files modified (only this worklog append).
+- All 11 mandated sections delivered with quoted code/schema lines.
+- All 7 specific questions answered:
+  - **Wedding creation flow**: 2 flows — public lead capture at `/onboarding` (no wedding created), platform-admin wizard at `/platform/admin` Onboarding tab (5 steps: Couple → Plan → Tarifs → Organizer → Vérification). NO theme step in the wizard. Default theme source = `DEFAULT_THEME` constant in `templates.ts` (NOT a template — the wedding has NO Theme row until the organizer opens the Thème tab).
+  - **Multi-tenant**: 12 tenant-scoped tables (8 core + 4 added later: Theme, MusicTrack, Invitation, UsageCounter) + 2 billing tables (Subscription, Invoice) + 2 nullable-weddingId tables (AuditLog, AdminUser). ALS populated by `runWithTenant()` invoked from `withPublicTenant` + `withAdminTenantHandler` HOCs. Slug extracted from URL path / X-Wedding-Slug header / ?wedding= query.
+  - **Tenant admin tabs**: 12 tabs in this order — dashboard, guests, tables, access-logs, media, music, timeline, theme (Palette), studio (PenTool), appearance, users (superAdminOnly), settings (superAdminOnly).
+  - **Platform admin**: NO top-level wedding picker. Each per-wedding component (ThemeCustomizer, PenpotStudio) renders its own wedding picker dropdown when called without an explicit `slug` prop. Picker fetches `/api/platform/weddings?limit=100` with cookie auth.
+  - **Auth**: Custom JWT (8h) + bcrypt (12 rounds). NOT NextAuth. Tenant admin uses `admin_token` in localStorage + Bearer header (auto-attached by global fetch interceptor in `/w/[slug]/admin/page.tsx`). Platform admin additionally sets an httpOnly `auth_token` cookie via `/api/platform/login`. JWT claims: `{ id, email, name, role, weddingId, isPlatformAdmin }`.
+  - **Existing onboarding/wizard**: YES — the 5-step OnboardingTab wizard is the only guided flow. A couple just signed up (i.e. a lead just submitted) sees NOTHING until the platform admin manually opens the wizard. The first screen the new ORGANIZER sees is `/w/{slug}/admin/login` (login form) — there is NO welcome/onboarding screen inside the tenant admin.
+  - **Wedding model fields**: 20 scalar columns fully listed in §4 (id, slug, brideName, groomName, coupleLabel, weddingDate, timezone, venueName, venueAddress, venueCity, venueLat, venueLng, venueReference, status, plan, customDomain, isDefault, createdAt, updatedAt, publishedAt) + 16 relations.
+- 3 plausible insertion points for the "Choose Collection" step documented (in-wizard new step / collection-first flow / post-creation redirect) with effort estimates.
+- 5 companion changes recommended (seed starter content, pre-link Penpot file, fix duplicate-wedding leak, add Collection model OR keep constants, reuse duplicate-wedding code path for `/api/collections/apply`).
+- Report ready to feed the Collection Engine planning document.
+
+CONSTRAINTS COMPLIANCE:
+- ✅ READ-ONLY audit — zero source files modified (only this worklog append)
+- ✅ All 8 mandated files read fully (admin page, weddings API, duplicate route, schema, db.ts, platform admin, auth, OnboardingTab)
+- ✅ Note: the user-supplied path `src/app/api/weddings/route.ts` does NOT exist — flagged in §2 with the 3 actual creation routes documented instead.
+- ✅ All 11 specific output sections delivered with quoted code/schema lines
+- ✅ All 7 specific questions answered with concrete file paths + line numbers
+
+---
+Task ID: AUDIT-D
+Agent: Explore (Billing + Templates + Catalog Audit)
+Task: READ-ONLY inventory of Billing system, theme templates/presets, and catalog-like concepts to plan a Collection Engine (free + premium collections).
+
+Work Log:
+- Read /home/z/my-project/worklog.md (last ~310 lines) for prior context (PENPOT-NATIVE-INTEGRATION, CONSOLIDATION-FIXES-2CRITICAL, CONSOLIDATION-PHASE2-DOUBLONS, WIRING-AUDIT-15-CASES).
+- Read full prisma/schema.prisma (432 lines) — all 18 models.
+- Read /home/z/my-project/src/lib/billing.ts (315 lines) + src/lib/types.ts (153 lines) + src/lib/plan-limits.ts (139 lines).
+- Read all 5 billing-related API routes (see inventory §2).
+- Read /home/z/my-project/src/lib/themes/templates.ts (212 lines) — the only file under src/lib/themes/.
+- Read /home/z/my-project/src/app/api/theme/apply-template/route.ts.
+- Searched codebase for keywords: collection / catalog / library / preset / variant / premium / tier / plan / subscription / billing / stripe / payment.
+- Read src/app/platform/admin/page.tsx (NAV_ITEMS + renderContent), src/app/platform/admin/BillingTab.tsx (1202 LOC — types, form state, helpers only), src/app/platform/admin/OnboardingTab.tsx (PLANS catalog + PlanStep selectable-grid UI).
+- Read src/components/admin/ThemeCustomizer.tsx templates-grid rendering (lines 322-366) — the existing selectable-grid pattern.
+- Read /home/z/my-project/src/app/onboarding/page.tsx (public form) — confirms Lead captures `plan` only, no theme/collection concept.
+- Verified no stripe package in package.json (no Stripe SDK, no webhook, no checkout — schema columns are future-reserved only).
+- Verified plan-limits enforcement call sites: guests POST, media POST, admin/users POST, custom-domain GET.
+
+═══════════════════════════════════════════════════════════════════════════════
+SECTION 1 — BILLING / SUBSCRIPTION SCHEMA (present, mature)
+═══════════════════════════════════════════════════════════════════════════════
+
+NO ABSENCE — billing is fully modeled. Three Prisma models (schema.prisma lines 78-172):
+
+### `Subscription` (lines 92-124)
+```
+id                     String    @id @default(cuid())
+weddingId              String    @unique            // 1:1 with Wedding
+wedding                Wedding   @relation(...)
+plan                   String    @default("TRIAL")  // TRIAL | ESSENTIEL | PREMIUM | ELITE
+status                 String    @default("TRIALING") // TRIALING | PENDING_PAYMENT | ACTIVE | PAST_DUE | SUSPENDED | CANCELED | EXPIRED
+amountAgreed           Int?      // negotiated price in minor units (cents); null = use plan default
+currency               String    @default("usd")    // usd | eur | fcfa
+billingCycle           String    @default("MONTHLY") // MONTHLY | ANNUAL | ONE_TIME
+currentPeriodStart     DateTime?
+currentPeriodEnd       DateTime?
+cancelAt               DateTime?
+trialEndsAt            DateTime?
+activatedAt            DateTime?  // first time marked ACTIVE (i.e. first payment received)
+paidAt                 DateTime?  // last payment received timestamp
+paymentMethod          String?    // MOBILE_MONEY | BANK_TRANSFER | CASH | OTHER
+whatsappPhone          String?    // client's WhatsApp number
+notes                  String?    // admin freeform notes about negotiation
+stripeCustomerId       String?    @unique  // RESERVED — unused
+stripeSubscriptionId   String?    @unique  // RESERVED — unused
+createdAt              DateTime   @default(now())
+updatedAt              DateTime   @updatedAt
+invoices               Invoice[]
+```
+
+### `Invoice` (lines 126-159)
+```
+id                String       @id @default(cuid())
+subscriptionId    String
+subscription      Subscription @relation(...)
+weddingId         String       // denormalized for platform-wide queries
+wedding           Wedding      @relation(...)
+amountDue         Int          // cents
+amountPaid        Int          @default(0)
+currency          String       @default("usd")
+billingCycle      String       @default("MONTHLY")
+status            String       @default("OPEN")  // DRAFT | OPEN | PAID | VOID
+paymentMethod     String?      // MOBILE_MONEY | BANK_TRANSFER | CASH | OTHER
+whatsappSentAt    DateTime?
+whatsappPhone     String?
+confirmedBy       String?      // AdminUser.id who marked PAID
+notes             String?
+stripeInvoiceId   String?      @unique  // RESERVED — unused
+pdfUrl            String?
+hostedInvoiceUrl  String?
+paidAt            DateTime?
+createdAt         DateTime     @default(now())
+@@index([weddingId, status])
+@@index([subscriptionId])
+```
+
+### `UsageCounter` (lines 161-172) — DEAD SCHEMA (confirmed by CONSOLIDATION-PHASE2-DOUBLONS report)
+```
+id          String   @id @default(cuid())
+weddingId   String
+wedding     Wedding  @relation(...)
+metric      String   // GUESTS | MEDIA_BYTES | ADMINS | QR_SCANS
+value       Int      @default(0)
+period      String   // "2026-06"
+updatedAt   DateTime @updatedAt
+@@unique([weddingId, metric, period])
+```
+**ZERO Prisma calls anywhere in src/** — purely future-proofing. Could be repurposed as metered-usage backbone for a Collection Engine metering system, or left untouched.
+
+### `Wedding.plan` (schema line 30) — denormalized billing pointer
+```
+plan            String        @default("TRIAL") // TRIAL, ESSENTIEL, PREMIUM, ELITE
+customDomain    String?       @unique // e.g. "mariage-sophie.fr" (Premium/Élite only)
+```
+- `Wedding.plan` is the canonical "current effective plan" used by /api/platform/dashboard MRR + by plan-limits checks.
+- The subscription's plan is synced back onto `Wedding.plan` when an invoice is marked PAID (see /api/platform/invoices/[id] PUT logic).
+
+═══════════════════════════════════════════════════════════════════════════════
+SECTION 2 — BILLING API ROUTES (5 endpoints, all platform-admin only)
+═══════════════════════════════════════════════════════════════════════════════
+
+| Route | Method | Behavior |
+|-------|--------|----------|
+| `/api/platform/billing/weddings` | GET | Billing overview — every wedding with subscription + invoice counts + effectivePriceUsdCents + summary (total/active/pending/trial/mrrUsd/pendingUsd). Filters: status, plan, search. |
+| `/api/platform/weddings/[id]/subscription` | GET, PUT | Per-wedding subscription upsert. Validates plan/status/billingCycle/paymentMethod/amountAgreed. On transition to ACTIVE: writes paidAt + (first-time) activatedAt + syncs Wedding.plan. Audit-logged. |
+| `/api/platform/weddings/[id]/subscription/whatsapp` | POST | Builds prefilled wa.me deeplink with offer message. Best-effort stamps `whatsappSentAt` on most recent OPEN invoice + syncs `whatsappPhone`. Audit-logged as BILLING_WHATSAPP_SENT. |
+| `/api/platform/weddings/[id]/invoices` | GET, POST | List invoices / create new invoice. POST auto-upserts subscription (status=PENDING_PAYMENT) in same transaction. Audit-logged as CREATE_INVOICE. |
+| `/api/platform/invoices` | GET | Platform-wide invoice list with filters (status, weddingId, search, pagination). |
+| `/api/platform/invoices/[id]` | PUT | Mark invoice PAID → cascades to Subscription (status=ACTIVE, paidAt, activatedAt first-time) + Wedding.plan sync. Or VOID. Or reopen (VOID→OPEN). Audit-logged as INVOICE_MARKED_PAID / INVOICE_VOIDED. |
+| `/api/onboarding/create-wedding` | POST | **Transactional onboarding wizard**: atomically creates Wedding + AdminUser (ORGANIZER) + Subscription (PENDING_PAYMENT) + first Invoice (OPEN) + optional Lead conversion. Returns WhatsApp deeplink for immediate billing follow-up. |
+
+NO routes named `/api/billing/...`, `/api/subscriptions/...`, `/api/plans/...`, `/api/stripe/...`, or `/api/payments/...` exist.
+
+═══════════════════════════════════════════════════════════════════════════════
+SECTION 3 — BILLING COMPONENTS (single dedicated file, no shadcn-style split)
+═══════════════════════════════════════════════════════════════════════════════
+
+NO `Billing*.tsx` / `Subscription*.tsx` / `Plan*.tsx` components live in `src/components/admin/` (verified via LS). The 14 admin components are: AccessLogManager, AppearanceManager, AdminPanel, TimelineManager, UserManager, ThemeCustomizer, GuestManager, MusicManager, SettingsManager, LoginForm, TableManager, Dashboard, MediaManager, LuxuryExperienceManager.
+
+Billing UI lives in **one monolithic client component** at the platform-admin route level:
+
+- `src/app/platform/admin/BillingTab.tsx` — 1202 LOC. Exports `BillingTab({ fetchWithAuth })`. Renders:
+  - Filter bar (search, status filter, plan filter)
+  - Summary cards (total / active / pending / trial / MRR USD / pending USD)
+  - Weddings table with per-row "Manage" action
+  - Subscription edit dialog (plan/status/billingCycle/amountAgreed/paymentMethod/whatsappPhone/notes)
+  - Invoice create + mark-as-paid/void flows
+  - WhatsApp deeplink preview dialog (with copy + open-wa.me buttons)
+- `src/app/platform/admin/OnboardingTab.tsx` — 2150 LOC. 5-step wizard: Couple → Plan → Tarifs → Organisateur → Vérification. Calls `/api/onboarding/create-wedding`. **This is where the public-onboarding-style "pick a plan" grid lives (see §11).**
+
+═══════════════════════════════════════════════════════════════════════════════
+SECTION 4 — PLAN / TIER CONCEPT (4 tiers, manually billed, partially gated)
+═══════════════════════════════════════════════════════════════════════════════
+
+From `src/lib/types.ts`:
+```ts
+export type Plan = 'TRIAL' | 'ESSENTIEL' | 'PREMIUM' | 'ELITE';
+
+export const PLAN_LIMITS: Record<Plan, { guests, mediaBytes, admins, customDomain }> = {
+  TRIAL:     { guests: 20,   mediaBytes: 100 MB,          admins: 1,  customDomain: false },
+  ESSENTIEL: { guests: 200,  mediaBytes: 1 GB,            admins: 2,  customDomain: false },
+  PREMIUM:   { guests: 500,  mediaBytes: 5 GB,            admins: 5,  customDomain: true  },
+  ELITE:     { guests: -1,   mediaBytes: -1,              admins: 10, customDomain: true  },
+};
+
+export const PLAN_METADATA: Record<Plan, { label, priceFcfa, priceUsd }> = {
+  TRIAL:     { label: 'Essai Libre',  priceFcfa: 0,      priceUsd: 0   },
+  ESSENTIEL: { label: 'Essentiel',    priceFcfa: 30000,  priceUsd: 49  },
+  PREMIUM:   { label: 'Premium',      priceFcfa: 60000,  priceUsd: 99  },
+  ELITE:     { label: 'Élite',        priceFcfa: 120000, priceUsd: 199 },
+};
+```
+
+### Tier-gating call sites (verified by grep on checkGuestLimit/checkAdminLimit/checkMediaLimit/canUseCustomDomain):
+
+| Function | Called from | Gates what |
+|----------|-------------|------------|
+| `checkGuestLimit` | `/api/guests/route.ts` POST (line 93) | New guest creation against plan cap |
+| `checkMediaLimit` | `/api/media/route.ts` POST (line 89) | Media upload against plan byte cap |
+| `checkAdminLimit` | `/api/admin/users/route.ts` POST (line 87) | New staff account against plan cap |
+| `canUseCustomDomain` | `/api/custom-domain/route.ts` GET (line 19) + `ThemeCustomizer.tsx` UI hint (line 548) | Custom-domain feature flag |
+
+**What is NOT gated by plan (the Collection Engine gap):**
+- All 4 theme templates (`THEME_TEMPLATES`) — all 4 freely available to every plan including TRIAL.
+- LuxuryVisualEngine + LuxuryExperienceManager — all 7 effects, all 4 themes (Gold/Rose/Champagne/Midnight), all sliders — freely available to every plan.
+- Penpot Studio — freely available to every plan.
+- Music (upload + ambient player) — freely available to every plan.
+- AppearanceManager (7 effects + section ambiance) — freely available to every plan.
+
+**Conclusion:** Tier-gating exists ONLY for hard quota features (guests/media/admins/domain). There is NO existing mechanism to gate aesthetic / content / collection features by plan. A Collection Engine introducing "premium collections" will need a NEW gating helper (e.g. `canAccessCollection(plan, collectionTier)` or `isPremiumCollection(collection) && plan !== 'PREMIUM' && plan !== 'ELITE'`).
+
+═══════════════════════════════════════════════════════════════════════════════
+SECTION 5 — STRIPE / PAYMENT INTEGRATION (ABSENT — manual WhatsApp flow only)
+═══════════════════════════════════════════════════════════════════════════════
+
+**Stripe: NOT integrated.** Schema columns are future-reserved placeholders only.
+- `Subscription.stripeCustomerId` + `Subscription.stripeSubscriptionId` — nullable, never written.
+- `Invoice.stripeInvoiceId` + `Invoice.pdfUrl` + `Invoice.hostedInvoiceUrl` — nullable, never written.
+- **No `stripe` package in `package.json`** (verified by reading the full file).
+- **No Stripe SDK import anywhere in src/** (verified by grep: only 5 hits, all field names in schema + 2 in subscription/route.ts select clauses).
+- No `/api/stripe/...` route, no webhook handler, no checkout session.
+
+**Actual payment flow = manual WhatsApp-driven**:
+1. Admin negotiates price with couple (based on PLAN_METADATA + amountAgreed override)
+2. Admin clicks "Send WhatsApp" → backend builds prefilled wa.me deeplink containing plan + price + services list + payment instructions (Mobile Money / Bank Transfer / Cash, configured via env vars BILLING_MOBILE_MONEY_PHONE / BILLING_BANK_IBAN / BILLING_CASH_ADDRESS)
+3. Couple pays outside platform (M-Pesa, Airtel Money, Orange Money, bank transfer, cash)
+4. Admin manually marks invoice as PAID via `/api/platform/invoices/[id]` PUT → cascades to Subscription ACTIVE + Wedding.plan sync
+5. Conversion rate constant: `FCFA_TO_USD_RATE = 600` (1 USD ≈ 600 FCFA, in `src/lib/billing.ts` line 18)
+
+═══════════════════════════════════════════════════════════════════════════════
+SECTION 6 — templates.ts — THE 4 THEME PRESETS (EXACT VALUES)
+═══════════════════════════════════════════════════════════════════════════════
+
+Source: `src/lib/themes/templates.ts` (212 lines — the ONLY file under `src/lib/themes/`).
+
+### Type definitions
+```ts
+export interface ThemeTemplate {
+  id: string;
+  name: string;
+  description: string;
+  primaryColor: string;
+  accentColor: string;
+  fontDisplay: string;
+  fontBody: string;
+  layout: 'classic' | 'modern' | 'minimalist' | 'royal';
+  preview: { bg: string; text: string; swatch: string[] };
+}
+```
+
+### Preset #1 — `'classic-gold'` (lines 103-117)
+```
+id:            'classic-gold'
+name:          'Or Classique'
+description:   "L'élégance intemporelle de l'or et du champagne — la signature Heureux Mariage."
+primaryColor:  '#D4A853'   (warm gold)
+accentColor:   '#C8785A'   (terracotta copper)
+fontDisplay:   'Cormorant Garamond'
+fontBody:      'Inter'
+layout:        'classic'
+preview.bg:    '#1a1410'   (deep coffee)
+preview.text:  '#F5E6D3'   (champagne cream)
+preview.swatch:['#D4A853', '#C8785A', '#8B6F47', '#F5E6D3']
+```
+
+### Preset #2 — `'romantic-rose'` (lines 118-132)
+```
+id:            'romantic-rose'
+name:          'Rose Romantique'
+description:   "Tendresse et poésie pour une célébration tout en douceur et romantisme."
+primaryColor:  '#E8B4B8'   (blush pink)
+accentColor:   '#C08497'   (dusty rose)
+fontDisplay:   'Playfair Display'
+fontBody:      'Lato'
+layout:        'modern'
+preview.bg:    '#2a1a1e'   (mulberry wine)
+preview.text:  '#FBE5E7'   (rose white)
+preview.swatch:['#E8B4B8', '#C08497', '#8B5A6B', '#FBE5E7']
+```
+
+### Preset #3 — `'minimal-modern'` (lines 133-147)
+```
+id:            'minimal-modern'
+name:          'Minimal Moderne'
+description:   "Lignes pures, gris contemporains — pour les couples au goût épuré et moderne."
+primaryColor:  '#525252'   (neutral graphite)
+accentColor:   '#A3A3A3'   (soft silver)
+fontDisplay:   'Marcellus'
+fontBody:      'Montserrat'
+layout:        'minimalist'
+preview.bg:    '#1c1c1c'   (near-black)
+preview.text:  '#E5E5E5'   (light grey)
+preview.swatch:['#525252', '#A3A3A3', '#262626', '#E5E5E5']
+```
+
+### Preset #4 — `'royal-night'` (lines 148-162)
+```
+id:            'royal-night'
+name:          'Nuit Royale'
+description:   "Sombre et somptueux, l'or étincelant sur fond nuit pour une allure majestueuse."
+primaryColor:  '#C9A14A'   (royal gold)
+accentColor:   '#1B1B3A'   (midnight indigo)
+fontDisplay:   'Italiana'
+fontBody:      'Lora'
+layout:        'royal'
+preview.bg:    '#0f0f1e'   (deep night)
+preview.text:  '#E5C97B'   (luminous gold)
+preview.swatch:['#C9A14A', '#1B1B3A', '#3D2E5F', '#E5C97B']
+```
+
+### Default theme (lines 167-173)
+```ts
+export const DEFAULT_THEME = {
+  primaryColor: '#D4A853',
+  accentColor:  '#C8785A',
+  fontDisplay:  'Cormorant Garamond',
+  fontBody:     'Inter',
+  layout:       'classic' as const,
+};
+```
+→ Default = Preset #1 ('classic-gold').
+
+### Additional exports (lines 40-98)
+- `FONT_OPTIONS` — 8 Google Fonts:
+  - **Serif (4):** Cormorant Garamond, Playfair Display, Marcellus, Lora
+  - **Sans-serif (3):** Inter, Lato, Montserrat
+  - **Display (1):** Italiana
+  Each with `{ family, label, category, googleFontUrl }`.
+- `LAYOUT_OPTIONS` — 4 layouts:
+  - `classic` → "Classique" — Sections élégantes traditionnelles avec heros centrés
+  - `modern` → "Moderne" — Mises en page asymétriques avec transitions fluides
+  - `minimalist` → "Minimaliste" — Épuré, beaucoup d'espace blanc, typographie fine
+  - `royal` → "Royal" — Ornementé, dorures, ambiance cérémonielle somptueuse
+- Helper functions: `getTemplate(id)`, `getFontOption(family)`, `getLayoutOption(id)`, `isValidHexColor(color)`, `normalizeHexColor(color)`.
+
+### How templates are applied (existing endpoint)
+`POST /api/theme/apply-template` (body: `{ templateId }`) → ORGANIZER+ → looks up template via `getTemplate()` → upserts the `Theme` row with the 5 template fields (primaryColor / accentColor / fontDisplay / fontBody / layout) → audit-logged as `APPLY_THEME_TEMPLATE`. **No plan-gating whatsoever — every plan including TRIAL can apply every template.**
+
+═══════════════════════════════════════════════════════════════════════════════
+SECTION 7 — src/lib/themes/ FOLDER INVENTORY (single file)
+═══════════════════════════════════════════════════════════════════════════════
+
+`LS src/lib/themes/` returns exactly ONE file:
+- `templates.ts` (212 LOC)
+
+**Exports summary:**
+| Export | Kind | Purpose |
+|--------|------|---------|
+| `ThemeTemplate` | interface | Shape of a theme preset |
+| `FontOption` | interface | Shape of a font entry |
+| `LayoutOption` | interface | Shape of a layout entry |
+| `FONT_OPTIONS` | const FontOption[] | 8 Google Fonts |
+| `LAYOUT_OPTIONS` | const LayoutOption[] | 4 layouts (classic/modern/minimalist/royal) |
+| `THEME_TEMPLATES` | const ThemeTemplate[] | **The 4 seed collections** (see §6) |
+| `DEFAULT_THEME` | const | = preset #1 ('classic-gold') |
+| `getTemplate(id)` | function | Lookup template by id |
+| `getFontOption(family)` | function | Lookup font by family name |
+| `getLayoutOption(id)` | function | Lookup layout by id |
+| `isValidHexColor(color)` | function | Regex validator (#RGB or #RRGGBB) |
+| `normalizeHexColor(color)` | function | Normalizes to #RRGGBB uppercase |
+
+**No `index.ts` barrel file.** All imports reference `@/lib/themes/templates` directly.
+
+═══════════════════════════════════════════════════════════════════════════════
+SECTION 8 — "COLLECTION" KEYWORD SEARCH RESULTS (ABSENT from src/)
+═══════════════════════════════════════════════════════════════════════════════
+
+- **src/ directory: ZERO matches** for the word "collection" (case-insensitive, word-boundary not required).
+- Only hits anywhere in /home/z/my-project: `package-lock.json` and `bun.lock` (npm package dependency names).
+
+**Conclusion:** The word "collection" is a clean namespace — no existing concept collides. The Collection Engine can introduce it without naming conflicts.
+
+═══════════════════════════════════════════════════════════════════════════════
+SECTION 9 — CATALOG / LIBRARY / PRESET / VARIANT KEYWORD RESULTS
+═══════════════════════════════════════════════════════════════════════════════
+
+| Keyword | src/ matches | Context |
+|---------|--------------|---------|
+| `catalog` | 1 file: `src/app/platform/admin/OnboardingTab.tsx` (line 225) | Comment only: `"Static plan catalog for the Step 2 selector"` — refers to the local `PLANS` const array (duplicated PLAN_METADATA + PLAN_LIMITS for client-side rendering without server-only imports). NOT a generic catalog system. |
+| `library` | 1 file: `src/hooks/use-toast.ts` (line 3) | Comment only: `"Inspired by react-hot-toast library"`. Not business-domain. |
+| `preset` | ZERO matches | Clean namespace. |
+| `variant` | 43 files | ALL matches are shadcn/ui `variant="…"` Button/Toggle/etc. prop usages or CSS class-variant systems (`class-variance-authority`). NOT business-domain "variant". No domain concept of "theme variant" or "preset variant". |
+
+**Conclusion:** "preset" and "collection" are both clean namespaces. "Catalog" exists only as a one-word code comment. "Library" exists only as a docstring. The Collection Engine can safely use any of these terms.
+
+═══════════════════════════════════════════════════════════════════════════════
+SECTION 10 — LEAD MODEL SCHEMA (public lead capture → wedding conversion)
+═══════════════════════════════════════════════════════════════════════════════
+
+From `prisma/schema.prisma` lines 411-431:
+```prisma
+model Lead {
+  id                 String    @id @default(cuid())
+  brideName          String
+  groomName          String
+  coupleLabel        String    // computed via buildCoupleLabel at insert time
+  weddingDate        DateTime?
+  venueCity          String?
+  email              String
+  phone              String?
+  plan               String    @default("TRIAL") // desired plan: TRIAL, ESSENTIEL, PREMIUM, ELITE
+  message            String?   // freeform note from the couple
+  status             String    @default("NEW") // NEW, CONTACTED, CONVERTED, REJECTED
+  notes              String?   // admin private notes
+  convertedWeddingId String?   // linked Wedding.id once converted (denormalized, no FK to avoid cascade complexity)
+  convertedAt        DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  @@index([status])
+  @@index([createdAt])
+}
+```
+
+**Purpose** (from schema docstring lines 404-409):
+> Public lead capture from the public `/onboarding` form. Platform admin reviews leads in the admin dashboard and converts them into a published Wedding via the onboarding wizard (transactional create).
+
+### Lead lifecycle
+- **Public submit:** `POST /api/onboarding/leads` (rate-limited 5/15min/IP, no auth). Public response excludes `notes`/`convertedWeddingId`/`convertedAt`/`updatedAt`.
+- **Admin list:** `GET /api/onboarding/leads` (PLATFORM_ADMIN). Paginated + filter by status + search + summary by status.
+- **Admin manual convert:** `POST /api/onboarding/leads/[id]/convert` body `{ weddingId }` — links an existing wedding to a lead.
+- **Auto-convert:** `/api/onboarding/create-wedding` accepts optional `leadId` body param → atomically sets Lead.status=CONVERTED + Lead.convertedWeddingId + Lead.convertedAt inside the same transaction that creates Wedding+AdminUser+Subscription+Invoice.
+
+### Can Lead become the entry point for "choose a collection before creating a wedding"?
+**YES — and it's the natural fit.** Currently the Lead model captures only:
+- Couple identity (bride/groom/coupleLabel)
+- Event basics (weddingDate, venueCity)
+- Contact (email, phone)
+- **Desired plan** (TRIAL/ESSENTIEL/PREMIUM/ELITE) ← already tier-aware
+- Message (freeform)
+
+It does NOT capture:
+- Desired theme/collection/template/preset ← **THE GAP**
+- Desired luxury-engine theme (gold/rose/champagne/midnight)
+- Desired layout (classic/modern/minimalist/royal)
+- Desired font pairing
+- Desired effect intensity
+
+**Recommended schema extension for Collection Engine:**
+Add an optional `collectionId String?` field to `Lead` (and optionally `themePresetId String?` to disambiguate from a future "Collection" concept that bundles theme + effects + music + layout together). The public `/onboarding` form would gain a "Choisir une collection" step before the "Plan" step; the onboarding wizard would pass `collectionId` to `/api/onboarding/create-wedding` which would apply the collection's theme + settings on the freshly-created Wedding.
+
+═══════════════════════════════════════════════════════════════════════════════
+SECTION 11 — EXISTING SELECTABLE-GRID UI PATTERNS (2 patterns, ready to clone)
+═══════════════════════════════════════════════════════════════════════════════
+
+Two reusable selectable-grid UI patterns already exist:
+
+### Pattern A — Theme template picker (ThemeCustomizer.tsx, lines 322-366)
+**4-column responsive grid of clickable cards with live preview + active indicator:**
+```tsx
+<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+  {THEME_TEMPLATES.map((template) => (
+    <motion.button
+      key={template.id}
+      whileHover={{ y: -2 }}
+      whileTap={{ scale: 0.98 }}
+      onClick={() => handleApplyTemplate(template)}
+      disabled={applyingTemplate !== null}
+      className="group relative text-left rounded-lg overflow-hidden border border-white/10 hover:border-gold/40 transition-colors disabled:opacity-60"
+      style={{ background: template.preview.bg }}
+    >
+      <div className="flex h-16">
+        {template.preview.swatch.map((color, i) => (
+          <div key={i} className="flex-1" style={{ background: color }} />
+        ))}
+      </div>
+      <div className="p-3" style={{ color: template.preview.text }}>
+        <p className="font-display text-sm font-semibold" style={{ fontFamily: `'${template.fontDisplay}', serif` }}>
+          {template.name}
+        </p>
+        <p className="text-[10px] opacity-70 mt-1 line-clamp-2">{template.description}</p>
+      </div>
+      {applyingTemplate === template.id && (<Loader2 spinner />)}
+      {applyingTemplate === null && theme.primaryColor.toUpperCase() === template.primaryColor.toUpperCase() && (
+        <div className="absolute top-2 right-2 ..."><Check /></div>
+      )}
+    </motion.button>
+  ))}
+</div>
+```
+**Active-state detection:** compares current theme's `primaryColor` to template's `primaryColor` (string match) — fragile if two templates share colors, but works for the current 4 templates.
+
+### Pattern B — Plan picker (OnboardingTab.tsx PlanStep, lines 1648-1714)
+**2-column responsive grid of plan cards with "popular" badge + selected ring:**
+```tsx
+<div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-2">
+  {PLANS.map((p) => {
+    const selected = form.plan === p.id
+    return (
+      <button
+        key={p.id}
+        type="button"
+        onClick={() => setForm((f) => ({ ...f, plan: p.id }))}
+        className={`text-left p-4 rounded-lg border transition-all relative ${
+          selected ? 'border-gold bg-gold/10 ring-1 ring-gold/30'
+                   : 'border-border bg-card/30 hover:border-gold/40'
+        }`}
+        aria-pressed={selected}
+      >
+        {p.popular && (<span className="absolute -top-2 right-3 bg-gold text-white text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full">Populaire</span>)}
+        <div className="flex items-center justify-between mb-1">
+          <span className="font-semibold text-base">{p.label}</span>
+          {selected && <CheckCircle2 className="w-4 h-4 text-gold" />}
+        </div>
+        <div className="text-sm text-muted-foreground mb-2">{p.tagline}</div>
+        <div className="flex items-baseline gap-2 mb-3">
+          {p.priceUsd === 0 ? (<span>Gratuit</span>) : (
+            <>
+              <span className="text-2xl font-bold">${p.priceUsd}</span>
+              <span className="text-xs text-muted-foreground">/ mois</span>
+              <span className="text-xs text-muted-foreground">· {p.priceFcfa.toLocaleString('fr-FR')} FCFA</span>
+            </>
+          )}
+        </div>
+        <ul className="text-xs text-muted-foreground space-y-1">
+          <li><CheckCircle2 className="w-3 h-3 text-emerald-400" /> {p.guests} invités</li>
+          <li><CheckCircle2 className="w-3 h-3 text-emerald-400" /> {p.media} de médias</li>
+          <li><CheckCircle2 className="w-3 h-3 text-emerald-400" /> {p.staff} comptes staff</li>
+          <li>{p.customDomain ? <><CheckCircle2/> Domaine personnalisé</> : <><XCircle/> Sous-domaine</>}</li>
+        </ul>
+      </button>
+    )
+  })}
+</div>
+```
+
+### Pattern B' — Public /onboarding plan preview (page.tsx lines 401-475)
+Same 4-column responsive grid (`grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6`) for the marketing-style plan preview on the public onboarding page.
+
+**These two patterns are the obvious UI scaffolding for a Collection Library grid.** A `CollectionLibrary` component would clone Pattern A (visual swatches + framer-motion hover) and add a `tier` badge ("Premium" / "Élite") + a lock overlay when the wedding's plan is below the collection's required tier.
+
+═══════════════════════════════════════════════════════════════════════════════
+SECTION 12 — GAPS FOR THE COLLECTION ENGINE (what's missing)
+═══════════════════════════════════════════════════════════════════════════════
+
+### Gap 1 — No `Collection` Prisma model (CRITICAL — schema change needed)
+- The schema has `Wedding`, `Theme`, `Settings`, `MusicTrack`, `Media`, `EventTimeline`, `CoupleStory` — but **no `Collection` model**.
+- The 4 templates in `templates.ts` are **hardcoded constants**, not database rows. There is no admin UI to create/edit/disable a collection.
+- **Required schema:**
+  ```prisma
+  model Collection {
+    id              String   @id @default(cuid())
+    slug            String   @unique  // e.g. "royal-night", "bohemian-dream"
+    name            String
+    description     String?
+    tier            String   @default("FREE") // FREE | PREMIUM | ELITE
+    thumbnailUrl    String?
+    // Theme seed (mirrors ThemeTemplate fields):
+    primaryColor    String
+    accentColor     String
+    fontDisplay     String
+    fontBody        String
+    layout          String   @default("classic")
+    // Optional luxury-engine preset:
+    luxuryTheme     String?  // gold | rose | champagne | midnight
+    // Optional effects preset (JSON):
+    effectsPreset   String?  // JSON: { intensity, density, speed, enabledEffects }
+    // Optional music track URL:
+    defaultMusicUrl String?
+    isPublished     Boolean  @default(true)
+    sortOrder       Int      @default(0)
+    createdAt       DateTime @default(now())
+    updatedAt       DateTime @updatedAt
+    @@index([tier, isPublished, sortOrder])
+  }
+  ```
+
+### Gap 2 — No premium-gating mechanism for aesthetic/content features (CRITICAL — new helper needed)
+- `src/lib/plan-limits.ts` only knows how to gate **quantitative** features (guests / media bytes / admins / custom-domain flag).
+- It has NO concept of gating a Collection / Template / Effect by plan tier.
+- **Required additions:**
+  ```ts
+  // In src/lib/plan-limits.ts (or a new src/lib/collections.ts):
+  export type CollectionTier = 'FREE' | 'PREMIUM' | 'ELITE';
+  export const TIER_HIERARCHY: Record<Plan, number> = {
+    TRIAL: 0, ESSENTIEL: 1, PREMIUM: 2, ELITE: 3,
+  };
+  export const COLLECTION_TIER_LEVEL: Record<CollectionTier, number> = {
+    FREE: 0, PREMIUM: 2, ELITE: 3,
+  };
+  export function canAccessCollection(plan: Plan, tier: CollectionTier): boolean {
+    return TIER_HIERARCHY[plan] >= COLLECTION_TIER_LEVEL[tier];
+  }
+  ```
+- And a server-side gate in the apply-collection endpoint (mirror of `/api/theme/apply-template`):
+  ```ts
+  if (!canAccessCollection(wedding.plan, collection.tier)) {
+    return NextResponse.json({ error: 'Plan insuffisant pour cette collection' }, { status: 403 });
+  }
+  ```
+- And a client-side lock overlay in the `CollectionLibrary` grid component.
+
+### Gap 3 — No `/api/collections` route namespace (CRITICAL — new routes needed)
+- No `/api/collections` GET (list collections, with `tier` filter for tenant-context calls).
+- No `/api/collections/[id]` GET (single collection detail).
+- No `/api/collections/apply` POST (apply a collection to a wedding — mirrors `/api/theme/apply-template` but also seeds Settings rows + luxury-engine state + music URL).
+- No `/api/platform/collections` GET/POST/PUT/DELETE (platform-admin CRUD for managing the catalog).
+- The existing `/api/theme/apply-template` route can be kept as a thin shim or deprecated in favor of `/api/collections/apply`.
+
+### Gap 4 — No `collectionId` field on `Lead` or `Wedding` (MEDIUM — schema change)
+- `Lead` captures `plan` but not the desired collection — couples cannot pre-pick a collection before onboarding.
+- `Wedding` has no `collectionId` field — no way to remember which collection was applied (only the resulting `Theme` row exists, and it can be customized after application, so reverse-engineering the source collection is impossible).
+- **Required:** Add `collectionId String?` to `Lead` + `Wedding` (nullable so existing weddings are unaffected — backward-compatible).
+
+### Gap 5 — No `CollectionLibrary` component (CRITICAL — new component)
+- No grid/gallery component for browsing collections.
+- The existing selectable-grid patterns (§11) are inline within `ThemeCustomizer.tsx` and `OnboardingTab.tsx` — they're not factored into a reusable component.
+- **Required:** `src/components/collections/CollectionLibrary.tsx` — props `{ slug?, onSelect, showPremiumBadge, currentPlan }`. Clones Pattern A from §11, adds tier badge + lock overlay + "Upgrade to unlock" CTA. Mount it in:
+  - `/w/[slug]/admin/page.tsx` as a new `'collections'` tab (between `'theme'` and `'studio'`)
+  - `/app/platform/admin/page.tsx` as a new `'collections'` tab (platform admin can preview + apply)
+  - `/app/onboarding/page.tsx` as a new "Choisir une collection" step (after Plan step, before form submit)
+  - `/app/platform/admin/OnboardingTab.tsx` as a new wizard step (between Plan and Tarifs)
+
+### Gap 6 — No "active collection" indicator (LOW — UX polish)
+- `ThemeCustomizer.tsx` active-state detection (string-match on `primaryColor`) is fragile — if two collections share a primary color, both will show as "active".
+- A proper `Wedding.collectionId` field (Gap 4) fixes this — the active card is simply `collection.id === wedding.collectionId`.
+
+### Gap 7 — No collection-to-effects / collection-to-music binding (MEDIUM — feature scope)
+- A "Collection" in the future should bundle more than just theme colors + fonts. It should bundle:
+  - Theme (colors + fonts + layout) ← exists
+  - Luxury-engine theme (gold/rose/champagne/midnight) + intensity/density/speed ← luxury-engine-store is localStorage-only today, NOT persisted server-side (see CONSOLIDATION-PHASE2-DOUBLONS Table E row "Effets visuels store")
+  - Music URL + volume ← Settings-based today (not MusicTrack, which is dead)
+  - Section ambiance toggles ← visual-effects-store, localStorage-only
+- For the **first iteration** of the Collection Engine, scoping to "theme-only collections" is acceptable — it's a 1:1 superset of the existing 4 templates with a `tier` badge + admin CRUD.
+- For a **later iteration**, a full "Collection" would also seed the luxury-engine store + music — this requires the Appearance-server-sync project first (see WIRING-AUDIT-15-CASES Case 5 — NEEDS-SCHEMA-CHANGE + NEEDS-NEW-LOGIC, 4-8h, MEDIUM-HIGH risk).
+
+═══════════════════════════════════════════════════════════════════════════════
+QUICK SUMMARY (for the planning document)
+═══════════════════════════════════════════════════════════════════════════════
+
+| Concern | Status | Ready for Collection Engine? |
+|---------|--------|------------------------------|
+| Billing model (Subscription + Invoice) | ✅ PRESENT, mature, manual WhatsApp flow | Yes — Subscription.plan is the canonical tier pointer |
+| Plan / tier concept (4 tiers) | ✅ PRESENT (TRIAL/ESSENTIEL/PREMIUM/ELITE) | Yes — direct reuse of `Plan` type |
+| Stripe / payment gateway | ❌ ABSENT (schema columns reserved, no SDK) | N/A — manual billing is fine for v1; premium gating is server-side check, not payment-gateway check |
+| Theme templates (4 presets) | ✅ PRESENT in `templates.ts` (hardcoded const) | Yes — these are the SEEDS of the Collection Library |
+| `Collection` model | ❌ ABSENT | NO — schema change required |
+| `collectionId` on Lead/Wedding | ❌ ABSENT | NO — schema change required (medium) |
+| `/api/collections` routes | ❌ ABSENT | NO — new routes required |
+| `CollectionLibrary` component | ❌ ABSENT | NO — new component required (clone §11 Pattern A) |
+| Aesthetic feature tier-gating | ❌ ABSENT (only quantitative limits exist) | NO — new `canAccessCollection()` helper required |
+| Selectable-grid UI pattern | ✅ PRESENT (2 patterns: ThemeCustomizer + OnboardingTab PlanStep) | Yes — clone for CollectionLibrary |
+| Lead → Wedding conversion | ✅ PRESENT, transactional | Yes — extend Lead with `collectionId`, pass to create-wedding |
+| Public onboarding form | ✅ PRESENT, captures plan | Extend with collection-picker step |
+
+### Migration path for the 4 existing templates
+The current `THEME_TEMPLATES` array (4 hardcoded entries) should be migrated into `db.collection.findMany()` rows on first deploy. A one-off seed script (e.g. `prisma/seed-collections.ts`) would create 4 Collection rows with `tier=FREE` (or `'royal-night'` could be `tier=PREMIUM` as a marketing hook). The existing `/api/theme/apply-template` route can either be kept as a backwards-compatible alias that calls `/api/collections/apply` internally, or deprecated in favor of the new endpoint.
+
+CONSTRAINTS COMPLIANCE:
+- ✅ READ-ONLY — zero files modified, zero files created (other than appending this audit report to worklog.md as instructed).
+- ✅ All findings quoted with exact field names, file paths, and line numbers.
+- ✅ All 12 sections of the requested output format covered.
+- ✅ No speculations presented as facts — every claim is grounded in actual file contents.
+
+---
+Task ID: COLLECTION-ENGINE-PLAN
+Agent: Main Agent
+Task: PHASE SUIVANTE — Transformer Penpot en Template Factory (Wedding Collections). PLANNING ONLY (no code). 10 deliverables: audit existing, identify reusable, define Collection structure, data model, Penpot→WOS sync, auto-deployment, variants mechanism, catalog operation, no-regression verification, progressive implementation plan.
+
+Work Log:
+- Read worklog.md (4212 lines) to understand completed state: Penpot native integration DONE (PenpotStudio + ThemeInjector --penpot-* vars + Studio tabs in tenant + platform admin), 2 critical fixes DONE (PremiumGallery self-fetch + ThemeCustomizer tenant tab).
+- Dispatched 4 parallel READ-ONLY audit agents (AUDIT-A/B/C/D) to inventory the codebase in detail.
+- AUDIT-A (Theme Engine + Penpot): Theme model 1:1 Wedding, customizations shape = {penpot:{fileUrl,fileId,pageId,invitationFrameId,saveTheDateFrameId,lastSyncedAt,tokens}}, 4 THEME_TEMPLATES hardcoded, layout field dead-code, no Collection/Variant concept exists (greenfield).
+- AUDIT-B (Invitation + Media + Luxury): InvitationCard SINGLE fixed design (523 LOC), Guest.category conflates relationship+prestige (no tier field), Media model lacks INVITATION_BG/HERO category values, LuxuryVisualEngine confirmed overlay (localStorage not DB), 2 parallel visual stores, AES-256-GCM token system solid, Invitation Prisma model DEAD.
+- AUDIT-C (Wedding Workspace + Multi-tenant): 12 tenant admin tabs, 3 wedding creation routes (/api/platform/weddings, /api/onboarding/create-wedding, /api/platform/weddings/[id]/duplicate), Theme row created LAZILY (not at wedding creation), onboarding wizard has NO theme/collection step, multi-tenant AsyncLocalStorage + Prisma extension on 12 models, custom JWT auth (not NextAuth).
+- AUDIT-D (Billing + Templates + Catalog): Billing model FULLY present (Subscription + Invoice + UsageCounter-dead), 4-tier plan (TRIAL/ESSENTIEL/PREMIUM/ELITE), PLAN_LIMITS quantitative only (no aesthetic gating), Stripe NOT integrated (manual WhatsApp), Lead model with plan field, 2 selectable-grid UI patterns ready to clone (ThemeCustomizer grid + OnboardingTab PlanStep grid), NO Collection/catalog/library concept in code (clean namespace).
+- Synthesized all 4 audit reports into comprehensive plan document covering all 10 deliverables.
+- Wrote plan to /home/z/my-project/COLLECTION_ENGINE_PLAN.md (~500 lines, 10 sections + 2 annexes).
+
+Stage Summary:
+- DELIVERABLE: /home/z/my-project/COLLECTION_ENGINE_PLAN.md — comprehensive plan, NO code written.
+- 10 deliverables covered: (1) Audit existing engines, (2) Reuse matrix, (3) Collection structure (5 packs: Theme/Website/Invitation/Print/Communication), (4) Data model (2 new Prisma models Collection + CollectionVariant, 4 nullable columns Wedding.collectionId/variantId + Lead.collectionId + Guest.tier), (5) Penpot→WOS sync (frame registry JSON, 4-directional sync, reuses themeToPenpotTokens existing fns), (6) Auto-deployment pipeline (7-step UX, POST /api/collections/apply, idempotent upsert), (7) Variants mechanism (CollectionVariant model, 3-layer merge: Collection > Variant > Couple, IA adjusts only after choice), (8) Catalog operation (CollectionLibrary grid, canAccessCollection tier gate, couple vs admin views), (9) No-regression (8 risks mitigated, 10 safeguards, 30-min rollback), (10) Progressive plan (Phase 0-6 = 19.5-25.5h, Phase 7 deferred v2).
+- KEY DECISIONS: (a) No ThemeVariant model — variants live at Collection level, Theme stays 1:1. (b) All new columns nullable → zero breaking change. (c) InvitationRenderer is a WRAPPER with fallback to existing InvitationCard (not a replacement). (d) IA adjusts only, never creates (per directive). (e) Duplicate-wedding patch: clear collectionId + penpot fileId (data-leak fix).
+- FILES PLANNED (not created): 8 new files (src/lib/collections/{seed,index}.ts, src/app/api/collections/{route,[id]/route,apply/route}.ts, src/components/collections/{CollectionLibrary,VariantPicker,PalettePicker}.tsx, src/components/admin/CollectionAdmin.tsx, src/components/wedding/{InvitationRenderer,PenpotInvitationCard}.tsx) + 8 files modified (all additive).
+- CONSTRAINTS COMPLIANCE: ✅ READ-ONLY (no source code modified, only plan doc + worklog). ✅ No engine rebuilt. ✅ No existing feature broken. ✅ Backend preserved. ✅ Frontend preserved. ✅ Additive-only approach. ✅ Plan provided BEFORE any code (per explicit user instruction "Fournir un plan d'implémentation progressif avant d'écrire le moindre code").
+- STATUS: Awaiting user validation to begin Phase 0 (Schema & Seed).
