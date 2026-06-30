@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence, useInView } from 'framer-motion'
 import Image from 'next/image'
 import { X, ChevronLeft, ChevronRight, ZoomIn, Camera } from 'lucide-react'
@@ -37,9 +37,43 @@ export default function PremiumGallery({ images }: PremiumGalleryProps) {
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null)
   const { premiumButtons } = useVisualEffects()
 
+  // Consolidation fix: when no explicit `images` prop is passed, fetch the
+  // wedding's real media from /api/media (auto-scoped by the tenant
+  // interceptor). Falls back to `defaultPhotos` only when the API returns
+  // an empty list (e.g. couple hasn't uploaded anything yet).
+  // Backward compatible: if `images` prop is passed, it always wins.
+  const [fetchedImages, setFetchedImages] = useState<GalleryImage[]>([])
+  useEffect(() => {
+    if (images && images.length > 0) return // explicit prop wins, no fetch
+    let cancelled = false
+    fetch('/api/media?type=PHOTO&category=GALLERY')
+      .then(res => res.ok ? res.json() : null)
+      .then(data => {
+        if (cancelled) return
+        const media = Array.isArray(data?.media) ? data.media : []
+        // Only keep photo-type entries (defensive: route already filters by type)
+        const galleryImages: GalleryImage[] = media
+          .filter((m: { url?: string; type?: string }) => m?.url)
+          .map((m: { id: string; url: string; title?: string | null; description?: string | null; category?: string | null }) => ({
+            id: m.id,
+            url: m.url,
+            title: m.title ?? null,
+            description: m.description ?? null,
+            category: m.category ?? null,
+          }))
+        setFetchedImages(galleryImages)
+      })
+      .catch(() => {
+        // Silent fallback to defaultPhotos — network errors shouldn't crash the gallery
+      })
+    return () => { cancelled = true }
+  }, [images])
+
   const photos = images && images.length > 0
     ? images.map(img => ({ id: img.id, url: img.url, title: img.title || '', category: img.category || '' }))
-    : defaultPhotos
+    : fetchedImages.length > 0
+      ? fetchedImages.map(img => ({ id: img.id, url: img.url, title: img.title || '', category: img.category || '' }))
+      : defaultPhotos
 
   const openLightbox = (index: number) => setSelectedIndex(index)
   const closeLightbox = () => setSelectedIndex(null)

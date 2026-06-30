@@ -67,6 +67,7 @@ import {
   Wallet,
   Rocket,
   Palette,
+  PenTool,
   Send,
   CheckCircle,
   Pause,
@@ -92,6 +93,7 @@ import { PLAN_METADATA, type Plan, type WeddingStatus } from '@/lib/types'
 import { BillingTab } from './BillingTab'
 import { OnboardingTab } from './OnboardingTab'
 import { ThemeCustomizer } from '@/components/admin/ThemeCustomizer'
+import { PenpotStudio } from '@/components/penpot/PenpotStudio'
 
 // Local role labels — we can't import from @/lib/auth because that module
 // imports `next/headers` + Prisma (server-only). Same pattern as
@@ -210,7 +212,7 @@ interface PaginatedUsers {
   limit: number
 }
 
-type TabId = 'dashboard' | 'weddings' | 'users' | 'audit' | 'billing' | 'onboarding' | 'appearance'
+type TabId = 'dashboard' | 'weddings' | 'users' | 'audit' | 'billing' | 'onboarding' | 'appearance' | 'studio'
 
 interface NavItem {
   id: TabId
@@ -226,6 +228,7 @@ const NAV_ITEMS: NavItem[] = [
   { id: 'users', label: 'Utilisateurs', icon: UsersIcon },
   { id: 'audit', label: "Journal d'audit", icon: ScrollText },
   { id: 'appearance', label: 'Apparence', icon: Palette },
+  { id: 'studio', label: 'Studio Penpot', icon: PenTool },
 ]
 
 const WEDDING_STATUSES: WeddingStatus[] = ['DRAFT', 'PUBLISHED', 'COMPLETED', 'ARCHIVED', 'SUSPENDED']
@@ -2196,6 +2199,12 @@ export default function PlatformAdminPage() {
         return <AuditTab fetchWithAuth={fetchWithAuth} />
       case 'appearance':
         return <ThemeCustomizer />
+      case 'studio':
+        // Penpot Studio — the official design Studio of Wedding OS.
+        // Platform admin can link a Penpot file per wedding and sync design tokens.
+        // The PenpotStudio component reads the active wedding from the ThemeCustomizer
+        // wedding picker (same X-Wedding-Slug header pattern).
+        return <PenpotStudio />
       default:
         return <DashboardTab fetchWithAuth={fetchWithAuth} />
     }
