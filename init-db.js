@@ -171,6 +171,44 @@ async function createTables() {
         CONSTRAINT "GuestAccessLog_guestId_fkey" FOREIGN KEY ("guestId") REFERENCES "Guest"("id") ON DELETE SET NULL
       )`
     },
+    // ─── Collection Engine (Phase 1 — additive, nullable for zero regression) ───
+    {
+      name: 'Collection',
+      sql: `CREATE TABLE IF NOT EXISTS "Collection" (
+        "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(9)))),
+        "slug" TEXT NOT NULL,
+        "name" TEXT NOT NULL,
+        "description" TEXT,
+        "thumbnailUrl" TEXT,
+        "isActive" BOOLEAN NOT NULL DEFAULT true,
+        "isPublished" BOOLEAN NOT NULL DEFAULT true,
+        "sortOrder" INTEGER NOT NULL DEFAULT 0,
+        "category" TEXT NOT NULL DEFAULT 'LUXURY',
+        "tier" TEXT NOT NULL DEFAULT 'FREE',
+        "penpotFileUrl" TEXT,
+        "penpotFileId" TEXT,
+        "themeSeed" TEXT NOT NULL,
+        "luxuryPreset" TEXT,
+        "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "Collection_slug_key" UNIQUE ("slug")
+      )`
+    },
+    {
+      name: 'CollectionVariant',
+      sql: `CREATE TABLE IF NOT EXISTS "CollectionVariant" (
+        "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(9)))),
+        "collectionId" TEXT NOT NULL,
+        "code" TEXT NOT NULL,
+        "name" TEXT NOT NULL,
+        "paletteOverride" TEXT,
+        "penpotPageId" TEXT,
+        "isDefault" BOOLEAN NOT NULL DEFAULT false,
+        "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "CollectionVariant_collectionId_fkey" FOREIGN KEY ("collectionId") REFERENCES "Collection"("id") ON DELETE CASCADE,
+        CONSTRAINT "CollectionVariant_collectionId_code_key" UNIQUE ("collectionId", "code")
+      )`
+    },
   ];
 
   // Create tables in order (respecting foreign keys: Table before Guest)
@@ -205,6 +243,9 @@ async function createTables() {
     'ALTER TABLE "GuestSession" ADD COLUMN "deviceInfo" TEXT',
     'ALTER TABLE "GuestAccessLog" ADD COLUMN "fingerprint" TEXT',
     'ALTER TABLE "GuestAccessLog" ADD COLUMN "deviceInfo" TEXT',
+    // ─── Collection Engine (Phase 1 — nullable, zero regression) ───
+    'ALTER TABLE "Wedding" ADD COLUMN "collectionId" TEXT',
+    'ALTER TABLE "Wedding" ADD COLUMN "variantId" TEXT',
   ];
 
   for (const alterSql of alterStatements) {
