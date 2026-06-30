@@ -6682,3 +6682,46 @@ Stage Summary:
 - FILES PLANNED (not created): 8 new files (src/lib/collections/{seed,index}.ts, src/app/api/collections/{route,[id]/route,apply/route}.ts, src/components/collections/{CollectionLibrary,VariantPicker,PalettePicker}.tsx, src/components/admin/CollectionAdmin.tsx, src/components/wedding/{InvitationRenderer,PenpotInvitationCard}.tsx) + 8 files modified (all additive).
 - CONSTRAINTS COMPLIANCE: ✅ READ-ONLY (no source code modified, only plan doc + worklog). ✅ No engine rebuilt. ✅ No existing feature broken. ✅ Backend preserved. ✅ Frontend preserved. ✅ Additive-only approach. ✅ Plan provided BEFORE any code (per explicit user instruction "Fournir un plan d'implémentation progressif avant d'écrire le moindre code").
 - STATUS: Awaiting user validation to begin Phase 0 (Schema & Seed).
+
+---
+Task ID: COLLECTION-ENGINE-PLAN-V2-RECAST
+Agent: Main Agent
+Task: RECADRAGE ARCHITECTURAL avant implémentation. Vision figée : Wedding OS ne fabrique plus de thèmes, il DÉPLOIE des Collections Premium créées dans Penpot. Vérifier conformité du plan v1, identifier divergences, produire plan v2 conforme. NO CODE — planning only.
+
+Work Log:
+- Read user recast directive: 7 key shifts identified (Collection not Theme as primary object, Design System abstraction layer, Designer-Publish workflow, Marketplace architecture prep, 2 orthogonal tier axes, strict sequential phases with gates, ThemeCustomizer subordinated).
+- Verified "Command Center", "QR Engine", "Guest Engine" are conceptual groupings (not literal code names) via Grep: Command Center = platform admin dashboard, QR Engine = src/lib/guest-auth.ts (AES-256-GCM + qrcode), Guest Engine = Guest model + /api/guests/** + /api/guest/** + GuestPersonalSpace.
+- Audited v1 plan (COLLECTION_ENGINE_PLAN.md) against new vision: identified 8 divergences (D1-D8) requiring correction.
+- Wrote revised plan to /home/z/my-project/COLLECTION_ENGINE_PLAN_V2.md (~600 lines, 10 sections + 2 annexes).
+- Key architectural additions in v2:
+  * 4-level abstraction: Collection → DesignSystem → Module → Frame (vs v1's 2-level Collection → Frame)
+  * 2 new Prisma models: DesignSystem + Module (in addition to v1's Collection + CollectionVariant = 4 new models total)
+  * 2 orthogonal tier axes: billing tier (Subscription.plan, existing) + marketplace tier (Collection.marketplaceTier, new) + category (Collection.category, new)
+  * Marketplace data fields: marketplaceTier (FREE/PREMIUM/EXCLUSIVE/ENTERPRISE/LIMITED/EVENT/SIGNATURE), category (LUXURY/ROYAL/CLASSIC/MINIMAL/AFRICAN/MODERN/CATHOLIC/CIVIL/DESTINATION/BEACH/GARDEN/WINTER), priceFcfa, priceUsd, limitedQuantity, eventDate — DATA ONLY, no UI, no payment routing
+  * Designer-Publish workflow: designer creates in Penpot → pastes URL in CollectionAdmin → Wedding OS auto-detects frames by naming convention → designer confirms mappings → publish → appears in catalog
+  * 5 mandatory packs with EXACT 34 modules: Website(10) + Invitations(8) + Print(8) + Communication(8) + Luxury Preset(1 composite)
+  * Strict sequential phases with validation gates (Phase 0→1→2→3→4→5→6, NO parallel, gate validation mandatory between each)
+  * ThemeCustomizer repositioned (subordinated to CollectionLibrary, not removed, not extended)
+- 8 divergences corrected:
+  * D1: Added DesignSystem + Module models (4-level abstraction)
+  * D2: Reframed Theme Engine as subordinate execution motor (not primary object)
+  * D3: Added Designer-Publish workflow with auto-detection
+  * D4: Added marketplaceTier + category (orthogonal to billing tier)
+  * D5: Rewrote phases as strictly sequential with gates (no parallel)
+  * D6: ThemeCustomizer repositioned as subordinate (palette override only)
+  * D7: Updated pack structure with all 34 mandatory items nominatively
+  * D8: Extended reuse matrix to 15 entries (added Command Center, QR Engine, Guest Engine)
+- Conformity verification: 12/12 vision principles validated ✅
+- Effort estimate: Phase 0-6 + Patch = 26.5-33.5h (vs v1's 19.5-25.5h — delta from DesignSystem+Module + Designer-Publish + strict gates)
+- Phase 7 (Print & Communication renderers) deferred v2, requires explicit user unlock
+
+Stage Summary:
+- DELIVERABLE: /home/z/my-project/COLLECTION_ENGINE_PLAN_V2.md — revised plan supersedes v1, NO code written.
+- 8 divergences from v1 identified and corrected.
+- 4 new Prisma models planned (DesignSystem, Module, Collection, CollectionVariant) + 4 nullable columns.
+- 5 mandatory packs with 34 exact modules defined.
+- Marketplace architecture prepared (data only, no UI).
+- Strict sequential implementation plan with 7 validation gates.
+- Reuse matrix extended to 15 motors/concepts (none replaced, all additive).
+- CONSTRAINTS COMPLIANCE: ✅ READ-ONLY (no source code modified, only plan doc + worklog). ✅ No engine rebuilt. ✅ No Penpot duplication. ✅ No graphic editor. ✅ No theme builder. ✅ IA assistant only. ✅ Additive/retrocompatible/reversible. ✅ Plan provided BEFORE any code (per explicit user instruction "Avant toute implémentation, vérifie que chaque décision technique rapproche la plateforme de cette vision").
+- STATUS: Awaiting user validation to begin Phase 0 (Schema & Seed). Strict sequential execution with gates will be enforced.
