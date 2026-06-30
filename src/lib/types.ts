@@ -58,7 +58,14 @@ export type WeddingStatus = 'DRAFT' | 'PUBLISHED' | 'COMPLETED' | 'ARCHIVED' | '
  *   RECEPTION   (2) — per-wedding reception staff (check-in, guest lookup)
  *   CONTROLLER  (1) — per-wedding check-in controller (read-only + check-in)
  */
-export type Role = 'PLATFORM_ADMIN' | 'SUPER_ADMIN' | 'ORGANIZER' | 'RECEPTION' | 'CONTROLLER';
+export type Role =
+  | 'PLATFORM_ADMIN'
+  | 'SUPER_ADMIN'
+  | 'ORGANIZER'
+  | 'RECEPTION'
+  | 'CONTROLLER'
+  | 'DESIGNER'
+  | 'ART_DIRECTOR';
 
 export const ROLE_HIERARCHY: Record<Role, number> = {
   PLATFORM_ADMIN: 4,
@@ -66,6 +73,8 @@ export const ROLE_HIERARCHY: Record<Role, number> = {
   ORGANIZER: 3,
   RECEPTION: 2,
   CONTROLLER: 1,
+  DESIGNER: 2, // Phase 4 — can access Designer Portal + own Collections
+  ART_DIRECTOR: 3, // Phase 4 — can validate submissions
 };
 
 /**
@@ -76,6 +85,7 @@ export function normalizeRole(role: string): Role {
   const r = role as Role;
   if (r === 'PLATFORM_ADMIN' || r === 'SUPER_ADMIN') return 'PLATFORM_ADMIN';
   if (r === 'ORGANIZER' || r === 'RECEPTION' || r === 'CONTROLLER') return r;
+  if (r === 'DESIGNER' || r === 'ART_DIRECTOR') return r;
   return 'CONTROLLER'; // fail-safe: least privilege
 }
 

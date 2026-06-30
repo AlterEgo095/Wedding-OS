@@ -275,6 +275,8 @@ export const ROLE_LABELS: Record<string, string> = {
   ORGANIZER: 'Organisateur',
   RECEPTION: 'Réception',
   CONTROLLER: 'Contrôleur',
+  DESIGNER: 'Designer',
+  ART_DIRECTOR: 'Directeur Artistique',
 };
 
 export function getRoleLabel(role: string): string {

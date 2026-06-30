@@ -189,9 +189,17 @@ async function createTables() {
         "penpotFileId" TEXT,
         "themeSeed" TEXT NOT NULL,
         "luxuryPreset" TEXT,
+        "status" TEXT NOT NULL DEFAULT 'COMMERCIALISE',
+        "version" TEXT NOT NULL DEFAULT '0.1.0',
+        "authorId" TEXT,
+        "submittedAt" DATETIME,
+        "publishedAt" DATETIME,
+        "commercializedAt" DATETIME,
+        "archivedAt" DATETIME,
         "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
         "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        CONSTRAINT "Collection_slug_key" UNIQUE ("slug")
+        CONSTRAINT "Collection_slug_key" UNIQUE ("slug"),
+        CONSTRAINT "Collection_authorId_fkey" FOREIGN KEY ("authorId") REFERENCES "AdminUser"("id") ON DELETE SET NULL ON UPDATE CASCADE
       )`
     },
     {
@@ -267,6 +275,16 @@ async function createTables() {
     // ─── Collection Engine (Phase 1 — nullable, zero regression) ───
     'ALTER TABLE "Wedding" ADD COLUMN "collectionId" TEXT',
     'ALTER TABLE "Wedding" ADD COLUMN "variantId" TEXT',
+    // ─── Collection Engine (Phase 4 — Lifecycle 6 états) ───
+    // status/version default COMMERCIALISE/0.1.0 so existing seed Collections
+    // remain visible in the couple-facing catalog (which now filters status='COMMERCIALISE').
+    'ALTER TABLE "Collection" ADD COLUMN "status" TEXT NOT NULL DEFAULT \'COMMERCIALISE\'',
+    'ALTER TABLE "Collection" ADD COLUMN "version" TEXT NOT NULL DEFAULT \'0.1.0\'',
+    'ALTER TABLE "Collection" ADD COLUMN "authorId" TEXT',
+    'ALTER TABLE "Collection" ADD COLUMN "submittedAt" DATETIME',
+    'ALTER TABLE "Collection" ADD COLUMN "publishedAt" DATETIME',
+    'ALTER TABLE "Collection" ADD COLUMN "commercializedAt" DATETIME',
+    'ALTER TABLE "Collection" ADD COLUMN "archivedAt" DATETIME',
   ];
 
   for (const alterSql of alterStatements) {

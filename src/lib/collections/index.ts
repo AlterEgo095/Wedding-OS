@@ -810,14 +810,17 @@ function toPublicCollection(row: {
 }
 
 /**
- * List all active + published Collections, filtered by the caller's billing plan.
+ * List all commercialized Collections, filtered by the caller's billing plan.
+ * Phase 4: a Collection is shown in the couple-facing catalog only when
+ * status === 'COMMERCIALISE'. Seed Collections default to COMMERCIALISE so
+ * the catalog behavior is unchanged from Phase 1/2/3.
  * Auto-seeds the catalog on first call (idempotent — creates missing Collections).
  */
 export async function listCollections(billingPlan: Plan): Promise<CollectionPublic[]> {
   await ensureCollectionsSeeded()
 
   const rows = await db.collection.findMany({
-    where: { isActive: true, isPublished: true },
+    where: { isActive: true, isPublished: true, status: 'COMMERCIALISE' },
     include: { variants: { orderBy: { code: 'asc' } } },
     orderBy: { sortOrder: 'asc' },
   })
@@ -841,6 +844,7 @@ export async function getCollection(
     include: { variants: { orderBy: { code: 'asc' } } },
   })
   if (!row || !row.isActive || !row.isPublished) return null
+  if (row.status !== 'COMMERCIALISE') return null
   if (!canAccessCollection(billingPlan, row.tier)) return null
   return toPublicCollection(row)
 }
@@ -1210,3 +1214,257 @@ export async function validateCompleteness(
     missingSlots,
   }
 }
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Phase 4 — Lifecycle 6 états (spec §3)
+// ══════════════════════════════════════════════════════════════════════════════
+// BROUILLON → EN_COURS → VALIDATION → PUBLIE → COMMERCIALISE → ARCHIVE
+// Each transition is gated by role + completeness rules. Every transition is
+// logged in AuditLog for traceability.
+// ══════════════════════════════════════════════════════════════════════════════
+
+export type CollectionStatus =
+  | 'BROUILLON'
+  | 'EN_COURS'
+  | 'VALIDATION'
+  | 'PUBLIE'
+  | 'COMMERCIALISE'
+  | 'ARCHIVE'
+
+export const COLLECTION_STATUSES: readonly CollectionStatus[] = [
+  'BROUILLON',
+  'EN_COURS',
+  'VALIDATION',
+  'PUBLIE',
+  'COMMERCIALISE',
+  'ARCHIVE',
+]
+
+export const COLLECTION_STATUS_LABELS: Record<CollectionStatus, string> = {
+  BROUILLON: 'Brouillon',
+  'EN_COURS': 'En cours',
+  VALIDATION: 'En validation',
+  PUBLIE: 'Publié',
+  COMMERCIALISE: 'Commercialisé',
+  ARCHIVE: 'Archivé',
+}
+
+// Roles allowed to trigger each transition (spec §3.3 matrice des transitions).
+// PLATFORM_ADMIN can always trigger any transition (super-user).
+const TRANSITION_ROLES: Record<string, readonly string[]> = {
+  'BROUILLON→EN_COURS': ['DESIGNER', 'PLATFORM_ADMIN', 'SUPER_ADMIN'],
+  'EN_COURS→BROUILLON': ['DESIGNER', 'PLATFORM_ADMIN', 'SUPER_ADMIN'],
+  'EN_COURS→VALIDATION': ['DESIGNER', 'PLATFORM_ADMIN', 'SUPER_ADMIN'],
+  'VALIDATION→EN_COURS': ['ART_DIRECTOR', 'PLATFORM_ADMIN', 'SUPER_ADMIN'],
+  'VALIDATION→PUBLIE': ['ART_DIRECTOR', 'PLATFORM_ADMIN', 'SUPER_ADMIN'],
+  'PUBLIE→COMMERCIALISE': ['PLATFORM_ADMIN', 'SUPER_ADMIN'],
+  'PUBLIE→ARCHIVE': ['PLATFORM_ADMIN', 'SUPER_ADMIN'],
+  'COMMERCIALISE→ARCHIVE': ['PLATFORM_ADMIN', 'SUPER_ADMIN'],
+  'ARCHIVE→PUBLIE': ['PLATFORM_ADMIN', 'SUPER_ADMIN'],
+}
+
+export function canTransition(
+  from: CollectionStatus,
+  to: CollectionStatus,
+  userRole: string
+): boolean {
+  if (from === to) return false
+  const key = `${from}→${to}`
+  const allowed = TRANSITION_ROLES[key]
+  if (!allowed) return false
+  return allowed.includes(userRole)
+}
+
+export interface TransitionOption {
+  to: CollectionStatus
+  label: string
+  allowed: boolean
+  reason?: string
+}
+
+/**
+ * Returns the list of transitions available from a given status for a given role.
+ * Useful for the Designer Portal UI to render action buttons.
+ */
+export function availableTransitions(
+  from: CollectionStatus,
+  userRole: string
+): TransitionOption[] {
+  const candidates: Array<{ to: CollectionStatus; label: string }> = [
+    { to: 'BROUILLON', label: 'Repasser en brouillon' },
+    { to: 'EN_COURS', label: 'Reprendre l\'itération' },
+    { to: 'VALIDATION', label: 'Soumettre pour validation' },
+    { to: 'PUBLIE', label: 'Approuver et publier' },
+    { to: 'COMMERCIALISE', label: 'Commercialiser' },
+    { to: 'ARCHIVE', label: 'Archiver' },
+  ]
+  return candidates
+    .filter((c) => c.to !== from)
+    .map((c) => {
+      const allowed = canTransition(from, c.to, userRole)
+      let reason: string | undefined
+      if (!allowed) {
+        if (c.to === 'VALIDATION') reason = 'Réservé au designer'
+        else if (c.to === 'PUBLIE' || c.to === 'EN_COURS') reason = 'Réservé à l\'Art Director'
+        else reason = 'Réservé à l\'administrateur de plateforme'
+      }
+      return { to: c.to, label: c.label, allowed, reason }
+    })
+}
+
+/**
+ * Execute a lifecycle transition.
+ * Validates: transition is allowed for the role, status is currently `from`,
+ * and (for VALIDATION/PUBLIE) the 34 module slots are filled.
+ * Logs the transition in AuditLog.
+ */
+export async function transitionCollection(params: {
+  collectionId: string
+  to: CollectionStatus
+  userRole: string
+  userId: string
+  weddingId?: string | null
+}): Promise<{ from: CollectionStatus; to: CollectionStatus; version: string }> {
+  const { collectionId, to, userRole, userId, weddingId = null } = params
+
+  const collection = await db.collection.findUnique({
+    where: { id: collectionId },
+    select: {
+      id: true,
+      slug: true,
+      name: true,
+      status: true,
+      version: true,
+    },
+  })
+  if (!collection) {
+    throw new ApplyError('Collection introuvable', 404)
+  }
+
+  const from = collection.status as CollectionStatus
+  if (from === to) {
+    throw new ApplyError(
+      `La Collection est déjà dans l'état "${COLLECTION_STATUS_LABELS[to]}"`,
+      400
+    )
+  }
+  if (!canTransition(from, to, userRole)) {
+    throw new ApplyError(
+      `Transition non autorisée: ${from} → ${to} (rôle ${userRole})`,
+      403
+    )
+  }
+
+  // Completeness gate: forward publication flow requires all 34 slots mapped.
+  // EXCEPTION: ARCHIVE → PUBLIE (restoration of a previously-published Collection)
+  // skips the gate — the Collection was already commercialized in the past, so the
+  // designer/admin is just reactivating it. The forward flow (VALIDATION, fresh
+  // PUBLIE from VALIDATION) still enforces the gate.
+  if (
+    (to === 'VALIDATION' || to === 'PUBLIE') &&
+    !(from === 'ARCHIVE' && to === 'PUBLIE')
+  ) {
+    const report = await validateCompleteness(collectionId)
+    if (!report.complete) {
+      throw new ApplyError(
+        `Complétude insuffisante: ${report.filled}/${report.total} slots mappés. ` +
+          `Tous les 34 slots doivent être associés à un frame Penpot avant ${to === 'VALIDATION' ? 'soumission' : 'publication'}.`,
+        422
+      )
+    }
+  }
+
+  // Build update payload — only set timestamps when entering the corresponding state.
+  const now = new Date()
+  const update: {
+    status: CollectionStatus
+    submittedAt?: Date
+    publishedAt?: Date
+    commercializedAt?: Date
+    archivedAt?: Date
+    version?: string
+  } = { status: to }
+
+  if (to === 'VALIDATION') update.submittedAt = now
+  if (to === 'PUBLIE') {
+    update.publishedAt = now
+    // Bump version on first publication (0.x → 1.0.0) — leave existing explicit versions alone.
+    if (collection.version.startsWith('0.')) {
+      update.version = '1.0.0'
+    }
+  }
+  if (to === 'COMMERCIALISE') update.commercializedAt = now
+  if (to === 'ARCHIVE') update.archivedAt = now
+
+  await db.collection.update({ where: { id: collectionId }, data: update })
+
+  // AuditLog entry — action keyed for easy querying.
+  await db.auditLog.create({
+    data: {
+      weddingId,
+      userId,
+      action: 'COLLECTION_TRANSITION',
+      details: JSON.stringify({
+        collectionId,
+        slug: collection.slug,
+        name: collection.name,
+        from,
+        to,
+        version: update.version ?? collection.version,
+      }),
+    },
+  })
+
+  return {
+    from,
+    to,
+    version: update.version ?? collection.version,
+  }
+}
+
+// ─── Phase 4 — Designer Portal read API ─────────────────────────────────────
+
+export interface CollectionDesignerView extends CollectionPublic {
+  status: CollectionStatus
+  version: string
+  authorId: string | null
+  authorName: string | null
+  submittedAt: string | null
+  publishedAt: string | null
+  commercializedAt: string | null
+  archivedAt: string | null
+}
+
+/**
+ * List ALL Collections (all statuses) for the Designer Portal.
+ * Phase 4: this is the workspace view — designers and art directors see
+ * Collections across the entire lifecycle, not just commercialized ones.
+ */
+export async function listAllCollectionsForDesigner(): Promise<CollectionDesignerView[]> {
+  await ensureCollectionsSeeded()
+
+  const rows = await db.collection.findMany({
+    include: {
+      variants: { orderBy: { code: 'asc' } },
+      author: { select: { name: true } },
+    },
+    orderBy: [{ status: 'asc' }, { sortOrder: 'asc' }],
+  })
+
+  return rows.map((r) => {
+    const base = toPublicCollection(r)
+    return {
+      ...base,
+      status: r.status as CollectionStatus,
+      version: r.version,
+      authorId: r.authorId,
+      authorName: r.author?.name ?? null,
+      submittedAt: r.submittedAt ? r.submittedAt.toISOString() : null,
+      publishedAt: r.publishedAt ? r.publishedAt.toISOString() : null,
+      commercializedAt: r.commercializedAt ? r.commercializedAt.toISOString() : null,
+      archivedAt: r.archivedAt ? r.archivedAt.toISOString() : null,
+    }
+  })
+}
+
+

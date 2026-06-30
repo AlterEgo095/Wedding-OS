@@ -46,6 +46,7 @@ import AppearanceManager from '@/components/admin/AppearanceManager';
 import { ThemeCustomizer } from '@/components/admin/ThemeCustomizer';
 import { PenpotStudio } from '@/components/penpot/PenpotStudio';
 import { CollectionLibrary } from '@/components/collections/CollectionLibrary';
+import { DesignerPortal } from '@/components/collections/DesignerPortal';
 
 interface AuthUser {
   id: string
@@ -55,18 +56,28 @@ interface AuthUser {
   weddingId?: string | null
 }
 
-type TabId = 'dashboard' | 'collections' | 'guests' | 'tables' | 'media' | 'music' | 'timeline' | 'users' | 'settings' | 'access-logs' | 'appearance' | 'theme' | 'studio'
+type TabId = 'dashboard' | 'collections' | 'designer' | 'guests' | 'tables' | 'media' | 'music' | 'timeline' | 'users' | 'settings' | 'access-logs' | 'appearance' | 'theme' | 'studio'
 
 interface NavItem {
   id: TabId
   label: string
   icon: React.ComponentType<{ className?: string }>
   superAdminOnly?: boolean
+  /** Tab is visible only if user.role is in this list. Default: visible to all. */
+  rolesOnly?: string[]
 }
 
 const NAV_ITEMS: NavItem[] = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { id: 'collections', label: 'Collections', icon: Layers },
+  // Phase 4 — Designer Portal: workspace for designers + art directors + platform admins.
+  // Visible only to DESIGNER, ART_DIRECTOR, PLATFORM_ADMIN, SUPER_ADMIN.
+  {
+    id: 'designer',
+    label: 'Designer Portal',
+    icon: PenTool,
+    rolesOnly: ['DESIGNER', 'ART_DIRECTOR', 'PLATFORM_ADMIN', 'SUPER_ADMIN'],
+  },
   { id: 'guests', label: 'Invités', icon: Users },
   { id: 'tables', label: 'Tables', icon: Grid3X3 },
   { id: 'access-logs', label: 'Accès', icon: FileSearch },
@@ -215,9 +226,12 @@ export default function PerWeddingAdminPage() {
   }, [])
 
   // PLATFORM_ADMIN and SUPER_ADMIN both see the superAdminOnly tabs.
-  const visibleNavItems = NAV_ITEMS.filter(
-    (item) => !item.superAdminOnly || isPlatformAdmin(user?.role || '')
-  )
+  // Phase 4: tabs with `rolesOnly` are visible only if user.role is in the list.
+  const visibleNavItems = NAV_ITEMS.filter((item) => {
+    if (item.superAdminOnly && !isPlatformAdmin(user?.role || '')) return false
+    if (item.rolesOnly && !item.rolesOnly.includes(user?.role || '')) return false
+    return true
+  })
 
   const renderContent = () => {
     if (!token) return null
@@ -231,6 +245,11 @@ export default function PerWeddingAdminPage() {
         // the couple apply one. The fetch interceptor installed above attaches
         // X-Wedding-Slug + Authorization headers transparently.
         return <CollectionLibrary slug={slug} />
+      case 'designer':
+        // Phase 4 — Designer Portal: lifecycle 6 états workspace.
+        // Visible only to DESIGNER / ART_DIRECTOR / PLATFORM_ADMIN / SUPER_ADMIN
+        // (filtering done in NAV_ITEMS via rolesOnly).
+        return <DesignerPortal />
       case 'guests':
         return <GuestManager token={token} onSessionExpired={handleSessionExpired} />
       case 'tables':

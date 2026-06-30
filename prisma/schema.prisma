@@ -72,13 +72,18 @@ model AdminUser {
   email        String     @unique
   password     String
   name         String
-  role         String     @default("CONTROLLER") // SUPER_ADMIN, ORGANIZER, CONTROLLER, RECEPTION
+  // Roles: SUPER_ADMIN, PLATFORM_ADMIN, ORGANIZER, RECEPTION, CONTROLLER,
+  //        DESIGNER (Phase 4 — Designer Portal access),
+  //        ART_DIRECTOR (Phase 4 — validates submissions)
+  role         String     @default("CONTROLLER")
   weddingId    String?    // null for SUPER_ADMIN (platform-wide); set for ORGANIZER/STAFF
   lastLoginAt  DateTime?
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
   wedding      Wedding?   @relation(fields: [weddingId], references: [id], onDelete: Cascade)
   auditLogs    AuditLog[]
+  // Phase 4 — Collections authored by this designer (inverse of Collection.authorId).
+  authoredCollections Collection[] @relation("CollectionAuthor")
 
   @@index([weddingId])
 }
@@ -486,6 +491,22 @@ model Collection {
   // JSON shape: { theme: 'gold'|'rose'|'champagne'|'midnight', effects: {...}, intensity, density, speed, haloCount }
   // Nullable: when null, the LuxuryVisualEngine falls back to its localStorage behavior (unchanged).
   luxuryPreset    String?
+
+  // ─── Phase 4 — Lifecycle 6 états (spec §3) ──────────────────────────────
+  // status: BROUILLON | EN_COURS | VALIDATION | PUBLIE | COMMERCIALISE | ARCHIVE
+  // Default COMMERCIALISE for backward compat with Phase 1/2/3 seed Collections
+  // (they are already deployable, so they start in the terminal "commercialized" state).
+  status          String   @default("COMMERCIALISE")
+  // semver snapshot tag (e.g. "1.0.0"). Bumped on each VALIDATION transition.
+  version         String   @default("0.1.0")
+  // Designer who authored this Collection (nullable for legacy seed Collections).
+  authorId        String?
+  author          AdminUser? @relation("CollectionAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+  // Lifecycle timestamps (set when entering the corresponding state).
+  submittedAt     DateTime? // EN_COURS → VALIDATION
+  publishedAt     DateTime? // VALIDATION → PUBLIE
+  commercializedAt DateTime? // PUBLIE → COMMERCIALISE
+  archivedAt      DateTime? // * → ARCHIVE
 
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
