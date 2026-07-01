@@ -5,7 +5,7 @@ import Image from 'next/image'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   Crown, Gem, Heart, Sparkles, Globe, Mail, Printer, Megaphone,
-  Check, ChevronRight, X, Rocket, ArrowRight, Star, Layers,
+  Check, ChevronRight, X, Rocket, ArrowRight, Star, Layers, Loader2,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -34,6 +34,27 @@ interface PublicCollection {
   priceUsd: number
   designSystem: PremiumCollection['designSystem']
   stats: { packs: number; modules: number; variants: number; qualityScore: number }
+}
+
+// ─── Couple preview data (Phase B — no hardcoded "Josué" / "Hornella") ─────────
+// Fetched from /api/settings (tenant-aware). Falls back to neutral placeholders
+// when no wedding is resolved or settings are missing.
+interface CouplePreview {
+  bride: string
+  groom: string
+  label: string
+  date: string
+  venue: string
+  hashtag?: string
+}
+
+const NEUTRAL_COUPLE: CouplePreview = {
+  bride: 'Mme',
+  groom: 'M.',
+  label: 'Mari & Mme',
+  date: 'Date à définir',
+  venue: 'Lieu à définir',
+  hashtag: '',
 }
 
 const PACK_ICONS: Record<PackId, React.ComponentType<{ className?: string }>> = {
@@ -155,7 +176,7 @@ function PackTabButton({ pack, active, onClick, ds }: {
   )
 }
 
-function ModulePreview({ pack, ds }: { pack: CollectionPack; ds: PremiumCollection['designSystem'] }) {
+function ModulePreview({ pack, ds, couple }: { pack: CollectionPack; ds: PremiumCollection['designSystem']; couple: CouplePreview }) {
   const [activeVariantByModule, setActiveVariantByModule] = useState<Record<string, string>>({})
   const [expandedModule, setExpandedModule] = useState<string | null>(null)
 
@@ -217,7 +238,7 @@ function ModulePreview({ pack, ds }: { pack: CollectionPack; ds: PremiumCollecti
 
               {/* Live preview */}
               <div className="rounded-lg overflow-hidden" style={{ background: ds.background }}>
-                <DesignRenderer renderer={chosenVariant?.renderer || ''} ds={ds} />
+                <DesignRenderer renderer={chosenVariant?.renderer || ''} ds={ds} couple={couple} />
               </div>
 
               {/* Tags + quality (expanded) */}
@@ -250,6 +271,38 @@ function ModulePreview({ pack, ds }: { pack: CollectionPack; ds: PremiumCollecti
 function CollectionDetail({ collection, onClose }: { collection: PublicCollection; onClose: () => void }) {
   const [activePack, setActivePack] = useState<PackId>('website')
   const [fullCollection, setFullCollection] = useState<PremiumCollection | null>(null)
+  const [couple, setCouple] = useState<CouplePreview>(NEUTRAL_COUPLE)
+  // Phase D — deploy state
+  const [deploying, setDeploying] = useState(false)
+  const [deployResult, setDeployResult] = useState<{ ok: boolean; message: string } | null>(null)
+
+  // Phase B — fetch the current wedding's couple identity (tenant-aware).
+  // /api/settings resolves the wedding from X-Wedding-Slug header / auth / default
+  // and returns bride_name, groom_name, wedding_date, venue_name, hashtag.
+  useEffect(() => {
+    fetch('/api/settings')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (!data?.settings) return
+        const s = data.settings
+        const bride = (s.bride_name || '').trim()
+        const groom = (s.groom_name || '').trim()
+        const label = [bride, groom].filter(Boolean).join(' & ') || 'Mari & Mme'
+        const dateRaw = s.wedding_date || ''
+        const dateDisplay = dateRaw
+          ? new Date(dateRaw).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })
+          : 'Date à définir'
+        setCouple({
+          bride: bride || 'Mme',
+          groom: groom || 'M.',
+          label,
+          date: dateDisplay,
+          venue: (s.venue_name || '').trim() || 'Lieu à définir',
+          hashtag: (s.hashtag || '').trim() || '',
+        })
+      })
+      .catch(() => {})
+  }, [])
 
   useEffect(() => {
     fetch(`/api/collections/${collection.id}`)
@@ -260,6 +313,38 @@ function CollectionDetail({ collection, onClose }: { collection: PublicCollectio
 
   const ds = collection.designSystem
   const pack = fullCollection?.packs.find((p) => p.id === activePack)
+
+  // Phase D — wire the "Déployer cette Collection" button to the deploy endpoint.
+  // The endpoint requires ORGANIZER+ auth and persists a WeddingCollectionBinding
+  // + applies the Collection's DesignSystem to the Wedding's Theme row.
+  const handleDeploy = async () => {
+    setDeploying(true)
+    setDeployResult(null)
+    try {
+      const res = await fetch('/api/collections/deploy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ collectionId: collection.id }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (res.ok && data?.success) {
+        setDeployResult({
+          ok: true,
+          message: `Collection "${collection.name}" déployée — le thème du mariage a été mis à jour.`,
+        })
+      } else if (res.status === 401) {
+        setDeployResult({ ok: false, message: 'Connexion requise — connectez-vous en tant qu\u2019Organisateur.' })
+      } else if (res.status === 403) {
+        setDeployResult({ ok: false, message: 'Permissions insuffisantes — rôle Organisateur requis.' })
+      } else {
+        setDeployResult({ ok: false, message: data?.error || 'Échec du déploiement.' })
+      }
+    } catch {
+      setDeployResult({ ok: false, message: 'Erreur réseau — réessayez.' })
+    } finally {
+      setDeploying(false)
+    }
+  }
 
   return (
     <DialogContent className="max-w-5xl max-h-[92vh] overflow-hidden flex flex-col p-0 gap-0" style={{ background: ds.background, border: `1px solid ${ds.primary}40` }}>
@@ -305,7 +390,7 @@ function CollectionDetail({ collection, onClose }: { collection: PublicCollectio
         {pack ? (
           <>
             <p className="text-xs mb-4" style={{ color: ds.textMuted }}>{pack.description} — {pack.modules.length} modules</p>
-            <ModulePreview pack={pack} ds={ds} />
+            <ModulePreview pack={pack} ds={ds} couple={couple} />
           </>
         ) : (
           <div className="flex items-center justify-center py-20">
@@ -314,18 +399,38 @@ function CollectionDetail({ collection, onClose }: { collection: PublicCollectio
         )}
       </div>
 
-      {/* Footer — Deploy CTA */}
-      <div className="p-4 flex items-center justify-between gap-3" style={{ background: ds.surface, borderTop: `1px solid ${ds.primary}30` }}>
-        <div>
-          <p className="text-[10px] uppercase tracking-wider" style={{ color: ds.textMuted }}>Tarif Collection</p>
-          <p className="font-serif text-xl font-bold" style={{ color: ds.primary }}>{collection.priceFcfa.toLocaleString('fr-FR')} FCFA</p>
-          <p className="text-[10px]" style={{ color: ds.textMuted }}>≈ ${collection.priceUsd} USD</p>
+      {/* Footer — Deploy CTA (Phase D — wired to POST /api/collections/deploy) */}
+      <div className="p-4 flex flex-col gap-2" style={{ background: ds.surface, borderTop: `1px solid ${ds.primary}30` }}>
+        {deployResult && (
+          <div
+            className="text-xs px-3 py-2 rounded-md flex items-start gap-2"
+            style={{
+              background: deployResult.ok ? `${ds.primary}15` : 'rgba(239, 68, 68, 0.12)',
+              color: deployResult.ok ? ds.primary : '#f87171',
+              border: `1px solid ${deployResult.ok ? `${ds.primary}40` : 'rgba(239, 68, 68, 0.3)'}`,
+            }}
+          >
+            {deployResult.ok ? <Check size={14} className="mt-0.5 flex-shrink-0" /> : <X size={14} className="mt-0.5 flex-shrink-0" />}
+            <span>{deployResult.message}</span>
+          </div>
+        )}
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="text-[10px] uppercase tracking-wider" style={{ color: ds.textMuted }}>Tarif Collection</p>
+            <p className="font-serif text-xl font-bold" style={{ color: ds.primary }}>{collection.priceFcfa.toLocaleString('fr-FR')} FCFA</p>
+            <p className="text-[10px]" style={{ color: ds.textMuted }}>≈ ${collection.priceUsd} USD</p>
+          </div>
+          <Button
+            onClick={handleDeploy}
+            disabled={deploying}
+            className="gap-2"
+            style={{ background: ds.primary, color: ds.background }}
+          >
+            {deploying ? <Loader2 size={15} className="animate-spin" /> : <Rocket size={15} />}
+            {deploying ? 'Déploiement…' : 'Déployer cette Collection'}
+            {!deploying && <ArrowRight size={15} />}
+          </Button>
         </div>
-        <Button className="gap-2" style={{ background: ds.primary, color: ds.background }}>
-          <Rocket size={15} />
-          Déployer cette Collection
-          <ArrowRight size={15} />
-        </Button>
       </div>
     </DialogContent>
   )

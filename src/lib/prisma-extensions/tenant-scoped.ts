@@ -55,6 +55,8 @@ const TENANT_SCOPED_MODELS = new Set<string>([
   'MusicTrack',
   'Invitation',
   'UsageCounter',
+  // Phase C — Collection binding is tenant-scoped (1 active binding per wedding).
+  'WeddingCollectionBinding',
 ]);
 
 // Operations that accept a `where` clause for filtering (read + bulk write).
