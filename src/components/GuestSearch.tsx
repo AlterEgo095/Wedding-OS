@@ -78,6 +78,28 @@ export default function GuestSearch({ initialCode }: { initialCode?: string }) {
   const sectionRef = useRef<HTMLDivElement>(null)
   const isInView = useInView(sectionRef, { once: true, margin: '-100px' })
 
+  // Phase B — fetch the couple identity from /api/settings (tenant-aware).
+  // Replaces the hardcoded "Josué" / "Hornella" alt text + sentences that
+  // leaked the default wedding's couple into every other wedding's guest search.
+  const [couple, setCouple] = useState<{ bride: string; groom: string; label: string }>({
+    bride: '',
+    groom: '',
+    label: '',
+  })
+  useEffect(() => {
+    fetch('/api/settings')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (!data?.settings) return
+        const s = data.settings
+        const bride = (s.bride_name || '').trim()
+        const groom = (s.groom_name || '').trim()
+        const label = [bride, groom].filter(Boolean).join(' & ')
+        setCouple({ bride, groom, label })
+      })
+      .catch(() => {})
+  }, [])
+
   // Debounced search
   const performSearch = useCallback(async (q: string) => {
     if (!q.trim()) {
@@ -191,7 +213,7 @@ export default function GuestSearch({ initialCode }: { initialCode?: string }) {
             >
               <img
                 src="/uploads/couple-photo-1.jpeg"
-                alt="Josué"
+                alt={couple.groom || 'Photo du mari'}
                 className="w-full h-full object-cover"
               />
             </motion.div>
@@ -213,7 +235,7 @@ export default function GuestSearch({ initialCode }: { initialCode?: string }) {
             >
               <img
                 src="/uploads/couple-photo-2.jpeg"
-                alt="Hornella"
+                alt={couple.bride || 'Photo de la mariée'}
                 className="w-full h-full object-cover"
               />
             </motion.div>
@@ -223,7 +245,9 @@ export default function GuestSearch({ initialCode }: { initialCode?: string }) {
             <span className="gold-gradient">Retrouvez Votre Place</span>
           </h2>
           <p className="font-display text-lg text-muted-foreground max-w-xl mx-auto">
-            Josué &amp; Hornella vous invitent — Recherchez votre invitation par nom, prénom ou code
+            {couple.label
+              ? `${couple.label} vous invitent — Recherchez votre invitation par nom, prénom ou code`
+              : 'Recherchez votre invitation par nom, prénom ou code'}
           </p>
           <div className="section-divider max-w-xs mx-auto mt-6">
             <span className="flourish text-sm">✦</span>
@@ -434,7 +458,7 @@ export default function GuestSearch({ initialCode }: { initialCode?: string }) {
                 <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-full overflow-hidden gold-border shadow-lg shadow-gold/10">
                   <img
                     src="/uploads/couple-photo-1.jpeg"
-                    alt="Josué"
+                    alt={couple.groom || 'Photo du mari'}
                     className="w-full h-full object-cover"
                   />
                 </div>
@@ -447,7 +471,7 @@ export default function GuestSearch({ initialCode }: { initialCode?: string }) {
                 <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-full overflow-hidden gold-border shadow-lg shadow-gold/10">
                   <img
                     src="/uploads/couple-photo-2.jpeg"
-                    alt="Hornella"
+                    alt={couple.bride || 'Photo de la mariée'}
                     className="w-full h-full object-cover"
                   />
                 </div>
@@ -461,7 +485,9 @@ export default function GuestSearch({ initialCode }: { initialCode?: string }) {
                 Recherchez votre nom pour retrouver votre invitation.
               </p>
               <p className="font-display text-sm text-muted-foreground/70 mb-6">
-                Josué &amp; Hornella sont impatients de célébrer ce moment avec vous
+                {couple.label
+                  ? `${couple.label} sont impatients de célébrer ce moment avec vous`
+                  : 'Recherchez votre nom pour retrouver votre invitation.'}
               </p>
 
               {/* Decorative elements */}

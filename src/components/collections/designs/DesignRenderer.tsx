@@ -17,17 +17,21 @@ import type { DesignSystem } from '@/lib/collections/types'
 export interface DesignRendererProps {
   renderer: string
   ds: DesignSystem
-  // Sample data for preview
-  couple?: { bride: string; groom: string; label: string; date: string; venue: string }
+  // Sample data for preview. Phase B: defaults are NEUTRAL placeholders
+  // ("Mari" / "Mme" / "Mariage") so the catalog previews never leak the
+  // default wedding's couple identity ("Josué" / "Hornella"). The actual
+  // couple from Settings is passed by CollectionsShowcase via /api/settings.
+  couple?: { bride: string; groom: string; label: string; date: string; venue: string; hashtag?: string }
   guest?: { name: string; table: number; seats: number; category: string; code: string }
 }
 
 const DEFAULT_COUPLE = {
-  bride: 'Hornella',
-  groom: 'Josué',
-  label: 'Josué & Hornella',
-  date: '15 Juin 2025',
-  venue: 'Kinshasa',
+  bride: 'Mme',
+  groom: 'M.',
+  label: 'Mari & Mme',
+  date: 'Date à définir',
+  venue: 'Lieu à définir',
+  hashtag: '',
 }
 
 // ─── Helper: resolve a renderer key to its collection prefix + module + variant ─
@@ -259,7 +263,9 @@ function FooterA({ ds, couple }: { ds: DesignSystem; couple: NonNullable<DesignR
     <div className="w-full rounded-xl p-6 text-center" style={{ background: ds.background, borderTop: `1px solid ${ds.primary}40` }}>
       <Flourish color={ds.primary} />
       <p className="font-serif text-xl mt-2" style={{ color: ds.text, fontFamily: ds.fontDisplay }}>{couple.label}</p>
-      <p className="text-xs mt-1" style={{ color: ds.textMuted }}>#HornellaEtJosue2025 · Heureux Mariage</p>
+      <p className="text-xs mt-1" style={{ color: ds.textMuted }}>
+        {couple.hashtag ? `${couple.hashtag} · ` : ''}Heureux Mariage
+      </p>
     </div>
   )
 }

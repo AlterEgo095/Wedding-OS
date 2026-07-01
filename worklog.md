@@ -6756,3 +6756,45 @@ Stage Summary:
 - Vérifié Agent Browser : homepage + modal + 5 packs + previews live + variantes + CTA déployer. Aucune erreur runtime dans dev.log liée aux Collections.
 - CONFORMITÉ VISION : le catalogue n'est plus vide. Le commercial peut ouvrir une Collection, voir les vrais designs, choisir une variante, et déployer. C'est l'expérience qui fait la valeur de Wedding OS.
 - PROCHAINES ÉTAPES possibles : (1) compléter les 4 autres Collections à 100% (surtout ajouter variantes B/C/D sur modules clés), (2) connecter le bouton Déployer au endpoint existant /api/theme/apply-template pour appliquer réellement le DesignSystem à un Wedding, (3) ajouter import photos + noms dans le flow de déploiement.
+
+---
+Task ID: PHASES-A-B-C-D-E-CORRECTIVES
+Agent: Main Agent
+Task: 5 phases correctives post-audit (score 6.1/10) — A: Sécurisation, B: Élimination données codées en dur, C: Collection comme objet central, D: Déploiement réel, E: Nettoyage.
+
+Work Log:
+- Read worklog.md (6758 lines) to confirm audit was complete + verify current state of /api/registry/* routes (audit summary mentioned 9 unauthenticated registry routes — verified they DON'T EXIST; only /api/collections/* exist).
+- Phase A (Sécurisation): Rewrote /api/collections/deploy POST with getAuthUser + hasPermission(['PLATFORM_ADMIN','ORGANIZER']) + withAdminTenantHandler. Verified 401 returned without auth cookie, 200 with PLATFORM_ADMIN cookie. Audited all 60+ API routes — only deploy was missing auth (collections GET routes are intentionally public catalog browsing; guest routes use guest_session cookie system).
+- Phase B (Hardcoded data): 
+  * /api/collections/deploy: couple defaults now fetched from Settings (bride_name, groom_name, hashtag, wedding_date, venue_name) — no more 'Hornella'/'Josué' fallbacks.
+  * DesignRenderer.tsx: DEFAULT_COUPLE changed from {bride:'Hornella', groom:'Josué', label:'Josué & Hornella'} to NEUTRAL placeholders {bride:'Mme', groom:'M.', label:'Mari & Mme', date:'Date à définir', venue:'Lieu à définir'}. Added hashtag?:string to couple prop. FooterA hashtag line changed from hardcoded "#HornellaEtJosue2025 · Heureux Mariage" to dynamic "{couple.hashtag ? `${couple.hashtag} · ` : ''}Heureux Mariage".
+  * CollectionsShowcase.tsx: Added CouplePreview type + NEUTRAL_COUPLE constant. CollectionDetail now fetches /api/settings on mount and passes the actual couple (tenant-aware) to ModulePreview → DesignRenderer.
+  * GuestSearch.tsx: Added couple state + /api/settings fetch. Replaced 6 hardcoded occurrences: alt="Josué"→alt={couple.groom || 'Photo du mari'}, alt="Hornella"→alt={couple.bride || 'Photo de la mariée'}, "Josué & Hornella vous invitent..."→dynamic, "Josué & Hornella sont impatients..."→dynamic.
+- Phase C (Collection as central entity): 
+  * prisma/schema.prisma: Added 2 nullable fields to Wedding (collectionId String?, collectionVersion String?) — backward-compatible. Added new model WeddingCollectionBinding { id, weddingId @unique, collectionId, collectionVersion, manifest String (JSON), status, deployedAt, deployedByUserId, createdAt, updatedAt } with @@index([collectionId]) + @@index([status]).
+  * src/lib/prisma-extensions/tenant-scoped.ts: Added 'WeddingCollectionBinding' to TENANT_SCOPED_MODELS set so all queries are auto-scoped by weddingId.
+  * Ran bun run db:push — schema synced, Prisma Client regenerated.
+- Phase D (Real deployment): 
+  * /api/collections/deploy: Route body now persists binding + applies theme in a single db.$transaction: (1) upsert WeddingCollectionBinding with manifest JSON + status=DEPLOYED + deployedByUserId, (2) update Wedding.collectionId + collectionVersion, (3) upsert Theme row with collection.designSystem (primaryColor, accentColor, fontDisplay, fontBody, layout, customizations JSON). Plus auditLog entry with action=DEPLOY_COLLECTION.
+  * CollectionsShowcase.tsx: Wired "Déployer cette Collection" button onClick → handleDeploy() → POST /api/collections/deploy with {collectionId}. Added deploying spinner (Loader2 animate-spin), deployResult state with success/error message (401 → "Connexion requise", 403 → "Permissions insuffisantes", ok → "Collection X déployée — le thème du mariage a été mis à jour").
+  * End-to-end browser test: logged in as admin@josue-hornella.wedding → clicked Royal Gold card → clicked Déployer → success message displayed → DB verified: Wedding.collectionId="royal-gold", WeddingCollectionBinding row created (manifest 411 chars), Theme row updated (#D4A853 / #C8785A / Cormorant Garamond / Inter), AuditLog DEPLOY_COLLECTION entry created.
+- Phase E (Cleanup): Verified MarketingSection, CoupleGallery, CouplePhotosSection are not imported anywhere (only mentioned in comments). Deleted all 3 files (-658 LOC). InvitationCard kept (still used as fallback in GuestSearch.tsx). No orphan API routes found.
+- Self-verification (Agent Browser):
+  * Homepage loads 200, no errors, no console errors.
+  * Collections Premium section visible with 5 cards.
+  * Click Royal Gold → modal opens with 5 pack tabs + "Déployer cette Collection" button.
+  * Click deploy without auth → 401 → "Connexion requise — connectez-vous en tant qu'Organisateur." message.
+  * Login as PLATFORM_ADMIN → return to / → click Royal Gold → click deploy → "Collection \"Royal Gold\" déployée — le thème du mariage a été mis à jour." message.
+  * GuestSearch section shows couple names dynamically (no hardcoded leak).
+  * Lint: 0 new errors on the 5 modified files (61 pre-existing errors unchanged).
+  * Dev log: full deploy transaction visible (BEGIN → INSERT WeddingCollectionBinding → UPDATE Wedding → UPSERT Theme → COMMIT → INSERT AuditLog → POST 200 in 18ms).
+
+Stage Summary:
+- PHASE A (Sécurisation) ✅: /api/collections/deploy now requires ORGANIZER+ auth + tenant resolution. 401 without cookie, 200 with PLATFORM_ADMIN cookie. Other 60+ API routes verified properly secured.
+- PHASE B (Données codées en dur) ✅: 0 hardcoded "Josué"/"Hornella" defaults remaining in deploy route, DesignRenderer, GuestSearch, CollectionsShowcase. All couple data fetched from /api/settings (tenant-aware). Hashtag dynamic via couple.hashtag prop.
+- PHASE C (Collection comme objet central) ✅: Wedding now references its Collection via collectionId + collectionVersion (nullable, backward-compatible). WeddingCollectionBinding model stores full deployment manifest (1 active binding per wedding via @unique). Tenant-scoped extension auto-injects weddingId on all queries.
+- PHASE D (Déploiement réel) ✅: "Déployer cette Collection" button wired to POST /api/collections/deploy. Endpoint persists binding + applies design system to Theme in a single transaction. AuditLog entry created. End-to-end browser-verified: Royal Gold deployed to default wedding, Theme row updated, AuditLog persisted.
+- PHASE E (Nettoyage) ✅: 658 LOC of dead components removed (MarketingSection.tsx, CoupleGallery.tsx, CouplePhotosSection.tsx). No broken imports. InvitationCard.tsx kept (still used as fallback in GuestSearch).
+- FILES MODIFIED: 6 files (prisma/schema.prisma, src/lib/prisma-extensions/tenant-scoped.ts, src/app/api/collections/deploy/route.ts, src/components/collections/designs/DesignRenderer.tsx, src/components/collections/CollectionsShowcase.tsx, src/components/GuestSearch.tsx).
+- FILES DELETED: 3 files (src/components/MarketingSection.tsx, src/components/CoupleGallery.tsx, src/components/CouplePhotosSection.tsx).
+- CONSTRAINTS COMPLIANCE: ✅ No regression (homepage + modal + deploy all work). ✅ Additive-only on schema (nullable fields + new model — existing weddings unaffected). ✅ No breaking change to other admin UIs. ✅ Browser-verified end-to-end. ✅ Auth check enforced. ✅ Hardcoded couple identity eliminated. ✅ Collection is now the master entity referenced by Wedding. ✅ Deploy button is wired and persists binding + applies theme. ✅ Dead code removed.

@@ -30,6 +30,12 @@ model Wedding {
   plan            String        @default("TRIAL") // TRIAL, ESSENTIEL, PREMIUM, ELITE
   customDomain    String?       @unique // e.g. "mariage-sophie.fr" (Premium/Élite only)
   isDefault       Boolean       @default(false) // marks the legacy wedding served at "/"
+  // ── Phase C — Collection as central entity ────────────────────────────────
+  // The Wedding references its currently-deployed Collection + version. The
+  // full binding history lives in WeddingCollectionBinding (1:N below). Both
+  // fields are nullable so existing weddings remain backward-compatible.
+  collectionId        String?  // e.g. "royal-gold"
+  collectionVersion   String?  // e.g. "1.0.0"
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
   publishedAt     DateTime?
@@ -51,6 +57,7 @@ model Wedding {
   usageCounters   UsageCounter[]
   invitations     Invitation[]
   invoices        Invoice[]
+  collectionBindings WeddingCollectionBinding[]
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -428,4 +435,40 @@ model Lead {
 
   @@index([status])
   @@index([createdAt])
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// PHASE C — COLLECTION BINDING (Collection as central entity)
+// ══════════════════════════════════════════════════════════════════════════════
+// A WeddingCollectionBinding records the deployment of a Premium Collection
+// (Royal Gold, Royal Black, …) to a Wedding. There is at most one ACTIVE
+// binding per wedding (enforced by `@@unique([weddingId])`), but the table
+// keeps a small history: when a new Collection is deployed, the existing row
+// is updated in place (status flips to DEPLOYED, previous manifest is
+// archived in the `manifest` JSON column).
+//
+// The deploy endpoint (POST /api/collections/deploy) upserts this row and also
+// mirrors collectionId + collectionVersion onto the Wedding itself for fast
+// reads at render time (avoids an extra join on the public site).
+//
+// The `manifest` column stores the full deployment manifest as JSON:
+//   { collectionId, collectionName, collectionVersion, designSystem,
+//     variantSelections, deployedAt, deployedBy }
+// ══════════════════════════════════════════════════════════════════════════════
+
+model WeddingCollectionBinding {
+  id                String   @id @default(cuid())
+  weddingId         String   @unique // one active binding per wedding
+  wedding           Wedding  @relation(fields: [weddingId], references: [id], onDelete: Cascade)
+  collectionId      String   // e.g. "royal-gold" — references PremiumCollection.id in catalog.ts
+  collectionVersion String   // e.g. "1.0.0"
+  manifest          String   // JSON: full deployment manifest (variant selections, design system, etc.)
+  status            String   @default("DEPLOYED") // DEPLOYED, ARCHIVED, ROLLED_BACK
+  deployedAt        DateTime @default(now())
+  deployedByUserId  String?  // AdminUser.id of the deployer (null for system/migration)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([collectionId])
+  @@index([status])
 }
