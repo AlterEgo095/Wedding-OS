@@ -1,0 +1,641 @@
+     1→'use client'
+     2→
+     3→// ════════════════════════════════════════════════════════════════════════════
+     4→// PenpotStudio — Native Penpot Design Studio Integration
+     5→// ════════════════════════════════════════════════════════════════════════════
+     6→// This is the official design Studio of Wedding OS, powered by Penpot.
+     7→//
+     8→// Architecture (reuses existing engines, zero regression):
+     9→//   ┌─────────────────────────────────────────────────────────────┐
+    10→//   │ PenpotStudio (this component)                              │
+    11→//   │  • Embeds Penpot editor via iframe (view mode)             │
+    12→//   │  • Links a Penpot file URL → stored in Theme.customizations│
+    13→//   │  • Pushes theme tokens to Penpot (colors + fonts)          │
+    14→//   │  • Pulls design tokens from Penpot                         │
+    15→//   │  • Coexists with LuxuryVisualEngine (ambiance overlay)     │
+    16→//   ├─────────────────────────────────────────────────────────────┤
+    17→//   │ Theme Engine (existing)                                    │
+    18→//   │  • /api/theme GET/PUT — reads/writes Theme row             │
+    19→//   │  • Theme.customizations JSON stores Penpot integration     │
+    20→//   │  • ThemeCustomizer still works (4 canonical fields)        │
+    21→//   ├─────────────────────────────────────────────────────────────┤
+    22→//   │ ThemeInjector (existing)                                   │
+    23→//   │  • Injects --theme-* CSS vars (unchanged)                  │
+    24→//   │  • Now ALSO injects --penpot-* CSS vars (additive)         │
+    25→//   ├─────────────────────────────────────────────────────────────┤
+    26→//   │ InvitationCard (existing, fallback)                        │
+    27→//   │  • If Theme.customizations.penpot.invitationFrameId is set │
+    28→//   │    → render Penpot SVG export with guest data overlaid     │
+    29→//   │  • Else → render the existing fixed InvitationCard design  │
+    30→//   ├─────────────────────────────────────────────────────────────┤
+    31→//   │ Media Engine (existing)                                    │
+    32→//   │  • /api/media returns the wedding's uploaded photos        │
+    33→//   │  • Penpot can reference these URLs as placed images        │
+    34→//   └─────────────────────────────────────────────────────────────┘
+    35→//
+    36→// All Penpot state is persisted in Theme.customizations.penpot (JSON).
+    37→// This is additive: the existing Theme.customizations field is reused,
+    38→// zero schema migration needed.
+    39→// ════════════════════════════════════════════════════════════════════════════
+    40→
+    41→import { useState, useEffect, useCallback, useRef } from 'react'
+    42→import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+    43→import { Button } from '@/components/ui/button'
+    44→import { Input } from '@/components/ui/input'
+    45→import { Label } from '@/components/ui/label'
+    46→import { Badge } from '@/components/ui/badge'
+    47→import { Separator } from '@/components/ui/separator'
+    48→import {
+    49→  ExternalLink,
+    50→  Link2,
+    51→  Unlink,
+    52→  RefreshCw,
+    53→  Palette,
+    54→  Upload,
+    55→  Download,
+    56→  Loader2,
+    57→  CheckCircle2,
+    58→  Info,
+    59→  Sparkles,
+    60→} from 'lucide-react'
+    61→import { toast } from 'sonner'
+    62→import {
+    63→  PENPOT_BASE_URL,
+    64→  PENPOT_ENABLED,
+    65→  buildPenpotViewUrl,
+    66→  buildPenpotEditUrl,
+    67→  parsePenpotUrl,
+    68→  themeToPenpotTokens,
+    69→  penpotTokensToTheme,
+    70→  type PenpotIntegration,
+    71→  type PenpotTokens,
+    72→  EMPTY_PENPOT_INTEGRATION,
+    73→} from '@/lib/penpot/config'
+    74→
+    75→interface PenpotStudioProps {
+    76→  /** Wedding slug — used for the X-Wedding-Slug header (tenant scoping). */
+    77→  slug?: string
+    78→  /**
+    79→   * Called when the user links/unlinks a Penpot file.
+    80→   * The parent should persist `integration.fileUrl` to Theme.customizations.
+    81→   */
+    82→  onIntegrationChange?: (integration: PenpotIntegration) => void
+    83→}
+    84→
+    85→export function PenpotStudio({ slug, onIntegrationChange }: PenpotStudioProps) {
+    86→  // ─── Load existing Penpot integration from /api/theme ────────────────────
+    87→  // The Theme.customizations JSON field stores the PenpotIntegration blob.
+    88→  // We read it on mount and expose editors for each field.
+    89→  const [loading, setLoading] = useState(true)
+    90→  const [saving, setSaving] = useState(false)
+    91→  const [syncing, setSyncing] = useState<'push' | 'pull' | null>(null)
+    92→  const [integration, setIntegration] = useState<PenpotIntegration>(EMPTY_PENPOT_INTEGRATION)
+    93→  const [theme, setTheme] = useState<{
+    94→    primaryColor?: string | null
+    95→    accentColor?: string | null
+    96→    fontDisplay?: string | null
+    97→    fontBody?: string | null
+    98→  }>({})
+    99→  const [fileUrlInput, setFileUrlInput] = useState('')
+   100→  const iframeRef = useRef<HTMLIFrameElement>(null)
+   101→
+   102→  // ─── Fetch current theme + Penpot integration on mount ───────────────────
+   103→  const fetchTheme = useCallback(async () => {
+   104→    setLoading(true)
+   105→    try {
+   106→      const res = await fetch('/api/theme')
+   107→      if (!res.ok) return
+   108→      const data = await res.json()
+   109→      const themeRow = data.theme || data
+   110→      setTheme({
+   111→        primaryColor: themeRow.primaryColor,
+   112→        accentColor: themeRow.accentColor,
+   113→        fontDisplay: themeRow.fontDisplay,
+   114→        fontBody: themeRow.fontBody,
+   115→      })
+   116→      // Parse the existing customizations JSON (if any) to restore Penpot state
+   117→      let customizations: Record<string, unknown> = {}
+   118→      if (themeRow.customizations) {
+   119→        try {
+   120→          customizations =
+   121→            typeof themeRow.customizations === 'string'
+   122→              ? JSON.parse(themeRow.customizations)
+   123→              : themeRow.customizations
+   124→        } catch {
+   125→          customizations = {}
+   126→        }
+   127→      }
+   128→      const penpot = (customizations.penpot as PenpotIntegration) || EMPTY_PENPOT_INTEGRATION
+   129→      setIntegration(penpot)
+   130→      setFileUrlInput(penpot.fileUrl || '')
+   131→    } catch {
+   132→      // Silent — theme may not exist yet for a fresh wedding
+   133→    } finally {
+   134→      setLoading(false)
+   135→    }
+   136→  }, [])
+   137→
+   138→  useEffect(() => {
+   139→    fetchTheme()
+   140→  }, [fetchTheme])
+   141→
+   142→  // ─── Persist Penpot integration to /api/theme (PUT) ──────────────────────
+   143→  // We merge our PenpotIntegration into the existing Theme.customizations JSON
+   144→  // so we never clobber other customizations fields (additive merge).
+   145→  // Returns true on success, false on failure (so callers can decide whether
+   146→  // to show their own success toast or not).
+   147→  const persistIntegration = useCallback(
+   148→    async (next: PenpotIntegration): Promise<boolean> => {
+   149→      setSaving(true)
+   150→      try {
+   151→        // First, re-fetch the latest theme to get the current customizations
+   152→        // (avoids clobbering concurrent edits from ThemeCustomizer).
+   153→        const getRes = await fetch('/api/theme')
+   154→        if (!getRes.ok) {
+   155→          toast.error('Impossible de charger le thème actuel')
+   156→          return false
+   157→        }
+   158→        const getData = await getRes.json()
+   159→        const themeRow = getData.theme || getData
+   160→        let customizations: Record<string, unknown> = {}
+   161→        if (themeRow.customizations) {
+   162→          try {
+   163→            customizations =
+   164→              typeof themeRow.customizations === 'string'
+   165→                ? JSON.parse(themeRow.customizations)
+   166→                : themeRow.customizations
+   167→          } catch {
+   168→            customizations = {}
+   169→          }
+   170→        }
+   171→        // Merge: only touch the `penpot` key, leave everything else intact
+   172→        customizations.penpot = next
+   173→
+   174→        const putRes = await fetch('/api/theme', {
+   175→          method: 'PUT',
+   176→          headers: { 'Content-Type': 'application/json' },
+   177→          body: JSON.stringify({
+   178→            // Preserve existing theme fields (don't clobber colors/fonts)
+   179→            primaryColor: themeRow.primaryColor,
+   180→            accentColor: themeRow.accentColor,
+   181→            fontDisplay: themeRow.fontDisplay,
+   182→            fontBody: themeRow.fontBody,
+   183→            layout: themeRow.layout,
+   184→            // Send customizations as an OBJECT — the /api/theme PUT route
+   185→            // calls JSON.stringify() itself. Sending a pre-stringified value
+   186→            // would cause double-encoding (the route would JSON.stringify a
+   187→            // string, producing an escaped string in the DB).
+   188→            customizations,
+   189→          }),
+   190→        })
+   191→        if (!putRes.ok) {
+   192→          const err = await putRes.json().catch(() => ({}))
+   193→          toast.error(err.error || 'Échec de la sauvegarde Penpot')
+   194→          return false
+   195→        }
+   196→        setIntegration(next)
+   197→        onIntegrationChange?.(next)
+   198→        return true
+   199→      } catch {
+   200→        toast.error('Erreur réseau lors de la sauvegarde')
+   201→        return false
+   202→      } finally {
+   203→        setSaving(false)
+   204→      }
+   205→    },
+   206→    [onIntegrationChange]
+   207→  )
+   208→
+   209→  // ─── Link a Penpot file ──────────────────────────────────────────────────
+   210→  const handleLinkFile = useCallback(async () => {
+   211→    const url = fileUrlInput.trim()
+   212→    if (!url) {
+   213→      toast.error('Collez une URL de fichier Penpot')
+   214→      return
+   215→    }
+   216→    if (!url.startsWith(PENPOT_BASE_URL) && !url.startsWith('http')) {
+   217→      toast.error(`L'URL doit commencer par ${PENPOT_BASE_URL}`)
+   218→      return
+   219→    }
+   220→    const { fileId, pageId } = parsePenpotUrl(url)
+   221→    if (!fileId) {
+   222→      toast.error('URL Penpot invalide — file-id introuvable')
+   223→      return
+   224→    }
+   225→    const next: PenpotIntegration = {
+   226→      ...integration,
+   227→      fileUrl: url,
+   228→      fileId,
+   229→      pageId,
+   230→      lastSyncedAt: new Date().toISOString(),
+   231→    }
+   232→    const ok = await persistIntegration(next)
+   233→    if (ok) toast.success('Studio Penpot lié avec succès')
+   234→  }, [fileUrlInput, integration, persistIntegration])
+   235→
+   236→  // ─── Unlink Penpot file ──────────────────────────────────────────────────
+   237→  const handleUnlink = useCallback(async () => {
+   238→    const next: PenpotIntegration = {
+   239→      ...EMPTY_PENPOT_INTEGRATION,
+   240→      tokens: integration.tokens, // keep tokens even after unlink
+   241→    }
+   242→    setFileUrlInput('')
+   243→    const ok = await persistIntegration(next)
+   244→    if (ok) toast.success('Fichier Penpot délié')
+   245→  }, [integration, persistIntegration])
+   246→
+   247→  // ─── Push theme tokens to Penpot ─────────────────────────────────────────
+   248→  // Serializes the current ThemeCustomizer colors/fonts as PenpotTokens and
+   249→  // stores them in Theme.customizations.penpot.tokens. The couple can then
+   250→  // import these tokens into their Penpot file (via Penpot's Tokens plugin
+   251→  // or by copying the JSON from the clipboard).
+   252→  const handlePushTokens = useCallback(async () => {
+   253→    setSyncing('push')
+   254→    try {
+   255→      const tokens = themeToPenpotTokens(theme)
+   256→      const next: PenpotIntegration = {
+   257→        ...integration,
+   258→        tokens,
+   259→        lastSyncedAt: new Date().toISOString(),
+   260→      }
+   261→      const ok = await persistIntegration(next)
+   262→      if (!ok) return
+   263→      // Also copy the tokens JSON to clipboard for easy paste into Penpot
+   264→      try {
+   265→        await navigator.clipboard.writeText(JSON.stringify(tokens, null, 2))
+   266→        toast.success('Tokens poussés vers Penpot (JSON copié dans le presse-papiers)')
+   267→      } catch {
+   268→        toast.success('Tokens poussés vers Penpot')
+   269→      }
+   270→    } finally {
+   271→      setSyncing(null)
+   272→    }
+   273→  }, [theme, integration, persistIntegration])
+   274→
+   275→  // ─── Pull tokens from Penpot (manual paste) ──────────────────────────────
+   276→  // Since we can't directly read from the Penpot iframe (cross-origin),
+   277→  // the couple pastes the Penpot tokens JSON into a prompt. We parse it,
+   278→  // store it in customizations, AND update the canonical theme fields
+   279→  // (primaryColor, accentColor, fontDisplay, fontBody) so ThemeInjector
+   280→  // picks them up immediately.
+   281→  const handlePullTokens = useCallback(async () => {
+   282→    setSyncing('pull')
+   283→    try {
+   284→      const pasted = window.prompt(
+   285→        'Collez le JSON des tokens exporté depuis Penpot (ou laissez vide pour ignorer) :'
+   286→      )
+   287→      if (!pasted) {
+   288→        setSyncing(null)
+   289→        return
+   290→      }
+   291→      let tokens: PenpotTokens
+   292→      try {
+   293→        tokens = JSON.parse(pasted)
+   294→      } catch {
+   295→        toast.error('JSON invalide — vérifiez le format')
+   296→        setSyncing(null)
+   297→        return
+   298→      }
+   299→      // Map back to canonical theme fields and persist via /api/theme PUT
+   300→      const themeUpdate = penpotTokensToTheme(tokens)
+   301→      const getRes = await fetch('/api/theme')
+   302→      if (!getRes.ok) {
+   303→        toast.error('Impossible de charger le thème')
+   304→        return
+   305→      }
+   306→      const getData = await getRes.json()
+   307→      const themeRow = getData.theme || getData
+   308→      let customizations: Record<string, unknown> = {}
+   309→      if (themeRow.customizations) {
+   310→        try {
+   311→          customizations =
+   312→            typeof themeRow.customizations === 'string'
+   313→              ? JSON.parse(themeRow.customizations)
+   314→              : themeRow.customizations
+   315→        } catch {
+   316→          customizations = {}
+   317→        }
+   318→      }
+   319→      const next: PenpotIntegration = {
+   320→        ...integration,
+   321→        tokens,
+   322→        lastSyncedAt: new Date().toISOString(),
+   323→      }
+   324→      customizations.penpot = next
+   325→
+   326→      const putRes = await fetch('/api/theme', {
+   327→        method: 'PUT',
+   328→        headers: { 'Content-Type': 'application/json' },
+   329→        body: JSON.stringify({
+   330→          primaryColor: themeUpdate.primaryColor ?? themeRow.primaryColor,
+   331→          accentColor: themeUpdate.accentColor ?? themeRow.accentColor,
+   332→          fontDisplay: themeUpdate.fontDisplay ?? themeRow.fontDisplay,
+   333→          fontBody: themeUpdate.fontBody ?? themeRow.fontBody,
+   334→          layout: themeRow.layout,
+   335→          // Send as object — the /api/theme PUT route does JSON.stringify itself
+   336→          customizations,
+   337→        }),
+   338→      })
+   339→      if (!putRes.ok) {
+   340→        toast.error('Échec de la synchronisation Penpot → Thème')
+   341→        return
+   342→      }
+   343→      setIntegration(next)
+   344→      setTheme((prev) => ({ ...prev, ...themeUpdate }))
+   345→      onIntegrationChange?.(next)
+   346→      toast.success('Tokens Penpot → Thème synchronisés')
+   347→    } finally {
+   348→      setSyncing(null)
+   349→    }
+   350→  }, [integration, persistIntegration, onIntegrationChange])
+   351→
+   352→  // ─── Render ──────────────────────────────────────────────────────────────
+   353→
+   354→  if (!PENPOT_ENABLED) {
+   355→    return (
+   356→      <Card className="border-gold/20">
+   357→        <CardContent className="p-6 text-center text-muted-foreground">
+   358→          <Palette className="w-8 h-8 mx-auto mb-2 opacity-50" />
+   359→          <p>Studio Penpot désactivé. Configurez NEXT_PUBLIC_PENPOT_BASE_URL.</p>
+   360→        </CardContent>
+   361→      </Card>
+   362→    )
+   363→  }
+   364→
+   365→  if (loading) {
+   366→    return (
+   367→      <div className="flex items-center justify-center py-16">
+   368→        <Loader2 className="w-6 h-6 animate-spin text-gold" />
+   369→        <span className="ml-2 text-sm text-muted-foreground">Chargement du Studio…</span>
+   370→      </div>
+   371→    )
+   372→  }
+   373→
+   374→  const isLinked = !!(integration.fileId && integration.fileUrl)
+   375→  const viewUrl = isLinked
+   376→    ? buildPenpotViewUrl(integration.fileId!, integration.pageId)
+   377→    : null
+   378→  const editUrl = isLinked
+   379→    ? buildPenpotEditUrl(integration.fileId!, integration.pageId)
+   380→    : null
+   381→
+   382→  return (
+   383→    <div className="space-y-4 p-4 md:p-6">
+   384→      {/* ─── Header ─────────────────────────────────────────────────────── */}
+   385→      <Card className="border-gold/20 bg-gradient-to-br from-gold/[0.03] to-transparent">
+   386→        <CardHeader className="pb-3">
+   387→          <div className="flex items-start justify-between gap-3">
+   388→            <div className="flex items-center gap-3">
+   389→              <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-gold/20 to-rose-gold/10 flex items-center justify-center">
+   390→                <Palette className="w-5 h-5 text-gold" />
+   391→              </div>
+   392→              <div>
+   393→                <CardTitle className="text-lg flex items-center gap-2">
+   394→                  Studio Penpot
+   395→                  {isLinked ? (
+   396→                    <Badge variant="outline" className="text-emerald-400 border-emerald-400/30 text-xs">
+   397→                      <CheckCircle2 className="w-3 h-3 mr-1" />
+   398→                      Lié
+   399→                    </Badge>
+   400→                  ) : (
+   401→                    <Badge variant="outline" className="text-muted-foreground text-xs">
+   402→                      Non lié
+   403→                    </Badge>
+   404→                  )}
+   405→                </CardTitle>
+   406→                <p className="text-xs text-muted-foreground mt-1">
+   407→                  Le Studio officiel de création — invitations, save-the-date, visuels
+   408→                </p>
+   409→              </div>
+   410→            </div>
+   411→            {isLinked && editUrl && (
+   412→              <Button asChild size="sm" variant="outline" className="shrink-0">
+   413→                <a href={editUrl} target="_blank" rel="noopener noreferrer">
+   414→                  <ExternalLink className="w-3.5 h-3.5 mr-1.5" />
+   415→                  Éditer dans Penpot
+   416→                </a>
+   417→              </Button>
+   418→            )}
+   419→          </div>
+   420→        </CardHeader>
+   421→      </Card>
+   422→
+   423→      {/* ─── File Linker ────────────────────────────────────────────────── */}
+   424→      <Card className="border-white/10">
+   425→        <CardHeader className="pb-3">
+   426→          <CardTitle className="text-sm flex items-center gap-2">
+   427→            <Link2 className="w-4 h-4 text-gold" />
+   428→            Fichier Penpot
+   429→          </CardTitle>
+   430→        </CardHeader>
+   431→        <CardContent className="space-y-3">
+   432→          <div className="space-y-2">
+   433→            <Label htmlFor="penpot-url" className="text-xs">
+   434→              URL du fichier Penpot (partage ou éditeur)
+   435→            </Label>
+   436→            <div className="flex gap-2">
+   437→              <Input
+   438→                id="penpot-url"
+   439→                value={fileUrlInput}
+   440→                onChange={(e) => setFileUrlInput(e.target.value)}
+   441→                placeholder={`${PENPOT_BASE_URL}/#/view?file-id=...&page-id=...`}
+   442→                className="text-xs font-mono"
+   443→                disabled={saving}
+   444→              />
+   445→              {isLinked ? (
+   446→                <Button
+   447→                  variant="outline"
+   448→                  size="sm"
+   449→                  onClick={handleUnlink}
+   450→                  disabled={saving}
+   451→                  className="shrink-0 text-red-400 hover:text-red-300 hover:bg-red-400/10"
+   452→                >
+   453→                  <Unlink className="w-3.5 h-3.5 mr-1.5" />
+   454→                  Délier
+   455→                </Button>
+   456→              ) : (
+   457→                <Button
+   458→                  size="sm"
+   459→                  onClick={handleLinkFile}
+   460→                  disabled={saving || !fileUrlInput.trim()}
+   461→                  className="shrink-0"
+   462→                >
+   463→                  {saving ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : <Link2 className="w-3.5 h-3.5 mr-1.5" />}
+   464→                  Lier
+   465→                </Button>
+   466→              )}
+   467→            </div>
+   468→            <p className="text-[11px] text-muted-foreground">
+   469→              Dans Penpot : Menu → Partager → Copier le lien. Collez-le ici.
+   470→            </p>
+   471→          </div>
+   472→          {isLinked && integration.fileId && (
+   473→            <div className="text-[11px] text-muted-foreground font-mono bg-white/[0.02] rounded p-2 border border-white/5">
+   474→              <div>file-id: <span className="text-foreground">{integration.fileId}</span></div>
+   475→              {integration.pageId && (
+   476→                <div>page-id: <span className="text-foreground">{integration.pageId}</span></div>
+   477→              )}
+   478→              {integration.lastSyncedAt && (
+   479→                <div>dernière sync: <span className="text-foreground">{new Date(integration.lastSyncedAt).toLocaleString('fr-FR')}</span></div>
+   480→              )}
+   481→            </div>
+   482→          )}
+   483→        </CardContent>
+   484→      </Card>
+   485→
+   486→      {/* ─── Token Sync Bridge ──────────────────────────────────────────── */}
+   487→      <Card className="border-white/10">
+   488→        <CardHeader className="pb-3">
+   489→          <CardTitle className="text-sm flex items-center gap-2">
+   490→            <RefreshCw className="w-4 h-4 text-gold" />
+   491→            Synchronisation des tokens
+   492→          </CardTitle>
+   493→        </CardHeader>
+   494→        <CardContent className="space-y-3">
+   495→          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+   496→            {/* Push: Wedding OS → Penpot */}
+   497→            <div className="rounded-lg border border-white/5 bg-white/[0.02] p-3 space-y-2">
+   498→              <div className="flex items-center gap-2">
+   499→                <Upload className="w-3.5 h-3.5 text-gold" />
+   500→                <span className="text-xs font-medium">Pousser vers Penpot</span>
+   501→              </div>
+   502→              <p className="text-[11px] text-muted-foreground">
+   503→                Exporte les couleurs et polices du thème actuel au format JSON
+   504→                pour les importer dans Penpot.
+   505→              </p>
+   506→              <Button
+   507→                size="sm"
+   508→                variant="outline"
+   509→                onClick={handlePushTokens}
+   510→                disabled={syncing !== null}
+   511→                className="w-full text-xs"
+   512→              >
+   513→                {syncing === 'push' ? <Loader2 className="w-3 h-3 mr-1.5 animate-spin" /> : <Upload className="w-3 h-3 mr-1.5" />}
+   514→                Pousser les tokens
+   515→              </Button>
+   516→            </div>
+   517→
+   518→            {/* Pull: Penpot → Wedding OS */}
+   519→            <div className="rounded-lg border border-white/5 bg-white/[0.02] p-3 space-y-2">
+   520→              <div className="flex items-center gap-2">
+   521→                <Download className="w-3.5 h-3.5 text-gold" />
+   522→                <span className="text-xs font-medium">Tirer depuis Penpot</span>
+   523→              </div>
+   524→              <p className="text-[11px] text-muted-foreground">
+   525→                Importe les tokens modifiés dans Penpot pour mettre à jour le
+   526→                thème Wedding OS (couleurs, polices).
+   527→              </p>
+   528→              <Button
+   529→                size="sm"
+   530→                variant="outline"
+   531→                onClick={handlePullTokens}
+   532→                disabled={syncing !== null}
+   533→                className="w-full text-xs"
+   534→              >
+   535→                {syncing === 'pull' ? <Loader2 className="w-3 h-3 mr-1.5 animate-spin" /> : <Download className="w-3 h-3 mr-1.5" />}
+   536→                Tirer les tokens
+   537→              </Button>
+   538→            </div>
+   539→          </div>
+   540→
+   541→          {/* Current token state */}
+   542→          {integration.tokens && (
+   543→            <>
+   544→              <Separator className="bg-white/5" />
+   545→              <div className="space-y-1.5">
+   546→                <span className="text-[11px] text-muted-foreground uppercase tracking-wider">
+   547→                  Tokens actuels
+   548→                </span>
+   549→                <div className="flex flex-wrap gap-1.5">
+   550→                  {Object.entries(integration.tokens).filter(([, v]) => v).map(([k, v]) => (
+   551→                    <Badge key={k} variant="outline" className="text-[10px] font-mono">
+   552→                      {k}: <span className="text-foreground ml-1">{String(v)}</span>
+   553→                    </Badge>
+   554→                  ))}
+   555→                </div>
+   556→              </div>
+   557→            </>
+   558→          )}
+   559→        </CardContent>
+   560→      </Card>
+   561→
+   562→      {/* ─── Penpot Embed (view mode) ──────────────────────────────────── */}
+   563→      {isLinked && viewUrl ? (
+   564→        <Card className="border-white/10 overflow-hidden">
+   565→          <CardHeader className="pb-3">
+   566→            <CardTitle className="text-sm flex items-center gap-2">
+   567→              <Sparkles className="w-4 h-4 text-gold" />
+   568→              Aperçu du design Penpot
+   569→            </CardTitle>
+   570→          </CardHeader>
+   571→          <CardContent className="p-0">
+   572→            <div className="relative w-full" style={{ minHeight: '500px' }}>
+   573→              <iframe
+   574→                ref={iframeRef}
+   575→                src={viewUrl}
+   576→                title="Penpot Studio"
+   577→                className="w-full border-0"
+   578→                style={{ minHeight: '500px', height: '60vh' }}
+   579→                allow="clipboard-read; clipboard-write; fullscreen"
+   580→                loading="lazy"
+   581→              />
+   582→            </div>
+   583→            <div className="p-3 bg-white/[0.02] border-t border-white/5 flex items-center gap-2 text-[11px] text-muted-foreground">
+   584→              <Info className="w-3 h-3 shrink-0" />
+   585→              <span>
+   586→                Mode aperçu (lecture seule). Pour éditer, cliquez sur « Éditer dans Penpot ».
+   587→              </span>
+   588→            </div>
+   589→          </CardContent>
+   590→        </Card>
+   591→      ) : (
+   592→        <Card className="border-dashed border-white/15">
+   593→          <CardContent className="p-8 text-center space-y-3">
+   594→            <div className="w-14 h-14 rounded-full bg-gold/10 flex items-center justify-center mx-auto">
+   595→              <Palette className="w-6 h-6 text-gold" />
+   596→            </div>
+   597→            <div>
+   598→              <p className="text-sm font-medium">Aucun fichier Penpot lié</p>
+   599→              <p className="text-xs text-muted-foreground mt-1 max-w-md mx-auto">
+   600→                Liez un fichier Penpot pour transformer Wedding OS en Studio de création.
+   601→                Vos invitations, save-the-date et visuels seront conçus dans Penpot,
+   602→                puis affichés sur votre site avec les données dynamiques (invités, tables, QR codes).
+   603→              </p>
+   604→            </div>
+   605→            <Button asChild size="sm" variant="outline">
+   606→              <a href={PENPOT_BASE_URL} target="_blank" rel="noopener noreferrer">
+   607→                <ExternalLink className="w-3.5 h-3.5 mr-1.5" />
+   608→                Ouvrir Penpot
+   609→              </a>
+   610→            </Button>
+   611→          </CardContent>
+   612→        </Card>
+   613→      )}
+   614→
+   615→      {/* ─── Integration info ──────────────────────────────────────────── */}
+   616→      <Card className="border-blue-500/15 bg-blue-500/[0.02]">
+   617→        <CardContent className="p-4 space-y-2">
+   618→          <div className="flex items-center gap-2 text-xs font-medium text-blue-300">
+   619→            <Info className="w-3.5 h-3.5" />
+   620→            Comment fonctionne l&apos;intégration Penpot
+   621→          </div>
+   622→          <ol className="text-[11px] text-muted-foreground space-y-1 list-decimal list-inside ml-1">
+   623→            <li>Créez un fichier Penpot (ou dupliquez un template fourni).</li>
+   624→            <li>Copiez l&apos;URL de partage et liez-la ci-dessus.</li>
+   625→            <li>Poussez vos couleurs/polices vers Penpot (bouton ci-dessus).</li>
+   626→            <li>Concevez votre invitation/save-the-date dans Penpot.</li>
+   627→            <li>Tirez les tokens modifiés pour resynchroniser le thème.</li>
+   628→            <li>Le moteur InvitationCard affiche automatiquement votre design Penpot.</li>
+   629→          </ol>
+   630→          <p className="text-[11px] text-muted-foreground pt-1 border-t border-blue-500/10">
+   631→            <strong className="text-foreground">Coexistence :</strong> le LuxuryVisualEngine
+   632→            (particules, bokeh, halos) se superpose au design Penpot sans conflit.
+   633→            Le ThemeInjector applique les tokens Penpot via les variables CSS{' '}
+   634→            <code className="text-foreground">--penpot-*</code>.
+   635→          </p>
+   636→        </CardContent>
+   637→      </Card>
+   638→    </div>
+   639→  )
+   640→}
+   641→
