@@ -6798,3 +6798,19 @@ Stage Summary:
 - FILES MODIFIED: 6 files (prisma/schema.prisma, src/lib/prisma-extensions/tenant-scoped.ts, src/app/api/collections/deploy/route.ts, src/components/collections/designs/DesignRenderer.tsx, src/components/collections/CollectionsShowcase.tsx, src/components/GuestSearch.tsx).
 - FILES DELETED: 3 files (src/components/MarketingSection.tsx, src/components/CoupleGallery.tsx, src/components/CouplePhotosSection.tsx).
 - CONSTRAINTS COMPLIANCE: ✅ No regression (homepage + modal + deploy all work). ✅ Additive-only on schema (nullable fields + new model — existing weddings unaffected). ✅ No breaking change to other admin UIs. ✅ Browser-verified end-to-end. ✅ Auth check enforced. ✅ Hardcoded couple identity eliminated. ✅ Collection is now the master entity referenced by Wedding. ✅ Deploy button is wired and persists binding + applies theme. ✅ Dead code removed.
+
+---
+Task ID: AUDIT-CERTIFICATION-FINAL
+Agent: Main Agent (synthèse de 8 sous-agents)
+Task: AUDIT 15 — Certification production-ready. Synthèse des 14 audits précédents en un rapport unique avec score /100 sur 16 dimensions + verdict OUI/NON.
+
+Work Log:
+- Lancé 8 sous-agents parallèles (audit-1-13, audit-2, audit-3-4, audit-5-6, audit-7-8-9, audit-10, audit-11-14, audit-12).
+- Reçu 8 rapports détaillés avec preuves file:line pour chaque affirmation.
+- Synthèse ci-dessous.
+
+Stage Summary:
+- Verdict final: NON (justifié ci-dessous).
+- Score global moyen: 47/100 (critique).
+- 7 P0 critiques, 23 P1, 18 P2, 14 P3.
+- Voir rapport complet ci-dessous.
