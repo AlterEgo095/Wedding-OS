@@ -3,6 +3,12 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { verifyPassword, generateToken, checkLoginRateLimit, resetLoginRateLimit, setAuthCookie } from '@/lib/auth';
 import { getRateLimitKey, checkRateLimit, withSecurityHeaders } from '@/lib/rate-limit';
+// P2-SEC-1: structured logger (no stack leak).
+import { logger } from '@/lib/logger';
+// P2-CQ-5: standardised API errors.
+import { internalError } from '@/lib/api-errors';
+// P2-SEC-14: writeAuditLog populates ipAddress + userAgent from request.
+import { writeAuditLog } from '@/lib/audit';
 
 export async function POST(request: NextRequest) {
   try {
@@ -14,7 +20,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const body = await request.json();
+    const body = await request.json().catch(() => null); // P2-CQ-6
+    if (!body) {
+      return NextResponse.json(
+        { error: 'Email and password are required' },
+        { status: 400 }
+      );
+    }
     const { email, password } = body;
 
     if (!email || !password) {
@@ -55,13 +67,17 @@ export async function POST(request: NextRequest) {
       weddingId: user.weddingId,
     });
 
-    await db.auditLog.create({
-      data: {
-        weddingId: user.weddingId, // null for SUPER_ADMIN
-        userId: user.id,
-        action: 'LOGIN',
-        details: `User ${user.email} logged in`,
-      },
+    // P2-SEC-14: writeAuditLog populates ipAddress + userAgent from request.
+    // (Skipped wrapping POST with withRateLimit — this route already uses
+    // two rate-limit checks: checkRateLimit on IP + checkLoginRateLimit on
+    // email. Adding a third layer would just consume memory without
+    // improving protection.)
+    await writeAuditLog({
+      weddingId: user.weddingId, // null for SUPER_ADMIN
+      userId: user.id,
+      action: 'LOGIN',
+      details: `User ${user.email} logged in`,
+      request,
     });
 
     const response = NextResponse.json({
@@ -83,7 +99,11 @@ export async function POST(request: NextRequest) {
 
     return withSecurityHeaders(response);
   } catch (error) {
-    console.error('Login error:', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    // P2-SEC-1: never log error.stack.
+    logger.error('Login error', {
+      errMessage: error instanceof Error ? error.message : String(error),
+      errName: error instanceof Error ? error.name : 'Unknown',
+    });
+    return internalError();
   }
 }

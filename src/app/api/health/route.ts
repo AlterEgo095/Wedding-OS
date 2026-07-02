@@ -3,6 +3,7 @@ export const runtime = "nodejs";
 
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { logger } from "@/lib/logger"; // P2-SEC-8
 
 /**
  * Health check endpoint (P1-PROD-1).
@@ -29,10 +30,22 @@ export async function GET() {
     await db.$queryRaw`SELECT 1`;
     checks.database = { status: "ok", latencyMs: Date.now() - t0 };
   } catch (err) {
+    // P2-SEC-8: in production, never expose the raw DB error message — it
+    // can leak connection-string fragments, hostnames, or Prisma internals
+    // to unauthenticated callers (this endpoint has no auth). In dev we
+    // keep err.message for faster local debugging.
+    const isProd = process.env.NODE_ENV === "production";
     checks.database = {
       status: "fail",
-      error: err instanceof Error ? err.message : "Unknown DB error",
+      error: isProd
+        ? "database unreachable"
+        : err instanceof Error ? err.message : "Unknown DB error",
     };
+    // P2-SEC-1: structured logger, no stack leak.
+    logger.error("Health check DB failure", {
+      errMessage: err instanceof Error ? err.message : String(err),
+      errName: err instanceof Error ? err.name : "Unknown",
+    });
   }
 
   // ─── Required env vars ────────────────────────────────────────────────────

@@ -10,6 +10,12 @@ import {
 } from '@/lib/auth';
 import { getRateLimitKey, checkRateLimit, withSecurityHeaders } from '@/lib/rate-limit';
 import { isPlatformAdmin } from '@/lib/types';
+// P2-SEC-1: structured logger (no stack leak).
+import { logger } from '@/lib/logger';
+// P2-CQ-5: standardised API errors.
+import { internalError } from '@/lib/api-errors';
+// P2-SEC-14: writeAuditLog populates ipAddress + userAgent from request.
+import { writeAuditLog } from '@/lib/audit';
 
 /**
  * Platform admin login endpoint.
@@ -33,7 +39,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const body = await request.json();
+    const body = await request.json().catch(() => null); // P2-CQ-6
+    if (!body) {
+      return NextResponse.json(
+        { error: 'Email and password are required' },
+        { status: 400 }
+      );
+    }
     const { email, password } = body;
 
     if (!email || !password) {
@@ -93,19 +105,20 @@ export async function POST(request: NextRequest) {
       weddingId: user.weddingId, // null for platform admins
     });
 
-    // ─── Update lastLoginAt + audit log ────────────────────────────────────
+    // ─── Update lastLoginAt + audit log (P2-SEC-14) ───────────────────
+    // (Skipped wrapping POST with withRateLimit — this route already uses
+    // checkRateLimit on IP + checkLoginRateLimit on email.)
     await Promise.all([
       db.adminUser.update({
         where: { id: user.id },
         data: { lastLoginAt: new Date() },
       }),
-      db.auditLog.create({
-        data: {
-          weddingId: null, // platform-level event
-          userId: user.id,
-          action: 'PLATFORM_LOGIN',
-          details: `Platform admin ${user.email} logged in`,
-        },
+      writeAuditLog({
+        weddingId: null, // platform-level event
+        userId: user.id,
+        action: 'PLATFORM_LOGIN',
+        details: `Platform admin ${user.email} logged in`,
+        request,
       }),
     ]);
 
@@ -121,10 +134,11 @@ export async function POST(request: NextRequest) {
     setAuthCookie(response, token);
     return withSecurityHeaders(response);
   } catch (error) {
-    console.error('Platform login error:', error);
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    );
+    // P2-SEC-1: never log error.stack.
+    logger.error('Platform login error', {
+      errMessage: error instanceof Error ? error.message : String(error),
+      errName: error instanceof Error ? error.name : 'Unknown',
+    });
+    return internalError();
   }
 }

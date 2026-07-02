@@ -3,6 +3,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db, tenantDb } from '@/lib/db';
 import { getAuthUser, hasPermission } from '@/lib/auth';
 import { withPublicTenant, withAdminTenantHandler } from '@/lib/tenant-context';
+// P2-SEC-1: structured logger (no stack leak).
+import { logger } from '@/lib/logger';
+// P2-CQ-5: standardised API errors.
+import { internalError, badRequest } from '@/lib/api-errors';
 
 export const GET = withPublicTenant(async (_req, _ctx) => {
   try {
@@ -12,8 +16,12 @@ export const GET = withPublicTenant(async (_req, _ctx) => {
     });
     return NextResponse.json({ stories });
   } catch (error) {
-    console.error('List couple story error:', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    // P2-SEC-1: never log error.stack.
+    logger.error('List couple story error', {
+      errMessage: error instanceof Error ? error.message : String(error),
+      errName: error instanceof Error ? error.name : 'Unknown',
+    });
+    return internalError();
   }
 });
 
@@ -26,7 +34,8 @@ export async function POST(request: NextRequest) {
     }
 
     return withAdminTenantHandler(request, user, async (_req, ctx) => {
-      const body = await request.json();
+      const body = await request.json().catch(() => null); // P2-CQ-6
+      if (!body) return badRequest('Corps de requête invalide');
       const { title, description, date, imageUrl, order } = body;
       if (!title || !description) {
         return NextResponse.json({ error: 'Title and description are required' }, { status: 400 });
@@ -53,8 +62,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ story }, { status: 201 });
     });
   } catch (error) {
-    console.error('Create couple story error:', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    // P2-SEC-1: never log error.stack.
+    logger.error('Create couple story error', {
+      errMessage: error instanceof Error ? error.message : String(error),
+      errName: error instanceof Error ? error.name : 'Unknown',
+    });
+    return internalError();
   }
 }
 
@@ -67,7 +80,8 @@ export async function PUT(request: NextRequest) {
     }
 
     return withAdminTenantHandler(request, user, async (_req, ctx) => {
-      const body = await request.json();
+      const body = await request.json().catch(() => null); // P2-CQ-6
+      if (!body) return badRequest('Corps de requête invalide');
       const { id, title, description, date, imageUrl, order } = body;
       if (!id) return NextResponse.json({ error: 'Story ID is required' }, { status: 400 });
 
@@ -94,8 +108,12 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ story });
     });
   } catch (error) {
-    console.error('Update couple story error:', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    // P2-SEC-1: never log error.stack.
+    logger.error('Update couple story error', {
+      errMessage: error instanceof Error ? error.message : String(error),
+      errName: error instanceof Error ? error.name : 'Unknown',
+    });
+    return internalError();
   }
 }
 
@@ -128,7 +146,11 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ message: 'Couple story deleted successfully' });
     });
   } catch (error) {
-    console.error('Delete couple story error:', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    // P2-SEC-1: never log error.stack.
+    logger.error('Delete couple story error', {
+      errMessage: error instanceof Error ? error.message : String(error),
+      errName: error instanceof Error ? error.name : 'Unknown',
+    });
+    return internalError();
   }
 }

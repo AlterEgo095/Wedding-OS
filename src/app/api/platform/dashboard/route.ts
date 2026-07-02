@@ -3,6 +3,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getAuthUser, requirePlatformAdmin } from '@/lib/auth';
 import { PLAN_METADATA, type Plan } from '@/lib/types';
+import { logger } from '@/lib/logger'; // P2-SEC-1
+import { internalError } from '@/lib/api-errors'; // P2-CQ-5
 
 /**
  * Platform-wide dashboard stats.
@@ -82,6 +84,14 @@ export async function GET(request: NextRequest) {
     const sixMonthsAgoStart = monthSeries[0].monthStart;
 
     // ─── Parallel aggregation queries ──────────────────────────────────────
+    // P2-PERF-6: replaced the full-table scan `publishedWeddingsForMrr`
+    // (findMany of every PUBLISHED wedding's createdAt+plan, reduced in JS)
+    // with a single `groupBy` that returns per-plan counts. MRR is then
+    // sum(plan_count * plan_price). The 6-month mrrSeries still needs
+    // per-wedding createdAt, so it gets its own scoped findMany (6-mo window
+    // only) — much cheaper than fetching all PUBLISHED weddings.
+    const sixMonthsAgo = sixMonthsAgoStart; // alias for the scoped fetch
+
     const [
       weddingsTotal,
       weddingsByStatus,
@@ -94,7 +104,10 @@ export async function GET(request: NextRequest) {
       recentWeddings,
       recentActivity,
       // ── Phase 5-a: revenue / churn / growth inputs ──
-      publishedWeddingsForMrr,
+      // P2-PERF-6: groupBy replaces the full-array findMany for current MRR.
+      publishedWeddingsByPlanForMrr,
+      // P2-PERF-6: scoped 6-month findMany for the mrrSeries only.
+      publishedWeddingsLast6Mo,
       weddingsCreatedSince6Mo,
       suspended30d,
       archived30d,
@@ -155,10 +168,21 @@ export async function GET(request: NextRequest) {
         },
       }),
 
-      // ── Revenue: every PUBLISHED wedding's createdAt + plan ──
-      // Used for: mrr, arpu, byPlan, mrrSeries (single fetch, bucketed in JS).
-      db.wedding.findMany({
+      // ── P2-PERF-6: Revenue — per-plan counts of currently-PUBLISHED weddings.
+      // Single groupBy query; MRR = sum(plan_count * plan_price).
+      db.wedding.groupBy({
+        by: ['plan'],
         where: { status: 'PUBLISHED' },
+        _count: { _all: true },
+      }),
+
+      // ── P2-PERF-6: 6-month scoped findMany for the mrrSeries only.
+      // Replaces the full-table findMany that was being reduced twice.
+      db.wedding.findMany({
+        where: {
+          status: 'PUBLISHED',
+          createdAt: { gte: sixMonthsAgo },
+        },
         select: { createdAt: true, plan: true },
       }),
 
@@ -205,25 +229,23 @@ export async function GET(request: NextRequest) {
     }
 
     // ─── Revenue analytics (MRR, ARPU, byPlan, 6-month MRR series) ────────
-    // Active weddings = status='PUBLISHED'. MRR = sum of current plan price.
-    // NOTE: this is a point-in-time snapshot — we don't track historical plan
-    // changes, so mrrSeries uses an approximation (count currently-PUBLISHED
-    // weddings whose createdAt <= end of each month, sum their current price).
+    // P2-PERF-6: MRR is now computed from the per-plan groupBy result
+    // (single query) rather than reducing a findMany of every PUBLISHED wedding.
     const planPriceOf = (plan: string): number =>
       PLAN_METADATA[plan as Plan]?.priceUsd ?? 0;
 
-    const mrr = publishedWeddingsForMrr.reduce(
-      (sum, w) => sum + planPriceOf(w.plan),
-      0,
-    );
-    const activeCount = publishedWeddingsForMrr.length;
+    const planCounts: Record<string, number> = {};
+    let mrr = 0;
+    let activeCount = 0;
+    for (const row of publishedWeddingsByPlanForMrr) {
+      const count = row._count._all;
+      planCounts[row.plan] = count;
+      mrr += count * planPriceOf(row.plan);
+      activeCount += count;
+    }
     const arpu = activeCount > 0 ? Math.round(mrr / activeCount) : 0;
 
     // Per-plan breakdown (only plans with count > 0, ordered by tier desc).
-    const planCounts: Record<string, number> = {};
-    for (const w of publishedWeddingsForMrr) {
-      planCounts[w.plan] = (planCounts[w.plan] || 0) + 1;
-    }
     const revenueByPlan = PLAN_TIER_ORDER
       .filter((p) => (planCounts[p] || 0) > 0)
       .map((p) => ({
@@ -234,19 +256,49 @@ export async function GET(request: NextRequest) {
 
     // 6-month MRR series — for each month, sum current plan price of all
     // PUBLISHED weddings created on or before end-of-month.
+    // P2-PERF-6: uses the scoped 6-month findMany (not the full-table fetch).
+    // Note: weddings created > 6 months ago contribute to every month's MRR.
+    // We approximate by also fetching the count of PUBLISHED weddings older
+    // than 6 months, per plan, from the groupBy above (those weddings are
+    // included in `planCounts` but NOT in `publishedWeddingsLast6Mo`).
+    //
+    // For correctness: the mrrSeries for month M should include:
+    //   - all weddings created <= M.monthEnd (whether in 6-mo window or older)
+    //
+    // Since publishedWeddingsLast6Mo only contains weddings in the 6-mo
+    // window, we need the older ones too. We compute the older-plan-counts
+    // by subtracting the in-window per-plan counts from the global per-plan
+    // counts (planCounts). This is exact for the current snapshot.
+    const inWindowPlanCounts: Record<string, number> = {};
+    for (const w of publishedWeddingsLast6Mo) {
+      inWindowPlanCounts[w.plan] = (inWindowPlanCounts[w.plan] || 0) + 1;
+    }
+    const olderThanWindowPlanCounts: Record<string, number> = {};
+    for (const p of Object.keys(planCounts)) {
+      olderThanWindowPlanCounts[p] =
+        (planCounts[p] || 0) - (inWindowPlanCounts[p] || 0);
+    }
+
     const mrrSeries = monthSeries.map((m) => {
-      const matching = publishedWeddingsForMrr.filter(
+      // For month M, include older-than-window weddings (always count) +
+      // in-window weddings whose createdAt <= M.monthEnd.
+      const inWindowMatching = publishedWeddingsLast6Mo.filter(
         (w) => w.createdAt <= m.monthEnd,
       );
-      const monthMrr = matching.reduce(
+      const inWindowMrr = inWindowMatching.reduce(
         (sum, w) => sum + planPriceOf(w.plan),
         0,
       );
+      const olderMrr = Object.entries(olderThanWindowPlanCounts).reduce(
+        (sum, [p, c]) => sum + c * planPriceOf(p),
+        0,
+      );
+      const monthMrr = inWindowMrr + olderMrr;
       return {
         month: m.monthKey,
         label: m.label,
         mrr: monthMrr,
-        weddings: matching.length,
+        weddings: inWindowMatching.length + activeCount - publishedWeddingsLast6Mo.length,
       };
     });
 
@@ -304,10 +356,11 @@ export async function GET(request: NextRequest) {
       },
     });
   } catch (error) {
-    console.error('Platform dashboard error:', error);
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    );
+    // P2-SEC-1: never log error.stack.
+    logger.error('Platform dashboard error', {
+      errMessage: error instanceof Error ? error.message : String(error),
+      errName: error instanceof Error ? error.name : 'Unknown',
+    });
+    return internalError();
   }
 }

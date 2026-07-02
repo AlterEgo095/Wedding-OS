@@ -258,15 +258,36 @@ export async function getServerAuthUser(): Promise<AuthUser | null> {
 
 /**
  * Set the auth_token cookie on a NextResponse. Used by login endpoints.
- * Cookie is httpOnly, secure (in production), sameSite=lax, 8h expiry.
+ *
+ * Cookie attributes (P2-SEC-4 + P2-CQ-21):
+ *   - httpOnly: true (JS cannot read the token → XSS-resistant)
+ *   - secure: true in production (HTTPS-only)
+ *   - sameSite: 'strict' (CSRF-resistant — cookie NOT sent on cross-site
+ *     requests, even top-level navigations from a third-party site).
+ *     Previously 'lax' which still leaked the cookie on top-level GET
+ *     navigations from a malicious site.
+ *   - path: '/'
+ *   - maxAge: defaults to 8h to match `generateToken`'s JWT expiresIn of '8h'.
+ *     Callers may override via `maxAgeSeconds` (e.g. if a longer-lived JWT
+ *     is introduced in the future). Note: setting a cookie maxAge longer
+ *     than the JWT expiry gives the user a cookie containing an expired
+ *     token — they'll be redirected to login on the next request anyway.
+ *
+ * @param response NextResponse to attach the cookie to.
+ * @param token JWT string from generateToken().
+ * @param maxAgeSeconds Optional override (seconds). Default: 8h to match JWT.
  */
-export function setAuthCookie(response: NextResponse, token: string): NextResponse {
+export function setAuthCookie(
+  response: NextResponse,
+  token: string,
+  maxAgeSeconds: number = 8 * 60 * 60
+): NextResponse {
   response.cookies.set('auth_token', token, {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
+    sameSite: 'strict',
     path: '/',
-    maxAge: 8 * 60 * 60, // 8 hours, matches JWT expiry
+    maxAge: maxAgeSeconds,
   });
   return response;
 }
@@ -280,18 +301,11 @@ export function clearAuthCookie(response: NextResponse): NextResponse {
 }
 
 // ─── Role display helpers (for UI) ────────────────────────────────────────────
-
-export const ROLE_LABELS: Record<string, string> = {
-  PLATFORM_ADMIN: 'Administrateur Plateforme',
-  SUPER_ADMIN: 'Super Admin',
-  ORGANIZER: 'Organisateur',
-  RECEPTION: 'Réception',
-  CONTROLLER: 'Contrôleur',
-};
-
-export function getRoleLabel(role: string): string {
-  return ROLE_LABELS[role] || role;
-}
+// P2-CQ-14 + P2-CQ-21: ROLE_LABELS + getRoleLabel moved to src/lib/ui-labels.ts
+// (single source of truth shared with platform/admin UI). Re-exported here for
+// backwards-compat with existing imports of `@/lib/auth`.
+// `ui-labels` is pure (no Prisma, no next/server) — no runtime circular dep.
+export { ROLE_LABELS, getRoleLabel } from './ui-labels';
 
 /**
  * Get a normalized role for new user creation. SUPER_ADMIN is migrated to

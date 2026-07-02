@@ -6,6 +6,14 @@ import { withPublicTenant, withAdminTenantHandler } from '@/lib/tenant-context';
 import { checkMediaLimit } from '@/lib/plan-limits';
 import { writeFile, unlink, mkdir } from 'fs/promises';
 import path from 'path';
+// P2-SEC-6: rate-limit HOF.
+import { withRateLimit } from '@/lib/rate-limit';
+// P2-SEC-1: structured logger (no stack leak).
+import { logger } from '@/lib/logger';
+// P2-CQ-5: standardised API errors.
+import { internalError } from '@/lib/api-errors';
+// P2-SEC-14: writeAuditLog populates ipAddress + userAgent from request.
+import { writeAuditLog } from '@/lib/audit';
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 // SECURITY (P1-SEC-13): SVG removed from allowed list — SVG can carry
@@ -40,13 +48,22 @@ export const GET = withPublicTenant(async (request, _ctx) => {
 
     return NextResponse.json({ media });
   } catch (error) {
-    console.error('List media error:', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    // P2-SEC-1: never log error.stack.
+    logger.error('List media error', {
+      errMessage: error instanceof Error ? error.message : String(error),
+      errName: error instanceof Error ? error.name : 'Unknown',
+    });
+    return internalError();
   }
 });
 
 // POST /api/media — admin only, uploads a new media file
-export async function POST(request: NextRequest) {
+// P2-SEC-6: defined as a local function then wrapped on export so Next.js
+// picks up the rate-limited version (30/min) while the handler body stays
+// readable. File I/O + thumbnail generation is bandwidth-heavy.
+// Casts withAdminTenantHandler's Promise<Response> to Promise<NextResponse>
+// — runtime is NextResponse, but the lib's signature types it as Response.
+async function uploadMediaHandler(request: NextRequest): Promise<NextResponse> {
   try {
     const user = await getAuthUser(request);
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -54,7 +71,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Forbidden — insufficient permissions' }, { status: 403 });
     }
 
-    return withAdminTenantHandler(request, user, async (_req, ctx) => {
+    return await withAdminTenantHandler(request, user, async (_req, ctx) => {
       const formData = await request.formData();
       const file = formData.get('file') as File | null;
       const title = formData.get('title') as string | null;
@@ -109,7 +126,11 @@ export async function POST(request: NextRequest) {
       } catch (limitError) {
         // If the limit check itself fails, log and continue — we don't want
         // to block a legitimate upload because of an internal accounting error.
-        console.error('Media limit check failed:', limitError);
+        // P2-SEC-1: structured logger; no stack leak.
+        logger.error('Media limit check failed', {
+          errMessage: limitError instanceof Error ? limitError.message : String(limitError),
+          errName: limitError instanceof Error ? limitError.name : 'Unknown',
+        });
       }
 
       const uniqueName = `${Date.now()}-${Math.random().toString(36).substring(2, 8)}${ext}`;
@@ -137,21 +158,28 @@ export async function POST(request: NextRequest) {
         },
       });
 
-      await db.auditLog.create({
-        data: {
-          weddingId: ctx.weddingId, userId: user.id,
-          action: 'UPLOAD_MEDIA',
-          details: `Uploaded media: ${title || file.name}`,
-        },
+      // P2-SEC-14: writeAuditLog populates ipAddress + userAgent from request.
+      await writeAuditLog({
+        weddingId: ctx.weddingId, userId: user.id,
+        action: 'UPLOAD_MEDIA',
+        details: `Uploaded media: ${title || file.name}`,
+        request,
       });
 
       return NextResponse.json({ media }, { status: 201 });
-    });
+    }) as unknown as NextResponse;
   } catch (error) {
-    console.error('Upload media error:', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    // P2-SEC-1: never log error.stack.
+    logger.error('Upload media error', {
+      errMessage: error instanceof Error ? error.message : String(error),
+      errName: error instanceof Error ? error.name : 'Unknown',
+    });
+    return internalError();
   }
 }
+
+// P2-SEC-6: rate-limit the POST handler (30 requests / 60s per IP).
+export const POST = withRateLimit(30, 60_000)(uploadMediaHandler);
 
 // DELETE /api/media?id=... — admin only
 export async function DELETE(request: NextRequest) {
@@ -180,18 +208,22 @@ export async function DELETE(request: NextRequest) {
 
       await tenantDb.media.delete({ where: { id } });
 
-      await db.auditLog.create({
-        data: {
-          weddingId: ctx.weddingId, userId: user.id,
-          action: 'DELETE_MEDIA',
-          details: `Deleted media: ${existing.title || existing.url}`,
-        },
+      // P2-SEC-14: writeAuditLog populates ipAddress + userAgent from request.
+      await writeAuditLog({
+        weddingId: ctx.weddingId, userId: user.id,
+        action: 'DELETE_MEDIA',
+        details: `Deleted media: ${existing.title || existing.url}`,
+        request,
       });
 
       return NextResponse.json({ message: 'Media deleted successfully' });
     });
   } catch (error) {
-    console.error('Delete media error:', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    // P2-SEC-1: never log error.stack.
+    logger.error('Delete media error', {
+      errMessage: error instanceof Error ? error.message : String(error),
+      errName: error instanceof Error ? error.name : 'Unknown',
+    });
+    return internalError();
   }
 }

@@ -51,7 +51,8 @@ import {
 } from 'lucide-react'
 
 import { PLAN_METADATA, type Plan } from '@/lib/types'
-import { FCFA_TO_USD_RATE } from '@/lib/billing'
+import { PLAN_BADGE_CLASS, PLAN_LIST } from '@/lib/ui-labels'
+import { formatUsd, formatFcfa, formatDateTime } from '@/lib/format'
 
 // ══════════════════════════════════════════════════════════════════════════════
 // Types — mirror the API responses
@@ -195,14 +196,7 @@ const PAYMENT_METHOD_LABELS: Record<string, string> = {
   OTHER: 'Autre',
 }
 
-const PLAN_BADGE_CLASS: Record<Plan, string> = {
-  ELITE: 'bg-gold/15 text-gold border-gold/40',
-  PREMIUM: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30',
-  ESSENTIEL: 'bg-gold-dark/15 text-gold-dark border-gold-dark/30',
-  TRIAL: 'bg-zinc-500/15 text-zinc-400 border-zinc-500/30',
-}
-
-const PLANS: Plan[] = ['TRIAL', 'ESSENTIEL', 'PREMIUM', 'ELITE']
+const PLANS = PLAN_LIST
 const SUB_STATUSES = ['TRIALING', 'PENDING_PAYMENT', 'ACTIVE', 'PAST_DUE', 'SUSPENDED', 'CANCELED', 'EXPIRED']
 const BILLING_CYCLES = ['MONTHLY', 'ANNUAL', 'ONE_TIME']
 const PAYMENT_METHODS = ['MOBILE_MONEY', 'BANK_TRANSFER', 'CASH', 'OTHER']
@@ -235,25 +229,11 @@ const EMPTY_FORM: SubscriptionFormState = {
 // Helpers
 // ══════════════════════════════════════════════════════════════════════════════
 
-function formatUsd(cents: number): string {
-  return `$${(cents / 100).toFixed(2)}`
-}
-
-function formatFcfa(cents: number): string {
-  const usd = cents / 100
-  return `${Math.round(usd * FCFA_TO_USD_RATE).toLocaleString('fr-FR')} FCFA`
-}
-
-function formatDate(iso: string | null): string {
-  if (!iso) return '—'
-  return new Date(iso).toLocaleDateString('fr-FR', {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
-}
+// P2-CQ-3: formatters imported from @/lib/format — local copies deleted.
+// formatUsd / formatFcfa / formatDateTime are imported above.
+// The previous local `formatDate(iso)` had the same shape as the lib's
+// `formatDateTime` (date + hour:minute); call sites have been updated to
+// `formatDateTime`.
 
 // ══════════════════════════════════════════════════════════════════════════════
 // Main BillingTab component
@@ -1000,7 +980,7 @@ export function BillingTab({
                             </span>
                           </div>
                           <div className="text-xs text-muted-foreground">
-                            {formatDate(inv.createdAt)}
+                            {formatDateTime(inv.createdAt)}
                             {inv.paymentMethod && (
                               <>
                                 {' · '}
@@ -1010,7 +990,7 @@ export function BillingTab({
                             {inv.paidAt && (
                               <>
                                 {' · payée le '}
-                                {formatDate(inv.paidAt)}
+                                {formatDateTime(inv.paidAt)}
                               </>
                             )}
                           </div>

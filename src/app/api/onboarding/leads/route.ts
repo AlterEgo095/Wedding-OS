@@ -4,6 +4,12 @@ import { db } from '@/lib/db';
 import { getAuthUser, requirePlatformAdmin } from '@/lib/auth';
 import { getRateLimitKey, checkRateLimit } from '@/lib/rate-limit';
 import { buildCoupleLabel, type Plan } from '@/lib/types';
+// P2-CQ-1 + P2-SEC-2: shared EMAIL_REGEX from @/lib/constants.
+import { EMAIL_REGEX } from '@/lib/constants';
+// P2-SEC-1: structured logger (no stack leak).
+import { logger } from '@/lib/logger';
+// P2-CQ-5: standardised API errors.
+import { internalError } from '@/lib/api-errors';
 
 /**
  * Public lead capture + admin lead list (Phase 7 onboarding).
@@ -20,7 +26,7 @@ import { buildCoupleLabel, type Plan } from '@/lib/types';
  * Replaces the Phase 7-b in-memory stub with proper Prisma persistence.
  */
 
-const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+// P2-CQ-1 + P2-SEC-2: EMAIL_REGEX now imported from @/lib/constants.
 const VALID_LEAD_STATUSES = ['NEW', 'CONTACTED', 'CONVERTED', 'REJECTED'] as const;
 const VALID_LEAD_PLANS: Plan[] = ['TRIAL', 'ESSENTIEL', 'PREMIUM', 'ELITE'];
 
@@ -199,11 +205,12 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ lead }, { status: 201 });
   } catch (error) {
-    console.error('Create lead error:', error);
-    return NextResponse.json(
-      { error: 'Erreur interne du serveur.' },
-      { status: 500 },
-    );
+    // P2-SEC-1: never log error.stack.
+    logger.error('Create lead error', {
+      errMessage: error instanceof Error ? error.message : String(error),
+      errName: error instanceof Error ? error.name : 'Unknown',
+    });
+    return internalError();
   }
 }
 
@@ -270,10 +277,11 @@ export async function GET(request: NextRequest) {
       summary: summaryMap,
     });
   } catch (error) {
-    console.error('List leads error:', error);
-    return NextResponse.json(
-      { error: 'Erreur interne du serveur.' },
-      { status: 500 },
-    );
+    // P2-SEC-1: never log error.stack.
+    logger.error('List leads error', {
+      errMessage: error instanceof Error ? error.message : String(error),
+      errName: error instanceof Error ? error.name : 'Unknown',
+    });
+    return internalError();
   }
 }

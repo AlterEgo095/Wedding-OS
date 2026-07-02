@@ -5,6 +5,7 @@ import Image from 'next/image'
 import { motion, useScroll, useTransform, AnimatePresence } from 'framer-motion'
 import { Search, MailOpen, ChevronDown, Sparkles } from 'lucide-react'
 import { useVisualEffects } from '@/lib/visual-effects-store'
+import { SETTING_KEYS } from '@/lib/constants'
 import DynamicLightSweep from '@/components/effects/DynamicLightSweep'
 
 interface TimeLeft {
@@ -64,13 +65,19 @@ export default function HeroSection() {
   const contentOpacity = useTransform(scrollY, [0, 500], [1, 0])
   const contentY = useTransform(scrollY, [0, 500], [0, 80])
 
-  const groomName = settings.groom_name || ''
-  const brideName = settings.bride_name || ''
-  const dateDisplay = settings.site_subtitle || 'Vendredi 26 Juin 2026'
+  const groomName = settings[SETTING_KEYS.GROOM_NAME] || ''
+  const brideName = settings[SETTING_KEYS.BRIDE_NAME] || ''
+  const dateDisplay = settings[SETTING_KEYS.SITE_SUBTITLE] || 'Vendredi 26 Juin 2026'
 
+  // Read wedding_date / wedding_time into local consts so the useMemo deps
+  // array stays a list of simple expressions (react-hooks/use-memo rule).
+  // The SETTING_KEYS lookup is computed once per render; the memo recomputes
+  // only when the underlying string values change.
+  const weddingDateSetting = settings[SETTING_KEYS.WEDDING_DATE]
+  const weddingTimeSetting = settings[SETTING_KEYS.WEDDING_TIME]
   const weddingDateStr = useMemo(
-    () => `${settings.wedding_date || '2026-06-26'}T${settings.wedding_time || '21:30:00'}`,
-    [settings.wedding_date, settings.wedding_time]
+    () => `${weddingDateSetting || '2026-06-26'}T${weddingTimeSetting || '21:30:00'}`,
+    [weddingDateSetting, weddingTimeSetting]
   )
 
   // Background photos for crossfade

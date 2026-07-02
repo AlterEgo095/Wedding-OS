@@ -12,6 +12,16 @@ import {
   buildWhatsAppMessage,
   buildWhatsAppDeeplink,
 } from '@/lib/billing';
+// P2-CQ-1/2 + P2-SEC-2: shared constants from @/lib/constants.
+import { EMAIL_REGEX, MAX_PAYMENT_USD_CENTS } from '@/lib/constants';
+// P2-SEC-6: rate-limit HOF.
+import { withRateLimit } from '@/lib/rate-limit';
+// P2-SEC-1: structured logger (no stack leak).
+import { logger } from '@/lib/logger';
+// P2-CQ-5: standardised API errors.
+import { internalError } from '@/lib/api-errors';
+// P2-SEC-14: writeAuditLog populates ipAddress + userAgent.
+import { writeAuditLog } from '@/lib/audit';
 
 /**
  * POST /api/onboarding/create-wedding    (PLATFORM_ADMIN)
@@ -65,7 +75,9 @@ import {
  * used on every AdminUser query.
  */
 
-const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+// P2-CQ-1 + P2-SEC-2: EMAIL_REGEX now imported from @/lib/constants (was
+// duplicated locally with a slightly different pattern — /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+// — which is permissive on the TLD. The shared one requires 2+ chars).
 
 const WEDDING_RESPONSE_SELECT = {
   id: true,
@@ -90,7 +102,11 @@ const ORGANIZER_RESPONSE_SELECT = {
   weddingId: true,
 } as const;
 
-export async function POST(request: NextRequest) {
+// P2-SEC-6: rate-limited POST handler (5 requests / 60s per IP).
+// Resource-intensive: bcrypt hash + 5-row transaction + WhatsApp deeplink build.
+// Defined as a local function then wrapped on export so Next.js picks up the
+// rate-limited version while the handler body stays readable.
+async function createWeddingHandler(request: NextRequest) {
   try {
     const user = await getAuthUser(request);
     const denied = requirePlatformAdmin(user);
@@ -201,7 +217,8 @@ export async function POST(request: NextRequest) {
     }
     if (amountAgreed !== undefined && amountAgreed !== null) {
       const n = Number(amountAgreed);
-      if (!Number.isInteger(n) || n < 0 || n > 100_000_00) {
+      // P2-CQ-2 + P2-SEC-3: shared MAX_PAYMENT_USD_CENTS constant.
+      if (!Number.isInteger(n) || n < 0 || n > MAX_PAYMENT_USD_CENTS) {
         return NextResponse.json(
           { error: 'amountAgreed doit être un entier positif (cents USD) ≤ 1 000 000.' },
           { status: 400 },
@@ -316,7 +333,14 @@ export async function POST(request: NextRequest) {
       billingCycle,
     );
 
-    // ─── Transactional create ──────────────────────────────────────────────
+    // P2-SEC-10 + P2-PERF-5: hash the organizer password BEFORE opening the
+    // transaction. bcrypt is CPU-bound (~250ms at rounds=12) and would hold
+    // the SQLite single-writer lock for the duration of the hash, serializing
+    // all other writes. Moving it out of the tx cuts the lock hold time from
+    // ~300ms to ~50ms for a typical onboarding.
+    const hashedPassword = await hashPassword(organizerPassword);
+
+    // ─── Transactional create ────────────────────────────────────────────
     const result = await db.$transaction(async (tx) => {
       // 1. Create the wedding
       const wedding = await tx.wedding.create({
@@ -395,8 +419,8 @@ export async function POST(request: NextRequest) {
         })),
       });
 
-      // 2. Hash the organizer password (bcrypt — async inside tx is OK)
-      const hashedPassword = await hashPassword(organizerPassword);
+      // P2-SEC-10 + P2-PERF-5: hashedPassword was computed above the tx.
+      // (Original line moved out of the transaction.)
 
       // 3. Create the organizer AdminUser
       const organizer = await tx.adminUser.create({
@@ -478,7 +502,12 @@ export async function POST(request: NextRequest) {
         };
       }
 
-      // 8. Three platform-level audit logs
+      // 8. Three platform-level audit logs — written inside the tx so they
+      // commit atomically with the wedding/org/sub/invoice. writeAuditLog is
+      // not used here because (a) we already hold the tx handle and (b) we
+      // need them to commit-or-rollback with the rest of the operation.
+      // P2-SEC-14 is partially addressed — the post-tx audit below uses
+      // writeAuditLog which populates ipAddress/userAgent from the request.
       await tx.auditLog.createMany({
         data: [
           {
@@ -507,6 +536,16 @@ export async function POST(request: NextRequest) {
 
     // ─── Post-transaction side effects ─────────────────────────────────────
     invalidateWeddingCache(normalizedSlug);
+
+    // P2-SEC-14: writeAuditLog populates ipAddress + userAgent from request.
+    // (Best-effort — the in-tx auditLogs above already committed; this is a
+    // supplementary platform-level audit row for the WhatsApp deeplink build.)
+    await writeAuditLog({
+      userId: user!.id,
+      action: 'ONBOARDING_WIZARD_COMPLETED',
+      details: `Onboarding wizard completed for ${normalizedSlug} (${plan})`,
+      request,
+    });
 
     const whatsappMessage = buildWhatsAppMessage({
       coupleLabel,
@@ -537,10 +576,14 @@ export async function POST(request: NextRequest) {
       { status: 201 },
     );
   } catch (error) {
-    console.error('Create wedding (onboarding wizard) error:', error);
-    return NextResponse.json(
-      { error: 'Erreur interne du serveur.' },
-      { status: 500 },
-    );
+    // P2-SEC-1: never log error.stack.
+    logger.error('Create wedding (onboarding wizard) error', {
+      errMessage: error instanceof Error ? error.message : String(error),
+      errName: error instanceof Error ? error.name : 'Unknown',
+    });
+    return internalError();
   }
 }
+
+// P2-SEC-6: wrap the POST handler with rate limiting (5 requests / 60s per IP).
+export const POST = withRateLimit(5, 60_000)(createWeddingHandler);

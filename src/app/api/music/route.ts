@@ -5,6 +5,10 @@ import { getAuthUser, hasPermission } from '@/lib/auth';
 import { withPublicTenant, withAdminTenantHandler, TenantContext } from '@/lib/tenant-context';
 import { writeFile, unlink, mkdir } from 'fs/promises';
 import path from 'path';
+// P2-SEC-1: structured logger (no stack leak).
+import { logger } from '@/lib/logger';
+// P2-CQ-5: standardised API errors.
+import { internalError, badRequest } from '@/lib/api-errors';
 
 const MAX_FILE_SIZE = 30 * 1024 * 1024; // 30MB for audio files
 const ALLOWED_EXTENSIONS = ['.mp3', '.wav', '.ogg', '.m4a', '.aac'];
@@ -53,8 +57,12 @@ export const GET = withPublicTenant(async (_req, ctx) => {
       : '';
     return NextResponse.json({ music: settings, music_url: playableUrl });
   } catch (error) {
-    console.error('Get music settings error:', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    // P2-SEC-1: never log error.stack.
+    logger.error('Get music settings error', {
+      errMessage: error instanceof Error ? error.message : String(error),
+      errName: error instanceof Error ? error.name : 'Unknown',
+    });
+    return internalError();
   }
 });
 
@@ -129,8 +137,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ music: settings, music_url: playableUrl }, { status: 201 });
     });
   } catch (error) {
-    console.error('Upload music error:', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    // P2-SEC-1: never log error.stack.
+    logger.error('Upload music error', {
+      errMessage: error instanceof Error ? error.message : String(error),
+      errName: error instanceof Error ? error.name : 'Unknown',
+    });
+    return internalError();
   }
 }
 
@@ -144,7 +156,8 @@ export async function PUT(request: NextRequest) {
     }
 
     return withAdminTenantHandler(request, user, async (_req, ctx) => {
-      const body = await request.json();
+      const body = await request.json().catch(() => null); // P2-CQ-6
+      if (!body) return badRequest('Corps de requête invalide');
       const { enabled, volume } = body as { enabled?: boolean; volume?: number };
 
       if (enabled !== undefined) {
@@ -177,8 +190,12 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ music: settings, music_url: playableUrl });
     });
   } catch (error) {
-    console.error('Update music settings error:', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    // P2-SEC-1: never log error.stack.
+    logger.error('Update music settings error', {
+      errMessage: error instanceof Error ? error.message : String(error),
+      errName: error instanceof Error ? error.name : 'Unknown',
+    });
+    return internalError();
   }
 }
 
@@ -222,7 +239,11 @@ export async function DELETE(request: NextRequest) {
       });
     });
   } catch (error) {
-    console.error('Delete music error:', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    // P2-SEC-1: never log error.stack.
+    logger.error('Delete music error', {
+      errMessage: error instanceof Error ? error.message : String(error),
+      errName: error instanceof Error ? error.name : 'Unknown',
+    });
+    return internalError();
   }
 }

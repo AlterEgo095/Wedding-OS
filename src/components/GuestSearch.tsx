@@ -2,11 +2,13 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { motion, AnimatePresence, useInView } from 'framer-motion'
+import Image from 'next/image'
 import { Search, QrCode, X, Users, Hash, Armchair, MessageSquareHeart, Heart, MailOpen, Sparkles } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
+import { SETTING_KEYS } from '@/lib/constants'
 import {
   Dialog,
   DialogContent,
@@ -92,8 +94,8 @@ export default function GuestSearch({ initialCode }: { initialCode?: string }) {
       .then((data) => {
         if (!data?.settings) return
         const s = data.settings
-        const bride = (s.bride_name || '').trim()
-        const groom = (s.groom_name || '').trim()
+        const bride = (s[SETTING_KEYS.BRIDE_NAME] || '').trim()
+        const groom = (s[SETTING_KEYS.GROOM_NAME] || '').trim()
         const label = [bride, groom].filter(Boolean).join(' & ')
         setCouple({ bride, groom, label })
       })
@@ -177,19 +179,23 @@ export default function GuestSearch({ initialCode }: { initialCode?: string }) {
     <section id="recherche" ref={sectionRef} className="py-20 md:py-32 relative overflow-hidden">
       {/* Subtle background couple photos as decorative elements */}
       <div className="absolute inset-0 pointer-events-none overflow-hidden">
-        <div className="absolute -top-20 -left-20 w-72 h-72 rounded-full opacity-[0.04]">
-          <img
+        <div className="relative -top-20 -left-20 w-72 h-72 rounded-full opacity-[0.04]">
+          <Image
             src="/uploads/couple-photo-1.jpeg"
             alt=""
-            className="w-full h-full object-cover rounded-full"
+            fill
+            sizes="288px"
+            className="object-cover rounded-full"
             aria-hidden="true"
           />
         </div>
-        <div className="absolute -bottom-20 -right-20 w-72 h-72 rounded-full opacity-[0.04]">
-          <img
+        <div className="relative -bottom-20 -right-20 w-72 h-72 rounded-full opacity-[0.04]">
+          <Image
             src="/uploads/couple-photo-2.jpeg"
             alt=""
-            className="w-full h-full object-cover rounded-full"
+            fill
+            sizes="288px"
+            className="object-cover rounded-full"
             aria-hidden="true"
           />
         </div>
@@ -209,12 +215,14 @@ export default function GuestSearch({ initialCode }: { initialCode?: string }) {
               initial={{ opacity: 0, x: -20, scale: 0.8 }}
               animate={isInView ? { opacity: 1, x: 0, scale: 1 } : {}}
               transition={{ duration: 0.6, delay: 0.3 }}
-              className="w-16 h-16 sm:w-20 sm:h-20 rounded-full overflow-hidden gold-border shadow-lg shadow-gold/10"
+              className="relative w-16 h-16 sm:w-20 sm:h-20 rounded-full overflow-hidden gold-border shadow-lg shadow-gold/10"
             >
-              <img
+              <Image
                 src="/uploads/couple-photo-1.jpeg"
                 alt={couple.groom || 'Photo du mari'}
-                className="w-full h-full object-cover"
+                fill
+                sizes="(max-width: 640px) 64px, 80px"
+                className="object-cover"
               />
             </motion.div>
 
@@ -231,12 +239,14 @@ export default function GuestSearch({ initialCode }: { initialCode?: string }) {
               initial={{ opacity: 0, x: 20, scale: 0.8 }}
               animate={isInView ? { opacity: 1, x: 0, scale: 1 } : {}}
               transition={{ duration: 0.6, delay: 0.3 }}
-              className="w-16 h-16 sm:w-20 sm:h-20 rounded-full overflow-hidden gold-border shadow-lg shadow-gold/10"
+              className="relative w-16 h-16 sm:w-20 sm:h-20 rounded-full overflow-hidden gold-border shadow-lg shadow-gold/10"
             >
-              <img
+              <Image
                 src="/uploads/couple-photo-2.jpeg"
                 alt={couple.bride || 'Photo de la mariée'}
-                className="w-full h-full object-cover"
+                fill
+                sizes="(max-width: 640px) 64px, 80px"
+                className="object-cover"
               />
             </motion.div>
           </div>
@@ -335,11 +345,13 @@ export default function GuestSearch({ initialCode }: { initialCode?: string }) {
                     <div className="flex items-start gap-4">
                       {/* Couple photo thumbnail on result card */}
                       <div className="shrink-0 hidden sm:block">
-                        <div className="w-12 h-12 rounded-full overflow-hidden gold-border shadow-sm">
-                          <img
+                        <div className="relative w-12 h-12 rounded-full overflow-hidden gold-border shadow-sm">
+                          <Image
                             src="/uploads/couple-photo-1.jpeg"
                             alt=""
-                            className="w-full h-full object-cover"
+                            fill
+                            sizes="48px"
+                            className="object-cover"
                             aria-hidden="true"
                           />
                         </div>
@@ -455,11 +467,13 @@ export default function GuestSearch({ initialCode }: { initialCode?: string }) {
             <div className="glass-card gold-border rounded-2xl p-8 sm:p-10 text-center">
               {/* Couple photos in welcome */}
               <div className="flex items-center justify-center gap-3 mb-6">
-                <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-full overflow-hidden gold-border shadow-lg shadow-gold/10">
-                  <img
+                <div className="relative w-20 h-20 sm:w-24 sm:h-24 rounded-full overflow-hidden gold-border shadow-lg shadow-gold/10">
+                  <Image
                     src="/uploads/couple-photo-1.jpeg"
                     alt={couple.groom || 'Photo du mari'}
-                    className="w-full h-full object-cover"
+                    fill
+                    sizes="(max-width: 640px) 80px, 96px"
+                    className="object-cover"
                   />
                 </div>
                 <motion.div
@@ -468,11 +482,13 @@ export default function GuestSearch({ initialCode }: { initialCode?: string }) {
                 >
                   <Heart className="size-7 text-gold fill-gold/20" />
                 </motion.div>
-                <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-full overflow-hidden gold-border shadow-lg shadow-gold/10">
-                  <img
+                <div className="relative w-20 h-20 sm:w-24 sm:h-24 rounded-full overflow-hidden gold-border shadow-lg shadow-gold/10">
+                  <Image
                     src="/uploads/couple-photo-2.jpeg"
                     alt={couple.bride || 'Photo de la mariée'}
-                    className="w-full h-full object-cover"
+                    fill
+                    sizes="(max-width: 640px) 80px, 96px"
+                    className="object-cover"
                   />
                 </div>
               </div>
@@ -555,9 +571,13 @@ export default function GuestSearch({ initialCode }: { initialCode?: string }) {
             ) : qrData ? (
               <>
                 <div className="p-4 bg-white rounded-xl shadow-lg mb-4">
-                  <img
+                  {/* qrData.qrCode is a data: URL (base64 PNG) from the API —
+                      next/image handles data URLs natively without remotePatterns. */}
+                  <Image
                     src={qrData.qrCode}
                     alt="QR Code d'invitation"
+                    width={224}
+                    height={224}
                     className="w-56 h-56"
                   />
                 </div>

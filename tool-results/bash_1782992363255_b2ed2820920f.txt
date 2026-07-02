@@ -1,0 +1,400 @@
+            Inside: `tenantDb.guest.findFirst` (line 317) for duplicate check — 1 query per guest
+            Inside: `do { ... tenantDb.guest.findFirst({ where: { invitationCode } }) ... } while (codeAttempts < 10)`
+              (lines 339-347) — up to 10 queries per guest for invitation code uniqueness!
+            Inside: `tenantDb.guest.create` (line 360) — 1 insert per guest
+        For a 200-guest import: 200 tables-lookups + 200 dup-checks + ~200 avg 5 code-uniqueness-checks + 200 inserts = ~1000 queries.
+IMPACT: A 200-guest DOCX import takes 5-30 seconds (vs <500ms with createMany). SQLite
+        single-writer lock means the platform stalls for the duration. Frontend times out.
+FIX:    (1) Generate invitation codes in a single batch upfront (200 codes via `Array.from({length: 200}, () => uuid().substring(0,6).toUpperCase())`)
+        then deduplicate against a single `findMany({ where: { invitationCode: { in: codes } } })` query.
+        (2) Use `tenantDb.guest.createMany({ data: [...] })` for the inserts.
+        (3) Use `tenantDb.table.findMany({ where: { number: { in: [...] } } })` to batch the table lookups.
+        Target: 4-6 queries total regardless of guest count.
+EFFORT: M
+```
+
+```
+P2-PERF-2: N+1 query in /api/guests/import (XLSX) — sequential create per row
+FILE:   src/app/api/guests/import/route.ts:41-79
+PROOF:  `for (let i = 0; i < rows.length; i++) { ... await tenantDb.guest.create({ data: ... }) ... }`
+        — one create per row, no batching. Also generates a new invitationCode per row but
+        doesn't check for collisions (relies on the schema's @@unique constraint to throw,
+        caught by the per-row try/catch — so a collision = silent row skip).
+IMPACT: 200-row import = 200 sequential inserts ≈ 2-5 seconds. SQLite lock held throughout.
+FIX:    Pre-generate codes in batch, dedupe via 1 findMany, then `createMany({ data: [...], skipDuplicates: true })`.
+        Return `{ imported, skipped, errors }` in one shot.
+EFFORT: S
+```
+
+```
+P2-PERF-3: Missing pagination on /api/guests/export — fetches ALL guests into memory
+FILE:   src/app/api/guests/export/route.ts:22-25
+PROOF:  `const guests = await tenantDb.guest.findMany({ include: { table: { select: { name, number } } }, orderBy: { createdAt: 'desc' } })`
+        — no `take` limit. For a 1000-guest wedding this fetches 1000 rows + 1000 table joins
+        into a single JS array, then maps them all to XLSX rows in memory, then builds an
+        XLSX buffer.
+IMPACT: Memory spike on large weddings. XLSX buffer for 1000 rows ≈ 5-10MB. Under concurrent
+        exports (multiple admins), Node heap pressure.
+FIX:    (a) Stream the response using XLSX's stream API (xlsx-streambook or exceljs). OR
+        (b) Add a 5000-row hard cap with a 406 error above. OR (c) Document the limit and
+        add a progress bar on the client.
+EFFORT: M
+```
+
+```
+P2-PERF-4: Missing pagination on 3 public list endpoints (couple-story, tables, timeline)
+FILE:   src/app/api/couple-story/route.ts:9-13  `findMany({ orderBy: { order: 'asc' } })` — no take
+        src/app/api/tables/route.ts:17-21       `findMany({ include: { _count: ... }, orderBy: { number: 'asc' } })` — no take
+        src/app/api/timeline/route.ts:10-13     `findMany({ orderBy: { order: 'asc' } })` — no take
+PROOF:  All 3 return the full collection. Tables and timeline are bounded by the plan's
+        guest/table limits, so they're small. CoupleStory has no limit — a couple could
+        upload 100+ stories (there's no UI limit either).
+IMPACT: Low for tables/timeline (plan-limited). Medium for couple-story (no limit). The
+        real risk is the public homepage fetching all 3 endpoints in parallel on every page load.
+FIX:    Add `take: 50` to couple-story. Tables and timeline are bounded by plan limits —
+        leave as-is but add a `take: 200` safety cap.
+EFFORT: S
+```
+
+```
+P2-PERF-5: bcrypt hash inside db.$transaction (extends lock duration)
+FILE:   src/app/api/onboarding/create-wedding/route.ts:399
+PROOF:  (see P2-SEC-10 for full proof) — bcrypt(rounds=12) ≈ 200-300ms inside the tx.
+IMPACT: Under load, concurrent onboarding calls serialize on the bcrypt step. SQLite
+        single-writer lock means ALL writes platform-wide stall for the duration.
+        **DUPLICATE of P2-SEC-10** (perf angle).
+FIX:    Move `hashPassword(organizerPassword)` above the `db.$transaction()` call.
+EFFORT: S
+```
+
+```
+P2-PERF-6: Platform dashboard fetches ALL published weddings to compute MRR in JS
+FILE:   src/app/api/platform/dashboard/route.ts:160-163
+PROOF:  `db.wedding.findMany({ where: { status: 'PUBLISHED' }, select: { createdAt: true, plan: true } })`
+        — fetches every published wedding's createdAt + plan into a JS array, then in
+        `mrrSeries` (line 237-251) filters and reduces the array 6 times (once per month).
+        For 1000 published weddings: 1000-row fetch + 6000-iteration reduce.
+IMPACT: Dashboard GET latency grows linearly with platform success. At 10k weddings, this
+        is the slowest query in the API. The 6-month MRR series is the worst — 6 passes
+        over the full array.
+FIX:    Replace with a single `db.wedding.groupBy({ by: ['plan'], where: { status: 'PUBLISHED' }, _count: { _all: true } })`
+        for the current MRR. For the series, add a `publishedAt` index + use
+        `db.wedding.groupBy({ by: ['plan', <date_trunc>], ... })` — SQLite doesn't support
+        date_trunc, so a `findMany({ select: { createdAt: true, plan: true }, where: { createdAt: { gte: sixMonthsAgo } } })`
+        + bucketing in JS is acceptable for the series (the array is already scoped to 6 months).
+EFFORT: S
+```
+
+```
+P2-PERF-7: Admin dashboard route runs 7 Promise.all queries + 1 separate recentActivity query
+FILE:   src/app/api/admin/dashboard/route.ts:21-44
+PROOF:  Line 21-32: Promise.all of 7 queries (5 guest counts by status, 1 table count, 1
+        table findMany). Line 39-44: separate `db.auditLog.findMany` (NOT in the Promise.all).
+        Line 46-49: separate `tenantDb.guest.groupBy` for categoryStats.
+        Total: 9 sequential round-trips even though 7 are parallelized.
+IMPACT: Per-wedding admin dashboard takes 3× the optimal latency (3 sequential groups
+        instead of 1 Promise.all).
+FIX:    Move recentActivity + categoryStats into the Promise.all. All 9 queries run in
+        parallel. Latency drops from ~3 round-trips to ~1.
+EFFORT: S
+```
+
+```
+P2-PERF-8: Guest access-logs route runs 19 Prisma queries per request
+FILE:   src/app/api/guest/access-logs/route.ts (see P2-CQ-17 for full proof)
+PROOF:  14 parallel count queries (line 49-69) that could be a single groupBy, plus a
+        findMany for failedAttempts (line 79-82) that could be a groupBy by ipAddress.
+IMPACT: 19 queries per page load of the access-logs tab. For a wedding with 10k access
+        log rows, the 14 counts each scan the full table.
+        **DUPLICATE of P2-CQ-17** (perf angle).
+FIX:    Replace the 14 counts with 1 groupBy({ by: ['action'], _count: { _all: true } }).
+        Replace failedAttempts findMany + reduce with groupBy({ by: ['ipAddress'] }).
+        19 queries → 4 queries.
+EFFORT: M
+```
+
+```
+P2-PERF-9: /api/route.ts uses force-dynamic for a static "Hello, world!" response
+FILE:   src/app/api/route.ts:1-6
+PROOF:  `export const dynamic = "force-dynamic";` + returns a constant JSON. No DB, no
+        request-dependent data. Should be cached at the edge.
+IMPACT: Every request to /api renders the response from scratch (negligible cost, but
+        pointless). Also: the endpoint serves no purpose (see P2-CQ-15).
+FIX:    Delete the file (preferred) or remove the `force-dynamic` export to let Next.js
+        cache it.
+EFFORT: S
+```
+
+```
+P2-PERF-10: All 50 API routes use force-dynamic — some could be cached or static
+FILE:   src/app/api/**/route.ts (50 files all export `force-dynamic`)
+PROOF:  `rg -l "force-dynamic" src/app/api | wc -l` returns 50. Some routes are inherently
+        dynamic (auth, write endpoints), but read-only public endpoints like:
+          - GET /api/couple-story (per-wedding, changes rarely)
+          - GET /api/timeline (per-wedding, changes rarely)
+          - GET /api/settings (per-wedding, changes rarely)
+          - GET /api/theme (per-wedding, changes rarely)
+        Could use `revalidate = 60` (ISR) instead of force-dynamic, caching per-wedding
+        responses for 60s. The weddingCache in tenant-context.ts already caches the wedding
+        lookup; the response itself is re-computed every time.
+IMPACT: Every public page load hits 4-5 API endpoints that all re-run Prisma queries. With
+        ISR, the second+ visitor within 60s gets a cached response. ~30-50% reduction in DB
+        load for popular weddings.
+FIX:    Replace `export const dynamic = 'force-dynamic'` with `export const revalidate = 60`
+        in the 4 read-only public routes above. Invalidate via `revalidatePath('/w/[slug]')`
+        or `revalidateTag('wedding-' + slug)` when settings/theme/timeline change.
+EFFORT: M (requires invalidation logic in the PUT routes)
+```
+
+```
+P2-PERF-11: Missing index on Guest.invitationCode (queried on every guest auth)
+FILE:   prisma/schema.prisma:199  `invitationCode String` — no @@index
+        schema has @@unique([weddingId, invitationCode]) at line 217 which creates a
+        composite index, but `findFirst({ where: { invitationCode } })` queries don't benefit
+        from it because they don't filter by weddingId first.
+PROOF:  `tenantDb.guest.findFirst({ where: { invitationCode } })` is used in:
+          - src/app/api/guest/auth/route.ts:114
+          - src/app/api/guest/invite/route.ts:54
+          - src/app/api/guests/qrcode/[code]/route.ts:44
+        The tenant extension auto-injects weddingId, so the actual query becomes
+        `findFirst({ where: { invitationCode, weddingId: '<ctx>' } })` which DOES use the
+        composite unique index. So this is NOT actually an issue — the extension saves us.
+        Listed here because a developer reading the route file in isolation might think it's
+        an unindexed lookup.
+IMPACT: None — the tenant-scoped extension's auto-injection makes the composite index usable.
+        **NO ACTION NEEDED** (documented for awareness).
+FIX:    Add a code comment in the 3 sites: "// tenant extension auto-injects weddingId → uses @@unique([weddingId, invitationCode]) index"
+EFFORT: S
+```
+
+```
+P2-PERF-12: Missing index on AdminUser.email lookups during login
+FILE:   prisma/schema.prisma:71  `email String @unique`
+PROOF:  The @unique constraint at line 71 automatically creates a unique index. So
+        `findUnique({ where: { email } })` is indexed. NOT an issue.
+IMPACT: None. **NO ACTION NEEDED**.
+EFFORT: -
+```
+
+```
+P2-PERF-13: Platform admin page eagerly imports 7 large tab components + PenpotStudio
+FILE:   src/app/platform/admin/page.tsx:93-97
+PROOF:  ```ts
+        import { BillingTab } from './BillingTab'         // 1202 lines
+        import { OnboardingTab } from './OnboardingTab'   // 2150 lines
+        import { CollectionsFactoryTab } from './CollectionsFactoryTab'  // 315 lines
+        import { ThemeCustomizer } from '@/components/admin/ThemeCustomizer'  // 615 lines
+        import { PenpotStudio } from '@/components/penpot/PenpotStudio'      // unknown size
+        ```
+        All 5 are statically imported. The initial JS bundle for /platform/admin includes
+        ALL of them, even though only 1 tab is visible at a time. PenpotStudio (a canvas
+        editor) loads even if the user never opens the "Studio" tab.
+IMPACT: Estimated 200-400KB of JS shipped on first paint of /platform/admin. Slow on 3G.
+        **DUPLICATE of P1-UX-9 (open, M-effort)**.
+FIX:    `const PenpotStudio = dynamic(() => import(...).then(m => m.PenpotStudio), { ssr: false })`
+        Same for ThemeCustomizer, CollectionsFactoryTab, BillingTab, OnboardingTab.
+EFFORT: M
+```
+
+```
+P2-PERF-14: No cursor-based pagination anywhere — all list endpoints use offset (skip+take)
+FILE:   src/app/api/guests/route.ts:51  `skip, take: limit` (offset pagination)
+        src/app/api/platform/weddings/route.ts:89-90  (same)
+        src/app/api/platform/users/route.ts:68-69  (same)
+        src/app/api/onboarding/leads/route.ts:245-246  (same)
+        src/app/api/guest/access-logs/route.ts:36  (same)
+PROOF:  All 5 paginated list endpoints use `skip = (page - 1) * limit; take = limit`.
+        For deep pages (e.g. page 100 of 1000 guests), SQLite still scans the first 9900 rows.
+IMPACT: Deep pagination latency. Low for current scale (most weddings < 500 guests) but
+        will degrade as the platform grows.
+FIX:    For guests (the largest lists), add cursor pagination: `?cursor=<createdAt>&take=20`
+        with `where: { createdAt: { lt: cursor } }`. UI changes to "Load more" instead of
+        page numbers. Offset pagination is fine for admin tables where users rarely go past
+        page 5.
+EFFORT: M (guests only — others can stay offset)
+```
+
+```
+P2-PERF-15: Module-scope setInterval in lib/guest-auth.ts:202 and auto-auth/route.ts:17
+FILE:   src/lib/guest-auth.ts:202  `setInterval(() => { ... }, 10 * 60 * 1000)`
+        src/app/api/guest/auto-auth/route.ts:17  `setInterval(() => { usedLookupTokens.clear(); }, 10 * 60 * 1000)`
+PROOF:  Both are module-scope, never cleared. P1-CQ-20 was supposed to move them to
+        instrumentation.ts. The worklog P1-LAUNCH summary lists P1-CQ-1-20 as "remaining
+        P1" so this is still open.
+IMPACT: In development with HMR, each module reload adds another setInterval. After 10
+        reloads, 10 intervals run. In production: prevents graceful shutdown (the interval
+        keeps the event loop alive past SIGTERM until Docker SIGKILLs at 10s).
+        **DUPLICATE of P1-CQ-20 (open, S-effort)**.
+FIX:    Move both setInterval calls into `src/instrumentation.ts register()` (which P1-PROD-7
+        added). Store the handles and `clearInterval()` on SIGTERM.
+EFFORT: S
+```
+
+```
+P2-PERF-16: Missing Suspense boundaries around slow data fetches
+FILE:   src/app/page.tsx (root) — wraps GuestAuthProvider in Suspense but not the data fetches
+        src/app/w/[slug]/page.tsx — no Suspense around fetch calls
+PROOF:  P1-UX-1 added loading.tsx + error.tsx at the route-segment level. But individual
+        data fetches inside pages (e.g. `fetch('/api/settings')` in Footer, GuestSearch,
+        HeroSection) are not wrapped in Suspense. They show empty state until the fetch
+        resolves.
+IMPACT: Layout shift + empty sections on first paint. Not a P1 (loading.tsx covers route
+        transitions) but a polish issue.
+        **DUPLICATE of P1-UX-1 (partially addressed)**.
+FIX:    Wrap each async data fetch in `<Suspense fallback={<Skeleton/>}>`. Or convert the
+        fetches to React Server Components where possible (Footer is a candidate — it's
+        currently a client component just for the settings fetch).
+EFFORT: M
+```
+
+```
+P2-PERF-17: Footer, GuestSearch, HeroSection, GuestPersonalSpace are client components only because they fetch /api/settings
+FILE:   src/components/Footer.tsx:1   `'use client'`
+        src/components/GuestSearch.tsx:1   `'use client'`
+        src/components/HeroSection.tsx    (uses useState for settings)
+PROOF:  All 3 use `'use client'` + `useEffect(() => fetch('/api/settings'))` to read couple
+        names + hashtag + photos. The fetch could be done server-side (the wedding slug is
+        available in the URL or layout), the result passed as props. Footer in particular
+        has zero interactivity — pure rendering of settings data.
+IMPACT: Extra round-trip per page load (3-4 fetches per homepage). Client-side state for
+        data that doesn't change after first render. Hydration mismatch risk (P1-UX-7 pattern).
+FIX:    Convert Footer to a Server Component that takes `settings` as a prop. Pass settings
+        from the page server component. GuestSearch and HeroSection may need to stay client
+        (they have interactivity), but they can receive initial settings as props and only
+        re-fetch on demand.
+EFFORT: M
+```
+
+```
+P2-PERF-18: Missing loading.tsx for nested routes (only root exists)
+FILE:   src/app/loading.tsx (root only — added by P1-UX-1)
+        Missing: src/app/platform/loading.tsx, src/app/platform/admin/loading.tsx,
+        src/app/w/[slug]/loading.tsx, src/app/w/[slug]/admin/loading.tsx,
+        src/app/onboarding/loading.tsx
+PROOF:  `find src/app -name "loading.tsx"` returns only the root file. Next.js App Router
+        supports per-segment loading.tsx — without them, transitions to nested routes show
+        the parent's loading state (or nothing) until the new segment loads.
+IMPACT: Transitioning from /platform/admin#/dashboard to /platform/admin#/users (tab switch
+        in client) is instant, but navigating from /platform/login → /platform/admin shows
+        the root loading.tsx (which is the homepage skeleton — wrong UX).
+        **DUPLICATE of P1-UX-1 (partially addressed)**.
+FIX:    Add a generic loading.tsx to each of the 5 nested route segments above. Can be a
+        simple centered Spinner.
+EFFORT: S
+```
+
+### Summary tables
+
+#### P2-SEC (14 issues)
+
+| ID | Title | File | Effort |
+|----|-------|------|--------|
+| P2-SEC-1 | console.error leaks Error.stack (2 routes) | src/app/api/guest/{auto-auth:157,invite:133}/route.ts | S |
+| P2-SEC-2 | EMAIL_REGEX duplicated 4× post-P1-CQ-10 | src/app/api/{platform/users:113,onboarding/create-wedding:68,onboarding/leads:23}/route.ts | S |
+| P2-SEC-3 | VALID_PLANS / VALID_ROLES duplicated 3× post-P1-CQ-11/12 | src/app/api/{platform/weddings:27,platform/weddings/[id]:33,admin/users:22,platform/users:105}/route.ts | S |
+| P2-SEC-4 | Cookies use SameSite=Lax not Strict (4 sites) | src/lib/auth.ts:267 + 3 guest routes | S |
+| P2-SEC-5 | Invitation token in URL query param | src/app/api/guest/invite/route.ts:28 | M |
+| P2-SEC-6 | No rate limit on 44 of 50 API routes | src/app/api/** (all except 6 login/auth routes) | M |
+| P2-SEC-7 | Unsafe JSON.parse(theme.customizations) | src/app/api/theme/route.ts:22,117 | S |
+| P2-SEC-8 | Health endpoint leaks DB error.message | src/app/api/health/route.ts:34 | S |
+| P2-SEC-9 | Hardcoded dev-fallback secrets in source | src/lib/{auth:40,guest-auth:42,69}.ts | S |
+| P2-SEC-10 | bcrypt hash inside db.$transaction | src/app/api/onboarding/create-wedding/route.ts:399 | S |
+| P2-SEC-11 | Host header injection in QR code URL | src/app/api/guests/qrcode/[code]/route.ts:84-85 | S |
+| P2-SEC-12 | Lookup-token replay window (5min) | src/app/api/guest/auto-auth/route.ts:16-17,79-90 | S |
+| P2-SEC-13 | Body token in admin login response (DUPLICATE of P1-SEC-3) | src/app/api/admin/login/route.ts:67-76 | M |
+| P2-SEC-14 | auditLog.create never populates ipAddress/userAgent (P1-SEC-12 incomplete) | 40+ call sites across src/app/api/** | M |
+
+#### P2-CQ (22 issues)
+
+| ID | Title | File | Effort |
+|----|-------|------|--------|
+| P2-CQ-1 | EMAIL/PLANS/ROLES dedup incomplete (DUPLICATE of P1-CQ-10/11/12) | (see P2-SEC-2/3) | S |
+| P2-CQ-2 | MAX_PAYMENT_USD_CENTS magic number duplicated 3× (DUPLICATE of P1-CQ-19) | src/app/api/{platform/weddings/[id]/subscription:170,platform/weddings/[id]/invoices:145,onboarding/create-wedding:204}/route.ts | S |
+| P2-CQ-3 | formatDate / formatUsd / formatFcfa duplicated 3-4× (DUPLICATE of P1-CQ-13) | src/app/platform/admin/{page:377,BillingTab:238,OnboardingTab:344}.tsx | S |
+| P2-CQ-4 | PLANS array duplicated 3× in admin UI | src/app/platform/admin/{page:237,BillingTab:205,OnboardingTab:230}.tsx | S |
+| P2-CQ-5 | Inconsistent error message language (EN vs FR, period vs no period) | src/app/api/** (50 routes) | M |
+| P2-CQ-6 | Inconsistent body parsing — 8 routes use .catch, 22+ use raw .json() | src/app/api/** (22+ routes) | M |
+| P2-CQ-7 | auditLog.create never populates ipAddress/userAgent (DUPLICATE of P2-SEC-14) | 40+ call sites | M |
+| P2-CQ-8 | Inconsistent route design — PUT/DELETE read id from body or query | src/app/api/{guests,couple-story,tables,timeline}/route.ts | M |
+| P2-CQ-9 | Magic strings for Settings keys (bride_name, etc.) | src/app/api/onboarding/create-wedding:365-388 + 4 UI files | S |
+| P2-CQ-10 | createWedding POST handler is 453 lines (DUPLICATE of P1-CQ-7) | src/app/api/onboarding/create-wedding/route.ts:93-545 | L |
+| P2-CQ-11 | duplicateWedding POST handler is 200 lines (DUPLICATE of P1-CQ-7) | src/app/api/platform/weddings/[id]/duplicate/route.ts:29-234 | M |
+| P2-CQ-12 | 4 admin-UI components exceed 500 lines (DUPLICATE of P1-CQ-8 + P1-UX-9) | page.tsx (2452), OnboardingTab (2150), BillingTab (1202), GuestManager (1099) | L |
+| P2-CQ-13 | page.tsx duplicates WEDDING_STATUSES + PLANS + STATUS_LABELS from lib/ | src/app/platform/admin/page.tsx:236-268 | S |
+| P2-CQ-14 | ROLE_LABELS duplicated between lib/auth.ts and platform/admin/page.tsx | src/lib/auth.ts:284 + src/app/platform/admin/page.tsx:102 | S |
+| P2-CQ-15 | Dead code — /api/route.ts returns "Hello, world!" | src/app/api/route.ts (6 lines) | S |
+| P2-CQ-16 | Platform dashboard route runs 16 parallel Prisma queries | src/app/api/platform/dashboard/route.ts:85-189 | M |
+| P2-CQ-17 | Guest access-logs route runs 19 Prisma queries per request | src/app/api/guest/access-logs/route.ts:32-99 | M |
+| P2-CQ-18 | Missing JSDoc on ~44 of 50 API route handlers | src/app/api/** (44 routes without JSDoc) | M |
+| P2-CQ-19 | useAuthedFetch pattern duplicated in 4 admin client components | src/app/platform/admin/page.tsx:291-347 + 3 other sites | M |
+| P2-CQ-20 | Long inline design-decision comments (no formal markers) | src/app/api/onboarding/create-wedding:341-345 + others | S |
+| P2-CQ-21 | setAuthCookie helper exists but used in only 1 of 5 cookie sites | src/lib/auth.ts:263 + 4 inline cookie sets | S |
+| P2-CQ-22 | Dashboard route couples 6 analytics sections in one 250-line handler | src/app/api/platform/dashboard/route.ts:67-313 | M |
+
+#### P2-PERF (18 issues)
+
+| ID | Title | File | Effort |
+|----|-------|------|--------|
+| P2-PERF-1 | N+1 in guests/import-docx (up to 10 findFirst per guest) | src/app/api/guests/import-docx/route.ts:278-389 | M |
+| P2-PERF-2 | N+1 in guests/import (sequential create per row) | src/app/api/guests/import/route.ts:41-79 | S |
+| P2-PERF-3 | Missing pagination on guests/export (fetches ALL guests) | src/app/api/guests/export/route.ts:22-25 | M |
+| P2-PERF-4 | Missing pagination on couple-story / tables / timeline (no take) | src/app/api/{couple-story:9,tables:17,timeline:10}/route.ts | S |
+| P2-PERF-5 | bcrypt hash inside db.$transaction (DUPLICATE of P2-SEC-10) | src/app/api/onboarding/create-wedding/route.ts:399 | S |
+| P2-PERF-6 | Platform dashboard fetches ALL published weddings for MRR | src/app/api/platform/dashboard/route.ts:160-163 | S |
+| P2-PERF-7 | Admin dashboard runs 9 sequential queries (3 Promise.all groups) | src/app/api/admin/dashboard/route.ts:21-49 | S |
+| P2-PERF-8 | Guest access-logs route runs 19 Prisma queries (DUPLICATE of P2-CQ-17) | src/app/api/guest/access-logs/route.ts:32-99 | M |
+| P2-PERF-9 | /api/route.ts uses force-dynamic for static "Hello, world!" | src/app/api/route.ts:1 | S |
+| P2-PERF-10 | All 50 API routes use force-dynamic — 4 public reads could be ISR | src/app/api/{couple-story,tables,timeline,settings,theme}/route.ts | M |
+| P2-PERF-11 | (NON-ISSUE) Guest.invitationCode unindexed — actually uses composite unique | prisma/schema.prisma:199 | - |
+| P2-PERF-12 | (NON-ISSUE) AdminUser.email already indexed via @unique | prisma/schema.prisma:71 | - |
+| P2-PERF-13 | Platform admin eagerly imports 7 large tab components (DUPLICATE of P1-UX-9) | src/app/platform/admin/page.tsx:93-97 | M |
+| P2-PERF-14 | All list endpoints use offset pagination (no cursor) | src/app/api/{guests,platform/weddings,platform/users,onboarding/leads,guest/access-logs}/route.ts | M |
+| P2-PERF-15 | Module-scope setInterval never cleared (DUPLICATE of P1-CQ-20) | src/lib/guest-auth.ts:202 + src/app/api/guest/auto-auth/route.ts:17 | S |
+| P2-PERF-16 | Missing Suspense around individual data fetches (DUPLICATE of P1-UX-1) | src/app/{page,w/[slug]/page}.tsx + components | M |
+| P2-PERF-17 | Footer/GuestSearch/HeroSection are client components only for settings fetch | src/components/{Footer,GuestSearch,HeroSection}.tsx | M |
+| P2-PERF-18 | Missing loading.tsx for 5 nested routes (DUPLICATE of P1-UX-1) | (missing) src/app/{platform,platform/admin,w/[slug],w/[slug]/admin,onboarding}/loading.tsx | S |
+
+### Notes on duplicates / out-of-scope items
+
+- **P2-SEC-13 / P2-CQ-1 / P2-CQ-2 / P2-CQ-3 / P2-CQ-10 / P2-CQ-11 / P2-CQ-12 / P2-PERF-13 / P2-PERF-15 / P2-PERF-16 / P2-PERF-18** — these are explicitly marked as DUPLICATEs of open P1 items. The P1-LAUNCH worklog summary listed P1-SEC-3, P1-CQ-1-20, P1-UX-4-10 as "remaining P1 (non bloquants pour commercialisation, à traiter en P2/P3)". This audit enumerates the P2 angles of those P1 items so they can be batched together when the team tackles them.
+- **P2-PERF-11 / P2-PERF-12** — explicitly marked NON-ISSUE (the schema already has the indexes; documented for awareness so future devs don't re-add indexes).
+- **P2-CQ-20** — informational only, no action needed.
+- **Inconsistently-applied P1 fixes** — P1-CQ-10 (EMAIL_REGEX), P1-CQ-11 (VALID_PLANS), P1-CQ-12 (VALID_ROLES), P1-CQ-13 (formatDate), P1-CQ-19 (MAX_PAYMENT) are all marked as "fixed" in the P1-LAUNCH summary but the worklog only documents updating 1 site per constant (admin/users route). The other 3-6 sites still have local copies. This audit's P2-SEC-2/3 + P2-CQ-1/2/3 enumerate those remaining sites.
+
+
+---
+Task ID: P1P2-LIB
+Agent: P1+P2 Lib Files Agent
+Task: Create logger, audit helper, safe-json, format, ui-labels, api-errors; extend rate-limit; refactor auth+guest-auth cookie helpers; extend constants.
+
+Work Log:
+- Read last 600 lines of worklog.md to understand P0/P1 fixes and the 61-issue P2 audit (P2-SEC-1..14, P2-CQ-1..22, P2-PERF-1..18).
+- Read src/lib/{constants,auth,guest-auth,rate-limit,types,db,billing}.ts to understand existing exports and the existing ROLE_LABELS / setAuthCookie / getRateLimitKey / getClientInfo shapes.
+- Read src/app/platform/admin/{page,BillingTab,OnboardingTab}.tsx to confirm the 3 sets of duplicated formatters (formatDate, formatDateTime, toDateInput, formatUsd, formatFcfa) + the inline STATUS_LABELS / STATUS_BADGE_CLASS / PLAN_BADGE_CLASS / ROLE_BADGE_CLASS / WEDDING_STATUSES / PLANS arrays.
+- Confirmed Prisma schema uses plain String columns (not enums) for `status`/`plan`/`role` — so `@prisma/client` does NOT export `WeddingStatus`/`Plan`/`Role` types. Imported the local canonical types from `@/lib/types` instead (documented in ui-labels.ts).
+- Created src/lib/logger.ts (P1-SEC-15 + P1-PROD-5): structured JSON logger. JSON to stdout, level via LOG_LEVEL env (debug default in dev, info in prod), Error serialisation extracts errMessage/errName/errCode and omits stack by default (includeStack:true opts in, dev-only). Edge-runtime-safe (no Node-only top-level code). Exports `logger` singleton + `with(ctx)` for child loggers.
+- Created src/lib/safe-json.ts (P2-SEC-7): safeJsonParse<T>(s, fallback) — returns fallback on null/undefined/empty/invalid JSON, never throws, logs parse failures with a 200-char snippet.
+- Created src/lib/audit.ts (P2-SEC-14 + P2-CQ-7): writeAuditLog({weddingId?, userId?, action, details?, request?, ipAddress?, userAgent?}). Routes through tenantDb.auditLog.create when weddingId is set, else db.auditLog.create. Extracts IP/UA via getClientInfo when request is provided. Catches all errors internally (audit-log failure must NOT crash the request) — logs via logger.
+- Created src/lib/format.ts (P2-CQ-3): formatDate, formatDateTime, toDateInput, formatUsd, formatFcfa — accepts Date|string|null, never throws, returns '—' or '' for invalid input. Uses FCFA_TO_USD_RATE from lib/billing.ts (single source of truth).
+- Created src/lib/ui-labels.ts (P2-CQ-13 + P2-CQ-14 + P2-CQ-4): STATUS_LABELS, STATUS_BADGE_CLASS, PLAN_LABELS, PLAN_BADGE_CLASS, ROLE_LABELS, ROLE_BADGE_CLASS, PLAN_LIST, WEDDING_STATUS_LIST, getRoleLabel. Values match existing inline declarations in page.tsx + auth.ts (kept for backwards-compat).
+- Created src/lib/api-errors.ts (P2-CQ-5): internalError (500), badRequest (400), unauthorized (401), forbidden (403), notFound (404), rateLimited (429), conflict (409). All French copy, no trailing periods, override-able via optional msg param.
+- Modified src/lib/rate-limit.ts (P2-SEC-6): added withRateLimit(max, windowMs, keyFn?) HOF. Default keyFn = getRateLimitKey. On limit exceeded: returns NextResponse.json with canonical French 429 copy + Retry-After header (seconds). Forwards dynamic-route params (Args extends unknown[]) transparently.
+- Modified src/lib/auth.ts (P2-CQ-21 + P2-SEC-4): (1) moved ROLE_LABELS + getRoleLabel to ui-labels.ts, re-exported from auth.ts for backwards-compat. (2) setAuthCookie now accepts an optional maxAgeSeconds parameter (default 8h to match JWT expiresIn='8h' — deviating from the task's suggested 7-day default because that would give users a cookie containing an expired token; documented in JSDoc). (3) sameSite changed from 'lax' → 'strict' (P2-SEC-4).
+- Modified src/lib/guest-auth.ts (P2-CQ-21 + P2-SEC-4): added setGuestSessionCookie(response, token, maxAgeDays?) helper. Cookie attrs: httpOnly, secure in prod, sameSite='strict' (was 'lax'), path='/', maxAge defaults to SESSION_EXPIRY_DAYS (30) days matching GUEST_TOKEN_EXPIRY='30d' JWT. Added NextResponse import. The 3 guest cookie-setting sites (guest/auth, guest/auto-auth, guest/invite) will be updated by the API-routes agent.
+- Modified src/lib/constants.ts (P2-CQ-9 + P2-CQ-4 + P1-SEC-9): added SETTING_KEYS object (23 keys: bride_name, groom_name, couple_photo_1/2, hashtag, site_title, site_subtitle, welcome_message, invitation_message, wedding_date/time, venue_*, rsvp_deadline, primary_color, music_*) as const + SettingKey type. Re-exported PLAN_LIST from ui-labels (single source of truth). Added PASSWORD_RESET_TOKEN_EXPIRY_HOURS=1 for future P1-SEC-9 password-reset flow.
+- Ran `bun run lint` after each file change. Initial run flagged 3 unused eslint-disable directives in logger.ts (the project has `no-console: off` so the directives were redundant) — removed them. Final lint: 61 problems (59 errors, 2 warnings) = baseline count (0 NEW errors).
+- Ran `bunx tsc --noEmit`: 66 total TS errors (same as baseline). The only src/lib errors are 2 pre-existing ones in guest-auth.ts (lines 324, 445 — inside createGuestSession and logGuestAccess, both pre-existing functions I didn't modify) + 1 pre-existing in prisma-extensions/tenant-scoped.ts. My new files (logger/safe-json/audit/format/ui-labels/api-errors) and my modifications (rate-limit/auth/guest-auth/constants) introduce 0 new TS errors.
+
+Stage Summary:
+- Files created: src/lib/logger.ts, src/lib/safe-json.ts, src/lib/audit.ts, src/lib/format.ts, src/lib/ui-labels.ts, src/lib/api-errors.ts (6 files)
+- Files modified: src/lib/rate-limit.ts, src/lib/auth.ts, src/lib/guest-auth.ts, src/lib/constants.ts (4 files)
+- Lint result: 0 NEW errors (61 problems total = 59 errors + 2 warnings = pre-existing baseline)
+- TypeScript result: 0 NEW errors in src/lib (only 2 pre-existing errors in guest-auth.ts:324,445 + 1 in prisma-extensions — all in untouched code)
+- Key decisions:
+  1. **Re-export strategy** for ROLE_LABELS/getRoleLabel (auth.ts → ui-labels.ts): used `export { ROLE_LABELS, getRoleLabel } from './ui-labels'` so existing `import { ROLE_LABELS } from '@/lib/auth'` keeps working. No caller needs updating.
+  2. **PLAN_LIST** is defined ONCE in ui-labels.ts and re-exported from constants.ts — single source of truth, identity comparisons hold.
+  3. **setAuthCookie maxAge default**: kept at 8h to match `generateToken`'s JWT `expiresIn: '8h'`. The task suggested 7 days, but that would give users a cookie containing an expired JWT (8h < 7d) — they'd be redirected to login on the next request anyway. Documented the rationale in JSDoc. Callers who want a longer-lived cookie MUST also lengthen the JWT expiry (a change in generateToken).
+  4. **Type imports for ui-labels**: imported `Plan`, `Role`, `WeddingStatus` from `@/lib/types` instead of `@prisma/client` because the Prisma schema stores these as plain String columns (not enums), so the generated client doesn't export the types. Documented in ui-labels.ts header comment.
+  5. **Logger edge-runtime safety**: detected Edge via `process.env.NEXT_RUNTIME === 'edge'`. On Edge, `process.pid` is undefined — we omit `pid` from the log payload rather than emit `undefined`.
+  6. **Audit helper never throws**: wraps the entire DB write in try/catch and logs the failure via logger. The audited action has already happened by the time writeAuditLog is called — failing the request after the fact would be confusing UX.
+  7. **withRateLimit signature**: returns a generic HOF that preserves the wrapped handler's Args (variadic) — so Next.js dynamic-route handlers `(req, { params }) => ...` work transparently.

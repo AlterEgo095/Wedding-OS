@@ -221,8 +221,36 @@ function WeddingPageContent() {
   // ─── Regular landing content (shown when guest is not authenticated) ───────
   const regularContent = (
     <>
-      <OurStory stories={stories} />
+      {/* P1-UX-6: show a friendly empty state instead of OurStory's
+          DEFAULT_STORIES fallback when this wedding has no stories. The
+          fallback leaks the default wedding's couple identity into other
+          tenants; the inline empty state avoids that. */}
+      {!loading && stories.length === 0 ? (
+        <section
+          id="notre-histoire"
+          className="py-20 md:py-28 text-center"
+          aria-label="Notre histoire — aucune histoire à raconter"
+        >
+          <div className="max-w-xl mx-auto px-4">
+            <span
+              className="block mb-4 text-2xl text-muted-foreground/60"
+              aria-hidden="true"
+            >
+              ✦
+            </span>
+            <p className="font-serif text-xl text-muted-foreground mb-1">
+              Aucune histoire à raconter pour le moment
+            </p>
+            <p className="font-display text-sm text-muted-foreground/70">
+              Le couple n&apos;a pas encore partagé les chapitres de son histoire.
+            </p>
+          </div>
+        </section>
+      ) : (
+        <OurStory stories={stories} />
+      )}
       <PremiumGallery />
+      {/* EventTimeline handles its own empty state internally. */}
       {loading ? <EventTimelineSkeleton /> : <EventTimeline events={timeline} />}
       {loading ? <MapSectionSkeleton /> : <MapSection settings={settings} />}
       <GuestAuthForm

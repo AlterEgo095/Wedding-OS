@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
+import Image from 'next/image'
 import {
   LogOut, MapPin, Heart, QrCode,
   Check, Share2, Link2,
@@ -382,8 +383,18 @@ export default function GuestPersonalSpace({ guest, settings, onLogout }: GuestP
           {/* ZONE 1: PHOTOS (54%) */}
           <div style={{ width: '54%', position: 'relative', minHeight: '320px', overflow: 'hidden' }}>
             <div style={{ display: 'flex', width: '100%', height: '100%', position: 'absolute', inset: 0 }}>
-              {photo1Base64 && <img src={photo1Base64} alt={groomName} style={{ width: '50%', height: '100%', objectFit: 'cover', objectPosition: 'top' }} />}
-              {photo2Base64 && <img src={photo2Base64} alt={brideName} style={{ width: '50%', height: '100%', objectFit: 'cover', objectPosition: 'top' }} />}
+              {/* photo1Base64 / photo2Base64 are data: URLs (base64 JPEGs
+                  from the Settings API). next/image handles data URLs natively. */}
+              {photo1Base64 && (
+                <div style={{ width: '50%', height: '100%', position: 'relative' }}>
+                  <Image src={photo1Base64} alt={groomName} fill sizes="27%vw" style={{ objectFit: 'cover', objectPosition: 'top' }} />
+                </div>
+              )}
+              {photo2Base64 && (
+                <div style={{ width: '50%', height: '100%', position: 'relative' }}>
+                  <Image src={photo2Base64} alt={brideName} fill sizes="27%vw" style={{ objectFit: 'cover', objectPosition: 'top' }} />
+                </div>
+              )}
             </div>
             <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top, rgba(253,250,243,0.97) 0%, rgba(253,250,243,0.6) 30%, rgba(253,250,243,0.1) 50%, transparent 65%)' }} />
             <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to right, transparent 55%, rgba(253,250,243,0.5) 75%, rgba(253,250,243,0.95) 95%)' }} />
@@ -481,7 +492,7 @@ export default function GuestPersonalSpace({ guest, settings, onLogout }: GuestP
                 <p style={{ fontSize: '7px', letterSpacing: '0.2em', textTransform: 'uppercase', color: 'rgba(166,124,61,0.5)', fontWeight: 600, margin: 0, marginBottom: '4px', fontFamily: 'Cormorant Garamond, sans-serif' }}>Votre acc&#232;s personnel</p>
                 <div style={{ display: 'inline-block', padding: '6px', background: '#fff', boxShadow: '0 1px 8px rgba(196,162,101,0.12)' }}>
                   {qrCodeUrl ? (
-                    <img src={qrCodeUrl} alt="QR Code" style={{ width: '64px', height: '64px' }} />
+                    <Image src={qrCodeUrl} alt="QR Code" width={64} height={64} style={{ width: '64px', height: '64px' }} />
                   ) : (
                     <div style={{ width: '64px', height: '64px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '24px', color: 'rgba(196,162,101,0.2)' }}>&#9633;</div>
                   )}
@@ -576,12 +587,12 @@ export default function GuestPersonalSpace({ guest, settings, onLogout }: GuestP
                 <div className="absolute inset-0 flex">
                   <div className="w-1/2 h-full relative overflow-hidden">
                     {(photo1Base64 || couplePhoto1Path) ? (
-                      <img src={photo1Base64 || couplePhoto1Path} alt={groomName} className="w-full h-full object-cover object-top" />
+                      <Image src={(photo1Base64 || couplePhoto1Path) as string} alt={groomName} fill sizes="27%vw" className="object-cover object-top" />
                     ) : null}
                   </div>
                   <div className="w-1/2 h-full relative overflow-hidden">
                     {(photo2Base64 || couplePhoto2Path) ? (
-                      <img src={photo2Base64 || couplePhoto2Path} alt={brideName} className="w-full h-full object-cover object-top" />
+                      <Image src={(photo2Base64 || couplePhoto2Path) as string} alt={brideName} fill sizes="27%vw" className="object-cover object-top" />
                     ) : null}
                   </div>
                 </div>
@@ -664,7 +675,7 @@ export default function GuestPersonalSpace({ guest, settings, onLogout }: GuestP
                           </motion.div>
                         ) : qrCodeUrl ? (
                           <motion.div key="qr" initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} transition={{ type: 'spring', stiffness: 200, damping: 20 }}>
-                            <img src={qrCodeUrl} alt="QR Code" className="w-[52px] h-[52px] sm:w-[64px] sm:h-[64px]" />
+                            <Image src={qrCodeUrl} alt="QR Code" width={64} height={64} className="w-[52px] h-[52px] sm:w-[64px] sm:h-[64px]" />
                           </motion.div>
                         ) : (
                           <motion.div key="fallback" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="w-[52px] h-[52px] sm:w-[64px] sm:h-[64px] flex items-center justify-center">

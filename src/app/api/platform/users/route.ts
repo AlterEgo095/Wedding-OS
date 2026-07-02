@@ -3,6 +3,14 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getAuthUser, requirePlatformAdmin, hashPassword } from '@/lib/auth';
 import { normalizeRole, type Role } from '@/lib/types';
+// P2-CQ-1/2 + P2-SEC-2/3: shared constants from @/lib/constants.
+import { EMAIL_REGEX, VALID_ROLES, isValidPassword, PASSWORD_POLICY_MSG } from '@/lib/constants';
+// P2-SEC-1: structured logger (no stack leak).
+import { logger } from '@/lib/logger';
+// P2-CQ-5: standardised API errors.
+import { internalError } from '@/lib/api-errors';
+// P2-SEC-14: writeAuditLog populates ipAddress + userAgent from request.
+import { writeAuditLog } from '@/lib/audit';
 
 /**
  * Platform-wide user management.
@@ -78,11 +86,12 @@ export async function GET(request: NextRequest) {
       limit,
     });
   } catch (error) {
-    console.error('List platform users error:', error);
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    );
+    // P2-SEC-1: never log error.stack.
+    logger.error('List platform users error', {
+      errMessage: error instanceof Error ? error.message : String(error),
+      errName: error instanceof Error ? error.name : 'Unknown',
+    });
+    return internalError();
   }
 }
 
@@ -102,15 +111,13 @@ export async function GET(request: NextRequest) {
 // Email must be unique across the platform. Passwords are hashed with bcrypt
 // (rounds 12) and NEVER included in the response.
 
-const VALID_CREATE_ROLES: string[] = [
-  'PLATFORM_ADMIN',
-  'SUPER_ADMIN',
-  'ORGANIZER',
-  'RECEPTION',
-  'CONTROLLER',
-];
+// P1-SEC-5 + P2-SEC-3: VALID_CREATE_ROLES now imported from @/lib/constants
+// (was duplicated locally). The shared VALID_ROLES is a readonly tuple; we
+// cast to string[] here for the .includes() check (callers can't tell the
+// difference — runtime semantics are identical).
+const VALID_CREATE_ROLES: readonly string[] = VALID_ROLES;
 
-const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+// P2-CQ-1 + P2-SEC-2: EMAIL_REGEX now imported from @/lib/constants.
 
 export async function POST(request: NextRequest) {
   try {
@@ -118,8 +125,14 @@ export async function POST(request: NextRequest) {
     const denied = requirePlatformAdmin(user);
     if (denied) return denied;
 
-    const body = await request.json();
-    const { name, email, password, role, weddingId } = body ?? {};
+    const body = await request.json().catch(() => null); // P2-CQ-6
+    if (!body) {
+      return NextResponse.json(
+        { error: 'Corps de requête invalide' },
+        { status: 400 }
+      );
+    }
+    const { name, email, password, role, weddingId } = body;
 
     // ─── Field validation ───────────────────────────────────────────────────
     if (typeof name !== 'string' || name.trim().length < 1 || name.trim().length > 100) {
@@ -141,6 +154,14 @@ export async function POST(request: NextRequest) {
     if (typeof password !== 'string' || password.length < 8) {
       return NextResponse.json(
         { error: 'Password must be at least 8 characters' },
+        { status: 400 }
+      );
+    }
+    // P1-SEC-5: enforce full password policy (min 8 chars + letter + digit).
+    // Same pattern as /api/admin/users (P1-SEC-6).
+    if (!isValidPassword(password)) {
+      return NextResponse.json(
+        { error: PASSWORD_POLICY_MSG },
         { status: 400 }
       );
     }
@@ -195,7 +216,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // ─── Hash password + persist ────────────────────────────────────────────
+    // ─── Hash password + persist ────────────────────────────────────────
     const hashedPassword = await hashPassword(password);
 
     const created = await db.adminUser.create({
@@ -209,23 +230,23 @@ export async function POST(request: NextRequest) {
       select: USER_LIST_SELECT,
     });
 
-    // ─── Audit log ──────────────────────────────────────────────────────────
-    await db.auditLog.create({
-      data: {
-        weddingId: null, // platform-level event
-        userId: user!.id,
-        action: 'CREATE_USER',
-        details: `Created user ${normalizedEmail} (${normalizedRole})`,
-      },
+    // ─── Audit log (P2-SEC-14: writeAuditLog populates ipAddress + userAgent) ─
+    await writeAuditLog({
+      weddingId: null, // platform-level event
+      userId: user!.id,
+      action: 'CREATE_USER',
+      details: `Created user ${normalizedEmail} (${normalizedRole})`,
+      request,
     });
 
     return NextResponse.json({ user: created }, { status: 201 });
   } catch (error) {
-    console.error('Create platform user error:', error);
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    );
+    // P2-SEC-1: never log error.stack.
+    logger.error('Create platform user error', {
+      errMessage: error instanceof Error ? error.message : String(error),
+      errName: error instanceof Error ? error.name : 'Unknown',
+    });
+    return internalError();
   }
 }
 

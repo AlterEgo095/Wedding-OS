@@ -3,6 +3,14 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getAuthUser, requirePlatformAdmin } from '@/lib/auth';
 import { isValidSlug, buildCoupleLabel, type Plan, type WeddingStatus } from '@/lib/types';
+// P2-CQ-1 + P2-SEC-3: shared VALID_PLANS from @/lib/constants.
+import { VALID_PLANS } from '@/lib/constants';
+// P2-SEC-1: structured logger (no stack leak).
+import { logger } from '@/lib/logger';
+// P2-CQ-5: standardised API errors.
+import { internalError } from '@/lib/api-errors';
+// P2-SEC-14: writeAuditLog populates ipAddress + userAgent from request.
+import { writeAuditLog } from '@/lib/audit';
 
 /**
  * Platform-level wedding CRUD.
@@ -24,7 +32,9 @@ import { isValidSlug, buildCoupleLabel, type Plan, type WeddingStatus } from '@/
 // status introduced in ÉTAPE 5) — that was a latent bug that would have
 // blocked programmatic wedding creation with status: 'COMPLETED'.
 import { VALID_STATUSES } from '@/lib/wedding-status';
-const VALID_PLANS: Plan[] = ['TRIAL', 'ESSENTIEL', 'PREMIUM', 'ELITE'];
+// P2-CQ-1 + P2-SEC-3: VALID_PLANS now imported from @/lib/constants.
+// Note: VALID_PLANS is a readonly tuple; .includes(plan as Plan) works
+// because the tuple's element type is the union of plan literals.
 
 const WEDDING_LIST_SELECT = {
   id: true,
@@ -99,11 +109,12 @@ export async function GET(request: NextRequest) {
       limit,
     });
   } catch (error) {
-    console.error('List platform weddings error:', error);
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    );
+    // P2-SEC-1: never log error.stack.
+    logger.error('List platform weddings error', {
+      errMessage: error instanceof Error ? error.message : String(error),
+      errName: error instanceof Error ? error.name : 'Unknown',
+    });
+    return internalError();
   }
 }
 
@@ -113,7 +124,13 @@ export async function POST(request: NextRequest) {
     const denied = requirePlatformAdmin(user);
     if (denied) return denied;
 
-    const body = await request.json();
+    const body = await request.json().catch(() => null); // P2-CQ-6
+    if (!body) {
+      return NextResponse.json(
+        { error: 'Corps de requête invalide' },
+        { status: 400 }
+      );
+    }
     const {
       slug,
       brideName,
@@ -204,22 +221,22 @@ export async function POST(request: NextRequest) {
       select: WEDDING_LIST_SELECT,
     });
 
-    // ─── Audit log ─────────────────────────────────────────────────────────
-    await db.auditLog.create({
-      data: {
-        weddingId: null, // platform-level event (action targets a wedding, not in it)
-        userId: user!.id,
-        action: 'CREATE_WEDDING',
-        details: `Created wedding ${normalizedSlug}`,
-      },
+    // ─── Audit log (P2-SEC-14: writeAuditLog populates ipAddress + userAgent) ─
+    await writeAuditLog({
+      weddingId: null, // platform-level event (action targets a wedding, not in it)
+      userId: user!.id,
+      action: 'CREATE_WEDDING',
+      details: `Created wedding ${normalizedSlug}`,
+      request,
     });
 
     return NextResponse.json({ wedding }, { status: 201 });
   } catch (error) {
-    console.error('Create platform wedding error:', error);
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    );
+    // P2-SEC-1: never log error.stack.
+    logger.error('Create platform wedding error', {
+      errMessage: error instanceof Error ? error.message : String(error),
+      errName: error instanceof Error ? error.name : 'Unknown',
+    });
+    return internalError();
   }
 }

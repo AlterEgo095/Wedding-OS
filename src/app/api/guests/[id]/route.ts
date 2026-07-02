@@ -4,6 +4,10 @@ import { db, tenantDb } from '@/lib/db';
 import { getAuthUser, hasPermission } from '@/lib/auth';
 import { validateGuestSession, logGuestAccess, getClientInfo } from '@/lib/guest-auth';
 import { resolveAdminTenant, resolvePublicTenant, runWithTenant } from '@/lib/tenant-context';
+// P2-SEC-1: structured logger (no stack leak).
+import { logger } from '@/lib/logger';
+// P2-CQ-5: standardised API errors.
+import { internalError, badRequest } from '@/lib/api-errors';
 
 export async function GET(
   request: NextRequest,
@@ -67,8 +71,12 @@ export async function GET(
 
     return NextResponse.json({ error: 'Authentification requise' }, { status: 401 });
   } catch (error) {
-    console.error('Get guest error:', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    // P2-SEC-1: never log error.stack.
+    logger.error('Get guest error', {
+      errMessage: error instanceof Error ? error.message : String(error),
+      errName: error instanceof Error ? error.name : 'Unknown',
+    });
+    return internalError();
   }
 }
 
@@ -90,7 +98,8 @@ export async function PUT(
 
     return runWithTenant(context, async () => {
       const { id } = await params;
-      const body = await request.json();
+      const body = await request.json().catch(() => null); // P2-CQ-6
+      if (!body) return badRequest('Corps de requête invalide');
       const { firstName, lastName, displayName, invitationType, phone, email, tableId, seats, category, status, personalMessage, checkedIn } = body;
 
       const existing = await tenantDb.guest.findFirst({ where: { id } });
@@ -143,8 +152,12 @@ export async function PUT(
       return NextResponse.json({ guest });
     });
   } catch (error) {
-    console.error('Update guest error:', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    // P2-SEC-1: never log error.stack.
+    logger.error('Update guest error', {
+      errMessage: error instanceof Error ? error.message : String(error),
+      errName: error instanceof Error ? error.name : 'Unknown',
+    });
+    return internalError();
   }
 }
 
@@ -182,7 +195,11 @@ export async function DELETE(
       return NextResponse.json({ message: 'Guest deleted successfully' });
     });
   } catch (error) {
-    console.error('Delete guest error:', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    // P2-SEC-1: never log error.stack.
+    logger.error('Delete guest error', {
+      errMessage: error instanceof Error ? error.message : String(error),
+      errName: error instanceof Error ? error.name : 'Unknown',
+    });
+    return internalError();
   }
 }

@@ -277,13 +277,34 @@ function HomeContent() {
         </div>
       ) : null}
 
-      {/* Our Story Timeline */}
-      <OurStory stories={stories} />
+      {/* Our Story Timeline — P1-UX-6: show a friendly empty state instead of
+          the DEFAULT_STORIES fallback when the API returns no stories. The
+          fallback in OurStory leaks the default wedding's couple identity into
+          other tenants; the inline empty state avoids that. */}
+      {!loading && stories.length === 0 ? (
+        <section
+          id="notre-histoire"
+          className="py-20 md:py-28 text-center"
+          aria-label="Notre histoire — aucune histoire à raconter"
+        >
+          <div className="max-w-xl mx-auto px-4">
+            <Sparkles className="mx-auto mb-4 size-6 text-muted-foreground/60" aria-hidden="true" />
+            <p className="font-serif text-xl text-muted-foreground mb-1">
+              Aucune histoire à raconter pour le moment
+            </p>
+            <p className="font-display text-sm text-muted-foreground/70">
+              Le couple n&apos;a pas encore partagé les chapitres de son histoire.
+            </p>
+          </div>
+        </section>
+      ) : (
+        <OurStory stories={stories} />
+      )}
 
       {/* Premium Gallery */}
       <PremiumGallery />
 
-      {/* Event Timeline */}
+      {/* Event Timeline — already handles its own empty state internally. */}
       {loading ? (
         <EventTimelineSkeleton />
       ) : (

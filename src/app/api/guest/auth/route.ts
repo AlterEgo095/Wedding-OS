@@ -11,9 +11,14 @@ import {
   decryptInvitationLinkToken,
   generateInvitationLinkToken,
   validateGuestSession,
+  setGuestSessionCookie, // P2-SEC-4 + P2-CQ-21
 } from '@/lib/guest-auth';
 import { checkRateLimit, getRateLimitKey } from '@/lib/rate-limit';
 import { resolvePublicTenant, runWithTenant } from '@/lib/tenant-context';
+// P2-SEC-1: structured logger (no stack leak).
+import { logger } from '@/lib/logger';
+// P2-CQ-5: standardised API errors.
+import { internalError, badRequest } from '@/lib/api-errors';
 
 export async function POST(request: NextRequest) {
   const { context, error: tenantError } = await resolvePublicTenant(request);
@@ -88,7 +93,8 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      const body = await request.json();
+      const body = await request.json().catch(() => null); // P2-CQ-6
+      if (!body) return badRequest('Corps de requête invalide');
       const { code, firstName, lastName, linkToken } = body;
       let invitationCode = '';
 
@@ -150,20 +156,17 @@ export async function POST(request: NextRequest) {
         },
       });
 
-      response.cookies.set({
-        name: 'guest_session',
-        value: session.token,
-        httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'lax',
-        path: '/',
-        maxAge: 30 * 24 * 60 * 60,
-      });
+      // P2-SEC-4 + P2-CQ-21: shared cookie helper ensures sameSite='strict'.
+      setGuestSessionCookie(response, session.token);
 
       return response;
     } catch (error) {
-      console.error('Guest auth error:', error);
-      return NextResponse.json({ error: 'Erreur interne du serveur' }, { status: 500 });
+      // P2-SEC-1: never log error.stack.
+      logger.error('Guest auth error', {
+        errMessage: error instanceof Error ? error.message : String(error),
+        errName: error instanceof Error ? error.name : 'Unknown',
+      });
+      return internalError();
     }
   });
 }

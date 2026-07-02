@@ -3,6 +3,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db, tenantDb } from '@/lib/db';
 import { getAuthUser, hasPermission } from '@/lib/auth';
 import { withPublicTenant, withAdminTenantHandler } from '@/lib/tenant-context';
+// P2-SEC-1: structured logger (no stack leak).
+import { logger } from '@/lib/logger';
+// P2-CQ-5: standardised API errors.
+import { internalError, badRequest } from '@/lib/api-errors';
 
 // GET /api/timeline — public, returns all timeline events for the resolved wedding
 export const GET = withPublicTenant(async (_req, _ctx) => {
@@ -13,8 +17,12 @@ export const GET = withPublicTenant(async (_req, _ctx) => {
     });
     return NextResponse.json({ events });
   } catch (error) {
-    console.error('List timeline error:', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    // P2-SEC-1: never log error.stack.
+    logger.error('List timeline error', {
+      errMessage: error instanceof Error ? error.message : String(error),
+      errName: error instanceof Error ? error.name : 'Unknown',
+    });
+    return internalError();
   }
 });
 
@@ -28,7 +36,8 @@ export async function POST(request: NextRequest) {
     }
 
     return withAdminTenantHandler(request, user, async (_req, ctx) => {
-      const body = await request.json();
+      const body = await request.json().catch(() => null); // P2-CQ-6
+      if (!body) return badRequest('Corps de requête invalide');
       const { time, activity, location, description, icon, order } = body;
 
       if (!time || !activity) {
@@ -59,8 +68,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ event }, { status: 201 });
     });
   } catch (error) {
-    console.error('Create timeline error:', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    // P2-SEC-1: never log error.stack.
+    logger.error('Create timeline error', {
+      errMessage: error instanceof Error ? error.message : String(error),
+      errName: error instanceof Error ? error.name : 'Unknown',
+    });
+    return internalError();
   }
 }
 
@@ -74,7 +87,8 @@ export async function PUT(request: NextRequest) {
     }
 
     return withAdminTenantHandler(request, user, async (_req, ctx) => {
-      const body = await request.json();
+      const body = await request.json().catch(() => null); // P2-CQ-6
+      if (!body) return badRequest('Corps de requête invalide');
       const { id, time, activity, location, description, icon, order } = body;
 
       if (!id) return NextResponse.json({ error: 'Event ID is required' }, { status: 400 });
@@ -105,8 +119,12 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ event });
     });
   } catch (error) {
-    console.error('Update timeline error:', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    // P2-SEC-1: never log error.stack.
+    logger.error('Update timeline error', {
+      errMessage: error instanceof Error ? error.message : String(error),
+      errName: error instanceof Error ? error.name : 'Unknown',
+    });
+    return internalError();
   }
 }
 
@@ -141,7 +159,11 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ message: 'Timeline event deleted successfully' });
     });
   } catch (error) {
-    console.error('Delete timeline error:', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    // P2-SEC-1: never log error.stack.
+    logger.error('Delete timeline error', {
+      errMessage: error instanceof Error ? error.message : String(error),
+      errName: error instanceof Error ? error.name : 'Unknown',
+    });
+    return internalError();
   }
 }

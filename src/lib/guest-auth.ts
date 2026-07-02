@@ -1,5 +1,6 @@
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
+import { NextResponse } from 'next/server';
 import { db, tenantDb } from './db';
 
 // ─── Configuration ───
@@ -198,15 +199,79 @@ export function clearBruteForce(key: string): void {
   bruteForceStore.delete(key);
 }
 
-// Clean up expired entries every 10 minutes
-setInterval(() => {
+// ─── Cleanup interval ownership (P2-PERF-15) ─────────────────────────────
+// Previously: a module-scope setInterval() that was never cleared, causing
+// (a) HMR multiplication in dev and (b) the event loop to stay alive past
+// SIGTERM in production.
+// Now: the interval is registered via registerTokenReplayCacheCleanup(),
+// which is called from src/lib/instrumentation-node.ts (which also clears
+// the handle on shutdown).
+let _bruteForceCleanupHandle: ReturnType<typeof setInterval> | null = null;
+const BRUTE_FORCE_CLEANUP_INTERVAL_MS = 10 * 60 * 1000;
+
+function runBruteForceCleanup() {
   const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
   for (const [key, entry] of bruteForceStore.entries()) {
     if (entry.firstAttempt < oneHourAgo || (entry.bannedUntil && new Date() > entry.bannedUntil)) {
       bruteForceStore.delete(key);
     }
   }
-}, 10 * 60 * 1000);
+  // Also prune expired entries from the one-time-use lookup-token cache.
+  // (P2-SEC-12: previously a Set<string> was cleared every 10 minutes by an
+  // unowned setInterval in auto-auth/route.ts — creating a 5-minute replay
+  // window. The cache is now a TTL-bound Map pruned here, and one-time-use
+  // tokens are also rejected by their own 15-min timestamp check.)
+  pruneExpiredLookupTokens();
+}
+
+export function registerTokenReplayCacheCleanup(): ReturnType<typeof setInterval> {
+  if (_bruteForceCleanupHandle) return _bruteForceCleanupHandle;
+  _bruteForceCleanupHandle = setInterval(runBruteForceCleanup, BRUTE_FORCE_CLEANUP_INTERVAL_MS);
+  return _bruteForceCleanupHandle;
+}
+
+export function unregisterTokenReplayCacheCleanup() {
+  if (_bruteForceCleanupHandle) {
+    clearInterval(_bruteForceCleanupHandle);
+    _bruteForceCleanupHandle = null;
+  }
+}
+
+// ─── One-time-use lookup-token cache (P2-SEC-12) ─────────────────────────
+// Replaces the module-scope Set<string> in api/guest/auto-auth/route.ts.
+// The Set was cleared wholesale every 10 min, so for the window between
+// minute 10 and minute 15 (when the token's own timestamp expired) the
+// token was BOTH reusable AND still valid — a 5-minute replay window.
+// The Map stores the token's issue timestamp; isLookupTokenUsed() rejects
+// any token whose timestamp is older than 15 minutes regardless of whether
+// it's still in the Map, eliminating the replay window entirely.
+const LOOKUP_TOKEN_TTL_MS = 15 * 60 * 1000;
+const usedLookupTokens = new Map<string, number>(); // token → issuedAt ms
+
+function pruneExpiredLookupTokens() {
+  const cutoff = Date.now() - LOOKUP_TOKEN_TTL_MS;
+  for (const [token, issuedAt] of usedLookupTokens) {
+    if (issuedAt < cutoff) usedLookupTokens.delete(token);
+  }
+}
+
+/**
+ * Mark a one-time-use lookup token as consumed.
+ * Returns true if the token was not previously used (caller should proceed),
+ * false if the token has already been used (caller should reject).
+ *
+ * The token is also rejected if its own issuedAt timestamp is older than
+ * the lookup-token TTL — even if it's not yet in the Map — because the
+ * caller passes the original issue timestamp so we can double-check.
+ */
+export function consumeLookupToken(token: string, issuedAt: number): boolean {
+  // Hard expiry check independent of Map state — closes the 5-min replay
+  // window that existed when the Set was cleared wholesale.
+  if (Date.now() - issuedAt > LOOKUP_TOKEN_TTL_MS) return false;
+  if (usedLookupTokens.has(token)) return false;
+  usedLookupTokens.set(token, issuedAt);
+  return true;
+}
 
 // ─── Token Generation ───
 export function generateGuestToken(payload: GuestTokenPayload): string {
@@ -438,6 +503,48 @@ export function getGuestCookieName(): string {
 
 export function getSessionExpiryDays(): number {
   return SESSION_EXPIRY_DAYS;
+}
+
+/**
+ * Set the guest_session cookie on a NextResponse. Used by:
+ *   - /api/guest/auth/route.ts        (guest login with invitation code)
+ *   - /api/guest/auto-auth/route.ts   (one-time-use lookup-token auto-login)
+ *   - /api/guest/invite/route.ts      (invitation link auto-login)
+ *
+ * Cookie attributes (P2-SEC-4 + P2-CQ-21):
+ *   - httpOnly: true (JS cannot read the token → XSS-resistant)
+ *   - secure: true in production (HTTPS-only)
+ *   - sameSite: 'strict' (CSRF-resistant — was 'lax' before P2-SEC-4. Guest
+ *     sessions are accessed only via same-site navigations from invitation
+ *     links on the same domain, so 'strict' is safe and closes the cross-site
+ *     top-level-navigation leak that 'lax' allowed.)
+ *   - path: '/'
+ *   - maxAge: defaults to 30 days (overridable via `maxAgeDays`). Matches the
+ *     `GUEST_TOKEN_EXPIRY = '30d'` JWT expiry — the cookie and the token
+ *     inside it expire together so the user is never left with a cookie
+ *     containing an expired token.
+ *
+ * The 3 guest cookie-setting sites will be refactored by the API-routes
+ * agent to call this helper instead of inlining `response.cookies.set(...)`.
+ *
+ * @param response NextResponse to attach the cookie to.
+ * @param token Guest session JWT from generateGuestToken().
+ * @param maxAgeDays Optional override (days). Default: 30.
+ */
+export function setGuestSessionCookie(
+  response: NextResponse,
+  token: string,
+  maxAgeDays?: number
+): NextResponse {
+  const days = maxAgeDays ?? SESSION_EXPIRY_DAYS;
+  response.cookies.set(GUEST_COOKIE_NAME, token, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'strict',
+    path: '/',
+    maxAge: days * 24 * 60 * 60,
+  });
+  return response;
 }
 
 // ─── Extract client info from request ───

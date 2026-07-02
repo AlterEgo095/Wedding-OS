@@ -4,6 +4,10 @@ import { db, tenantDb } from '@/lib/db';
 import { validateGuestSession, getClientInfo } from '@/lib/guest-auth';
 import { getAuthUser, hasPermission } from '@/lib/auth';
 import { resolvePublicTenant, runWithTenant, resolveAdminTenant } from '@/lib/tenant-context';
+// P2-SEC-1: structured logger (no stack leak).
+import { logger } from '@/lib/logger';
+// P2-CQ-5: standardised API errors.
+import { internalError, badRequest } from '@/lib/api-errors';
 
 /**
  * RSVP API — Guest confirms or declines invitation (tenant-scoped)
@@ -31,7 +35,8 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: 'Session invalide' }, { status: 401 });
       }
 
-      const body = await request.json();
+      const body = await request.json().catch(() => null); // P2-CQ-6
+      if (!body) return badRequest('Corps de requête invalide');
       const { status, message, plusOne } = body;
 
       if (!status || !['CONFIRMED', 'DECLINED'].includes(status)) {
@@ -80,8 +85,12 @@ export async function POST(request: NextRequest) {
           : 'Nous avons bien pris note de votre réponse. Vous nous manquerez !',
       });
     } catch (error) {
-      console.error('RSVP error:', error);
-      return NextResponse.json({ error: 'Erreur interne du serveur' }, { status: 500 });
+      // P2-SEC-1: never log error.stack.
+      logger.error('RSVP error', {
+        errMessage: error instanceof Error ? error.message : String(error),
+        errName: error instanceof Error ? error.name : 'Unknown',
+      });
+      return internalError();
     }
   });
 }
@@ -134,8 +143,12 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Paramètre manquant' }, { status: 400 });
     });
   } catch (error) {
-    console.error('RSVP stats error:', error);
-    return NextResponse.json({ error: 'Erreur interne du serveur' }, { status: 500 });
+    // P2-SEC-1: never log error.stack.
+    logger.error('RSVP stats error', {
+      errMessage: error instanceof Error ? error.message : String(error),
+      errName: error instanceof Error ? error.name : 'Unknown',
+    });
+    return internalError();
   }
 }
 
@@ -176,7 +189,11 @@ export async function PUT(request: NextRequest) {
       });
     });
   } catch (error) {
-    console.error('RSVP reset error:', error);
-    return NextResponse.json({ error: 'Erreur interne du serveur' }, { status: 500 });
+    // P2-SEC-1: never log error.stack.
+    logger.error('RSVP reset error', {
+      errMessage: error instanceof Error ? error.message : String(error),
+      errName: error instanceof Error ? error.name : 'Unknown',
+    });
+    return internalError();
   }
 }

@@ -12,6 +12,14 @@ import {
   VALID_TRANSITIONS,
   isValidTransition,
 } from '@/lib/wedding-status';
+// P2-CQ-1 + P2-SEC-3: shared VALID_PLANS from @/lib/constants.
+import { VALID_PLANS } from '@/lib/constants';
+// P2-SEC-1: structured logger (no stack leak).
+import { logger } from '@/lib/logger';
+// P2-CQ-5: standardised API errors.
+import { internalError } from '@/lib/api-errors';
+// P2-SEC-14: writeAuditLog populates ipAddress + userAgent from request.
+import { writeAuditLog } from '@/lib/audit';
 
 /**
  * Per-wedding operations for the platform admin.
@@ -30,7 +38,7 @@ import {
  * next public/admin request re-fetches fresh data from the DB.
  */
 
-const VALID_PLANS: Plan[] = ['TRIAL', 'ESSENTIEL', 'PREMIUM', 'ELITE'];
+// P2-CQ-1 + P2-SEC-3: VALID_PLANS now imported from @/lib/constants.
 
 const WEDDING_DETAIL_SELECT = {
   id: true,
@@ -89,11 +97,12 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
     return NextResponse.json({ wedding });
   } catch (error) {
-    console.error('Get platform wedding error:', error);
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    );
+    // P2-SEC-1: never log error.stack.
+    logger.error('Get platform wedding error', {
+      errMessage: error instanceof Error ? error.message : String(error),
+      errName: error instanceof Error ? error.name : 'Unknown',
+    });
+    return internalError();
   }
 }
 
@@ -125,7 +134,13 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    const body = await request.json();
+    const body = await request.json().catch(() => null); // P2-CQ-6
+    if (!body) {
+      return NextResponse.json(
+        { error: 'Corps de requête invalide' },
+        { status: 400 }
+      );
+    }
     const {
       brideName,
       groomName,
@@ -240,22 +255,23 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
 
     invalidateWeddingCache(existing.slug);
 
-    await db.auditLog.create({
-      data: {
-        weddingId: null, // platform-level event
-        userId: user!.id,
-        action: 'UPDATE_WEDDING',
-        details: `Updated wedding ${existing.slug} (fields: ${Object.keys(updateData).join(', ')})`,
-      },
+    // P2-SEC-14: writeAuditLog populates ipAddress + userAgent from request.
+    await writeAuditLog({
+      weddingId: null, // platform-level event
+      userId: user!.id,
+      action: 'UPDATE_WEDDING',
+      details: `Updated wedding ${existing.slug} (fields: ${Object.keys(updateData).join(', ')})`,
+      request,
     });
 
     return NextResponse.json({ wedding });
   } catch (error) {
-    console.error('Update platform wedding error:', error);
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    );
+    // P2-SEC-1: never log error.stack.
+    logger.error('Update platform wedding error', {
+      errMessage: error instanceof Error ? error.message : String(error),
+      errName: error instanceof Error ? error.name : 'Unknown',
+    });
+    return internalError();
   }
 }
 
@@ -294,21 +310,22 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
 
     invalidateWeddingCache(existing.slug);
 
-    await db.auditLog.create({
-      data: {
-        weddingId: null, // platform-level event
-        userId: user!.id,
-        action: 'DELETE_WEDDING',
-        details: `Deleted wedding ${existing.slug} (${existing.coupleLabel})`,
-      },
+    // P2-SEC-14: writeAuditLog populates ipAddress + userAgent from request.
+    await writeAuditLog({
+      weddingId: null, // platform-level event
+      userId: user!.id,
+      action: 'DELETE_WEDDING',
+      details: `Deleted wedding ${existing.slug} (${existing.coupleLabel})`,
+      request,
     });
 
     return NextResponse.json({ success: true });
   } catch (error) {
-    console.error('Delete platform wedding error:', error);
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    );
+    // P2-SEC-1: never log error.stack.
+    logger.error('Delete platform wedding error', {
+      errMessage: error instanceof Error ? error.message : String(error),
+      errName: error instanceof Error ? error.name : 'Unknown',
+    });
+    return internalError();
   }
 }

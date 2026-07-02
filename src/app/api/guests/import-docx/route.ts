@@ -1,9 +1,76 @@
 export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from 'next/server';
-import { db, tenantDb } from '@/lib/db';
+import { tenantDb } from '@/lib/db';
 import { getAuthUser, hasPermission } from '@/lib/auth';
 import { resolveAdminTenant, runWithTenant } from '@/lib/tenant-context';
 import { v4 as uuidv4 } from 'uuid';
+import { logger } from '@/lib/logger'; // P2-SEC-1
+import { internalError } from '@/lib/api-errors'; // P2-CQ-5
+import { writeAuditLog } from '@/lib/audit'; // P2-SEC-14
+import { withRateLimit } from '@/lib/rate-limit'; // P2-SEC-6
+
+/**
+ * Generate a single JH-XXXXXX invitation code (6 hex chars, uppercased).
+ */
+function generateInvitationCode(): string {
+  return `JH-${uuidv4().substring(0, 6).toUpperCase()}`;
+}
+
+/**
+ * P2-PERF-1: Pre-generate unique invitation codes for ALL guests in a single
+ * batch, using at most 1 + ceil(collisions/200) findMany queries instead of
+ * up-to-10 findFirst queries per guest.
+ *
+ * Strategy:
+ *   1. Generate one candidate code per guest.
+ *   2. Single findMany({ where: { invitationCode: { in: allCodes } } }) → set
+ *      of taken codes.
+ *   3. For guests whose code is taken, regenerate. Loop with the new
+ *      candidates until no collisions remain (bounded by 5 iterations).
+ *
+ * Returns a Map<guestKey, invitationCode> keyed by `${firstName}|${lastName}|${tableNumber}`
+ * so the main loop can look up the pre-generated code in O(1) per guest.
+ */
+async function preGenerateInvitationCodes(
+  guests: Array<{ firstName: string; lastName: string; tableNumber: number }>
+): Promise<Map<string, string>> {
+  const codeMap = new Map<string, string>();
+  if (guests.length === 0) return codeMap;
+
+  // Build the initial set of candidate codes, keyed by guestKey.
+  const guestKeys: string[] = [];
+  for (const g of guests) {
+    const key = `${g.firstName}|${g.lastName}|${g.tableNumber}`;
+    guestKeys.push(key);
+    codeMap.set(key, generateInvitationCode());
+  }
+
+  // Iterate up to 5 times to resolve collisions.
+  for (let iter = 0; iter < 5; iter++) {
+    const codes = Array.from(codeMap.values());
+    // Single findMany to check ALL candidate codes at once.
+    // tenantDb extension auto-injects weddingId so the @@unique index covers
+    // (weddingId, invitationCode) — the lookup is O(log n), not a full scan.
+    const conflicts = await tenantDb.guest.findMany({
+      where: { invitationCode: { in: codes } },
+      select: { invitationCode: true },
+    });
+    if (conflicts.length === 0) break; // all codes are unique
+
+    const takenSet = new Set(conflicts.map((c) => c.invitationCode));
+    let regenCount = 0;
+    for (const key of guestKeys) {
+      const current = codeMap.get(key)!;
+      if (takenSet.has(current)) {
+        codeMap.set(key, generateInvitationCode());
+        regenCount++;
+      }
+    }
+    if (regenCount === 0) break; // safety: no progress, exit
+  }
+
+  return codeMap;
+}
 
 /* ══════════════════════════════════════════════════════════════
    DOCX Guest List Import API
@@ -182,7 +249,9 @@ function guessCategory(prefix: string, _tableName: string): string {
   return 'AMIS';
 }
 
-export async function POST(request: NextRequest) {
+// P2-SEC-6: defined as a local function then wrapped on export so Next.js
+// picks up the rate-limited version while the handler body stays readable.
+async function docxImportHandler(request: NextRequest) {
   try {
     const user = await getAuthUser(request);
     if (!user) {
@@ -229,7 +298,11 @@ export async function POST(request: NextRequest) {
       const result = await mammoth.extractRawText({ buffer });
       textContent = result.value;
     } catch (err) {
-      console.error('DOCX parsing error:', err);
+      // P2-SEC-1: structured logger; no stack leak.
+      logger.error('DOCX parsing error', {
+        errMessage: err instanceof Error ? err.message : String(err),
+        errName: err instanceof Error ? err.name : 'Unknown',
+      });
       return NextResponse.json(
         { error: 'Impossible de lire le fichier Word. Vérifiez le format.' },
         { status: 400 }
@@ -269,18 +342,39 @@ export async function POST(request: NextRequest) {
         await tenantDb.guest.deleteMany({}); // extension injects weddingId
         await tenantDb.table.deleteMany({});
       } catch (err) {
-        console.error('Replace mode cleanup error:', err);
+        // P2-SEC-1: structured logger; no stack leak.
+        logger.error('Replace mode cleanup error', {
+          errMessage: err instanceof Error ? err.message : String(err),
+          errName: err instanceof Error ? err.name : 'Unknown',
+        });
         result.errors.push('Erreur lors du nettoyage des données existantes');
       }
     }
 
+    // P2-PERF-1: pre-generate invitation codes for ALL guests in one batch
+    // (1 findMany instead of up-to-10 findFirst per guest).
+    const allParsedGuests = parsedTables.flatMap((t) =>
+      t.guests.map((g) => ({
+        firstName: g.firstName,
+        lastName: g.lastName,
+        tableNumber: t.number,
+      }))
+    );
+    const codeMap = await preGenerateInvitationCodes(allParsedGuests);
+
+    // P2-PERF-1: pre-resolve tables in a single batch to avoid 1 findFirst
+    // per parsedTable. tenantDb auto-injects weddingId.
+    const allTableNumbers = parsedTables.map((t) => t.number);
+    const existingTables = await tenantDb.table.findMany({
+      where: { number: { in: allTableNumbers } },
+    });
+    const tableByNumber = new Map(existingTables.map((t) => [t.number, t]));
+
     // Process each table — tenantDb auto-injects weddingId
     for (const parsedTable of parsedTables) {
       try {
-        // Find or create the table (scoped to current tenant by extension)
-        let table = await tenantDb.table.findFirst({
-          where: { number: parsedTable.number },
-        });
+        // Find or create the table (use pre-fetched map; tenant-scoped).
+        let table = tableByNumber.get(parsedTable.number);
 
         if (table) {
           if (table.name !== parsedTable.name) {
@@ -310,19 +404,34 @@ export async function POST(request: NextRequest) {
           guestsSkipped: [] as string[],
         };
 
+        // P2-PERF-1: batch-check duplicates for ALL guests in this table at
+        // once instead of one findFirst per guest.
+        const namePairs = parsedTable.guests.map((g) => ({
+          firstName: g.firstName,
+          lastName: g.lastName,
+        }));
+        const existingGuestsInTable = namePairs.length
+          ? await tenantDb.guest.findMany({
+              where: {
+                tableId: table.id,
+                OR: namePairs.map((p) => ({
+                  firstName: p.firstName,
+                  lastName: p.lastName,
+                })),
+              },
+              select: { firstName: true, lastName: true },
+            })
+          : [];
+        const existingGuestSet = new Set(
+          existingGuestsInTable.map((g) => `${g.firstName}|${g.lastName}`)
+        );
+
         // Process each guest in the table
         for (const parsedGuest of parsedTable.guests) {
           try {
-            // Check for duplicates (scoped to current tenant by extension)
-            const existingGuest = await tenantDb.guest.findFirst({
-              where: {
-                firstName: parsedGuest.firstName,
-                lastName: parsedGuest.lastName,
-                tableId: table.id,
-              },
-            });
-
-            if (existingGuest) {
+            // P2-PERF-1: use the pre-fetched duplicate set instead of a
+            // per-guest findFirst.
+            if (existingGuestSet.has(`${parsedGuest.firstName}|${parsedGuest.lastName}`)) {
               result.guestsSkipped++;
               result.duplicatesDetected.push(
                 `${parsedGuest.firstName} ${parsedGuest.lastName} (Table ${parsedTable.number})`
@@ -333,18 +442,9 @@ export async function POST(request: NextRequest) {
               continue;
             }
 
-            // Generate unique invitation code (scoped unique [weddingId, invitationCode])
-            let invitationCode: string;
-            let codeAttempts = 0;
-            do {
-              invitationCode = `JH-${uuidv4().substring(0, 6).toUpperCase()}`;
-              codeAttempts++;
-              // Use findFirst so the extension can scope by weddingId
-              const existing = await tenantDb.guest.findFirst({
-                where: { invitationCode },
-              });
-              if (!existing) break;
-            } while (codeAttempts < 10);
+            // P2-PERF-1: use the pre-generated code from the batch lookup.
+            const guestKey = `${parsedGuest.firstName}|${parsedGuest.lastName}|${parsedTable.number}`;
+            const invitationCode = codeMap.get(guestKey) || generateInvitationCode();
 
             // Determine category
             const category = guessCategory(parsedGuest.prefix, parsedTable.name);
@@ -389,22 +489,28 @@ export async function POST(request: NextRequest) {
     }
 
     // Log the import action
-    await db.auditLog.create({
-      data: {
-        weddingId: context.weddingId,
-        userId: user.id,
-        action: 'IMPORT_DOCX_GUESTS',
-        details: `Import DOCX: ${result.guestsCreated} invités créés, ${result.guestsSkipped} doublons ignorés, ${result.tablesCreated} tables créées, mode: ${mergeMode}`,
-      },
+    // P2-SEC-14: writeAuditLog populates ipAddress + userAgent from request.
+    await writeAuditLog({
+      weddingId: context.weddingId,
+      userId: user.id,
+      action: 'IMPORT_DOCX_GUESTS',
+      details: `Import DOCX: ${result.guestsCreated} invités créés, ${result.guestsSkipped} doublons ignorés, ${result.tablesCreated} tables créées, mode: ${mergeMode}`,
+      request,
     });
 
     return NextResponse.json(result);
     }); // end runWithTenant
   } catch (error) {
-    console.error('DOCX import error:', error);
-    return NextResponse.json(
-      { error: 'Erreur interne du serveur lors de l\'import' },
-      { status: 500 }
-    );
+    // P2-SEC-1: never log error.stack.
+    logger.error('DOCX import error', {
+      errMessage: error instanceof Error ? error.message : String(error),
+      errName: error instanceof Error ? error.name : 'Unknown',
+    });
+    return internalError();
   }
 }
+
+// P2-SEC-6: rate-limit the POST handler (5 requests / 60s per IP).
+// DOCX parsing + per-guest create is CPU+DB heavy — a 200-guest upload can
+// take 5-30s and would block other tenants if flooded.
+export const POST = withRateLimit(5, 60_000)(docxImportHandler);

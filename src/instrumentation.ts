@@ -5,6 +5,12 @@
  *   - Register graceful shutdown handlers (SIGTERM/SIGINT)
  *   - Pre-warm critical resources
  *   - Run startup health checks
+ *   - Own module-scope setInterval handles (P2-PERF-15)
+ *
+ * The Node.js-only logic lives in `src/lib/instrumentation-node.ts` and is
+ * dynamically imported here so the Edge runtime parser never sees the
+ * `process.on` / `process.pid` calls (which would otherwise emit Edge
+ * Runtime warnings on every cold start).
  *
  * https://nextjs.org/docs/app/api-reference/file-conventions/instrumentation
  */
@@ -13,51 +19,7 @@ export async function register() {
   // Only run in the Node.js runtime (not Edge)
   if (process.env.NEXT_RUNTIME !== "nodejs") return;
 
-  const ns = process.env.NODE_ENV;
-  console.log(`[instrumentation] Wedding OS starting — env=${ns} pid=${process.pid}`);
-
-  // ─── Graceful shutdown ───────────────────────────────────────────────────
-  // On SIGTERM (Docker stop, k8s rolling update) or SIGINT (Ctrl+C), we:
-  //   1. Log the signal
-  //   2. Allow in-flight requests ~10s to complete (Next.js handles this)
-  //   3. Close the Prisma connection (frees the SQLite file handle)
-  //   4. Exit cleanly (exit code 0 for SIGTERM, 130 for SIGINT)
-  let shuttingDown = false;
-  const shutdown = async (signal: "SIGTERM" | "SIGINT") => {
-    if (shuttingDown) return;
-    shuttingDown = true;
-    console.log(`[instrumentation] Received ${signal}, shutting down gracefully...`);
-
-    try {
-      // Dynamically import to avoid loading Prisma in Edge runtime
-      const { db } = await import("./lib/db");
-      await db.$disconnect();
-      console.log("[instrumentation] Prisma disconnected.");
-    } catch (err) {
-      console.error("[instrumentation] Error during disconnect:", err);
-    }
-
-    // Give Next.js a moment to finish in-flight responses
-    setTimeout(() => {
-      process.exit(signal === "SIGTERM" ? 0 : 130);
-    }, 500);
-  };
-
-  process.on("SIGTERM", () => void shutdown("SIGTERM"));
-  process.on("SIGINT", () => void shutdown("SIGINT"));
-
-  // ─── Uncaught error handlers ─────────────────────────────────────────────
-  // These log structured errors before the process crashes, so container
-  // logs have a clear record of the cause.
-  process.on("uncaughtException", (err) => {
-    console.error("[instrumentation] uncaughtException:", err);
-    // Don't exit immediately — let Next.js handle the request error. But
-    // flag that we should exit on the next graceful opportunity.
-    process.exitCode = 1;
-  });
-
-  process.on("unhandledRejection", (reason) => {
-    console.error("[instrumentation] unhandledRejection:", reason);
-    process.exitCode = 1;
-  });
+  // Dynamically import the Node-only module so the Edge parser doesn't
+  // bundle process.* calls into the Edge bundle.
+  await import("./lib/instrumentation-node").then((mod) => mod.register());
 }

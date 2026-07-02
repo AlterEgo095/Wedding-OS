@@ -1,0 +1,787 @@
+     1→'use client'
+     2→
+     3→import { useState, useEffect, useCallback, useRef } from 'react'
+     4→import { motion, AnimatePresence } from 'framer-motion'
+     5→import {
+     6→  LogOut, MapPin, Heart, QrCode,
+     7→  Check, Share2, Link2,
+     8→  PartyPopper, Download, FileImage, FileText, Loader2, ChevronDown,
+     9→  MessageSquare, Send, Mail, Calendar, Clock, Users,
+    10→  CheckCircle2, XCircle, Gift, Sparkles, Crown, Star
+    11→} from 'lucide-react'
+    12→import { Button } from '@/components/ui/button'
+    13→import { Input } from '@/components/ui/input'
+    14→import { Textarea } from '@/components/ui/textarea'
+    15→import { cleanGuestName } from '@/lib/guest-utils'
+    16→import type { CategoryDisplay } from '@/lib/guest-utils'
+    17→
+    18→interface GuestData {
+    19→  id: string
+    20→  firstName: string
+    21→  lastName: string
+    22→  displayName?: string | null
+    23→  invitationType?: string | null
+    24→  invitationCode: string
+    25→  seats: number
+    26→  category: string
+    27→  status: string
+    28→  personalMessage: string | null
+    29→  checkedIn: boolean
+    30→  table: { id: string; name: string; number: number } | null
+    31→  invitationViewed: boolean
+    32→  invitationViewCount: number
+    33→  lastAccessAt: string | null
+    34→  encryptedLink?: string
+    35→  rsvpAt?: string | null
+    36→  rsvpMessage?: string | null
+    37→  rsvpPlusOne?: boolean
+    38→}
+    39→
+    40→interface Settings {
+    41→  [key: string]: string | undefined
+    42→}
+    43→
+    44→interface GuestPersonalSpaceProps {
+    45→  guest: GuestData
+    46→  settings: Settings
+    47→  onLogout: () => void
+    48→}
+    49→
+    50→function CategoryBadge({ catDisplay }: { catDisplay: CategoryDisplay }) {
+    51→  return (
+    52→    <span
+    53→      className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[9px] tracking-[0.12em] uppercase font-bold"
+    54→      style={{
+    55→        background: catDisplay.bgColor,
+    56→        border: `1px solid ${catDisplay.borderColor}`,
+    57→        color: catDisplay.color,
+    58→      }}
+    59→    >
+    60→      <span className="text-[11px]">{catDisplay.emoji}</span>
+    61→      {catDisplay.label}
+    62→    </span>
+    63→  )
+    64→}
+    65→
+    66→const goldText: React.CSSProperties = {
+    67→  background: 'linear-gradient(135deg, #8B6914, #C4A265, #D4B87A, #C4A265, #8B6914)',
+    68→  WebkitBackgroundClip: 'text',
+    69→  WebkitTextFillColor: 'transparent',
+    70→  backgroundClip: 'text',
+    71→}
+    72→
+    73→type RevealPhase = 'envelope' | 'opening' | 'revealing' | 'complete'
+    74→
+    75→export default function GuestPersonalSpace({ guest, settings, onLogout }: GuestPersonalSpaceProps) {
+    76→  const [qrCodeUrl, setQrCodeUrl] = useState<string | null>(null)
+    77→  const [qrLoading, setQrLoading] = useState(true)
+    78→  const [copiedLink, setCopiedLink] = useState(false)
+    79→  const [downloading, setDownloading] = useState(false)
+    80→  const [downloadMenuOpen, setDownloadMenuOpen] = useState(false)
+    81→  const [shareMenuOpen, setShareMenuOpen] = useState(false)
+    82→  const [revealPhase, setRevealPhase] = useState<RevealPhase>('envelope')
+    83→  const [rsvpStatus, setRsvpStatus] = useState<string>(guest.status)
+    84→  const [rsvpLoading, setRsvpLoading] = useState(false)
+    85→  const [rsvpMessage, setRsvpMessage] = useState('')
+    86→  const [rsvpDone, setRsvpDone] = useState(false)
+    87→  const invitationRef = useRef<HTMLDivElement>(null)
+    88→  const downloadRef = useRef<HTMLDivElement>(null)
+    89→  const [photo1Base64, setPhoto1Base64] = useState<string | null>(null)
+    90→  const [photo2Base64, setPhoto2Base64] = useState<string | null>(null)
+    91→
+    92→  // Use displayName directly if available (new system: exact text, no transformation)
+    93→  // Otherwise fall back to cleanGuestName (legacy compatibility)
+    94→  const cleanedName = guest.displayName
+    95→    ? {
+    96→        displayName: guest.displayName,
+    97→        isCouple: guest.invitationType === 'couple',
+    98→        isFamille: false,
+    99→        isVip: guest.category === 'VIP',
+   100→        prefixName: guest.invitationType === 'couple' ? guest.displayName.replace(/^couple\s+/i, '') : guest.displayName,
+   101→        greeting: guest.invitationType === 'couple'
+   102→          ? `Invitation exclusive pour le ${guest.displayName}`
+   103→          : `Invitation exclusive pour ${guest.displayName}`,
+   104→        shortGreeting: guest.invitationType === 'couple'
+   105→          ? `Cher ${guest.displayName}`
+   106→          : `Cher ${guest.displayName}`,
+   107→        categoryDisplay: (() => {
+   108→          const catKey = guest.category?.toUpperCase() || 'AMIS'
+   109→          if (guest.invitationType === 'couple') return { emoji: '💍', label: 'Couple', color: '#A67C3D', bgColor: 'rgba(196,162,101,0.08)', borderColor: 'rgba(196,162,101,0.2)' }
+   110→          const configs: Record<string, CategoryDisplay> = {
+   111→            VIP: { emoji: '⭐', label: 'VIP', color: '#8B6914', bgColor: 'rgba(139,105,20,0.08)', borderColor: 'rgba(139,105,20,0.2)' },
+   112→            FAMILLE: { emoji: '👨‍👩‍👧', label: 'Famille', color: '#B05A5A', bgColor: 'rgba(176,90,90,0.08)', borderColor: 'rgba(176,90,90,0.2)' },
+   113→            AMIS: { emoji: '🤝', label: 'Amis', color: '#5A8B5A', bgColor: 'rgba(90,139,90,0.08)', borderColor: 'rgba(90,139,90,0.2)' },
+   114→          }
+   115→          return configs[catKey] || configs.AMIS
+   116→        })(),
+   117→      }
+   118→    : cleanGuestName(guest.firstName, guest.lastName, guest.category)
+   119→
+   120→  const groomName = settings.groom_name || ''
+   121→  const brideName = settings.bride_name || ''
+   122→  // Composite couple label for places where empty names would render "& " —
+   123→  // falls back to a generic "Mariage" so we never leak "Josué & Hornella"
+   124→  // (the default wedding's couple) into another wedding's guest space.
+   125→  const coupleLabel = (groomName && brideName)
+   126→    ? `${groomName} & ${brideName}`
+   127→    : (groomName || brideName || 'Mariage')
+   128→  // Couple monogram (e.g. "Josué" + "Hornella" → "J & H"). Empty when neither
+   129→  // name is configured so the previous hardcoded "J & H" doesn't leak into
+   130→  // another wedding's invitation card.
+   131→  const coupleMonogram = (groomName && brideName)
+   132→    ? `${groomName.charAt(0).toUpperCase()} & ${brideName.charAt(0).toUpperCase()}`
+   133→    : (groomName
+   134→      ? groomName.charAt(0).toUpperCase()
+   135→      : brideName
+   136→        ? brideName.charAt(0).toUpperCase()
+   137→        : '')
+   138→  const dateDisplay = settings.site_subtitle || 'Vendredi 26 Juin 2026'
+   139→  const venueName = settings.venue_name || 'Salle Polyvalente – Grand Palais Kinshasa'
+   140→  const venueAddress = settings.venue_address || '21 / 22 Avenue Bobozo'
+   141→  const venueReference = settings.venue_reference || 'Réf. Hôpital AKRAM, à la diagonale du Centre TELEMA'
+   142→  const venueTime = settings.venue_time || '21H30'
+   143→  const hashtag = settings.hashtag || ''
+   144→  const closingMessage = settings.invitation_message || 'Votre présence rendra cette célébration encore plus mémorable.'
+   145→  // Couple photo paths — settings-driven, empty fallback. The previous
+   146→  // hardcoded "/uploads/couple-photo-{1,2}.jpeg" fallback leaked the default
+   147→  // wedding's photos into every tenant's guest space (Phase 3 ÉTAPE 3b fix).
+   148→  // The img tags below conditionally render so we never emit a broken <img src="">.
+   149→  const couplePhoto1Path = settings.couple_photo_1 || ''
+   150→  const couplePhoto2Path = settings.couple_photo_2 || ''
+   151→
+   152→  const encryptedLinkUrl = guest.encryptedLink
+   153→    ? `${typeof window !== 'undefined' ? window.location.origin : ''}?invite=${guest.encryptedLink}`
+   154→    : ''
+   155→
+   156→  // Fetch QR code
+   157→  useEffect(() => {
+   158→    let cancelled = false
+   159→    async function fetchQR() {
+   160→      try {
+   161→        const res = await fetch(`/api/guests/qrcode/${guest.invitationCode}`)
+   162→        if (res.ok && !cancelled) {
+   163→          const data = await res.json()
+   164→          setQrCodeUrl(data.qrCode)
+   165→        }
+   166→      } catch { /* QR code is optional */ }
+   167→      finally { if (!cancelled) setQrLoading(false) }
+   168→    }
+   169→    fetchQR()
+   170→    return () => { cancelled = true }
+   171→  }, [guest.invitationCode])
+   172→
+   173→  // Pre-load couple photos as base64 for download compatibility
+   174→  useEffect(() => {
+   175→    async function loadPhotos() {
+   176→      try {
+   177→        // Preload the couple photos as base64 for html2canvas-pro download
+   178→        // compatibility. Uses the settings-driven path when configured, else
+   179→        // the legacy default-wedding photo path. Skips the preload entirely
+   180→        // when no path is available so we don't fetch broken URLs on tenants
+   181→        // that haven't configured a couple photo.
+   182→        if (!couplePhoto1Path && !couplePhoto2Path) return
+   183→        const [r1, r2] = await Promise.all([
+   184→          couplePhoto1Path
+   185→            ? fetch(couplePhoto1Path)
+   186→            : Promise.resolve<Response | null>(null),
+   187→          couplePhoto2Path
+   188→            ? fetch(couplePhoto2Path)
+   189→            : Promise.resolve<Response | null>(null),
+   190→        ])
+   191→        if (r1 && r1.ok) {
+   192→          const blob1 = await r1.blob()
+   193→          const reader1 = new FileReader()
+   194→          reader1.onloadend = () => setPhoto1Base64(reader1.result as string)
+   195→          reader1.readAsDataURL(blob1)
+   196→        }
+   197→        if (r2 && r2.ok) {
+   198→          const blob2 = await r2.blob()
+   199→          const reader2 = new FileReader()
+   200→          reader2.onloadend = () => setPhoto2Base64(reader2.result as string)
+   201→          reader2.readAsDataURL(blob2)
+   202→        }
+   203→      } catch { /* photos optional */ }
+   204→    }
+   205→    loadPhotos()
+   206→  }, [couplePhoto1Path, couplePhoto2Path])
+   207→
+   208→  // Auto-start envelope reveal
+   209→  useEffect(() => {
+   210→    const timer = setTimeout(() => setRevealPhase('opening'), 800)
+   211→    return () => clearTimeout(timer)
+   212→  }, [])
+   213→
+   214→  useEffect(() => {
+   215→    if (revealPhase === 'opening') {
+   216→      const timer = setTimeout(() => setRevealPhase('revealing'), 1200)
+   217→      return () => clearTimeout(timer)
+   218→    }
+   219→  }, [revealPhase])
+   220→
+   221→  useEffect(() => {
+   222→    if (revealPhase === 'revealing') {
+   223→      const timer = setTimeout(() => setRevealPhase('complete'), 1500)
+   224→      return () => clearTimeout(timer)
+   225→    }
+   226→  }, [revealPhase])
+   227→
+   228→  const handleCopyLink = useCallback(async (text: string) => {
+   229→    try { await navigator.clipboard.writeText(text) }
+   230→    catch {
+   231→      const ta = document.createElement('textarea')
+   232→      ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0'
+   233→      document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta)
+   234→    }
+   235→    setCopiedLink(true)
+   236→    setTimeout(() => setCopiedLink(false), 2500)
+   237→  }, [])
+   238→
+   239→  const handleRSVP = useCallback(async (status: 'CONFIRMED' | 'DECLINED') => {
+   240→    setRsvpLoading(true)
+   241→    try {
+   242→      const res = await fetch('/api/guest/rsvp', {
+   243→        method: 'POST',
+   244→        headers: { 'Content-Type': 'application/json' },
+   245→        body: JSON.stringify({ status, message: rsvpMessage }),
+   246→      })
+   247→      const data = await res.json()
+   248→      if (res.ok && data.success) {
+   249→        setRsvpStatus(status)
+   250→        setRsvpDone(true)
+   251→      }
+   252→    } catch { /* error */ }
+   253→    finally { setRsvpLoading(false) }
+   254→  }, [rsvpMessage])
+   255→
+   256→  // Download handler — uses html2canvas-pro for reliable CSS rendering
+   257→  const handleDownload = useCallback(async (format: 'png' | 'jpg' | 'pdf') => {
+   258→    setDownloading(true); setDownloadMenuOpen(false)
+   259→    try {
+   260→      const html2canvas = (await import('html2canvas-pro')).default
+   261→      const { jsPDF } = await import('jspdf')
+   262→
+   263→      const downloadEl = downloadRef.current
+   264→      if (!downloadEl) return
+   265→
+   266→      // Temporarily show the hidden download element for rendering
+   267→      downloadEl.style.position = 'fixed'
+   268→      downloadEl.style.left = '0'
+   269→      downloadEl.style.top = '0'
+   270→      downloadEl.style.zIndex = '-9999'
+   271→      downloadEl.style.opacity = '1'
+   272→      downloadEl.style.pointerEvents = 'none'
+   273→
+   274→      // Wait for all images inside the element
+   275→      const images = downloadEl.querySelectorAll('img')
+   276→      await Promise.all(
+   277→        Array.from(images).map(
+   278→          (img) => img.complete
+   279→            ? Promise.resolve()
+   280→            : new Promise<void>((resolve) => {
+   281→                img.onload = () => resolve()
+   282→                img.onerror = () => resolve()
+   283→              })
+   284→        )
+   285→      )
+   286→      await new Promise((r) => setTimeout(r, 200))
+   287→
+   288→      const canvas = await html2canvas(downloadEl, {
+   289→        scale: 2,
+   290→        backgroundColor: '#FAF6EE',
+   291→        useCORS: true,
+   292→        allowTaint: true,
+   293→        logging: false,
+   294→      })
+   295→
+   296→      // Hide again
+   297→      downloadEl.style.left = '-9999px'
+   298→      downloadEl.style.opacity = '0'
+   299→
+   300→      const dataUrl = format === 'jpg'
+   301→        ? canvas.toDataURL('image/jpeg', 0.95)
+   302→        : canvas.toDataURL('image/png')
+   303→
+   304→      const fileName = `invitation-${cleanedName.displayName.replace(/\s+/g, '-').toLowerCase()}`
+   305→
+   306→      if (format === 'pdf') {
+   307→        const img = new window.Image(); img.src = dataUrl
+   308→        await new Promise(r => { img.onload = r })
+   309→        const cardAspect = img.width / img.height
+   310→        const isLandscape = cardAspect > 1
+   311→        const pdf = new jsPDF({
+   312→          orientation: isLandscape ? 'landscape' : 'portrait',
+   313→          unit: 'mm',
+   314→          format: 'a5',
+   315→        })
+   316→        const pageW = isLandscape ? 210 : 148
+   317→        const pageH = isLandscape ? 148 : 210
+   318→        const margin = 5
+   319→        const maxW = pageW - margin * 2
+   320→        const maxH = pageH - margin * 2
+   321→        let cardW = maxW
+   322→        let cardH = cardW / cardAspect
+   323→        if (cardH > maxH) { cardH = maxH; cardW = cardH * cardAspect }
+   324→        const offsetX = (pageW - cardW) / 2
+   325→        const offsetY = (pageH - cardH) / 2
+   326→        pdf.addImage(dataUrl, 'PNG', offsetX, offsetY, cardW, cardH)
+   327→        pdf.save(`${fileName}.pdf`)
+   328→      } else {
+   329→        const link = document.createElement('a')
+   330→        link.download = `${fileName}.${format}`; link.href = dataUrl; link.click()
+   331→      }
+   332→    } catch (error) { console.error('Download error:', error) }
+   333→    finally { setDownloading(false) }
+   334→  }, [cleanedName.displayName])
+   335→
+   336→  const shareUrl = typeof window !== 'undefined' ? window.location.href : ''
+   337→  const shareText = `${cleanedName.shortGreeting} — Mariage de ${coupleLabel}, ${dateDisplay}`
+   338→
+   339→  const handleShare = useCallback(async (channel: 'whatsapp' | 'messenger' | 'telegram' | 'email') => {
+   340→    const encodedUrl = encodeURIComponent(shareUrl)
+   341→    const encodedText = encodeURIComponent(shareText)
+   342→    const urls: Record<string, string> = {
+   343→      whatsapp: `https://wa.me/?text=${encodedText}%20${encodedUrl}`,
+   344→      messenger: `https://www.facebook.com/dialog/send?link=${encodedUrl}&app_id=0&redirect_uri=${encodedUrl}`,
+   345→      telegram: `https://t.me/share/url?url=${encodedUrl}&text=${encodedText}`,
+   346→      email: `mailto:?subject=${encodeURIComponent(`Invitation — Mariage ${coupleLabel}`)}&body=${encodedText}%0A%0A${encodedUrl}`,
+   347→    }
+   348→    window.open(urls[channel], '_blank')
+   349→    setShareMenuOpen(false)
+   350→  }, [shareUrl, shareText, coupleLabel])
+   351→
+   352→  /* ══════════════════════════════════════════════════════════════
+   353→     HIDDEN DOWNLOAD-READY INVITATION
+   354→     Canvas-friendly: solid colors (no backgroundClip: text),
+   355→     emoji icons (no SVG), no Framer Motion
+   356→     ══════════════════════════════════════════════════════════════ */
+   357→  const downloadInvitation = (
+   358→    <div
+   359→      ref={downloadRef}
+   360→      style={{
+   361→        position: 'fixed',
+   362→        left: '-9999px',
+   363→        top: '0',
+   364→        zIndex: -9999,
+   365→        opacity: 0,
+   366→        pointerEvents: 'none',
+   367→        width: '700px',
+   368→        fontFamily: 'Playfair Display, Georgia, serif',
+   369→      }}
+   370→    >
+   371→      <div style={{
+   372→        width: '700px',
+   373→        display: 'flex',
+   374→        background: 'linear-gradient(175deg, #FDFAF3 0%, #FBF7EC 30%, #F7F1E5 60%, #FDFAF3 100%)',
+   375→        border: '2px solid rgba(196, 162, 101, 0.5)',
+   376→        overflow: 'hidden',
+   377→      }}>
+   378→        <div style={{ position: 'relative', display: 'flex', width: '100%' }}>
+   379→          {/* Inner gold border */}
+   380→          <div style={{ position: 'absolute', inset: '5px', border: '1px solid rgba(196, 162, 101, 0.2)', pointerEvents: 'none', zIndex: 2 }} />
+   381→
+   382→          {/* ZONE 1: PHOTOS (54%) */}
+   383→          <div style={{ width: '54%', position: 'relative', minHeight: '320px', overflow: 'hidden' }}>
+   384→            <div style={{ display: 'flex', width: '100%', height: '100%', position: 'absolute', inset: 0 }}>
+   385→              {photo1Base64 && <img src={photo1Base64} alt={groomName} style={{ width: '50%', height: '100%', objectFit: 'cover', objectPosition: 'top' }} />}
+   386→              {photo2Base64 && <img src={photo2Base64} alt={brideName} style={{ width: '50%', height: '100%', objectFit: 'cover', objectPosition: 'top' }} />}
+   387→            </div>
+   388→            <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top, rgba(253,250,243,0.97) 0%, rgba(253,250,243,0.6) 30%, rgba(253,250,243,0.1) 50%, transparent 65%)' }} />
+   389→            <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to right, transparent 55%, rgba(253,250,243,0.5) 75%, rgba(253,250,243,0.95) 95%)' }} />
+   390→
+   391→            {/* Couple names */}
+   392→            <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: '12px 16px', zIndex: 3 }}>
+   393→              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+   394→                <span style={{ fontSize: '24px', fontWeight: 'bold', color: '#8B6914' }}>{coupleMonogram || 'M'}</span>
+   395→                <div style={{ height: '1px', flex: 1, background: 'linear-gradient(to right, rgba(196,162,101,0.45), transparent)' }} />
+   396→              </div>
+   397→              <h1 style={{ fontSize: '30px', fontWeight: 'bold', color: '#8B6914', lineHeight: 1.1, margin: 0, fontFamily: 'Playfair Display, Georgia, serif' }}>
+   398→                {coupleLabel}
+   399→              </h1>
+   400→              <p style={{ fontSize: '10px', letterSpacing: '0.25em', textTransform: 'uppercase', color: 'rgba(166,124,61,0.65)', fontWeight: 600, marginTop: '4px', fontFamily: 'Cormorant Garamond, sans-serif' }}>
+   401→                {dateDisplay}
+   402→              </p>
+   403→            </div>
+   404→          </div>
+   405→
+   406→          {/* Gold separator */}
+   407→          <div style={{ width: '1px', alignSelf: 'stretch', background: 'linear-gradient(to bottom, transparent, rgba(196,162,101,0.3) 20%, rgba(196,162,101,0.4) 50%, rgba(196,162,101,0.3) 80%, transparent)' }} />
+   408→
+   409→          {/* ZONES 2-4: INFO PANEL (46%) */}
+   410→          <div style={{ width: '46%', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', padding: '16px 20px', gap: '10px' }}>
+   411→
+   412→            {/* ZONE 2: GUEST INFO */}
+   413→            <div style={{ padding: '10px 12px', background: 'linear-gradient(180deg, rgba(196,162,101,0.05) 0%, rgba(196,162,101,0.1) 50%, rgba(196,162,101,0.05) 100%)', border: '1px solid rgba(196,162,101,0.2)', position: 'relative' }}>
+   414→              <div style={{ position: 'absolute', inset: '2px', border: '1px solid rgba(196,162,101,0.07)', pointerEvents: 'none' }} />
+   415→              <p style={{ fontSize: '8px', letterSpacing: '0.3em', textTransform: 'uppercase', color: 'rgba(166,124,61,0.6)', fontWeight: 600, margin: 0, fontFamily: 'Cormorant Garamond, sans-serif' }}>
+   416→                {cleanedName.isCouple ? 'Invitation pour le' : cleanedName.isFamille ? 'Invitation pour la' : 'Invitation pour'}
+   417→              </p>
+   418→              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px', flexWrap: 'wrap' }}>
+   419→                <h2 style={{ fontSize: '20px', fontWeight: 'bold', color: '#8B6914', lineHeight: 1.2, margin: 0, fontFamily: 'Playfair Display, Georgia, serif' }}>
+   420→                  {cleanedName.displayName}
+   421→                </h2>
+   422→                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '2px 8px', borderRadius: '999px', fontSize: '9px', letterSpacing: '0.12em', textTransform: 'uppercase', fontWeight: 'bold', background: cleanedName.categoryDisplay.bgColor, border: `1px solid ${cleanedName.categoryDisplay.borderColor}`, color: cleanedName.categoryDisplay.color }}>
+   423→                  <span style={{ fontSize: '11px' }}>{cleanedName.categoryDisplay.emoji}</span>
+   424→                  {cleanedName.categoryDisplay.label}
+   425→                </span>
+   426→              </div>
+   427→              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginTop: '8px' }}>
+   428→                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+   429→                  <span style={{ fontSize: '14px' }}>&#127979;</span>
+   430→                  <span style={{ fontSize: '14px', fontWeight: 'bold', color: '#8B6914', fontFamily: 'Playfair Display, Georgia, serif' }}>
+   431→                    {guest.table?.name || '—'}
+   432→                  </span>
+   433→                </div>
+   434→                {guest.table?.number && (
+   435→                  <span style={{ fontSize: '8px', letterSpacing: '0.1em', color: 'rgba(166,124,61,0.45)', fontWeight: 600, fontFamily: 'Cormorant Garamond, sans-serif', textTransform: 'uppercase' }}>
+   436→                    Table {guest.table.number}
+   437→                  </span>
+   438→                )}
+   439→                <div style={{ height: '16px', width: '1px', background: 'rgba(196,162,101,0.25)' }} />
+   440→                <span style={{ fontSize: '10px', letterSpacing: '0.05em', color: 'rgba(166,124,61,0.65)', fontWeight: 500, fontFamily: 'Cormorant Garamond, sans-serif' }}>
+   441→                  {guest.seats} place{guest.seats > 1 ? 's' : ''} r&#233;serv&#233;e{guest.seats > 1 ? 's' : ''}
+   442→                </span>
+   443→              </div>
+   444→            </div>
+   445→
+   446→            {/* ZONE 3: WEDDING INFO */}
+   447→            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px 12px', padding: '0 2px' }}>
+   448→              <div style={{ display: 'flex', alignItems: 'start', gap: '6px' }}>
+   449→                <span style={{ fontSize: '14px', marginTop: '1px' }}>&#128197;</span>
+   450→                <div>
+   451→                  <p style={{ fontSize: '7px', letterSpacing: '0.2em', textTransform: 'uppercase', color: 'rgba(166,124,61,0.5)', fontWeight: 600, margin: 0, fontFamily: 'Cormorant Garamond, sans-serif' }}>Date</p>
+   452→                  <p style={{ fontSize: '11px', fontWeight: 600, color: '#5C4A1E', lineHeight: 1.3, margin: 0, fontFamily: 'Playfair Display, Georgia, serif' }}>{dateDisplay}</p>
+   453→                </div>
+   454→              </div>
+   455→              <div style={{ display: 'flex', alignItems: 'start', gap: '6px' }}>
+   456→                <span style={{ fontSize: '14px', marginTop: '1px' }}>&#128336;</span>
+   457→                <div>
+   458→                  <p style={{ fontSize: '7px', letterSpacing: '0.2em', textTransform: 'uppercase', color: 'rgba(166,124,61,0.5)', fontWeight: 600, margin: 0, fontFamily: 'Cormorant Garamond, sans-serif' }}>Heure</p>
+   459→                  <p style={{ fontSize: '11px', fontWeight: 600, color: '#5C4A1E', lineHeight: 1.3, margin: 0, fontFamily: 'Playfair Display, Georgia, serif' }}>{venueTime}</p>
+   460→                </div>
+   461→              </div>
+   462→              <div style={{ display: 'flex', alignItems: 'start', gap: '6px', gridColumn: '1 / -1' }}>
+   463→                <span style={{ fontSize: '14px', marginTop: '1px' }}>&#128205;</span>
+   464→                <div>
+   465→                  <p style={{ fontSize: '7px', letterSpacing: '0.2em', textTransform: 'uppercase', color: 'rgba(166,124,61,0.5)', fontWeight: 600, margin: 0, fontFamily: 'Cormorant Garamond, sans-serif' }}>Lieu</p>
+   466→                  <p style={{ fontSize: '11px', fontWeight: 600, color: '#5C4A1E', lineHeight: 1.3, margin: 0, fontFamily: 'Playfair Display, Georgia, serif' }}>{venueName}</p>
+   467→                  <p style={{ fontSize: '9px', color: 'rgba(122,106,74,0.55)', lineHeight: 1.3, margin: 0, fontFamily: 'Cormorant Garamond, sans-serif' }}>{venueAddress}</p>
+   468→                  {venueReference && (
+   469→                    <p style={{ fontSize: '8px', color: 'rgba(122,106,74,0.4)', fontStyle: 'italic', lineHeight: 1.3, margin: 0, marginTop: '2px', fontFamily: 'Cormorant Garamond, sans-serif' }}>{venueReference}</p>
+   470→                  )}
+   471→                </div>
+   472→              </div>
+   473→            </div>
+   474→
+   475→            {/* Gold divider */}
+   476→            <div style={{ height: '1px', width: '100%', background: 'linear-gradient(to right, transparent, rgba(196,162,101,0.25) 30%, rgba(196,162,101,0.25) 70%, transparent)' }} />
+   477→
+   478→            {/* ZONE 4: QR CODE + CLOSING */}
+   479→            <div style={{ display: 'flex', alignItems: 'flex-end', gap: '12px' }}>
+   480→              <div style={{ flexShrink: 0 }}>
+   481→                <p style={{ fontSize: '7px', letterSpacing: '0.2em', textTransform: 'uppercase', color: 'rgba(166,124,61,0.5)', fontWeight: 600, margin: 0, marginBottom: '4px', fontFamily: 'Cormorant Garamond, sans-serif' }}>Votre acc&#232;s personnel</p>
+   482→                <div style={{ display: 'inline-block', padding: '6px', background: '#fff', boxShadow: '0 1px 8px rgba(196,162,101,0.12)' }}>
+   483→                  {qrCodeUrl ? (
+   484→                    <img src={qrCodeUrl} alt="QR Code" style={{ width: '64px', height: '64px' }} />
+   485→                  ) : (
+   486→                    <div style={{ width: '64px', height: '64px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '24px', color: 'rgba(196,162,101,0.2)' }}>&#9633;</div>
+   487→                  )}
+   488→                </div>
+   489→                <p style={{ fontSize: '6px', color: 'rgba(166,124,61,0.35)', textAlign: 'center', margin: 0, marginTop: '4px', fontFamily: 'Cormorant Garamond, sans-serif' }}>Pr&#233;sentez &#224; l&apos;entr&#233;e</p>
+   490→              </div>
+   491→              <div style={{ flex: 1, minWidth: 0, paddingBottom: '4px' }}>
+   492→                <p style={{ fontSize: '8px', color: 'rgba(122,106,74,0.45)', fontStyle: 'italic', lineHeight: 1.5, margin: 0, fontFamily: 'Cormorant Garamond, sans-serif' }}>{closingMessage}</p>
+   493→                <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '6px' }}>
+   494→                  <span style={{ fontSize: '10px', color: 'rgba(196,162,101,0.3)' }}>&#9829;</span>
+   495→                  <span style={{ fontSize: '12px', fontWeight: 'bold', color: '#8B6914', fontFamily: 'Playfair Display, Georgia, serif' }}>{coupleLabel}</span>
+   496→                </div>
+   497→                <p style={{ fontSize: '7px', letterSpacing: '0.1em', color: 'rgba(196,162,101,0.3)', fontWeight: 600, margin: 0, marginTop: '2px', fontFamily: 'Cormorant Garamond, sans-serif' }}>{hashtag}</p>
+   498→              </div>
+   499→            </div>
+   500→          </div>
+   501→        </div>
+   502→      </div>
+   503→    </div>
+   504→  )
+   505→
+   506→  /* ══════════════════════════════════════════════════════════════
+   507→     RENDER — ENVELOPE REVEAL PHASE
+   508→     ══════════════════════════════════════════════════════════════ */
+   509→  if (revealPhase === 'envelope' || revealPhase === 'opening') {
+   510→    return (
+   511→      <section className="relative min-h-screen flex flex-col items-center justify-center overflow-hidden">
+   512→        <div className="absolute inset-0" style={{ background: 'linear-gradient(180deg, #0A0A0F 0%, #141420 40%, #0F0D18 100%)' }} />
+   513→        <div className="absolute inset-0 overflow-hidden pointer-events-none">
+   514→          {[...Array(12)].map((_, i) => (
+   515→            <motion.div key={i}
+   516→              className="absolute rounded-full"
+   517→              style={{ left: `${8 + i * 8}%`, top: `${10 + (i % 4) * 25}%`, width: `${1 + (i % 3)}px`, height: `${1 + (i % 3)}px`, backgroundColor: `rgba(196, 162, 101, ${0.15 + (i % 3) * 0.08})` }}
+   518→              animate={{ y: [-15, 15, -15], opacity: [0.1, 0.3, 0.1] }}
+   519→              transition={{ duration: 5 + i * 0.5, repeat: Infinity, ease: 'easeInOut', delay: i * 0.4 }}
+   520→            />
+   521→          ))}
+   522→        </div>
+   523→        <motion.div initial={{ opacity: 0, y: 40, scale: 0.9 }} animate={{ opacity: 1, y: 0, scale: 1 }} transition={{ duration: 0.8, ease: "easeOut" }} className="relative z-10">
+   524→          <div className="relative w-[320px] sm:w-[380px]">
+   525→            <motion.div className="relative" style={{ background: 'linear-gradient(175deg, #F5EFE3 0%, #EDE5D5 50%, #E8DCC8 100%)', borderRadius: '8px', boxShadow: '0 25px 60px rgba(0,0,0,0.5), 0 0 40px rgba(196,162,101,0.15)' }}>
+   526→              <div className="absolute inset-0 rounded-[8px]" style={{ border: '1.5px solid rgba(196,162,101,0.4)' }} />
+   527→              <div className="absolute inset-[4px] rounded-[6px]" style={{ border: '1px solid rgba(196,162,101,0.15)' }} />
+   528→              <div className="relative p-8 text-center">
+   529→                <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ delay: 0.5, type: 'spring', stiffness: 200, damping: 15 }} className="absolute -top-6 left-1/2 -translate-x-1/2 z-20">
+   530→                  <div className="w-12 h-12 rounded-full flex items-center justify-center" style={{ background: 'linear-gradient(135deg, #8B6914, #C4A265, #D4B87A)', boxShadow: '0 4px 12px rgba(196,162,101,0.4), inset 0 1px 2px rgba(255,255,255,0.3)' }}>
+   531→                    <Heart className="size-5 text-white fill-white" />
+   532→                  </div>
+   533→                </motion.div>
+   534→                <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.8, duration: 0.6 }} className="font-display text-[10px] tracking-[0.3em] uppercase mt-4 mb-3" style={{ color: 'rgba(139,105,20,0.5)' }}>Vous &#234;tes invit&#233;(e)</motion.p>
+   535→                <motion.h2 initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 1.0, duration: 0.8 }} className="font-serif text-3xl sm:text-4xl font-bold mb-2" style={goldText}>{coupleLabel}</motion.h2>
+   536→                <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 1.2, duration: 0.6 }} className="font-display text-[10px] tracking-[0.2em] uppercase mb-6" style={{ color: 'rgba(139,105,20,0.6)' }}>{dateDisplay}</motion.p>
+   537→                {revealPhase === 'opening' && (
+   538→                  <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex items-center justify-center gap-2">
+   539→                    <motion.div animate={{ rotate: 360 }} transition={{ duration: 1.5, repeat: Infinity, ease: 'linear' }} className="w-5 h-5 border-2 rounded-full" style={{ borderColor: 'rgba(196,162,101,0.2)', borderTopColor: '#C4A265' }} />
+   540→                    <span className="font-display text-[10px] tracking-[0.15em] uppercase" style={{ color: 'rgba(139,105,20,0.5)' }}>Ouverture...</span>
+   541→                  </motion.div>
+   542→                )}
+   543→              </div>
+   544→            </motion.div>
+   545→          </div>
+   546→        </motion.div>
+   547→      </section>
+   548→    )
+   549→  }
+   550→
+   551→  /* ══════════════════════════════════════════════════════════════
+   552→     RENDER — REVEALING / COMPLETE PHASE
+   553→     ══════════════════════════════════════════════════════════════ */
+   554→  return (
+   555→    <section className="relative overflow-hidden min-h-screen flex flex-col items-center justify-start py-4 sm:py-6 px-3 sm:px-4">
+   556→      {/* Hidden download-ready version for canvas capture */}
+   557→      {downloadInvitation}
+   558→
+   559→      <div className="absolute inset-0" style={{ background: 'linear-gradient(180deg, #FAF6EE 0%, #F5EFE3 40%, #F0E8D8 70%, #FAF6EE 100%)' }} />
+   560→      <div className="absolute inset-0 overflow-hidden pointer-events-none">
+   561→        {[...Array(8)].map((_, i) => (
+   562→          <motion.div key={i} className="absolute rounded-full" style={{ left: `${10 + i * 12}%`, top: `${5 + i * 12}%`, width: `${1 + (i % 2)}px`, height: `${1 + (i % 2)}px`, backgroundColor: `rgba(196, 162, 101, ${0.08 + (i % 2) * 0.04})` }} animate={{ y: [0, -10, 0], opacity: [0.08, 0.2, 0.08] }} transition={{ duration: 4 + i * 0.5, repeat: Infinity, ease: 'easeInOut', delay: i * 0.8 }} />
+   563→        ))}
+   564→      </div>
+   565→
+   566→      <div className="relative z-10 w-full max-w-2xl">
+   567→        <motion.div initial={{ opacity: 0, y: 30, scale: 0.95 }} animate={{ opacity: 1, y: 0, scale: 1 }} transition={{ duration: 0.8, ease: "easeOut" }}>
+   568→          <div ref={invitationRef} className="relative w-full overflow-hidden shadow-2xl paper-texture" style={{ background: 'linear-gradient(175deg, #FDFAF3 0%, #FBF7EC 30%, #F7F1E5 60%, #FDFAF3 100%)', boxShadow: '0 20px 60px rgba(0,0,0,0.12), 0 0 30px rgba(196,162,101,0.08)' }}>
+   569→            <div className="absolute inset-0 z-[1] pointer-events-none" style={{ border: '2px solid rgba(196, 162, 101, 0.5)' }} />
+   570→            <div className="absolute inset-[5px] z-[1] pointer-events-none" style={{ border: '1px solid rgba(196, 162, 101, 0.2)' }} />
+   571→            <motion.div className="absolute inset-0 z-[2] pointer-events-none" style={{ background: 'linear-gradient(105deg, transparent 40%, rgba(196,162,101,0.05) 45%, rgba(196,162,101,0.02) 50%, transparent 55%)', backgroundSize: '200% 100%' }} animate={{ backgroundPosition: ['200% 0', '-200% 0'] }} transition={{ duration: 8, repeat: Infinity, ease: 'linear', repeatDelay: 6 }} />
+   572→
+   573→            <div className="relative z-10 flex flex-col md:flex-row">
+   574→              {/* ZONE 1: PHOTOS */}
+   575→              <div className="relative md:w-[54%] shrink-0 overflow-hidden aspect-[16/10] md:aspect-auto md:min-h-[300px] lg:min-h-[340px]">
+   576→                <div className="absolute inset-0 flex">
+   577→                  <div className="w-1/2 h-full relative overflow-hidden">
+   578→                    {(photo1Base64 || couplePhoto1Path) ? (
+   579→                      <img src={photo1Base64 || couplePhoto1Path} alt={groomName} className="w-full h-full object-cover object-top" />
+   580→                    ) : null}
+   581→                  </div>
+   582→                  <div className="w-1/2 h-full relative overflow-hidden">
+   583→                    {(photo2Base64 || couplePhoto2Path) ? (
+   584→                      <img src={photo2Base64 || couplePhoto2Path} alt={brideName} className="w-full h-full object-cover object-top" />
+   585→                    ) : null}
+   586→                  </div>
+   587→                </div>
+   588→                <div className="absolute inset-0" style={{ background: 'linear-gradient(to top, rgba(253,250,243,0.97) 0%, rgba(253,250,243,0.6) 30%, rgba(253,250,243,0.1) 50%, transparent 65%)' }} />
+   589→                <div className="hidden md:block absolute inset-0" style={{ background: 'linear-gradient(to right, transparent 55%, rgba(253,250,243,0.5) 75%, rgba(253,250,243,0.95) 95%)' }} />
+   590→                <div className="absolute bottom-0 left-0 right-0 p-3 sm:p-4 z-10">
+   591→                  <div className="flex items-center gap-2 mb-1">
+   592→                    <span className="font-serif text-xl sm:text-2xl font-bold" style={goldText}>{coupleMonogram || 'M'}</span>
+   593→                    <div className="h-px flex-1" style={{ background: 'linear-gradient(to right, rgba(196,162,101,0.45), transparent)' }} />
+   594→                  </div>
+   595→                  <h1 className="font-serif text-2xl sm:text-3xl md:text-[32px] font-bold leading-tight" style={goldText}>{coupleLabel}</h1>
+   596→                  <p className="font-display text-[8px] sm:text-[10px] tracking-[0.25em] uppercase text-[#A67C3D]/65 font-semibold mt-1">{dateDisplay}</p>
+   597→                </div>
+   598→              </div>
+   599→
+   600→              <div className="hidden md:block w-px self-stretch" style={{ background: 'linear-gradient(to bottom, transparent, rgba(196,162,101,0.3) 20%, rgba(196,162,101,0.4) 50%, rgba(196,162,101,0.3) 80%, transparent)' }} />
+   601→              <div className="md:hidden h-px w-full" style={{ background: 'linear-gradient(to right, transparent, rgba(196,162,101,0.3) 20%, rgba(196,162,101,0.4) 50%, rgba(196,162,101,0.3) 80%, transparent)' }} />
+   602→
+   603→              {/* ZONES 2-4: INFO PANEL */}
+   604→              <div className="md:w-[46%] flex flex-col justify-between p-3 sm:p-4 md:p-5 gap-2 sm:gap-2.5">
+   605→                {/* ZONE 2: GUEST INFO */}
+   606→                <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.3, duration: 0.6 }} className="relative py-2.5 px-3" style={{ background: 'linear-gradient(180deg, rgba(196,162,101,0.05) 0%, rgba(196,162,101,0.1) 50%, rgba(196,162,101,0.05) 100%)', border: '1px solid rgba(196,162,101,0.2)' }}>
+   607→                  <div className="absolute inset-0.5 pointer-events-none" style={{ border: '1px solid rgba(196,162,101,0.07)' }} />
+   608→                  <p className="font-display text-[7px] sm:text-[8px] tracking-[0.3em] uppercase text-[#A67C3D]/60 font-semibold">{cleanedName.isCouple ? 'Invitation pour le' : cleanedName.isFamille ? 'Invitation pour la' : 'Invitation pour'}</p>
+   609→                  <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+   610→                    <h2 className="font-serif text-lg sm:text-xl font-bold leading-tight" style={goldText}>{cleanedName.displayName}</h2>
+   611→                    <CategoryBadge catDisplay={cleanedName.categoryDisplay} />
+   612→                  </div>
+   613→                  <div className="flex items-center gap-3 mt-2">
+   614→                    <div className="flex items-center gap-1.5">
+   615→                      <Users className="size-3.5 text-[#C4A265]/65" />
+   616→                      <span className="font-serif text-sm sm:text-base font-bold" style={{ color: '#8B6914' }}>{guest.table?.name || '—'}</span>
+   617→                    </div>
+   618→                    {guest.table?.number && (
+   619→                      <span className="font-display text-[7px] sm:text-[8px] tracking-[0.1em] uppercase text-[#A67C3D]/40 font-semibold">Table {guest.table.number}</span>
+   620→                    )}
+   621→                    <div className="h-4 w-px" style={{ background: 'rgba(196,162,101,0.25)' }} />
+   622→                    <span className="font-display text-[9px] sm:text-[10px] tracking-wider text-[#A67C3D]/65 font-medium">{guest.seats} place{guest.seats > 1 ? 's' : ''} r&#233;serv&#233;e{guest.seats > 1 ? 's' : ''}</span>
+   623→                  </div>
+   624→                </motion.div>
+   625→
+   626→                {/* ZONE 3: WEDDING INFO */}
+   627→                <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.5, duration: 0.6 }} className="grid grid-cols-2 gap-x-3 gap-y-1.5 px-0.5">
+   628→                  <div className="flex items-start gap-2">
+   629→                    <Calendar className="size-3.5 text-[#C4A265]/65 shrink-0 mt-0.5" />
+   630→                    <div>
+   631→                      <p className="font-display text-[7px] tracking-[0.2em] uppercase text-[#A67C3D]/50 font-semibold">Date</p>
+   632→                      <p className="font-serif text-[10px] sm:text-[11px] font-semibold text-[#5C4A1E] leading-tight">{dateDisplay}</p>
+   633→                    </div>
+   634→                  </div>
+   635→                  <div className="flex items-start gap-2">
+   636→                    <Clock className="size-3.5 text-[#C4A265]/65 shrink-0 mt-0.5" />
+   637→                    <div>
+   638→                      <p className="font-display text-[7px] tracking-[0.2em] uppercase text-[#A67C3D]/50 font-semibold">Heure</p>
+   639→                      <p className="font-serif text-[10px] sm:text-[11px] font-semibold text-[#5C4A1E] leading-tight">{venueTime}</p>
+   640→                    </div>
+   641→                  </div>
+   642→                  <div className="flex items-start gap-2 col-span-2">
+   643→                    <MapPin className="size-3.5 text-[#C4A265]/65 shrink-0 mt-0.5" />
+   644→                    <div>
+   645→                      <p className="font-display text-[7px] tracking-[0.2em] uppercase text-[#A67C3D]/50 font-semibold">Lieu</p>
+   646→                      <p className="font-serif text-[10px] sm:text-[11px] font-semibold text-[#5C4A1E] leading-tight">{venueName}</p>
+   647→                      <p className="font-display text-[8px] sm:text-[9px] text-[#7A6A4A]/55 leading-tight">{venueAddress}</p>
+   648→                      {venueReference && <p className="font-display text-[7px] sm:text-[8px] text-[#7A6A4A]/40 italic leading-tight mt-0.5">{venueReference}</p>}
+   649→                    </div>
+   650→                  </div>
+   651→                </motion.div>
+   652→
+   653→                <div className="h-px w-full" style={{ background: 'linear-gradient(to right, transparent, rgba(196,162,101,0.25) 30%, rgba(196,162,101,0.25) 70%, transparent)' }} />
+   654→
+   655→                {/* ZONE 4: QR CODE + CLOSING */}
+   656→                <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.7, duration: 0.6 }} className="flex items-end gap-3">
+   657→                  <div className="shrink-0">
+   658→                    <p className="font-display text-[7px] tracking-[0.2em] uppercase text-[#A67C3D]/50 font-semibold mb-1">Votre acc&#232;s personnel</p>
+   659→                    <div className="inline-block p-1.5 bg-white" style={{ boxShadow: '0 1px 8px rgba(196,162,101,0.12)' }}>
+   660→                      <AnimatePresence mode="wait">
+   661→                        {qrLoading ? (
+   662→                          <motion.div key="loading" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="w-[52px] h-[52px] sm:w-[64px] sm:h-[64px] flex items-center justify-center">
+   663→                            <motion.div animate={{ rotate: 360 }} transition={{ duration: 1.2, repeat: Infinity, ease: 'linear' }} className="size-4 border-2 border-[#C4A265]/20 border-t-[#C4A265] rounded-full" />
+   664→                          </motion.div>
+   665→                        ) : qrCodeUrl ? (
+   666→                          <motion.div key="qr" initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} transition={{ type: 'spring', stiffness: 200, damping: 20 }}>
+   667→                            <img src={qrCodeUrl} alt="QR Code" className="w-[52px] h-[52px] sm:w-[64px] sm:h-[64px]" />
+   668→                          </motion.div>
+   669→                        ) : (
+   670→                          <motion.div key="fallback" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="w-[52px] h-[52px] sm:w-[64px] sm:h-[64px] flex items-center justify-center">
+   671→                            <QrCode className="size-6 text-[#C4A265]/20" />
+   672→                          </motion.div>
+   673→                        )}
+   674→                      </AnimatePresence>
+   675→                    </div>
+   676→                    <p className="font-display text-[6px] text-[#A67C3D]/35 mt-1 text-center">Pr&#233;sentez &#224; l&apos;entr&#233;e</p>
+   677→                  </div>
+   678→                  <div className="flex-1 min-w-0 pb-1">
+   679→                    <p className="font-display text-[7px] sm:text-[8px] text-[#7A6A4A]/45 italic leading-snug">{closingMessage}</p>
+   680→                    <div className="flex items-center gap-1.5 mt-1.5">
+   681→                      <Heart className="size-2.5 text-[#C4A265]/30 fill-[#C4A265]/15" />
+   682→                      <span className="font-serif text-[11px] sm:text-xs font-bold" style={goldText}>{coupleLabel}</span>
+   683→                    </div>
+   684→                    <p className="font-display text-[6px] sm:text-[7px] tracking-wider text-[#C4A265]/30 font-semibold mt-0.5">{hashtag}</p>
+   685→                  </div>
+   686→                </motion.div>
+   687→              </div>
+   688→            </div>
+   689→          </div>
+   690→        </motion.div>
+   691→
+   692→        {/* RSVP SECTION */}
+   693→        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.8, duration: 0.6 }} className="mt-5">
+   694→          <div className="relative p-5 sm:p-6 text-center" style={{ background: 'linear-gradient(175deg, rgba(196,162,101,0.04) 0%, rgba(196,162,101,0.08) 50%, rgba(196,162,101,0.04) 100%)', border: '1px solid rgba(196,162,101,0.2)' }}>
+   695→            <div className="absolute inset-1 pointer-events-none" style={{ border: '1px solid rgba(196,162,101,0.06)' }} />
+   696→            <h3 className="font-serif text-xl sm:text-2xl font-bold mb-2" style={goldText}>Confirmer ma pr&#233;sence</h3>
+   697→            <p className="font-display text-[10px] sm:text-[11px] text-[#7A6A4A]/55 mb-5">{coupleLabel} souhaitent conna&#238;tre votre r&#233;ponse</p>
+   698→            {rsvpDone || rsvpStatus === 'CONFIRMED' || rsvpStatus === 'DECLINED' ? (
+   699→              <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full" style={{ background: rsvpStatus === 'CONFIRMED' ? 'linear-gradient(135deg, rgba(16,185,129,0.08), rgba(16,185,129,0.15))' : 'linear-gradient(135deg, rgba(239,68,68,0.08), rgba(239,68,68,0.12))', border: `1px solid ${rsvpStatus === 'CONFIRMED' ? 'rgba(16,185,129,0.25)' : 'rgba(239,68,68,0.2)'}` }}>
+   700→                {rsvpStatus === 'CONFIRMED' ? (
+   701→                  <><CheckCircle2 className="size-4 text-emerald-500" /><span className="font-display text-xs font-bold text-emerald-700">Pr&#233;sence confirm&#233;e !</span><Sparkles className="size-3 text-emerald-400" /></>
+   702→                ) : (
+   703→                  <><XCircle className="size-4 text-red-400" /><span className="font-display text-xs font-bold text-red-600">D&#233;clin&#233;</span></>
+   704→                )}
+   705→              </motion.div>
+   706→            ) : (
+   707→              <div className="space-y-4">
+   708→                <div className="max-w-sm mx-auto">
+   709→                  <Textarea placeholder="Un petit mot pour les mari&#233;s (optionnel)..." value={rsvpMessage} onChange={(e) => setRsvpMessage(e.target.value)} className="h-16 text-[11px] font-display resize-none bg-[#FDFAF3] border-[rgba(196,162,101,0.15)] text-[#5C4A1E] placeholder:text-[#A67C3D]/30 focus:border-[#C4A265]/40" />
+   710→                </div>
+   711→                <div className="flex items-center justify-center gap-3">
+   712→                  <Button onClick={() => handleRSVP('CONFIRMED')} disabled={rsvpLoading} className="gap-2 px-5 py-2.5 font-display text-[10px] tracking-[0.1em] uppercase font-bold shadow-lg transition-all duration-300 rounded-sm h-10" style={{ background: 'linear-gradient(135deg, #059669, #10B981, #34D399)', color: '#FDFAF3', boxShadow: '0 4px 15px rgba(16,185,129,0.25)' }}>
+   713→                    {rsvpLoading ? <Loader2 className="size-4 animate-spin" /> : <CheckCircle2 className="size-4" />}Je serai pr&#233;sent
+   714→                  </Button>
+   715→                  <Button onClick={() => handleRSVP('DECLINED')} disabled={rsvpLoading} variant="outline" className="gap-2 px-5 py-2.5 font-display text-[10px] tracking-[0.1em] uppercase font-semibold transition-all duration-300 rounded-sm h-10" style={{ borderColor: 'rgba(239,68,68,0.2)', color: '#DC2626' }}>
+   716→                    <XCircle className="size-4" />Je ne pourrai pas
+   717→                  </Button>
+   718→                </div>
+   719→              </div>
+   720→            )}
+   721→          </div>
+   722→        </motion.div>
+   723→
+   724→        {/* ACTION BUTTONS */}
+   725→        <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 1.0, duration: 0.5 }} className="mt-3 flex flex-col sm:flex-row items-center justify-center gap-2 sm:gap-2.5">
+   726→          <div className="relative">
+   727→            <Button onClick={() => { setDownloadMenuOpen(!downloadMenuOpen); setShareMenuOpen(false) }} disabled={downloading} className="gap-2 px-4 py-2 font-display text-[10px] tracking-[0.1em] uppercase font-semibold shadow-lg transition-all duration-300 rounded-sm h-9" style={{ background: 'linear-gradient(135deg, #A67C3D, #C4A265, #D4B87A)', color: '#FDFAF3', boxShadow: '0 3px 12px rgba(196,162,101,0.2)' }}>
+   728→              {downloading ? <Loader2 className="size-3.5 animate-spin" /> : <Download className="size-3.5" />}{downloading ? 'G&#233;n&#233;ration...' : 'T&#233;l&#233;charger'}<ChevronDown className={`size-2.5 transition-transform duration-200 ${downloadMenuOpen ? 'rotate-180' : ''}`} />
+   729→            </Button>
+   730→            <AnimatePresence>
+   731→              {downloadMenuOpen && (
+   732→                <motion.div initial={{ opacity: 0, y: -4, scale: 0.95 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: -4, scale: 0.95 }} transition={{ duration: 0.12 }} className="absolute top-full left-1/2 -translate-x-1/2 mt-1 w-40 py-1 shadow-xl z-50 rounded-sm" style={{ background: '#FDFAF3', border: '1px solid rgba(196,162,101,0.25)' }}>
+   733→                  {([{ format: 'pdf' as const, icon: FileText, label: 'PDF HD' }, { format: 'png' as const, icon: FileImage, label: 'PNG HD' }, { format: 'jpg' as const, icon: FileImage, label: 'JPG' }]).map((item) => (
+   734→                    <button key={item.format} onClick={() => handleDownload(item.format)} disabled={downloading} className="w-full flex items-center gap-2 px-3 py-1.5 text-left hover:bg-[rgba(196,162,101,0.06)] transition-colors">
+   735→                      <item.icon className="size-3 text-[#C4A265]" /><span className="font-display text-[10px] tracking-wide text-[#5C4A1E] font-medium">{item.label}</span>
+   736→                    </button>
+   737→                  ))}
+   738→                </motion.div>
+   739→              )}
+   740→            </AnimatePresence>
+   741→          </div>
+   742→          <div className="relative">
+   743→            <Button onClick={() => { setShareMenuOpen(!shareMenuOpen); setDownloadMenuOpen(false) }} variant="outline" className="gap-2 px-4 py-2 font-display text-[10px] tracking-[0.1em] uppercase font-semibold transition-all duration-300 rounded-sm h-9" style={{ borderColor: 'rgba(196,162,101,0.3)', color: '#A67C3D' }}>
+   744→              <Share2 className="size-3.5" />Partager<ChevronDown className={`size-2.5 transition-transform duration-200 ${shareMenuOpen ? 'rotate-180' : ''}`} />
+   745→            </Button>
+   746→            <AnimatePresence>
+   747→              {shareMenuOpen && (
+   748→                <motion.div initial={{ opacity: 0, y: -4, scale: 0.95 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: -4, scale: 0.95 }} transition={{ duration: 0.12 }} className="absolute top-full left-1/2 -translate-x-1/2 mt-1 w-40 py-1 shadow-xl z-50 rounded-sm" style={{ background: '#FDFAF3', border: '1px solid rgba(196,162,101,0.25)' }}>
+   749→                  {([{ channel: 'whatsapp' as const, icon: MessageSquare, label: 'WhatsApp', color: '#25D366' }, { channel: 'telegram' as const, icon: Send, label: 'Telegram', color: '#0088CC' }, { channel: 'email' as const, icon: Mail, label: 'Email', color: '#A67C3D' }]).map((item) => (
+   750→                    <button key={item.channel} onClick={() => handleShare(item.channel)} className="w-full flex items-center gap-2 px-3 py-1.5 text-left hover:bg-[rgba(196,162,101,0.06)] transition-colors">
+   751→                      <item.icon className="size-3" style={{ color: item.color }} /><span className="font-display text-[10px] tracking-wide text-[#5C4A1E] font-medium">{item.label}</span>
+   752→                    </button>
+   753→                  ))}
+   754→                </motion.div>
+   755→              )}
+   756→            </AnimatePresence>
+   757→          </div>
+   758→          {guest.encryptedLink && (
+   759→            <Button onClick={() => handleCopyLink(encryptedLinkUrl)} variant="outline" className="gap-2 px-4 py-2 font-display text-[10px] tracking-[0.1em] uppercase font-semibold transition-all duration-300 rounded-sm h-9" style={{ borderColor: 'rgba(196,162,101,0.3)', color: '#A67C3D' }}>
+   760→              {copiedLink ? <Check className="size-3.5 text-emerald-500" /> : <Link2 className="size-3.5" />}{copiedLink ? 'Copi&#233; !' : 'Lien'}
+   761→            </Button>
+   762→          )}
+   763→        </motion.div>
+   764→
+   765→        {/* ENCRYPTED LINK */}
+   766→        {guest.encryptedLink && (
+   767→          <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 1.2, duration: 0.5 }} className="mt-2">
+   768→            <div className="flex items-center gap-2 p-2.5 rounded-sm" style={{ background: 'rgba(196,162,101,0.04)', border: '1px solid rgba(196,162,101,0.1)' }}>
+   769→              <Link2 className="size-3 text-[#C4A265]/50" />
+   770→              <span className="font-display text-[9px] text-[#7A6A4A]/55">Lien personnel :</span>
+   771→              <Input readOnly value={encryptedLinkUrl} className="h-6 text-[9px] font-mono bg-transparent border-none p-0 text-[#A67C3D]/70 focus:ring-0" />
+   772→              <Button variant="outline" size="sm" onClick={() => handleCopyLink(encryptedLinkUrl)} className="h-6 px-2 text-[9px] font-display" style={{ borderColor: 'rgba(196,162,101,0.2)', color: '#A67C3D' }}>{copiedLink ? '✓' : 'Copier'}</Button>
+   773→            </div>
+   774→          </motion.div>
+   775→        )}
+   776→
+   777→        {/* LOGOUT */}
+   778→        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 1.5, duration: 0.5 }} className="mt-4 text-center">
+   779→          <Button variant="ghost" size="sm" onClick={onLogout} className="gap-1.5 font-display text-[10px] tracking-wider uppercase text-[#7A6A4A]/40 hover:text-[#7A6A4A]/70">
+   780→            <LogOut className="size-2.5" />D&#233;connexion
+   781→          </Button>
+   782→        </motion.div>
+   783→      </div>
+   784→    </section>
+   785→  )
+   786→}
+   787→

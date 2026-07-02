@@ -4,6 +4,10 @@ import { db, tenantDb } from '@/lib/db';
 import { getAuthUser, hasPermission } from '@/lib/auth';
 import { withPublicTenant, withAdminTenantHandler } from '@/lib/tenant-context';
 import { isValidHexColor, normalizeHexColor, getLayoutOption, getFontOption, DEFAULT_THEME } from '@/lib/themes/templates';
+import { safeJsonParse } from '@/lib/safe-json'; // P2-SEC-7
+import { logger } from '@/lib/logger'; // P2-SEC-1
+import { badRequest, internalError } from '@/lib/api-errors'; // P2-CQ-5
+import { writeAuditLog } from '@/lib/audit'; // P2-SEC-14
 
 // GET /api/theme — public, returns the theme for the resolved wedding
 export const GET = withPublicTenant(async (_req, ctx) => {
@@ -19,7 +23,7 @@ export const GET = withPublicTenant(async (_req, ctx) => {
       fontDisplay: theme?.fontDisplay ?? DEFAULT_THEME.fontDisplay,
       fontBody: theme?.fontBody ?? DEFAULT_THEME.fontBody,
       layout: theme?.layout ?? DEFAULT_THEME.layout,
-      customizations: theme?.customizations ? JSON.parse(theme.customizations) : null,
+      customizations: safeJsonParse(theme?.customizations, null), // P2-SEC-7
       wedding: {
         slug: ctx.slug,
         isDefault: ctx.isDefault,
@@ -30,8 +34,12 @@ export const GET = withPublicTenant(async (_req, ctx) => {
 
     return NextResponse.json(response);
   } catch (error) {
-    console.error('Get theme error:', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    // P2-SEC-1: never log error.stack.
+    logger.error('Get theme error', {
+      errMessage: error instanceof Error ? error.message : String(error),
+      errName: error instanceof Error ? error.name : 'Unknown',
+    });
+    return internalError();
   }
 });
 
@@ -45,7 +53,8 @@ export async function PUT(request: NextRequest) {
     }
 
     return withAdminTenantHandler(request, user, async (_req, ctx) => {
-      const body = await request.json();
+      const body = await request.json().catch(() => null); // P2-CQ-6
+      if (!body) return badRequest('Corps de requête invalide');
       const { primaryColor, accentColor, fontDisplay, fontBody, layout, customizations } = body as {
         primaryColor?: string;
         accentColor?: string;
@@ -99,13 +108,13 @@ export async function PUT(request: NextRequest) {
         },
       });
 
-      await db.auditLog.create({
-        data: {
-          weddingId: ctx.weddingId,
-          userId: user.id,
-          action: 'UPDATE_THEME',
-          details: `Theme updated: ${Object.keys(updateData).join(', ')}`,
-        },
+      // P2-SEC-14: writeAuditLog populates ipAddress + userAgent from request.
+      await writeAuditLog({
+        weddingId: ctx.weddingId,
+        userId: user.id,
+        action: 'UPDATE_THEME',
+        details: `Theme updated: ${Object.keys(updateData).join(', ')}`,
+        request,
       });
 
       return NextResponse.json({
@@ -114,11 +123,15 @@ export async function PUT(request: NextRequest) {
         fontDisplay: theme.fontDisplay,
         fontBody: theme.fontBody,
         layout: theme.layout,
-        customizations: theme.customizations ? JSON.parse(theme.customizations) : null,
+        customizations: safeJsonParse(theme.customizations, null), // P2-SEC-7
       });
     });
   } catch (error) {
-    console.error('Update theme error:', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    // P2-SEC-1: never log error.stack.
+    logger.error('Update theme error', {
+      errMessage: error instanceof Error ? error.message : String(error),
+      errName: error instanceof Error ? error.name : 'Unknown',
+    });
+    return internalError();
   }
 }
