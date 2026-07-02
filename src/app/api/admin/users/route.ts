@@ -217,6 +217,50 @@ export async function PUT(request: NextRequest) {
     const existing = await db.adminUser.findUnique({ where: { id } });
     if (!existing) return NextResponse.json({ error: 'User not found' }, { status: 404 });
 
+    // P1-SEC: Prevent self-role-change (privilege escalation). A user editing
+    // their own role could grant themselves SUPER_ADMIN or, conversely, demote
+    // themselves and lose access mid-session. Require another admin to do it.
+    if (id === user.id && role && role !== existing.role) {
+      return NextResponse.json(
+        { error: 'Vous ne pouvez pas modifier votre propre rôle' },
+        { status: 403 }
+      );
+    }
+
+    // P1-SEC: Prevent removing the last platform admin. If the existing user is
+    // currently a platform admin (PLATFORM_ADMIN or legacy SUPER_ADMIN) and the
+    // new role demotes them to a non-platform role, count remaining platform
+    // admins and block the change if it would leave the platform with zero
+    // admins (lockout risk).
+    if (
+      isPlatformAdmin(existing.role) &&
+      role &&
+      !isPlatformAdmin(role)
+    ) {
+      const platformAdminCount = await db.adminUser.count({
+        where: {
+          OR: [{ role: 'PLATFORM_ADMIN' }, { role: 'SUPER_ADMIN' }],
+        },
+      });
+      if (platformAdminCount <= 1) {
+        return NextResponse.json(
+          { error: 'Impossible de supprimer le dernier administrateur de plateforme' },
+          { status: 403 }
+        );
+      }
+    }
+
+    // P1-SEC: Prevent self-deactivation via weddingId reassignment. A user
+    // changing their own weddingId could lock themselves out of their tenant
+    // (or grant themselves access to a different wedding). The weddingId
+    // change must be performed by another admin.
+    if (id === user.id && weddingId !== undefined && weddingId !== existing.weddingId) {
+      return NextResponse.json(
+        { error: 'Vous ne pouvez pas modifier votre propre affectation' },
+        { status: 403 }
+      );
+    }
+
     if (role) {
       // Phase 3 ÉTAPE 6: accept both canonical PLATFORM_ADMIN and legacy SUPER_ADMIN.
       if (!VALID_ROLES.includes(role)) {
