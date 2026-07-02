@@ -67,3 +67,6 @@ server.log
 /db/*.db
 /db/*.db-journal
 /prisma/*.db
+
+# Local VPS deploy tool (contains no secrets, reads from env)
+/.zscripts/vps-ssh.py
