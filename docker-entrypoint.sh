@@ -29,11 +29,23 @@ chown -R nextjs:nodejs /app/logs 2>/dev/null || true
 echo "📦 Initializing database..."
 su-exec nextjs node init-db.js 2>/dev/null || node init-db.js
 
-echo "🔧 Syncing Prisma schema (db push)..."
-su-exec nextjs node node_modules/prisma/build/index.js db push --skip-generate --accept-data-loss 2>/dev/null \
-  || node node_modules/prisma/build/index.js db push --skip-generate --accept-data-loss 2>/dev/null \
-  || npx prisma db push --skip-generate --accept-data-loss 2>/dev/null \
-  || echo "⚠️ prisma db push failed — assuming schema is already in sync"
+echo "🔧 Running prisma migrate deploy..."
+su-exec nextjs node node_modules/prisma/build/index.js migrate deploy 2>/dev/null \
+  || node node_modules/prisma/build/index.js migrate deploy 2>/dev/null \
+  || npx prisma migrate deploy 2>/dev/null \
+  || {
+    echo "⚠️ migrate deploy failed — falling back to db push (no data loss)..."
+    su-exec nextjs node node_modules/prisma/build/index.js db push --skip-generate 2>/dev/null \
+      || node node_modules/prisma/build/index.js db push --skip-generate 2>/dev/null \
+      || npx prisma db push --skip-generate 2>/dev/null \
+      || echo "⚠️ prisma db push failed — assuming schema is already in sync"
+  }
+
+echo "🔧 Running prisma generate..."
+su-exec nextjs node node_modules/prisma/build/index.js generate 2>/dev/null \
+  || node node_modules/prisma/build/index.js generate 2>/dev/null \
+  || npx prisma generate 2>/dev/null \
+  || echo "⚠️ prisma generate failed — client may be stale"
 
 # Fix ownership again after init-db.js may have created new files
 chown -R nextjs:nodejs /app/db/ 2>/dev/null || true

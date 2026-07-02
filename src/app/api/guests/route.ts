@@ -5,6 +5,12 @@ import { getAuthUser, hasPermission } from '@/lib/auth';
 import { v4 as uuidv4 } from 'uuid';
 import { resolveAdminTenant, runWithTenant } from '@/lib/tenant-context';
 import { checkGuestLimit } from '@/lib/plan-limits';
+// P2-SEC-14 + P2-CQ-7: writeAuditLog populates ipAddress + userAgent from request.
+import { writeAuditLog } from '@/lib/audit';
+// P2-SEC-1: structured logger (no stack leak).
+import { logger } from '@/lib/logger';
+// P2-CQ-5: standardised API errors.
+import { internalError } from '@/lib/api-errors';
 
 export async function GET(request: NextRequest) {
   try {
@@ -21,15 +27,25 @@ export async function GET(request: NextRequest) {
 
     return runWithTenant(context, async () => {
       const { searchParams } = new URL(request.url);
-      const page = parseInt(searchParams.get('page') || '1', 10);
-      const limit = parseInt(searchParams.get('limit') || '20', 10);
+
+      // P2-PERF-14: cursor pagination support.
+      //   • ?cursor=<createdAtIso>&limit=N  → cursor mode (preferred, no COUNT)
+      //   • ?page=N&limit=N                 → offset mode (backwards-compat)
+      //   • ?limit=N (neither)              → cursor mode, first page
+      // The `limit` is clamped to [1, 100] in all modes to prevent abuse.
+      // Filters (status, category, tableId, search) are preserved across both
+      // modes and combined with the cursor predicate via Prisma's implicit AND.
+      const cursor = searchParams.get('cursor');
+      const limit = Math.min(
+        Math.max(parseInt(searchParams.get('limit') || '20', 10) || 20, 1),
+        100,
+      );
       const status = searchParams.get('status');
       const category = searchParams.get('category');
       const tableId = searchParams.get('tableId');
       const search = searchParams.get('search');
 
-      const skip = (page - 1) * limit;
-
+      // Shared where clause (used by both cursor + offset modes).
       const where: Record<string, unknown> = {};
       if (status) where.status = status;
       if (category) where.category = category;
@@ -44,23 +60,89 @@ export async function GET(request: NextRequest) {
       }
       // weddingId auto-injected by extension
 
-      const [guests, total] = await Promise.all([
-        tenantDb.guest.findMany({
-          where,
-          include: { table: { select: { id: true, name: true, number: true } } },
-          skip, take: limit,
-          orderBy: { createdAt: 'desc' },
-        }),
-        tenantDb.guest.count({ where }),
-      ]);
+      const include = { table: { select: { id: true, name: true, number: true } } };
 
-      return NextResponse.json({
-        guests,
-        pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
+      // ─── Cursor mode ─────────────────────────────────────────────────────
+      // We fetch `limit + 1` rows to detect `hasMore` without a COUNT query
+      // (COUNT(*) on SQLite with WHERE can be slow on large guest lists).
+      // The cursor is the `createdAt` ISO string of the last row of the
+      // previous page — combined with `orderBy: createdAt desc` this gives a
+      // stable, index-friendly seek.
+      if (cursor) {
+        const cursorDate = new Date(cursor);
+        if (isNaN(cursorDate.getTime())) {
+          return NextResponse.json(
+            { error: 'Invalid cursor (expected ISO 8601 date)' },
+            { status: 400 },
+          );
+        }
+        const guests = await tenantDb.guest.findMany({
+          where: { ...where, createdAt: { lt: cursorDate } },
+          include,
+          take: limit + 1,
+          orderBy: { createdAt: 'desc' },
+        });
+        const hasMore = guests.length > limit;
+        const trimmed = hasMore ? guests.slice(0, limit) : guests;
+        const nextCursor =
+          hasMore && trimmed.length > 0
+            ? trimmed[trimmed.length - 1].createdAt.toISOString()
+            : null;
+        return NextResponse.json({ guests: trimmed, nextCursor, hasMore });
+      }
+
+      // ─── Offset mode (backwards-compat) ──────────────────────────────────
+      // Existing clients call ?page=N&limit=N and expect
+      //   { guests, pagination: { page, limit, total, totalPages } }.
+      // We preserve that contract by default. Pass `includeTotal=false` to
+      // skip the COUNT(*) query when the client doesn't need totals (e.g.
+      // infinite-scroll UIs that already use the cursor mode above).
+      if (searchParams.has('page')) {
+        const page = Math.max(parseInt(searchParams.get('page') || '1', 10) || 1, 1);
+        const skip = (page - 1) * limit;
+        const includeTotal = searchParams.get('includeTotal') !== 'false';
+        const [guests, total] = await Promise.all([
+          tenantDb.guest.findMany({
+            where,
+            include,
+            skip,
+            take: limit,
+            orderBy: { createdAt: 'desc' },
+          }),
+          includeTotal ? tenantDb.guest.count({ where }) : Promise.resolve(undefined),
+        ]);
+        return NextResponse.json({
+          guests,
+          pagination: {
+            page,
+            limit,
+            total,
+            totalPages: typeof total === 'number' ? Math.ceil(total / limit) : undefined,
+          },
+        });
+      }
+
+      // ─── Default: cursor mode, first page ────────────────────────────────
+      const guests = await tenantDb.guest.findMany({
+        where,
+        include,
+        take: limit + 1,
+        orderBy: { createdAt: 'desc' },
       });
+      const hasMore = guests.length > limit;
+      const trimmed = hasMore ? guests.slice(0, limit) : guests;
+      const nextCursor =
+        hasMore && trimmed.length > 0
+          ? trimmed[trimmed.length - 1].createdAt.toISOString()
+          : null;
+      return NextResponse.json({ guests: trimmed, nextCursor, hasMore });
     });
   } catch (error) {
-    console.error('List guests error:', error);
+    // P2-SEC-1: never log error.stack.
+    logger.error('List guests error', {
+      errMessage: error instanceof Error ? error.message : String(error),
+      errName: error instanceof Error ? error.name : 'Unknown',
+    });
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
@@ -132,19 +214,21 @@ export async function POST(request: NextRequest) {
         include: { table: { select: { id: true, name: true, number: true } } },
       });
 
-      await db.auditLog.create({
-        data: {
-          weddingId: context.weddingId, userId: user.id,
-          action: 'CREATE_GUEST',
-          details: `Created guest ${firstName} ${lastName}`,
-        },
+      await writeAuditLog({
+        weddingId: context.weddingId, userId: user.id,
+        action: 'CREATE_GUEST',
+        details: `Created guest ${firstName} ${lastName}`,
+        request,
       });
 
       return NextResponse.json({ guest }, { status: 201 });
     });
   } catch (error) {
-    console.error('Create guest error:', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    logger.error('Create guest error', {
+      errMessage: error instanceof Error ? error.message : String(error),
+      errName: error instanceof Error ? error.name : 'Unknown',
+    });
+    return internalError();
   }
 }
 
@@ -207,19 +291,21 @@ export async function PUT(request: NextRequest) {
         include: { table: { select: { id: true, name: true, number: true } } },
       });
 
-      await db.auditLog.create({
-        data: {
-          weddingId: context.weddingId, userId: user.id,
-          action: 'UPDATE_GUEST',
-          details: `Updated guest ${existing.firstName} ${existing.lastName}`,
-        },
+      await writeAuditLog({
+        weddingId: context.weddingId, userId: user.id,
+        action: 'UPDATE_GUEST',
+        details: `Updated guest ${existing.firstName} ${existing.lastName}`,
+        request,
       });
 
       return NextResponse.json({ guest });
     });
   } catch (error) {
-    console.error('Update guest error:', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    logger.error('Update guest error', {
+      errMessage: error instanceof Error ? error.message : String(error),
+      errName: error instanceof Error ? error.name : 'Unknown',
+    });
+    return internalError();
   }
 }
 
@@ -246,18 +332,20 @@ export async function DELETE(request: NextRequest) {
 
       await tenantDb.guest.delete({ where: { id } });
 
-      await db.auditLog.create({
-        data: {
-          weddingId: context.weddingId, userId: user.id,
-          action: 'DELETE_GUEST',
-          details: `Deleted guest ${existing.firstName} ${existing.lastName}`,
-        },
+      await writeAuditLog({
+        weddingId: context.weddingId, userId: user.id,
+        action: 'DELETE_GUEST',
+        details: `Deleted guest ${existing.firstName} ${existing.lastName}`,
+        request,
       });
 
       return NextResponse.json({ message: 'Guest deleted successfully' });
     });
   } catch (error) {
-    console.error('Delete guest error:', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    logger.error('Delete guest error', {
+      errMessage: error instanceof Error ? error.message : String(error),
+      errName: error instanceof Error ? error.name : 'Unknown',
+    });
+    return internalError();
   }
 }

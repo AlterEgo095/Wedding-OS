@@ -4,13 +4,16 @@
 // Tenant-aware admin shell. Mirrors /admin/page.tsx exactly (same NAV_ITEMS,
 // same sidebar, same mobile responsive behavior, same panels) but:
 //
-//   1. On mount: read admin_token from localStorage. If missing → redirect to
-//      /w/{slug}/admin/login.
+//   1. On mount (P1-SEC-3): call /api/me to check auth status. If 401,
+//      redirect to /w/{slug}/admin/login.
 //   2. Installs a GLOBAL fetch interceptor (useEffect once per slug) that wraps
 //      window.fetch to auto-add the X-Wedding-Slug header on every /api/* call.
 //      This lets ALL existing admin components (Dashboard, GuestManager, …)
 //      work unchanged — they just call fetch('/api/…') and the interceptor
-//      attaches the tenant header transparently.
+//      attaches the tenant header transparently. The interceptor also auto-
+//      attaches the X-CSRF-Token header on state-changing requests (P1-SEC-7)
+//      and sets credentials: 'include' so the httpOnly auth_token cookie is
+//      sent automatically (P1-SEC-3).
 //   3. Sidebar shows the wedding's coupleLabel + the user's name.
 //   4. PLATFORM_ADMIN sees an extra "Plateforme" link to /platform/admin.
 //   5. visibleNavItems filter includes PLATFORM_ADMIN for superAdminOnly tabs.
@@ -105,27 +108,14 @@ export default function PerWeddingAdminPage() {
   const mounted = useSyncExternalStore(emptySubscribe, getTrue, getFalse)
 
   // ─── Auth state ────────────────────────────────────────────────────────────
-  // Lazy initializers read localStorage once on the client (matching the
-  // /admin/page.tsx pattern). On the server they return null. We don't access
-  // these in the render output until `mounted` is true, so there is no
-  // hydration mismatch.
-  const [token, setToken] = useState<string | null>(() => {
-    if (typeof window !== 'undefined') {
-      return localStorage.getItem('admin_token')
-    }
-    return null
-  })
-  const [user, setUser] = useState<AuthUser | null>(() => {
-    if (typeof window !== 'undefined') {
-      try {
-        const saved = localStorage.getItem('admin_user')
-        return saved ? (JSON.parse(saved) as AuthUser) : null
-      } catch {
-        return null
-      }
-    }
-    return null
-  })
+  // P1-SEC-3: token is no longer read from localStorage. We keep the `token`
+  // state for backwards-compat with child components (Dashboard, GuestManager,
+  // …) that still take a `token` prop and send `Authorization: Bearer ${token}`.
+  // The value is always `''` — the server's getTokenFromRequest falls back to
+  // the httpOnly auth_token cookie when the bearer value is empty.
+  const [token, setToken] = useState<string>('')
+  const [user, setUser] = useState<AuthUser | null>(null)
+  const [authChecked, setAuthChecked] = useState(false)
 
   const [activeTab, setActiveTab] = useState<TabId>('dashboard')
   const [sidebarOpen, setSidebarOpen] = useState(false)
@@ -136,6 +126,15 @@ export default function PerWeddingAdminPage() {
   // admin components like Dashboard, GuestManager, etc. fire their initial
   // /api/* requests. Otherwise the first fetch would silently fall back to
   // the default wedding and show wrong data.)
+  //
+  // P1-SEC-3: we no longer inject `Authorization: Bearer <token>` here. The
+  // httpOnly auth_token cookie is sent automatically on same-origin fetches
+  // (the default `credentials: 'same-origin'` setting). We DO still inject
+  // the X-Wedding-Slug header for tenant scoping.
+  //
+  // P1-SEC-7: we also inject the X-CSRF-Token header on state-changing
+  // requests (POST/PUT/DELETE/PATCH) by reading the csrf_token cookie
+  // (httpOnly=false, set by login or /api/csrf-token).
   useLayoutEffect(() => {
     const originalFetch = window.fetch
     window.fetch = (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
@@ -153,18 +152,25 @@ export default function PerWeddingAdminPage() {
         if (!headers.has('X-Wedding-Slug')) {
           headers.set('X-Wedding-Slug', slug)
         }
-        // Consolidation fix: also auto-attach the admin Bearer token from
-        // localStorage so components that don't receive an explicit `token`
-        // prop (ThemeCustomizer, PenpotStudio) can still call authenticated
-        // PUT/POST endpoints. Additive: if a component already sets
-        // Authorization (GuestManager, TableManager, etc.), we don't override.
-        if (!headers.has('Authorization')) {
-          const t = localStorage.getItem('admin_token')
-          if (t) {
-            headers.set('Authorization', `Bearer ${t}`)
+        // P1-SEC-7: auto-attach CSRF token on state-changing requests.
+        // Reads from the csrf_token cookie (httpOnly=false). If the cookie
+        // is missing (e.g. user navigated here without going through login
+        // — unlikely but possible), the server will reject with 403.
+        const method = (init?.method || 'GET').toUpperCase()
+        const isStateChanging =
+          method === 'POST' || method === 'PUT' || method === 'DELETE' || method === 'PATCH'
+        if (isStateChanging && !headers.has('X-CSRF-Token')) {
+          const csrfMatch = document.cookie
+            .split('; ')
+            .find((row) => row.startsWith('csrf_token='))
+          if (csrfMatch) {
+            const csrfToken = csrfMatch.split('=').slice(1).join('=')
+            if (csrfToken) headers.set('X-CSRF-Token', csrfToken)
           }
         }
-        init = { ...init, headers }
+        // P1-SEC-3: ensure credentials are included so the httpOnly auth
+        // cookie is sent.
+        init = { ...init, headers, credentials: 'include' }
       }
       return originalFetch(input as RequestInfo, init)
     }
@@ -174,21 +180,60 @@ export default function PerWeddingAdminPage() {
     }
   }, [slug])
 
-  // ─── Mount: redirect if no token (separate from interceptor so the
-  // interceptor installs synchronously regardless of auth state)
+  // ─── Mount: check auth via /api/me. If not authed, redirect to login.
+  // (Separate from the interceptor so the interceptor installs synchronously
+  // regardless of auth state.)
   useEffect(() => {
-    if (!token || !user) {
+    let cancelled = false
+    ;(async () => {
+      try {
+        const res = await fetch('/api/me', { credentials: 'include' })
+        if (cancelled) return
+        if (res.ok) {
+          const data = await res.json()
+          if (data?.user) {
+            setUser(data.user as AuthUser)
+            setToken('') // empty — server uses cookie
+            try {
+              localStorage.setItem('admin_user', JSON.stringify(data.user))
+            } catch {
+              /* ignore */
+            }
+          }
+        }
+      } catch {
+        /* network error — leave user as null */
+      } finally {
+        if (!cancelled) setAuthChecked(true)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [])
+
+  // Redirect to login if not authenticated (after the /api/me check completes).
+  useEffect(() => {
+    if (!authChecked) return
+    if (!user) {
       router.replace(`/w/${slug}/admin/login`)
-      return
     }
-  }, [slug, router, token, user])
+  }, [authChecked, user, slug, router])
 
   // ─── Handlers ──────────────────────────────────────────────────────────────
   const handleLogout = useCallback(
-    (showMessage = true) => {
-      localStorage.removeItem('admin_token')
-      localStorage.removeItem('admin_user')
-      setToken(null)
+    async (showMessage = true) => {
+      // Best-effort server-side logout (clears httpOnly + CSRF cookies).
+      try {
+        await fetch('/api/admin/logout', { method: 'POST', credentials: 'include' })
+      } catch {
+        /* ignore */
+      }
+      try {
+        localStorage.removeItem('admin_token') // legacy cleanup (no-op if empty)
+        localStorage.removeItem('admin_user')
+      } catch {
+        /* ignore */
+      }
+      setToken('')
       setUser(null)
       if (showMessage) toast.success('Déconnexion réussie')
       router.replace(`/w/${slug}/admin/login`)
@@ -199,9 +244,13 @@ export default function PerWeddingAdminPage() {
   const handleSessionExpired = useCallback(() => {
     if (sessionExpiredRef.current) return
     sessionExpiredRef.current = true
-    localStorage.removeItem('admin_token')
-    localStorage.removeItem('admin_user')
-    setToken(null)
+    try {
+      localStorage.removeItem('admin_token') // legacy cleanup
+      localStorage.removeItem('admin_user')
+    } catch {
+      /* ignore */
+    }
+    setToken('')
     setUser(null)
     toast.error('Session expirée, veuillez vous reconnecter')
     router.replace(`/w/${slug}/admin/login`)
@@ -262,7 +311,7 @@ export default function PerWeddingAdminPage() {
   const coupleLabel = wedding.coupleLabel || slug
 
   // ─── Loading screen during SSR / hydration / missing-token window ──────────
-  if (!mounted || !token || !user) {
+  if (!mounted || !authChecked || !token || !user) {
     return (
       <div
         className="h-screen flex flex-col items-center justify-center gap-4"

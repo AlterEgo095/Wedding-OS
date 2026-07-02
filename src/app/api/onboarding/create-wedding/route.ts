@@ -575,7 +575,24 @@ async function createWeddingHandler(request: NextRequest) {
       },
       { status: 201 },
     );
-  } catch (error) {
+  } catch (error: unknown) {
+    // P1-CQ-18: catch unique-constraint violations (email already exists).
+    // The most likely cause is a duplicate organizer email — the wizard does
+    // a pre-flight findUnique but two concurrent onboarding submissions with
+    // the same email can both pass the check (TOCTOU window). The slug check
+    // is inside the tx so it can't race here, but the email check is done
+    // outside the tx — handle the race gracefully.
+    if (
+      typeof error === 'object' &&
+      error !== null &&
+      'code' in error &&
+      (error as { code: string }).code === 'P2002'
+    ) {
+      return NextResponse.json(
+        { error: 'Cet email est déjà utilisé' },
+        { status: 409 },
+      );
+    }
     // P2-SEC-1: never log error.stack.
     logger.error('Create wedding (onboarding wizard) error', {
       errMessage: error instanceof Error ? error.message : String(error),

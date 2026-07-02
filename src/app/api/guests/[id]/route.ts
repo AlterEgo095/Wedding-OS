@@ -8,6 +8,8 @@ import { resolveAdminTenant, resolvePublicTenant, runWithTenant } from '@/lib/te
 import { logger } from '@/lib/logger';
 // P2-CQ-5: standardised API errors.
 import { internalError, badRequest } from '@/lib/api-errors';
+// P2-SEC-14 + P2-CQ-7: writeAuditLog populates ipAddress + userAgent from request.
+import { writeAuditLog } from '@/lib/audit';
 
 export async function GET(
   request: NextRequest,
@@ -141,12 +143,11 @@ export async function PUT(
         include: { table: { select: { id: true, name: true, number: true } } },
       });
 
-      await db.auditLog.create({
-        data: {
-          weddingId: context.weddingId, userId: user.id,
-          action: 'UPDATE_GUEST',
-          details: `Updated guest ${existing.firstName} ${existing.lastName}`,
-        },
+      await writeAuditLog({
+        weddingId: context.weddingId, userId: user.id,
+        action: 'UPDATE_GUEST',
+        details: `Updated guest ${existing.firstName} ${existing.lastName}`,
+        request,
       });
 
       return NextResponse.json({ guest });
@@ -184,12 +185,11 @@ export async function DELETE(
 
       await tenantDb.guest.delete({ where: { id } });
 
-      await db.auditLog.create({
-        data: {
-          weddingId: context.weddingId, userId: user.id,
-          action: 'DELETE_GUEST',
-          details: `Deleted guest ${existing.firstName} ${existing.lastName}`,
-        },
+      await writeAuditLog({
+        weddingId: context.weddingId, userId: user.id,
+        action: 'DELETE_GUEST',
+        details: `Deleted guest ${existing.firstName} ${existing.lastName}`,
+        request,
       });
 
       return NextResponse.json({ message: 'Guest deleted successfully' });

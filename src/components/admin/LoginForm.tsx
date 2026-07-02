@@ -8,8 +8,22 @@ import { Label } from '@/components/ui/label'
 import { Crown, Mail, Lock, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 
+interface AuthUser {
+  id: string
+  email: string
+  name: string
+  role: string
+  weddingId?: string | null
+}
+
 interface LoginFormProps {
-  onLogin: (token: string, user: { id: string; email: string; name: string; role: string }) => void
+  /**
+   * Called after a successful login. The auth_token httpOnly cookie is
+   * already set by the server (P1-SEC-3) — the client no longer needs to
+   * store or pass a token. The `user` argument lets the parent component
+   * update its in-memory user state (for sidebar display, role checks, etc.).
+   */
+  onLogin: (user: AuthUser) => void
 }
 
 /**
@@ -50,10 +64,11 @@ export default function LoginForm({ onLogin }: LoginFormProps) {
       const res = await fetch('/api/admin/login', {
         method: 'POST',
         headers,
+        credentials: 'include', // P1-SEC-3: send + receive the httpOnly auth cookie.
         body: JSON.stringify({ email, password }),
       })
 
-      const data = await res.json()
+      const data = await res.json().catch(() => ({} as { error?: string; user?: AuthUser }))
 
       if (!res.ok) {
         setError(data.error || 'Erreur de connexion')
@@ -61,10 +76,19 @@ export default function LoginForm({ onLogin }: LoginFormProps) {
         return
       }
 
-      localStorage.setItem('admin_token', data.token)
-      localStorage.setItem('admin_user', JSON.stringify(data.user))
-      toast.success(`Bienvenue, ${data.user.name} !`)
-      onLogin(data.token, data.user)
+      // P1-SEC-3: NO `admin_token` localStorage write — the httpOnly cookie
+      // set by the server is the secure auth path. We keep `admin_user` in
+      // localStorage for UI display only (sidebar name + role), NOT for
+      // authentication.
+      if (data.user) {
+        try {
+          localStorage.setItem('admin_user', JSON.stringify(data.user))
+        } catch {
+          /* ignore — localStorage may be disabled (private mode) */
+        }
+      }
+      toast.success(`Bienvenue, ${data.user?.name || 'Administrateur'} !`)
+      onLogin(data.user as AuthUser)
     } catch {
       setError('Erreur de connexion au serveur')
       toast.error('Erreur de connexion au serveur')

@@ -4,6 +4,9 @@ import { db } from '@/lib/db';
 import { getAuthUser, hasPermission } from '@/lib/auth';
 import { withPublicTenant, withAdminTenantHandler } from '@/lib/tenant-context';
 import { validateCustomDomain, planSupportsCustomDomain } from '@/lib/custom-domains';
+import { getClientInfo } from '@/lib/guest-auth';
+import { badRequest, internalError } from '@/lib/api-errors';
+import { logger } from '@/lib/logger';
 
 // GET /api/custom-domain — public, returns the custom domain config for the resolved wedding
 export const GET = withPublicTenant(async (_req, ctx) => {
@@ -19,8 +22,11 @@ export const GET = withPublicTenant(async (_req, ctx) => {
       canUseCustomDomain: planSupportsCustomDomain(wedding?.plan ?? ctx.plan),
     });
   } catch (error) {
-    console.error('Get custom domain error:', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    logger.error('get-custom-domain failed', {
+      errMessage: error instanceof Error ? error.message : String(error),
+      errName: error instanceof Error ? error.name : 'Unknown',
+    });
+    return internalError();
   }
 });
 
@@ -34,11 +40,12 @@ export async function PUT(request: NextRequest) {
     }
 
     return withAdminTenantHandler(request, user, async (_req, ctx) => {
-      const body = await request.json();
+      const body = await request.json().catch(() => null); // P2-CQ-6
+      if (!body) return badRequest('Corps de requête invalide');
       const { domain } = body as { domain?: string };
 
       if (!domain) {
-        return NextResponse.json({ error: 'Le domaine est requis' }, { status: 400 });
+        return badRequest('Le domaine est requis');
       }
 
       // Check plan supports custom domain
@@ -76,18 +83,26 @@ export async function PUT(request: NextRequest) {
         );
       }
 
-      await db.wedding.update({
-        where: { id: ctx.weddingId },
-        data: { customDomain: normalizedDomain },
-      });
+      // P2-CQ-7: resolve IP/UA before the tx.
+      const client = getClientInfo(request);
 
-      await db.auditLog.create({
-        data: {
-          weddingId: ctx.weddingId,
-          userId: user.id,
-          action: 'SET_CUSTOM_DOMAIN',
-          details: `Custom domain set: ${normalizedDomain}`,
-        },
+      // P1-CQ-17: wedding.update + auditLog.create in a single tx.
+      await db.$transaction(async (tx) => {
+        await tx.wedding.update({
+          where: { id: ctx.weddingId },
+          data: { customDomain: normalizedDomain },
+        });
+
+        await tx.auditLog.create({
+          data: {
+            weddingId: ctx.weddingId,
+            userId: user.id,
+            action: 'SET_CUSTOM_DOMAIN',
+            details: `Custom domain set: ${normalizedDomain}`,
+            ipAddress: client.ipAddress ?? null,
+            userAgent: client.userAgent ?? null,
+          },
+        });
       });
 
       return NextResponse.json({
@@ -97,8 +112,11 @@ export async function PUT(request: NextRequest) {
       });
     });
   } catch (error) {
-    console.error('Set custom domain error:', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    logger.error('set-custom-domain failed', {
+      errMessage: error instanceof Error ? error.message : String(error),
+      errName: error instanceof Error ? error.name : 'Unknown',
+    });
+    return internalError();
   }
 }
 
@@ -112,24 +130,35 @@ export async function DELETE(request: NextRequest) {
     }
 
     return withAdminTenantHandler(request, user, async (_req, ctx) => {
-      await db.wedding.update({
-        where: { id: ctx.weddingId },
-        data: { customDomain: null },
-      });
+      // P2-CQ-7: resolve IP/UA before the tx.
+      const client = getClientInfo(request);
 
-      await db.auditLog.create({
-        data: {
-          weddingId: ctx.weddingId,
-          userId: user.id,
-          action: 'CLEAR_CUSTOM_DOMAIN',
-          details: 'Custom domain cleared',
-        },
+      // P1-CQ-17: wedding.update + auditLog.create in a single tx.
+      await db.$transaction(async (tx) => {
+        await tx.wedding.update({
+          where: { id: ctx.weddingId },
+          data: { customDomain: null },
+        });
+
+        await tx.auditLog.create({
+          data: {
+            weddingId: ctx.weddingId,
+            userId: user.id,
+            action: 'CLEAR_CUSTOM_DOMAIN',
+            details: 'Custom domain cleared',
+            ipAddress: client.ipAddress ?? null,
+            userAgent: client.userAgent ?? null,
+          },
+        });
       });
 
       return NextResponse.json({ customDomain: null });
     });
   } catch (error) {
-    console.error('Clear custom domain error:', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    logger.error('clear-custom-domain failed', {
+      errMessage: error instanceof Error ? error.message : String(error),
+      errName: error instanceof Error ? error.name : 'Unknown',
+    });
+    return internalError();
   }
 }

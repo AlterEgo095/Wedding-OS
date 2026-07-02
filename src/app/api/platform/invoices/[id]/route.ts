@@ -5,6 +5,10 @@ import { getAuthUser, requirePlatformAdmin } from '@/lib/auth';
 import { invalidateWeddingCache } from '@/lib/tenant-context';
 import { isValidPaymentMethod } from '@/lib/billing';
 import type { Plan } from '@/lib/types';
+// P2-CQ-5: standardised API errors.
+import { badRequest } from '@/lib/api-errors';
+// P2-CQ-7: writeAuditLog populates ipAddress + userAgent from request.
+import { writeAuditLog } from '@/lib/audit';
 
 /**
  * PUT /api/platform/invoices/{id}
@@ -77,7 +81,8 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    const body = await request.json();
+    const body = await request.json().catch(() => null); // P2-CQ-6
+    if (!body) return badRequest('Corps de requête invalide');
     const { status, paymentMethod, whatsappPhone, notes, amountPaid } = body;
 
     if (status !== undefined && !['OPEN', 'PAID', 'VOID'].includes(status)) {
@@ -187,13 +192,13 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       status === 'PAID' ? 'INVOICE_MARKED_PAID'
       : status === 'VOID' ? 'INVOICE_VOIDED'
       : 'UPDATE_INVOICE';
-    await db.auditLog.create({
-      data: {
-        weddingId: invoice.weddingId,
-        userId: user!.id,
-        action,
-        details: `Invoice ${id} ${status === 'PAID' ? 'marked paid' : status === 'VOID' ? 'voided' : 'updated'} ($${(invoice.amountDue / 100).toFixed(2)} ${updated.currency})`,
-      },
+    // P2-CQ-7: writeAuditLog populates ipAddress + userAgent from request.
+    await writeAuditLog({
+      weddingId: invoice.weddingId,
+      userId: user!.id,
+      action,
+      details: `Invoice ${id} ${status === 'PAID' ? 'marked paid' : status === 'VOID' ? 'voided' : 'updated'} ($${(invoice.amountDue / 100).toFixed(2)} ${updated.currency})`,
+      request,
     });
 
     return NextResponse.json({ invoice: updated });

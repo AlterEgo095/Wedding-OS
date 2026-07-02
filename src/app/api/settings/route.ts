@@ -1,5 +1,6 @@
-export const dynamic = "force-dynamic";
+export const revalidate = 60; // P2-PERF-10: ISR — public settings cached 60s, invalidated on mutation
 import { NextRequest, NextResponse } from 'next/server';
+import { revalidatePath } from 'next/cache';
 import { db, tenantDb } from '@/lib/db';
 import { getAuthUser, hasPermission } from '@/lib/auth';
 import { withPublicTenant, withAdminTenantHandler } from '@/lib/tenant-context';
@@ -7,6 +8,8 @@ import { withPublicTenant, withAdminTenantHandler } from '@/lib/tenant-context';
 import { logger } from '@/lib/logger';
 // P2-CQ-5: standardised API errors.
 import { internalError, badRequest } from '@/lib/api-errors';
+// P2-SEC-14 + P2-CQ-7: writeAuditLog populates ipAddress + userAgent from request.
+import { writeAuditLog } from '@/lib/audit';
 
 // GET /api/settings — public, returns all settings for the resolved wedding
 export const GET = withPublicTenant(async (_req, ctx) => {
@@ -58,14 +61,21 @@ export async function PUT(request: NextRequest) {
       );
       await Promise.all(upsertPromises);
 
-      await db.auditLog.create({
-        data: {
-          weddingId: ctx.weddingId,
-          userId: user.id,
-          action: 'UPDATE_SETTINGS',
-          details: `Updated ${Object.keys(settings).length} settings`,
-        },
+      await writeAuditLog({
+        weddingId: ctx.weddingId,
+        userId: user.id,
+        action: 'UPDATE_SETTINGS',
+        details: `Updated ${Object.keys(settings).length} settings`,
+        request,
       });
+
+      // P2-PERF-10: invalidate ISR caches for this resource + public pages.
+      // Settings drive the homepage layout (couple names, dates, theme), so we
+      // revalidate the public wedding page + invite page + homepage too.
+      revalidatePath('/api/settings');
+      revalidatePath('/w/[slug]', 'page');
+      revalidatePath('/w/[slug]/invite/[code]', 'page');
+      revalidatePath('/');
 
       const updatedSettings = await tenantDb.settings.findMany({ orderBy: { key: 'asc' } });
       const settingsMap: Record<string, string> = {};

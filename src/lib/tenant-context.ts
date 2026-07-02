@@ -20,8 +20,22 @@
 
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { NextRequest } from 'next/server';
-import { db } from './db';
 import { DEFAULT_WEDDING_SLUG, isPlatformAdmin } from './types';
+
+// ─── Lazy db getter (breaks circular import) ─────────────────────────────────
+// Cycle was: db.ts → tenant-scoped.ts → tenant-context.ts → db.ts
+// `db` is only referenced inside async functions (resolveWeddingBySlug,
+// resolveAdminTenant), never at module top-level. We therefore defer the
+// dynamic import until first use. After the first call, the promise is cached
+// so subsequent calls incur only a single microtask hop (negligible compared
+// to a DB round-trip).
+let _dbPromise: Promise<typeof import('./db').db> | null = null;
+function getDb(): Promise<typeof import('./db').db> {
+  if (!_dbPromise) {
+    _dbPromise = import('./db').then((m) => m.db);
+  }
+  return _dbPromise;
+}
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -113,6 +127,7 @@ export async function resolveWeddingBySlug(slug: string): Promise<CachedWedding 
     return cached;
   }
 
+  const db = await getDb();
   const wedding = await db.wedding.findUnique({
     where: { slug: normalizedSlug },
     select: {
@@ -296,6 +311,7 @@ export async function resolveAdminTenant(
       };
     }
     // Need slug for context — fetch wedding by ID
+    const db = await getDb();
     const wedding = await db.wedding.findUnique({
       where: { id: user.weddingId },
       select: {

@@ -1,5 +1,6 @@
-export const dynamic = "force-dynamic";
+export const revalidate = 60; // P2-PERF-10: ISR — public couple-story cached 60s, invalidated on mutation
 import { NextRequest, NextResponse } from 'next/server';
+import { revalidatePath } from 'next/cache';
 import { db, tenantDb } from '@/lib/db';
 import { getAuthUser, hasPermission } from '@/lib/auth';
 import { withPublicTenant, withAdminTenantHandler } from '@/lib/tenant-context';
@@ -7,11 +8,14 @@ import { withPublicTenant, withAdminTenantHandler } from '@/lib/tenant-context';
 import { logger } from '@/lib/logger';
 // P2-CQ-5: standardised API errors.
 import { internalError, badRequest } from '@/lib/api-errors';
+// P2-SEC-14 + P2-CQ-7: writeAuditLog populates ipAddress + userAgent from request.
+import { writeAuditLog } from '@/lib/audit';
 
 export const GET = withPublicTenant(async (_req, _ctx) => {
   try {
     const stories = await tenantDb.coupleStory.findMany({
       orderBy: { order: 'asc' },
+      take: 50, // P2-PERF-4: bound public list to avoid unbounded scans
       // weddingId auto-injected
     });
     return NextResponse.json({ stories });
@@ -51,13 +55,18 @@ export async function POST(request: NextRequest) {
         },
       });
 
-      await db.auditLog.create({
-        data: {
-          weddingId: ctx.weddingId, userId: user.id,
-          action: 'CREATE_COUPLE_STORY',
-          details: `Created couple story: ${title}`,
-        },
+      await writeAuditLog({
+        weddingId: ctx.weddingId, userId: user.id,
+        action: 'CREATE_COUPLE_STORY',
+        details: `Created couple story: ${title}`,
+        request,
       });
+
+      // P2-PERF-10: invalidate ISR caches for this resource + public pages.
+      revalidatePath('/api/couple-story');
+      revalidatePath('/w/[slug]', 'page');
+      revalidatePath('/w/[slug]/invite/[code]', 'page');
+      revalidatePath('/');
 
       return NextResponse.json({ story }, { status: 201 });
     });
@@ -97,13 +106,18 @@ export async function PUT(request: NextRequest) {
 
       const story = await tenantDb.coupleStory.update({ where: { id }, data: updateData });
 
-      await db.auditLog.create({
-        data: {
-          weddingId: ctx.weddingId, userId: user.id,
-          action: 'UPDATE_COUPLE_STORY',
-          details: `Updated couple story: ${existing.title}`,
-        },
+      await writeAuditLog({
+        weddingId: ctx.weddingId, userId: user.id,
+        action: 'UPDATE_COUPLE_STORY',
+        details: `Updated couple story: ${existing.title}`,
+        request,
       });
+
+      // P2-PERF-10: invalidate ISR caches for this resource + public pages.
+      revalidatePath('/api/couple-story');
+      revalidatePath('/w/[slug]', 'page');
+      revalidatePath('/w/[slug]/invite/[code]', 'page');
+      revalidatePath('/');
 
       return NextResponse.json({ story });
     });
@@ -135,13 +149,18 @@ export async function DELETE(request: NextRequest) {
 
       await tenantDb.coupleStory.delete({ where: { id } });
 
-      await db.auditLog.create({
-        data: {
-          weddingId: ctx.weddingId, userId: user.id,
-          action: 'DELETE_COUPLE_STORY',
-          details: `Deleted couple story: ${existing.title}`,
-        },
+      await writeAuditLog({
+        weddingId: ctx.weddingId, userId: user.id,
+        action: 'DELETE_COUPLE_STORY',
+        details: `Deleted couple story: ${existing.title}`,
+        request,
       });
+
+      // P2-PERF-10: invalidate ISR caches for this resource + public pages.
+      revalidatePath('/api/couple-story');
+      revalidatePath('/w/[slug]', 'page');
+      revalidatePath('/w/[slug]/invite/[code]', 'page');
+      revalidatePath('/');
 
       return NextResponse.json({ message: 'Couple story deleted successfully' });
     });

@@ -12,10 +12,17 @@ import {
 import { getAuthUser, hasPermission } from '@/lib/auth';
 import { resolvePublicTenant, runWithTenant, resolveAdminTenant } from '@/lib/tenant-context';
 import { logger } from '@/lib/logger'; // P2-SEC-1 — never log error.stack
-import { internalError } from '@/lib/api-errors'; // P2-CQ-5
+import { internalError, badRequest } from '@/lib/api-errors'; // P2-CQ-5
 
 // GET /api/guest/invite?token=ENCRYPTED_TOKEN
 // Public: Validates an encrypted invitation link token and auto-authenticates the guest
+//
+// P2-SEC-5 (token in URL): the token is now accepted from EITHER the
+// `invite_token` short-lived cookie (preferred — never logged in access
+// logs) OR the URL query param `?token=...` (kept for backwards compat
+// with invitation links already sent by email/SMS). The response always
+// carries `Referrer-Policy: no-referrer` so the token in the URL (if any)
+// is not leaked to third-party sites via the Referer header.
 export async function GET(request: NextRequest) {
   const { context, error: tenantError } = await resolvePublicTenant(request);
   if (tenantError || !context) {
@@ -28,13 +35,22 @@ export async function GET(request: NextRequest) {
   return runWithTenant(context, async () => {
     try {
       const { searchParams } = new URL(request.url);
-      const linkToken = searchParams.get('token');
+
+      // ── P2-SEC-5: accept token from cookie OR URL query ───────────────────
+      // Priority: cookie > query. Cookie is read synchronously; query is
+      // kept for backwards compat with invitation links already sent.
+      const cookieToken = request.cookies.get('invite_token')?.value;
+      const queryToken = searchParams.get('token');
+      const linkToken = cookieToken || queryToken;
 
       if (!linkToken) {
-        return NextResponse.json(
+        const response = NextResponse.json(
           { error: 'Token d\'invitation requis', authenticated: false },
           { status: 400 }
         );
+        // P2-SEC-5: don't leak a potential token via Referer on a redirect.
+        response.headers.set('Referrer-Policy', 'no-referrer');
+        return response;
       }
 
       const clientInfo = getClientInfo(request);
@@ -47,10 +63,13 @@ export async function GET(request: NextRequest) {
           details: 'Invalid or tampered invitation link token',
           ...clientInfo,
         });
-        return NextResponse.json(
+        const response = NextResponse.json(
           { error: 'Cette invitation est privée et exclusivement réservée à son titulaire.', authenticated: false },
           { status: 403 }
         );
+        response.headers.set('Referrer-Policy', 'no-referrer');
+        response.cookies.delete('invite_token');
+        return response;
       }
 
       // findFirst auto-scoped by tenant extension
@@ -65,10 +84,13 @@ export async function GET(request: NextRequest) {
           details: `Invitation link for non-existent code: ${invitationCode.substring(0, 2)}***`,
           ...clientInfo,
         });
-        return NextResponse.json(
+        const response = NextResponse.json(
           { error: 'Cette invitation est privée et exclusivement réservée à son titulaire.', authenticated: false },
           { status: 403 }
         );
+        response.headers.set('Referrer-Policy', 'no-referrer');
+        response.cookies.delete('invite_token');
+        return response;
       }
 
       // Check if guest already has an active session
@@ -84,7 +106,7 @@ export async function GET(request: NextRequest) {
         });
 
         const encryptedLink = generateInvitationLinkToken(guest.invitationCode);
-        return NextResponse.json({
+        const response = NextResponse.json({
           success: true, authenticated: true,
           guest: {
             id: guest.id, firstName: guest.firstName, lastName: guest.lastName,
@@ -95,6 +117,9 @@ export async function GET(request: NextRequest) {
             table: guest.table, encryptedLink,
           },
         });
+        response.headers.set('Referrer-Policy', 'no-referrer');
+        response.cookies.delete('invite_token');
+        return response;
       }
 
       const session = await createGuestSession(guest.id, guest.invitationCode, clientInfo.userAgent, clientInfo.ipAddress);
@@ -127,6 +152,11 @@ export async function GET(request: NextRequest) {
 
       // P2-SEC-4 + P2-CQ-21: shared cookie helper ensures sameSite='strict'.
       setGuestSessionCookie(response, session.token);
+      // P2-SEC-5: never leak the token via Referer on subsequent navigations.
+      response.headers.set('Referrer-Policy', 'no-referrer');
+      // Clear the short-lived invite_token cookie — the guest now has a
+      // proper guest_session cookie; the invite_token is no longer needed.
+      response.cookies.delete('invite_token');
 
       return response;
     } catch (error) {
@@ -136,7 +166,9 @@ export async function GET(request: NextRequest) {
         errMessage: error instanceof Error ? error.message : String(error),
         errName: error instanceof Error ? error.name : 'Unknown',
       });
-      return internalError();
+      const response = internalError();
+      response.headers.set('Referrer-Policy', 'no-referrer');
+      return response;
     }
   });
 }
@@ -156,7 +188,8 @@ export async function POST(request: NextRequest) {
     }
 
     return runWithTenant(context, async () => {
-      const body = await request.json();
+      const body = await request.json().catch(() => null); // P2-CQ-6
+      if (!body) return badRequest('Corps de requête invalide');
       const { invitationCode, guestId } = body;
 
       let code = invitationCode;

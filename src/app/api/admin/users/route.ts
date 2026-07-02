@@ -17,6 +17,8 @@ import { logger } from '@/lib/logger';
 import { internalError } from '@/lib/api-errors';
 // P2-SEC-14: writeAuditLog populates ipAddress + userAgent from request.
 import { writeAuditLog } from '@/lib/audit';
+// P2-CQ-7: getClientInfo to resolve IP/UA for tx-scoped audit writes.
+import { getClientInfo } from '@/lib/guest-auth';
 
 // AdminUser is platform-level (not tenant-scoped) — SUPER_ADMIN has weddingId=null.
 // However, non-SUPER_ADMIN users can only see users in their own wedding.
@@ -135,27 +137,55 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const newUser = await db.adminUser.create({
-      data: {
-        email: email.toLowerCase(),
-        password: hashedPassword,
-        name, role,
-        weddingId: assignedWeddingId,
-      },
-      select: { id: true, email: true, name: true, role: true, weddingId: true, createdAt: true, updatedAt: true },
-    });
+    // P2-CQ-7: resolve IP/UA before the tx so the tx-scoped auditLog.create
+    // can capture them in a single row (no second writeAuditLog needed).
+    const client = getClientInfo(request);
 
-    // P2-SEC-14: writeAuditLog populates ipAddress + userAgent from request.
-    await writeAuditLog({
-      weddingId: assignedWeddingId, // null for SUPER_ADMIN
-      userId: user.id,
-      action: 'CREATE_USER',
-      details: `Created user ${email} (role: ${role})`,
-      request,
+    // P1-CQ-17: user create + audit log in a single tx — if the audit write
+    // fails, the user creation rolls back too (no orphan user without an
+    // audit trail).
+    const newUser = await db.$transaction(async (tx) => {
+      const created = await tx.adminUser.create({
+        data: {
+          email: email.toLowerCase(),
+          password: hashedPassword,
+          name, role,
+          weddingId: assignedWeddingId,
+        },
+        select: { id: true, email: true, name: true, role: true, weddingId: true, createdAt: true, updatedAt: true },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          weddingId: assignedWeddingId, // null for SUPER_ADMIN
+          userId: user.id,
+          action: 'CREATE_USER',
+          details: `Created user ${email} (role: ${role})`,
+          ipAddress: client.ipAddress ?? null,
+          userAgent: client.userAgent ?? null,
+        },
+      });
+
+      return created;
     });
 
     return NextResponse.json({ user: newUser }, { status: 201 });
-  } catch (error) {
+  } catch (error: unknown) {
+    // P1-CQ-18: catch unique-constraint violations (email already exists).
+    // The pre-flight findUnique above is a TOCTOU race window — two
+    // concurrent POSTs with the same email can both pass the check and the
+    // second create() throws P2002. Catch it and return 409 instead of 500.
+    if (
+      typeof error === 'object' &&
+      error !== null &&
+      'code' in error &&
+      (error as { code: string }).code === 'P2002'
+    ) {
+      return NextResponse.json(
+        { error: 'Cet email est déjà utilisé' },
+        { status: 409 }
+      );
+    }
     // P2-SEC-1: never log error.stack.
     logger.error('Create user error', {
       errMessage: error instanceof Error ? error.message : String(error),
@@ -212,22 +242,39 @@ export async function PUT(request: NextRequest) {
     if (weddingId !== undefined) updateData.weddingId = weddingId;
     if (password) updateData.password = await hashPassword(password);
 
-    const updatedUser = await db.adminUser.update({
-      where: { id }, data: updateData,
-      select: { id: true, email: true, name: true, role: true, weddingId: true, createdAt: true, updatedAt: true },
-    });
+    // P2-CQ-7: resolve IP/UA before the tx.
+    const client = getClientInfo(request);
 
-    // P2-SEC-14: writeAuditLog populates ipAddress + userAgent from request.
-    await writeAuditLog({
-      weddingId: updatedUser.weddingId,
-      userId: user.id,
-      action: 'UPDATE_USER',
-      details: `Updated user ${existing.email}`,
-      request,
+    // P1-CQ-17: user update + audit log in a single tx.
+    const updatedUser = await db.$transaction(async (tx) => {
+      const updated = await tx.adminUser.update({
+        where: { id }, data: updateData,
+        select: { id: true, email: true, name: true, role: true, weddingId: true, createdAt: true, updatedAt: true },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          weddingId: updated.weddingId,
+          userId: user.id,
+          action: 'UPDATE_USER',
+          details: `Updated user ${existing.email}`,
+          ipAddress: client.ipAddress ?? null,
+          userAgent: client.userAgent ?? null,
+        },
+      });
+
+      return updated;
     });
 
     return NextResponse.json({ user: updatedUser });
-  } catch (error) {
+  } catch (error: any) {
+    // P1-CQ-18: P2002 on update = email collision with another user.
+    if (error?.code === 'P2002') {
+      return NextResponse.json(
+        { error: 'Cet email est déjà utilisé' },
+        { status: 409 }
+      );
+    }
     // P2-SEC-1: never log error.stack.
     logger.error('Update user error', {
       errMessage: error instanceof Error ? error.message : String(error),

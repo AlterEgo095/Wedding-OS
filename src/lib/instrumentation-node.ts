@@ -14,6 +14,7 @@
  */
 
 import { registerTokenReplayCacheCleanup, unregisterTokenReplayCacheCleanup } from "./guest-auth";
+import { captureException } from "./sentry";
 
 let shuttingDown = false;
 let intervals: ReturnType<typeof setInterval>[] = [];
@@ -58,12 +59,12 @@ export function register() {
 
   // ─── Uncaught error handlers ────────────────────────────────────────────
   process.on("uncaughtException", (err) => {
-    console.error("[instrumentation] uncaughtException:", err);
+    captureException(err, { source: "uncaughtException" });
     process.exitCode = 1;
   });
 
   process.on("unhandledRejection", (reason) => {
-    console.error("[instrumentation] unhandledRejection:", reason);
+    captureException(reason, { source: "unhandledRejection" });
     process.exitCode = 1;
   });
 }
