@@ -298,5 +298,316 @@
   6797→- PHASE E (Nettoyage) ✅: 658 LOC of dead components removed (MarketingSection.tsx, CoupleGallery.tsx, CouplePhotosSection.tsx). No broken imports. InvitationCard.tsx kept (still used as fallback in GuestSearch).
   6798→- FILES MODIFIED: 6 files (prisma/schema.prisma, src/lib/prisma-extensions/tenant-scoped.ts, src/app/api/collections/deploy/route.ts, src/components/collections/designs/DesignRenderer.tsx, src/components/collections/CollectionsShowcase.tsx, src/components/GuestSearch.tsx).
   6799→- FILES DELETED: 3 files (src/components/MarketingSection.tsx, src/components/CoupleGallery.tsx, src/components/CouplePhotosSection.tsx).
+  6800→- CONSTRAINTS COMPLIANCE: ✅ No regression (homepage + modal + deploy all work). ✅ Additive-only on schema (nullable fields + new model — existing weddings unaffected). ✅ No breaking change to other admin UIs. ✅ Browser-verified end-to-end. ✅ Auth check enforced. ✅ Hardcoded couple identity eliminated. ✅ Collection is now the master entity referenced by Wedding. ✅ Deploy button is wired and persists binding + applies theme. ✅ Dead code removed.
+  6801→
+  6802→---
+  6803→Task ID: AUDIT-CERTIFICATION-FINAL
+  6804→Agent: Main Agent (synthèse de 8 sous-agents)
+  6805→Task: AUDIT 15 — Certification production-ready. Synthèse des 14 audits précédents en un rapport unique avec score /100 sur 16 dimensions + verdict OUI/NON.
+  6806→
+  6807→Work Log:
+  6808→- Lancé 8 sous-agents parallèles (audit-1-13, audit-2, audit-3-4, audit-5-6, audit-7-8-9, audit-10, audit-11-14, audit-12).
+  6809→- Reçu 8 rapports détaillés avec preuves file:line pour chaque affirmation.
+  6810→- Synthèse ci-dessous.
+  6811→
+  6812→Stage Summary:
+  6813→- Verdict final: NON (justifié ci-dessous).
+  6814→- Score global moyen: 47/100 (critique).
+  6815→- 7 P0 critiques, 23 P1, 18 P2, 14 P3.
+  6816→- Voir rapport complet ci-dessous.
+  6817→
+  6818→---
+  6819→
+  6820→## P0-AUDIT-SEC — Critical Security Audit (read-only)
+  6821→
+  6822→**Agent:** P0-AUDIT-SECURITY · **Scope:** authentication, tenant isolation, secrets, guest auth, all API routes under `src/app/api/**/route.ts`.
+  6823→
+  6824→### Summary
+  6825→5 P0 (critical, blocking) security issues identified. None are theoretical — each has a concrete exploit path against the current `.env` (which contains only `DATABASE_URL`, no `JWT_SECRET`, no `ENCRYPTION_KEY`).
+  6826→
+  6827→### Findings
+  6828→
+  6829→```
+  6830→P0-SEC-1: Hardcoded JWT secret fallback enables admin token forgery
+  6831→FILE: src/lib/auth.ts:28
+  6832→PROOF:
+  6833→  let _jwtSecret: string | null = null;
+  6834→  function getJwtSecret(): string {
+  6835→    if (_jwtSecret !== null) return _jwtSecret;
+  6836→    const env = process.env.JWT_SECRET;
+  6837→    if (env) { _jwtSecret = env; return _jwtSecret; }
+  6838→    if (process.env.NODE_ENV === 'production' && ...) {
+  6839→      console.warn('WARNING: JWT_SECRET is not set in production! ...');
+  6840→    }
+  6841→    _jwtSecret = 'wedding-platform-dev-secret-key-not-for-production';
+  6842→    return _jwtSecret;
+  6843→  }
+  6844→  // generateToken() and verifyToken() both call getJwtSecret().
+  6845→IMPACT: The repo's committed .env defines only DATABASE_URL — JWT_SECRET is
+  6846→  unset. In production, getJwtSecret() silently falls back to the publicly-known
+  6847→  string 'wedding-platform-dev-secret-key-not-for-production' (only a console.warn
+  6848→  is emitted). Any attacker can sign a JWT with payload
+  6849→  {id:'x', role:'PLATFORM_ADMIN', weddingId:null, isPlatformAdmin:true} and call
+  6850→  ANY /api/platform/* route as platform owner: list/read/update/delete every
+  6851→  wedding, every AdminUser (incl. password reset), every invoice, every
+  6852→  subscription, and create new weddings/organizers. Total authentication bypass.
+  6853→FIX: Throw at module scope in production when JWT_SECRET is missing
+  6854→  (do NOT fall back to a constant). Add a startup self-check that fails the build
+  6855→  if the env var is absent.
+  6856→```
+  6857→
+  6858→```
+  6859→P0-SEC-2: Hardcoded guest JWT secret fallback enables guest session forgery
+  6860→FILE: src/lib/guest-auth.ts:6
+  6861→PROOF:
+  6862→  const GUEST_JWT_SECRET =
+  6863→    (process.env.JWT_SECRET || 'dev-only-secret') + '-guest-session';
+  6864→  // generateGuestToken() / verifyGuestToken() use GUEST_JWT_SECRET.
+  6865→IMPACT: When JWT_SECRET is unset (current state), GUEST_JWT_SECRET becomes the
+  6866→  publicly-known string 'dev-only-secret-guest-session'. An attacker can forge a
+  6867→  guest session JWT for ANY guestId/sessionId of ANY wedding. validateGuestSession
+  6868→  then looks up the (possibly-fake) sessionId via tenantDb.guestSession.findFirst
+  6869→  — but the attacker doesn't even need a real session row: if they craft a JWT
+  6870→  with sessionId = "<existing-session-id>" (which they can enumerate via
+  6871→  /api/guest/lookup → /api/guest/auto-auth for any guest), they get full guest
+  6872→  access. Combined with P0-SEC-5, this is total guest-identity bypass across all
+  6873→  weddings.
+  6874→FIX: Fail-fast in production if JWT_SECRET is unset; never derive secrets from
+  6875→  a hardcoded fallback string.
+  6876→```
+  6877→
+  6878→```
+  6879→P0-SEC-3: Hardcoded encryption key fallback enables invitation-link token forgery
+  6880→FILE: src/lib/guest-auth.ts:10
+  6881→PROOF:
+  6882→  const ENCRYPTION_KEY =
+  6883→    process.env.ENCRYPTION_KEY ||
+  6884→    process.env.JWT_SECRET ||
+  6885→    'dev-encryption-key';
+  6886→  function getEncryptionKey(): Buffer {
+  6887→    return crypto.createHash('sha256').update(ENCRYPTION_KEY).digest();
+  6888→  }
+  6889→  // encryptId/decryptId use AES-256-GCM with this key. Used to encrypt the
+  6890→  // invitationCode in /api/guest/invite and the lookupToken in /api/guest/lookup.
+  6891→IMPACT: With both ENCRYPTION_KEY and JWT_SECRET unset (current .env), the
+  6892→  AES-256-GCM key is derived from the public constant 'dev-encryption-key'. An
+  6893→  attacker can (a) decrypt any encrypted invitation-link token they observe in
+  6894→  the wild (e.g. from a leaked WhatsApp message or QR code), recovering the
+  6895→  underlying invitationCode; AND (b) forge encrypted invitation-link tokens for
+  6896→  arbitrary invitation codes — bypassing /api/guest/invite GET which
+  6897→  auto-authenticates the guest with NO rate limit and NO IP binding. This is a
+  6898→  direct unauthenticated-guest-takeover primitive for any guest whose
+  6899→  invitationCode the attacker can guess or enumerate (codes are 8-char UUID
+  6900→  prefixes from uuidv4().substring(0,8).toUpperCase() in /api/guests POST, OR
+  6901→  the deterministic 'JH-XXXXXX' format in /api/guests/import-docx).
+  6902→FIX: Fail-fast in production if ENCRYPTION_KEY (or JWT_SECRET fallback) is unset.
+  6903→  Rotate the key + invalidate all outstanding encrypted tokens once fixed.
+  6904→```
+  6905→
+  6906→```
+  6907→P0-SEC-4: Privilege escalation — non-platform-admin with null weddingId is
+  6908→treated as a platform admin by resolveAdminTenant
+  6909→FILE: src/lib/tenant-context.ts:279
+  6910→PROOF:
+  6911→  export async function resolveAdminTenant(request, user) {
+  6912→    // Non-platform admin: lock to their own wedding (ignore X-Wedding-Slug
+  6913→    // header to prevent cross-tenant access).
+  6914→    if (!isPlatformAdmin(user.role) && user.weddingId) {   // ← BUG: && short-circuits on null
+  6915→      // ... lock to user.weddingId ...
+  6916→      return { context: buildTenantContext(cached), ... };
+  6917→    }
+  6918→    // Platform admin: respect X-Wedding-Slug header or fall back to default.
+  6919→    const slug = extractSlugFromRequest(request) ?? DEFAULT_WEDDING_SLUG;
+  6920→    const wedding = await resolveWeddingBySlug(slug);
+  6921→    // ... returns context for ANY wedding the caller names via header ...
+  6922→  }
+  6923→IMPACT: If a non-platform-admin user (ORGANIZER / RECEPTION / CONTROLLER) has
+  6924→  weddingId = null in the DB, the condition `!isPlatformAdmin(role) && user.weddingId`
+  6925→  evaluates to `true && null` → falsy, and execution falls through to the
+  6926→  platform-admin branch. The user can then send X-Wedding-Slug: <any-wedding>
+  6927→  and operate on ANY wedding — read/write guests, tables, settings, media,
+  6928→  theme, music, timeline, couple-story, etc. They effectively become a
+  6929→  platform admin for all tenant-scoped APIs. weddingId is nullable in the
+  6930→  schema (schema.prisma:75 `weddingId String?`); the route
+  6931→  /api/admin/users POST (line 79) does `isPlatformAdmin(role) ? null :
+  6932→  (weddingId || context.weddingId)` which today always sets a value, but any
+  6933→  future code path (migration script, manual DB fix, partial rollback) that
+  6934→  leaves an ORGANIZER with weddingId=null silently grants them cross-tenant
+  6935→  access. The safe behavior is to REJECT, not fall through.
+  6936→FIX: Replace the guard with:
+  6937→    if (!isPlatformAdmin(user.role)) {
+  6938→      if (!user.weddingId) {
+  6939→        return { context: null, wedding: null,
+  6940→                 error: { status: 403, message: 'Account misconfigured: no wedding assigned' } };
+  6941→      }
+  6942→      // ... lock to user.weddingId ...
+  6943→    }
+  6944→```
+  6945→
+  6946→```
+  6947→P0-SEC-5: Unauthenticated guest PII enumeration + mass identity takeover via
+  6948→/api/guest/lookup (no rate limit) + /api/guest/auto-auth (lookupToken chain)
+  6949→FILE: src/app/api/guest/lookup/route.ts:19 (GET handler) +
+  6950→      src/app/api/guest/auto-auth/route.ts:19 (POST handler)
+  6951→PROOF:
+  6952→  // /api/guest/lookup — NO checkRateLimit() call anywhere in the file (verified
+  6953→  // by grep). Returns up to 30 + 100 (accent fallback) guest records per query,
+  6954→  // each including firstName, lastName, displayName, invitationType, seats,
+  6955→  // category, table name+number, AND a lookupToken bound to the requester's IP
+  6956→  // subnet (first 3 octets) with a 15-minute validity window.
+  6957→
+  6958→  // /api/guest/auto-auth — accepts a lookupToken, validates:
+  6959→  //   1. decrypts (subject to P0-SEC-3 weak-key bypass, but not required here)
+  6960→  //   2. not in usedLookupTokens (one-time, in-memory, cleared every 10 min)
+  6961→  //   3. age ≤ 15 min
+  6962→  //   4. IP subnet matches the issuer
+  6963→  //   → then issues a 30-day guest_session cookie for that guest.
+  6964→  // Rate limit: 5 calls/min/IP (easily defeated by IP rotation).
+  6965→
+  6966→IMPACT: An attacker who knows any wedding slug (publicly visible in URLs,
+  6967→  shareable, enumerable via /api/platform/weddings if combined with P0-SEC-1,
+  6968→  OR simply known from a shared invitation URL):
+  6969→  1. Calls /api/guest/lookup?q=aa, ?q=ab, … ?q=zz (676 queries, no rate limit)
+  6970→     → dumps the entire guest list of that wedding (names, tables, categories).
+  6971→  2. For each returned lookupToken, calls /api/guest/auto-auth from the same IP
+  6972→     within 15 minutes → receives a 30-day guest_session cookie for that guest.
+  6973→  3. With each session, reads the guest's full PII (phone, email, personal
+  6974→     message, invitation code, encrypted invite link) via /api/guest/me, AND
+  6975→     can POST /api/guest/rsvp to mass-DECLINE or mass-CONFIRM invitations,
+  6976→     sabotaging the wedding's headcount.
+  6977→  The "search lock" only triggers if the attacker already has a guest_session
+  6978→  cookie — a fresh attacker has none, so the lock is a no-op. The invitation
+  6979→  code is supposed to be the guest's secret; this chain replaces it with "knows
+  6980→  a 2-letter prefix of any guest's name + the wedding slug".
+  6981→FIX: (a) Add IP-based rate limit to /api/guest/lookup (e.g. 5/15min/IP).
+  6982→  (b) Require an additional proof-of-knowledge before issuing a lookupToken
+  6983→      (e.g. invitation code prefix or couple's last name).
+  6984→  (c) Cap lookupToken validity to 60 seconds and bind to the full IP (not /24).
+  6985→  (d) After 3 successful auto-auths per IP per wedding per day, require
+  6986→      invitation-code re-verification.
+  6987→```
+  6988→
+  6989→### Routes audited (no P0 found in these)
+  6990→- All 50 files under `src/app/api/**/route.ts` (admin, platform, onboarding,
+  6991→  guests, guest/*, tables, timeline, couple-story, settings, theme, media,
+  6992→  music, music/file, custom-domain, collections/*, qrcode).
+  6993→- `src/middleware.ts` (no-op — auth handled per-route, acceptable).
+  6994→- `src/lib/{auth,tenant-context,db,guest-auth,rate-limit,types}.ts`.
+  6995→- `src/lib/prisma-extensions/tenant-scoped.ts` (extension correctly auto-injects
+  6996→  weddingId for findMany/findFirst/count/groupBy/aggregate/create/createMany/
+  6997→  updateMany/deleteMany; correctly does NOT inject for findUnique/update/delete/
+  6998→  upsert — but every audited route that uses these either uses findFirst
+  6999→  pre-check (scoped) or a composite `[weddingId, key]` unique key. No
+  7000→  cross-tenant leak found.).
+  7001→- `prisma/schema.prisma` (every tenant-scoped model has `weddingId String` with
+  7002→  `onDelete: Cascade`; composite uniques `[weddingId, *]]` are correct).
+  7003→- `next.config.ts` (no CORS misconfig — no `Access-Control-Allow-Origin: *`
+  7004→  with credentials; security headers present).
+  7005→- No `$queryRawUnsafe` / `$executeRawUnsafe` anywhere → no SQL injection.
+  7006→- File uploads (`/api/media`, `/api/music`) validate extension + MIME whitelist
+  7007→  (images, audio, video, pdf, svg) — no executable types; filename is
+  7008→  server-generated (`${Date.now()}-${rand}${ext}`) → no path traversal.
+  7009→
+  7010→### Non-P0 (intentionally excluded, listed for awareness)
+  7011→- `.env` is tracked in git despite `.gitignore` listing `.env*` (was committed
+  7012→  before the rule). Contents are benign (`DATABASE_URL` only) → P1 hygiene.
+  7013→- In-memory rate limiting (`Map`) doesn't work across multiple instances →
+  7014→  P1 once multi-instance deploy is planned.
+  7015→- 8h admin JWT, 30d guest JWT — long but documented design choice → P2.
+  7016→- `sameSite: 'lax'` cookie — acceptable CSRF posture for current routes (all
+  7017→  state-changing routes use POST/PUT/DELETE, blocked cross-origin by lax).
+  7018→- `typescript.ignoreBuildErrors: true` in next.config.ts — build-quality risk,
+  7019→  not a security P0.
+  7020→
+  7021→### Verdict
+  7022→**5 P0 critical security blockers found.** Issues 1–3 (hardcoded secret
+  7023→fallbacks) are individually sufficient to block international commercialization:
+  7024→combined, they constitute total authentication bypass for BOTH admin and guest
+  7025→tiers. Issue 4 is a latent privilege-escalation waiting for a single misconfigured
+  7026→user row. Issue 5 is an active unauthenticated-guest-takeover primitive
+  7027→exploitable today against any published wedding.
+  7028→
+  7029→Recommended fix order: P0-SEC-1 + P0-SEC-2 + P0-SEC-3 together (set
+  7030→JWT_SECRET + ENCRYPTION_KEY in production env, refuse to start without them,
+  7031→rotate keys) → P0-SEC-4 (1-line guard change) → P0-SEC-5 (rate-limit +
+  7032→proof-of-knowledge on guest lookup).
+  7033→
+  7034→---
+  7035→
+  7036→## Task ID: P0-AUDIT-MT — Multi-Tenant Isolation Audit (READ-ONLY)
+  7037→
+  7038→**Scope**: Find P0 cross-tenant data leaks in the wedding platform's multi-tenant isolation layer.
+  7039→
+  7040→**Files audited end-to-end**:
+  7041→- prisma/schema.prisma (475 LOC) — all 19 models
+  7042→- src/lib/prisma-extensions/tenant-scoped.ts (177 LOC)
+  7043→- src/lib/tenant-context.ts (374 LOC)
+  7044→- src/lib/guest-auth.ts (428 LOC) — session validation path
+  7045→- src/lib/auth.ts (322 LOC) — RBAC + JWT claims
+  7046→- src/lib/db.ts (47 LOC), src/lib/plan-limits.ts (139 LOC), src/middleware.ts (18 LOC)
+  7047→- All 51 API routes under src/app/api/**/route.ts
+  7048→- src/app/w/[slug]/{layout,wedding-context,page,admin/page}.tsx — client-side tenant header injection
+  7049→- Grep audit: `db.<tenant-scoped-model>.{findUnique,update,delete,upsert,findMany,findFirst,count}` across src/
+  7050→
+  7051→### Schema vs TENANT_SCOPED_MODELS cross-check
+  7052→
+  7053→| Model | weddingId | In TENANT_SCOPED_MODELS? | Notes |
+  7054→|---|---|---|---|
+  7055→| Wedding | (is the tenant) | N/A | Top-level entity |
+  7056→| AdminUser | nullable | NO (intentional) | SUPER_ADMIN has null |
+  7057→| Subscription | NOT NULL | NO (intentional) | All 11 queries gated by `requirePlatformAdmin` — verified |
+  7058→| Invoice | NOT NULL | NO (intentional) | Same as Subscription |
+  7059→| UsageCounter | NOT NULL | YES | ✓ |
+  7060→| Guest | NOT NULL | YES | ✓ |
+  7061→| Table | NOT NULL | YES | ✓ |
+  7062→| Media | NOT NULL | YES | ✓ |
+  7063→| EventTimeline | NOT NULL | YES | ✓ |
+  7064→| CoupleStory | NOT NULL | YES | ✓ |
+  7065→| Settings | NOT NULL | YES | ✓ |
+  7066→| Theme | NOT NULL | YES | ✓ |
+  7067→| MusicTrack | NOT NULL | YES | ✓ |
+  7068→| GuestSession | NOT NULL | YES | ✓ |
+  7069→| GuestAccessLog | NOT NULL | YES | ✓ |
+  7070→| AuditLog | nullable | NO (intentional) | Platform events have null |
+  7071→| Invitation | NOT NULL | YES | ✓ |
+  7072→| Lead | none | N/A | Pre-conversion public entity |
+  7073→| WeddingCollectionBinding | NOT NULL | YES | ✓ |
+  7074→
+  7075→→ **No models missing from TENANT_SCOPED_MODELS that should be there.** Subscription/Invoice are correctly excluded because they're only touched in platform-admin-only routes (verified all 11 raw `db.subscription|invoice.*` call sites are under /api/platform/*, each preceded by `requirePlatformAdmin(user)`).
+  7076→
+  7077→### Result: **0 P0 cross-tenant leaks found**
+  7078→
+  7079→Justification per audit dimension:
+  7080→
+  7081→1. **DEFAULT_WEDDING_SLUG fallback** (`tenant-context.ts:209`): `resolvePublicTenant` falls back to `DEFAULT_WEDDING_SLUG` ('josue-hornella') when no slug is in the request. This is documented legacy-compat for the root "/" client (line 17-19 docstring). The default wedding is publicly served at "/" — anyone visiting root can already use the lookup form. Not a leak; the public invitation finder is scoped to ONE wedding per request (auto-injected by the extension), never crosses tenants.
+  7082→
+  7083→2. **weddingCache** (`tenant-context.ts:101`): `Map<string, CachedWedding>` keyed by `normalizedSlug` (lowercase+trim, line 110). No collision risk between weddings. 60s TTL is a P1 multi-instance concern (already noted in prior audits), not a P0 leak.
+  7084→
+  7085→3. **resolveAdminTenant** (`tenant-context.ts:268-312`): non-platform-admin path correctly ignores `X-Wedding-Slug` header and locks to `user.weddingId` (line 279-298). Platform admins can switch weddings via header — by design (they're cross-tenant).
+  7086→
+  7087→4. **Routes accepting weddingId from body**: Only `/api/admin/users` POST/PUT, `/api/onboarding/publish`, `/api/onboarding/create-wedding`, `/api/onboarding/leads/[id]/convert`, `/api/platform/users` POST/PUT — ALL gated by `requirePlatformAdmin` (platform-admin only — cross-tenant by design).
+  7088→
+  7089→5. **findUnique/update/delete/upsert bypass pattern**: The tenant-scoped extension does NOT auto-inject weddingId for these operations (documented at `tenant-scoped.ts:21-24`). All 22 tenant-scoped call sites I audited use the safe `findFirst-then-mutate` pattern: an auto-scoped `findFirst({ where: { id } })` confirms the entity belongs to ctx.weddingId before the unscoped `update/delete({ where: { id } })`. Verified across /api/guests/[id], /api/guests (PUT/DELETE), /api/tables (PUT/DELETE), /api/couple-story (PUT/DELETE), /api/timeline (PUT/DELETE), /api/media (DELETE), /api/guest/rsvp, /api/guest/logout, and guest-auth.ts (createGuestSession + validateGuestSession internals).
+  7090→
+  7091→6. **Guest link tokens** (`guest-auth.ts:67-74`): `generateInvitationLinkToken(invitationCode)` encrypts ONLY the invitationCode, not the weddingId. invitationCode uniqueness is `@@unique([weddingId, invitationCode])` (schema line 217), so two weddings could theoretically share an 8-hex code (uuidv4-truncated → ~1/2^32 collision per pair). However, all auth flows (`/api/guest/auth`, `/api/guest/invite` GET, `/api/guest/auto-auth`) do `tenantDb.guest.findFirst({ where: { invitationCode } })` which auto-scopes to ctx.weddingId → a cross-tenant collision returns null and 403/404. Not exploitable.
+  7092→
+  7093→7. **Guest session cross-tenant hijacking**: `validateGuestSession` (`guest-auth.ts:261`) uses `tenantDb.guestSession.findFirst({ where: { id, token, isActive } })` — auto-scoped to ctx.weddingId. A wedding B session token presented in a wedding A context returns `valid: false`. Confirmed across all guest routes (auth, auto-auth, invite, me, rsvp, qrcode, logout, guests/[id] GET).
+  7094→
+  7095→8. **Frontend fetches**: X-Wedding-Slug header is auto-injected by /w/[slug]/* pages via `window.fetch` interceptor (`src/app/w/[slug]/page.tsx:141`, `src/app/w/[slug]/admin/page.tsx:153`). The 4 .tsx files referencing `weddingId` (BillingTab, platform/admin/page, OnboardingTab, w/[slug]/admin/page) are platform admin UI where passing weddingId in body is legitimate. No client-side fetches leak tenant context.
+  7096→
+  7097→9. **music/file legacy fallback** (`/api/music/file/route.ts:54-71`): Falls back to shared `/uploads/music/` directory for pre-migration files. The lookup of `music_file` setting uses composite key `weddingId_key` with `ctx.weddingId` (line 38-40) — an attacker can't request a foreign wedding's file because the basename must match the requesting tenant's stored setting. Filename is sanitized to basename (line 30-33) — no path traversal.
+  7098→
+  7099→10. **AuditLog bypass**: AuditLog is intentionally NOT in TENANT_SCOPED_MODELS (nullable weddingId for platform events). All `db.auditLog.create` calls in tenant routes pass `weddingId: context.weddingId` or `ctx.weddingId` explicitly — verified across /api/guests, /api/tables, /api/media, /api/music, /api/settings, /api/theme, /api/timeline, /api/couple-story, /api/custom-domain, /api/collections/deploy, /api/guest/rsvp. Platform-admin routes correctly pass `weddingId: null` for platform-level events.
+  7100→
+  7101→### Observations (NOT P0, listed for completeness — excluded per task scope)
+  7102→
+  7103→- **`assertTenantOwned()` helper is defined but never used** (`tenant-scoped.ts:155-173`). The findFirst-then-mutate pattern is relied upon everywhere instead. This is a P1 footgun for future developers — if someone adds a new route that does `tenantDb.guest.update({ where: { id } })` without a prior findFirst, it would leak. Recommend either (a) calling out the pattern in CONTRIBUTING.md, or (b) tightening the extension to throw when a tenant-scoped `update/delete/findUnique/upsert` is called without `weddingId` in the where clause.
+  7104→- **Subscription/Invoice not in TENANT_SCOPED_MODELS**: safe today because all 11 query sites are platform-admin-only. If a future tenant-scoped route needs to read a wedding's own subscription (e.g. organizer checking their plan), it MUST manually add `where: { weddingId: ctx.weddingId }` — the extension won't help.
+  7105→
+  7106→### Final summary
+  7107→
+  7108→**P0 issues found: 0.**
+  7109→
+  7110→The multi-tenant isolation layer is robust. The combination of (a) Prisma extension auto-injection on filter/insert operations, (b) `runWithTenant` AsyncLocalStorage propagation via `withPublicTenant` / `withAdminTenantHandler` HOFs, (c) consistent findFirst-then-mutate pattern for non-auto-scoped operations, (d) `resolveAdminTenant` ignoring X-Wedding-Slug for non-platform admins, and (e) `requirePlatformAdmin` gating on all cross-tenant platform routes provides defense in depth. No P0 cross-tenant data leaks identified.
 
-[showing lines 6500-6799 of 6801; use offset=6800 with limit to continue reading]
+[showing lines 6500-7110 of 7112; use offset=7111 with limit to continue reading]

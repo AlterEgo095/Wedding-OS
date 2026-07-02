@@ -4,27 +4,39 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from './db';
 import { isPlatformAdmin, normalizeRole, type Role } from './types';
 
-// JWT_SECRET — lazy initialization to avoid crashing the entire module at load time.
-// Previously, a missing JWT_SECRET in production would throw at module scope,
-// which prevented ANY route that imported this module (directly or via shared chunk)
-// from loading, causing 500 errors on /api/guest/invite, /api/guest/auto-auth, etc.
+// JWT_SECRET — lazy initialization. In production, the env var is REQUIRED.
+// A missing JWT_SECRET in production throws on first use (not at module load,
+// so unrelated routes still work). In development, a fixed dev-only fallback
+// is allowed for convenience.
+//
+// SECURITY (P0-SEC-1): The previous implementation silently fell back to a
+// hardcoded string 'wedding-platform-dev-secret-key-not-for-production' in
+// production, allowing anyone with source-code access to forge admin JWTs.
+// This is now a hard failure in production.
 let _jwtSecret: string | null = null;
 function getJwtSecret(): string {
   if (_jwtSecret !== null) return _jwtSecret;
   const env = process.env.JWT_SECRET;
-  if (env) {
+  if (env && env.length >= 32) {
     _jwtSecret = env;
     return _jwtSecret;
   }
-  // In production without JWT_SECRET, log a warning instead of crashing.
-  // This allows the app to start and serve pages while the admin panel
-  // will simply fail individual auth attempts (which is correct behavior).
-  if (process.env.NODE_ENV === 'production' && process.env.NEXT_PHASE !== 'phase-production-build') {
-    console.warn(
-      'WARNING: JWT_SECRET is not set in production! Admin authentication will not work securely. ' +
-      'Set JWT_SECRET in your .env file with: openssl rand -base64 48'
+  const isProd =
+    process.env.NODE_ENV === 'production' &&
+    process.env.NEXT_PHASE !== 'phase-production-build';
+  if (isProd) {
+    // Hard fail in production — no silent fallback to a forgeable secret.
+    throw new Error(
+      'FATAL: JWT_SECRET is missing or too short (<32 chars) in production. ' +
+      'Set JWT_SECRET in your .env file with: openssl rand -base64 48. ' +
+      'Admin authentication is disabled until this is fixed.'
     );
   }
+  // Dev-only fallback — never active in production.
+  console.warn(
+    'WARNING: JWT_SECRET not set — using insecure dev-only fallback. ' +
+    'Set JWT_SECRET in your .env file with: openssl rand -base64 48'
+  );
   _jwtSecret = 'wedding-platform-dev-secret-key-not-for-production';
   return _jwtSecret;
 }

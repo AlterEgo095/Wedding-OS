@@ -1,235 +1,3 @@
-  id                 String    @id @default(cuid())
-  brideName          String
-  groomName          String
-  coupleLabel        String    // computed via buildCoupleLabel at insert time
-  weddingDate        DateTime?
-  venueCity          String?
-  email              String
-  phone              String?
-  plan               String    @default("TRIAL") // desired plan: TRIAL, ESSENTIEL, PREMIUM, ELITE
-  message            String?   // freeform note from the couple
-  status             String    @default("NEW") // NEW, CONTACTED, CONVERTED, REJECTED
-  notes              String?   // admin private notes
-  convertedWeddingId String?   // linked Wedding.id once converted (denormalized, no FK to avoid cascade complexity)
-  convertedAt        DateTime?
-  createdAt          DateTime  @default(now())
-  updatedAt          DateTime  @updatedAt
-
-  @@index([status])
-  @@index([createdAt])
-}
-```
-
-**Purpose** (from schema docstring lines 404-409):
-> Public lead capture from the public `/onboarding` form. Platform admin reviews leads in the admin dashboard and converts them into a published Wedding via the onboarding wizard (transactional create).
-
-### Lead lifecycle
-- **Public submit:** `POST /api/onboarding/leads` (rate-limited 5/15min/IP, no auth). Public response excludes `notes`/`convertedWeddingId`/`convertedAt`/`updatedAt`.
-- **Admin list:** `GET /api/onboarding/leads` (PLATFORM_ADMIN). Paginated + filter by status + search + summary by status.
-- **Admin manual convert:** `POST /api/onboarding/leads/[id]/convert` body `{ weddingId }` — links an existing wedding to a lead.
-- **Auto-convert:** `/api/onboarding/create-wedding` accepts optional `leadId` body param → atomically sets Lead.status=CONVERTED + Lead.convertedWeddingId + Lead.convertedAt inside the same transaction that creates Wedding+AdminUser+Subscription+Invoice.
-
-### Can Lead become the entry point for "choose a collection before creating a wedding"?
-**YES — and it's the natural fit.** Currently the Lead model captures only:
-- Couple identity (bride/groom/coupleLabel)
-- Event basics (weddingDate, venueCity)
-- Contact (email, phone)
-- **Desired plan** (TRIAL/ESSENTIEL/PREMIUM/ELITE) ← already tier-aware
-- Message (freeform)
-
-It does NOT capture:
-- Desired theme/collection/template/preset ← **THE GAP**
-- Desired luxury-engine theme (gold/rose/champagne/midnight)
-- Desired layout (classic/modern/minimalist/royal)
-- Desired font pairing
-- Desired effect intensity
-
-**Recommended schema extension for Collection Engine:**
-Add an optional `collectionId String?` field to `Lead` (and optionally `themePresetId String?` to disambiguate from a future "Collection" concept that bundles theme + effects + music + layout together). The public `/onboarding` form would gain a "Choisir une collection" step before the "Plan" step; the onboarding wizard would pass `collectionId` to `/api/onboarding/create-wedding` which would apply the collection's theme + settings on the freshly-created Wedding.
-
-═══════════════════════════════════════════════════════════════════════════════
-SECTION 11 — EXISTING SELECTABLE-GRID UI PATTERNS (2 patterns, ready to clone)
-═══════════════════════════════════════════════════════════════════════════════
-
-Two reusable selectable-grid UI patterns already exist:
-
-### Pattern A — Theme template picker (ThemeCustomizer.tsx, lines 322-366)
-**4-column responsive grid of clickable cards with live preview + active indicator:**
-```tsx
-<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
-  {THEME_TEMPLATES.map((template) => (
-    <motion.button
-      key={template.id}
-      whileHover={{ y: -2 }}
-      whileTap={{ scale: 0.98 }}
-      onClick={() => handleApplyTemplate(template)}
-      disabled={applyingTemplate !== null}
-      className="group relative text-left rounded-lg overflow-hidden border border-white/10 hover:border-gold/40 transition-colors disabled:opacity-60"
-      style={{ background: template.preview.bg }}
-    >
-      <div className="flex h-16">
-        {template.preview.swatch.map((color, i) => (
-          <div key={i} className="flex-1" style={{ background: color }} />
-        ))}
-      </div>
-      <div className="p-3" style={{ color: template.preview.text }}>
-        <p className="font-display text-sm font-semibold" style={{ fontFamily: `'${template.fontDisplay}', serif` }}>
-          {template.name}
-        </p>
-        <p className="text-[10px] opacity-70 mt-1 line-clamp-2">{template.description}</p>
-      </div>
-      {applyingTemplate === template.id && (<Loader2 spinner />)}
-      {applyingTemplate === null && theme.primaryColor.toUpperCase() === template.primaryColor.toUpperCase() && (
-        <div className="absolute top-2 right-2 ..."><Check /></div>
-      )}
-    </motion.button>
-  ))}
-</div>
-```
-**Active-state detection:** compares current theme's `primaryColor` to template's `primaryColor` (string match) — fragile if two templates share colors, but works for the current 4 templates.
-
-### Pattern B — Plan picker (OnboardingTab.tsx PlanStep, lines 1648-1714)
-**2-column responsive grid of plan cards with "popular" badge + selected ring:**
-```tsx
-<div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-2">
-  {PLANS.map((p) => {
-    const selected = form.plan === p.id
-    return (
-      <button
-        key={p.id}
-        type="button"
-        onClick={() => setForm((f) => ({ ...f, plan: p.id }))}
-        className={`text-left p-4 rounded-lg border transition-all relative ${
-          selected ? 'border-gold bg-gold/10 ring-1 ring-gold/30'
-                   : 'border-border bg-card/30 hover:border-gold/40'
-        }`}
-        aria-pressed={selected}
-      >
-        {p.popular && (<span className="absolute -top-2 right-3 bg-gold text-white text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full">Populaire</span>)}
-        <div className="flex items-center justify-between mb-1">
-          <span className="font-semibold text-base">{p.label}</span>
-          {selected && <CheckCircle2 className="w-4 h-4 text-gold" />}
-        </div>
-        <div className="text-sm text-muted-foreground mb-2">{p.tagline}</div>
-        <div className="flex items-baseline gap-2 mb-3">
-          {p.priceUsd === 0 ? (<span>Gratuit</span>) : (
-            <>
-              <span className="text-2xl font-bold">${p.priceUsd}</span>
-              <span className="text-xs text-muted-foreground">/ mois</span>
-              <span className="text-xs text-muted-foreground">· {p.priceFcfa.toLocaleString('fr-FR')} FCFA</span>
-            </>
-          )}
-        </div>
-        <ul className="text-xs text-muted-foreground space-y-1">
-          <li><CheckCircle2 className="w-3 h-3 text-emerald-400" /> {p.guests} invités</li>
-          <li><CheckCircle2 className="w-3 h-3 text-emerald-400" /> {p.media} de médias</li>
-          <li><CheckCircle2 className="w-3 h-3 text-emerald-400" /> {p.staff} comptes staff</li>
-          <li>{p.customDomain ? <><CheckCircle2/> Domaine personnalisé</> : <><XCircle/> Sous-domaine</>}</li>
-        </ul>
-      </button>
-    )
-  })}
-</div>
-```
-
-### Pattern B' — Public /onboarding plan preview (page.tsx lines 401-475)
-Same 4-column responsive grid (`grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6`) for the marketing-style plan preview on the public onboarding page.
-
-**These two patterns are the obvious UI scaffolding for a Collection Library grid.** A `CollectionLibrary` component would clone Pattern A (visual swatches + framer-motion hover) and add a `tier` badge ("Premium" / "Élite") + a lock overlay when the wedding's plan is below the collection's required tier.
-
-═══════════════════════════════════════════════════════════════════════════════
-SECTION 12 — GAPS FOR THE COLLECTION ENGINE (what's missing)
-═══════════════════════════════════════════════════════════════════════════════
-
-### Gap 1 — No `Collection` Prisma model (CRITICAL — schema change needed)
-- The schema has `Wedding`, `Theme`, `Settings`, `MusicTrack`, `Media`, `EventTimeline`, `CoupleStory` — but **no `Collection` model**.
-- The 4 templates in `templates.ts` are **hardcoded constants**, not database rows. There is no admin UI to create/edit/disable a collection.
-- **Required schema:**
-  ```prisma
-  model Collection {
-    id              String   @id @default(cuid())
-    slug            String   @unique  // e.g. "royal-night", "bohemian-dream"
-    name            String
-    description     String?
-    tier            String   @default("FREE") // FREE | PREMIUM | ELITE
-    thumbnailUrl    String?
-    // Theme seed (mirrors ThemeTemplate fields):
-    primaryColor    String
-    accentColor     String
-    fontDisplay     String
-    fontBody        String
-    layout          String   @default("classic")
-    // Optional luxury-engine preset:
-    luxuryTheme     String?  // gold | rose | champagne | midnight
-    // Optional effects preset (JSON):
-    effectsPreset   String?  // JSON: { intensity, density, speed, enabledEffects }
-    // Optional music track URL:
-    defaultMusicUrl String?
-    isPublished     Boolean  @default(true)
-    sortOrder       Int      @default(0)
-    createdAt       DateTime @default(now())
-    updatedAt       DateTime @updatedAt
-    @@index([tier, isPublished, sortOrder])
-  }
-  ```
-
-### Gap 2 — No premium-gating mechanism for aesthetic/content features (CRITICAL — new helper needed)
-- `src/lib/plan-limits.ts` only knows how to gate **quantitative** features (guests / media bytes / admins / custom-domain flag).
-- It has NO concept of gating a Collection / Template / Effect by plan tier.
-- **Required additions:**
-  ```ts
-  // In src/lib/plan-limits.ts (or a new src/lib/collections.ts):
-  export type CollectionTier = 'FREE' | 'PREMIUM' | 'ELITE';
-  export const TIER_HIERARCHY: Record<Plan, number> = {
-    TRIAL: 0, ESSENTIEL: 1, PREMIUM: 2, ELITE: 3,
-  };
-  export const COLLECTION_TIER_LEVEL: Record<CollectionTier, number> = {
-    FREE: 0, PREMIUM: 2, ELITE: 3,
-  };
-  export function canAccessCollection(plan: Plan, tier: CollectionTier): boolean {
-    return TIER_HIERARCHY[plan] >= COLLECTION_TIER_LEVEL[tier];
-  }
-  ```
-- And a server-side gate in the apply-collection endpoint (mirror of `/api/theme/apply-template`):
-  ```ts
-  if (!canAccessCollection(wedding.plan, collection.tier)) {
-    return NextResponse.json({ error: 'Plan insuffisant pour cette collection' }, { status: 403 });
-  }
-  ```
-- And a client-side lock overlay in the `CollectionLibrary` grid component.
-
-### Gap 3 — No `/api/collections` route namespace (CRITICAL — new routes needed)
-- No `/api/collections` GET (list collections, with `tier` filter for tenant-context calls).
-- No `/api/collections/[id]` GET (single collection detail).
-- No `/api/collections/apply` POST (apply a collection to a wedding — mirrors `/api/theme/apply-template` but also seeds Settings rows + luxury-engine state + music URL).
-- No `/api/platform/collections` GET/POST/PUT/DELETE (platform-admin CRUD for managing the catalog).
-- The existing `/api/theme/apply-template` route can be kept as a thin shim or deprecated in favor of `/api/collections/apply`.
-
-### Gap 4 — No `collectionId` field on `Lead` or `Wedding` (MEDIUM — schema change)
-- `Lead` captures `plan` but not the desired collection — couples cannot pre-pick a collection before onboarding.
-- `Wedding` has no `collectionId` field — no way to remember which collection was applied (only the resulting `Theme` row exists, and it can be customized after application, so reverse-engineering the source collection is impossible).
-- **Required:** Add `collectionId String?` to `Lead` + `Wedding` (nullable so existing weddings are unaffected — backward-compatible).
-
-### Gap 5 — No `CollectionLibrary` component (CRITICAL — new component)
-- No grid/gallery component for browsing collections.
-- The existing selectable-grid patterns (§11) are inline within `ThemeCustomizer.tsx` and `OnboardingTab.tsx` — they're not factored into a reusable component.
-- **Required:** `src/components/collections/CollectionLibrary.tsx` — props `{ slug?, onSelect, showPremiumBadge, currentPlan }`. Clones Pattern A from §11, adds tier badge + lock overlay + "Upgrade to unlock" CTA. Mount it in:
-  - `/w/[slug]/admin/page.tsx` as a new `'collections'` tab (between `'theme'` and `'studio'`)
-  - `/app/platform/admin/page.tsx` as a new `'collections'` tab (platform admin can preview + apply)
-  - `/app/onboarding/page.tsx` as a new "Choisir une collection" step (after Plan step, before form submit)
-  - `/app/platform/admin/OnboardingTab.tsx` as a new wizard step (between Plan and Tarifs)
-
-### Gap 6 — No "active collection" indicator (LOW — UX polish)
-- `ThemeCustomizer.tsx` active-state detection (string-match on `primaryColor`) is fragile — if two collections share a primary color, both will show as "active".
-- A proper `Wedding.collectionId` field (Gap 4) fixes this — the active card is simply `collection.id === wedding.collectionId`.
-
-### Gap 7 — No collection-to-effects / collection-to-music binding (MEDIUM — feature scope)
-- A "Collection" in the future should bundle more than just theme colors + fonts. It should bundle:
-  - Theme (colors + fonts + layout) ← exists
-  - Luxury-engine theme (gold/rose/champagne/midnight) + intensity/density/speed ← luxury-engine-store is localStorage-only today, NOT persisted server-side (see CONSOLIDATION-PHASE2-DOUBLONS Table E row "Effets visuels store")
-  - Music URL + volume ← Settings-based today (not MusicTrack, which is dead)
-  - Section ambiance toggles ← visual-effects-store, localStorage-only
-- For the **first iteration** of the Collection Engine, scoping to "theme-only collections" is acceptable — it's a 1:1 superset of the existing 4 templates with a `tier` badge + admin CRUD.
 - For a **later iteration**, a full "Collection" would also seed the luxury-engine store + music — this requires the Appearance-server-sync project first (see WIRING-AUDIT-15-CASES Case 5 — NEEDS-SCHEMA-CHANGE + NEEDS-NEW-LOGIC, 4-8h, MEDIUM-HIGH risk).
 
 ═══════════════════════════════════════════════════════════════════════════════
@@ -398,3 +166,235 @@ Stage Summary:
 - FILES MODIFIED: 6 files (prisma/schema.prisma, src/lib/prisma-extensions/tenant-scoped.ts, src/app/api/collections/deploy/route.ts, src/components/collections/designs/DesignRenderer.tsx, src/components/collections/CollectionsShowcase.tsx, src/components/GuestSearch.tsx).
 - FILES DELETED: 3 files (src/components/MarketingSection.tsx, src/components/CoupleGallery.tsx, src/components/CouplePhotosSection.tsx).
 - CONSTRAINTS COMPLIANCE: ✅ No regression (homepage + modal + deploy all work). ✅ Additive-only on schema (nullable fields + new model — existing weddings unaffected). ✅ No breaking change to other admin UIs. ✅ Browser-verified end-to-end. ✅ Auth check enforced. ✅ Hardcoded couple identity eliminated. ✅ Collection is now the master entity referenced by Wedding. ✅ Deploy button is wired and persists binding + applies theme. ✅ Dead code removed.
+
+---
+Task ID: AUDIT-CERTIFICATION-FINAL
+Agent: Main Agent (synthèse de 8 sous-agents)
+Task: AUDIT 15 — Certification production-ready. Synthèse des 14 audits précédents en un rapport unique avec score /100 sur 16 dimensions + verdict OUI/NON.
+
+Work Log:
+- Lancé 8 sous-agents parallèles (audit-1-13, audit-2, audit-3-4, audit-5-6, audit-7-8-9, audit-10, audit-11-14, audit-12).
+- Reçu 8 rapports détaillés avec preuves file:line pour chaque affirmation.
+- Synthèse ci-dessous.
+
+Stage Summary:
+- Verdict final: NON (justifié ci-dessous).
+- Score global moyen: 47/100 (critique).
+- 7 P0 critiques, 23 P1, 18 P2, 14 P3.
+- Voir rapport complet ci-dessous.
+
+---
+
+## P0-AUDIT-SEC — Critical Security Audit (read-only)
+
+**Agent:** P0-AUDIT-SECURITY · **Scope:** authentication, tenant isolation, secrets, guest auth, all API routes under `src/app/api/**/route.ts`.
+
+### Summary
+5 P0 (critical, blocking) security issues identified. None are theoretical — each has a concrete exploit path against the current `.env` (which contains only `DATABASE_URL`, no `JWT_SECRET`, no `ENCRYPTION_KEY`).
+
+### Findings
+
+```
+P0-SEC-1: Hardcoded JWT secret fallback enables admin token forgery
+FILE: src/lib/auth.ts:28
+PROOF:
+  let _jwtSecret: string | null = null;
+  function getJwtSecret(): string {
+    if (_jwtSecret !== null) return _jwtSecret;
+    const env = process.env.JWT_SECRET;
+    if (env) { _jwtSecret = env; return _jwtSecret; }
+    if (process.env.NODE_ENV === 'production' && ...) {
+      console.warn('WARNING: JWT_SECRET is not set in production! ...');
+    }
+    _jwtSecret = 'wedding-platform-dev-secret-key-not-for-production';
+    return _jwtSecret;
+  }
+  // generateToken() and verifyToken() both call getJwtSecret().
+IMPACT: The repo's committed .env defines only DATABASE_URL — JWT_SECRET is
+  unset. In production, getJwtSecret() silently falls back to the publicly-known
+  string 'wedding-platform-dev-secret-key-not-for-production' (only a console.warn
+  is emitted). Any attacker can sign a JWT with payload
+  {id:'x', role:'PLATFORM_ADMIN', weddingId:null, isPlatformAdmin:true} and call
+  ANY /api/platform/* route as platform owner: list/read/update/delete every
+  wedding, every AdminUser (incl. password reset), every invoice, every
+  subscription, and create new weddings/organizers. Total authentication bypass.
+FIX: Throw at module scope in production when JWT_SECRET is missing
+  (do NOT fall back to a constant). Add a startup self-check that fails the build
+  if the env var is absent.
+```
+
+```
+P0-SEC-2: Hardcoded guest JWT secret fallback enables guest session forgery
+FILE: src/lib/guest-auth.ts:6
+PROOF:
+  const GUEST_JWT_SECRET =
+    (process.env.JWT_SECRET || 'dev-only-secret') + '-guest-session';
+  // generateGuestToken() / verifyGuestToken() use GUEST_JWT_SECRET.
+IMPACT: When JWT_SECRET is unset (current state), GUEST_JWT_SECRET becomes the
+  publicly-known string 'dev-only-secret-guest-session'. An attacker can forge a
+  guest session JWT for ANY guestId/sessionId of ANY wedding. validateGuestSession
+  then looks up the (possibly-fake) sessionId via tenantDb.guestSession.findFirst
+  — but the attacker doesn't even need a real session row: if they craft a JWT
+  with sessionId = "<existing-session-id>" (which they can enumerate via
+  /api/guest/lookup → /api/guest/auto-auth for any guest), they get full guest
+  access. Combined with P0-SEC-5, this is total guest-identity bypass across all
+  weddings.
+FIX: Fail-fast in production if JWT_SECRET is unset; never derive secrets from
+  a hardcoded fallback string.
+```
+
+```
+P0-SEC-3: Hardcoded encryption key fallback enables invitation-link token forgery
+FILE: src/lib/guest-auth.ts:10
+PROOF:
+  const ENCRYPTION_KEY =
+    process.env.ENCRYPTION_KEY ||
+    process.env.JWT_SECRET ||
+    'dev-encryption-key';
+  function getEncryptionKey(): Buffer {
+    return crypto.createHash('sha256').update(ENCRYPTION_KEY).digest();
+  }
+  // encryptId/decryptId use AES-256-GCM with this key. Used to encrypt the
+  // invitationCode in /api/guest/invite and the lookupToken in /api/guest/lookup.
+IMPACT: With both ENCRYPTION_KEY and JWT_SECRET unset (current .env), the
+  AES-256-GCM key is derived from the public constant 'dev-encryption-key'. An
+  attacker can (a) decrypt any encrypted invitation-link token they observe in
+  the wild (e.g. from a leaked WhatsApp message or QR code), recovering the
+  underlying invitationCode; AND (b) forge encrypted invitation-link tokens for
+  arbitrary invitation codes — bypassing /api/guest/invite GET which
+  auto-authenticates the guest with NO rate limit and NO IP binding. This is a
+  direct unauthenticated-guest-takeover primitive for any guest whose
+  invitationCode the attacker can guess or enumerate (codes are 8-char UUID
+  prefixes from uuidv4().substring(0,8).toUpperCase() in /api/guests POST, OR
+  the deterministic 'JH-XXXXXX' format in /api/guests/import-docx).
+FIX: Fail-fast in production if ENCRYPTION_KEY (or JWT_SECRET fallback) is unset.
+  Rotate the key + invalidate all outstanding encrypted tokens once fixed.
+```
+
+```
+P0-SEC-4: Privilege escalation — non-platform-admin with null weddingId is
+treated as a platform admin by resolveAdminTenant
+FILE: src/lib/tenant-context.ts:279
+PROOF:
+  export async function resolveAdminTenant(request, user) {
+    // Non-platform admin: lock to their own wedding (ignore X-Wedding-Slug
+    // header to prevent cross-tenant access).
+    if (!isPlatformAdmin(user.role) && user.weddingId) {   // ← BUG: && short-circuits on null
+      // ... lock to user.weddingId ...
+      return { context: buildTenantContext(cached), ... };
+    }
+    // Platform admin: respect X-Wedding-Slug header or fall back to default.
+    const slug = extractSlugFromRequest(request) ?? DEFAULT_WEDDING_SLUG;
+    const wedding = await resolveWeddingBySlug(slug);
+    // ... returns context for ANY wedding the caller names via header ...
+  }
+IMPACT: If a non-platform-admin user (ORGANIZER / RECEPTION / CONTROLLER) has
+  weddingId = null in the DB, the condition `!isPlatformAdmin(role) && user.weddingId`
+  evaluates to `true && null` → falsy, and execution falls through to the
+  platform-admin branch. The user can then send X-Wedding-Slug: <any-wedding>
+  and operate on ANY wedding — read/write guests, tables, settings, media,
+  theme, music, timeline, couple-story, etc. They effectively become a
+  platform admin for all tenant-scoped APIs. weddingId is nullable in the
+  schema (schema.prisma:75 `weddingId String?`); the route
+  /api/admin/users POST (line 79) does `isPlatformAdmin(role) ? null :
+  (weddingId || context.weddingId)` which today always sets a value, but any
+  future code path (migration script, manual DB fix, partial rollback) that
+  leaves an ORGANIZER with weddingId=null silently grants them cross-tenant
+  access. The safe behavior is to REJECT, not fall through.
+FIX: Replace the guard with:
+    if (!isPlatformAdmin(user.role)) {
+      if (!user.weddingId) {
+        return { context: null, wedding: null,
+                 error: { status: 403, message: 'Account misconfigured: no wedding assigned' } };
+      }
+      // ... lock to user.weddingId ...
+    }
+```
+
+```
+P0-SEC-5: Unauthenticated guest PII enumeration + mass identity takeover via
+/api/guest/lookup (no rate limit) + /api/guest/auto-auth (lookupToken chain)
+FILE: src/app/api/guest/lookup/route.ts:19 (GET handler) +
+      src/app/api/guest/auto-auth/route.ts:19 (POST handler)
+PROOF:
+  // /api/guest/lookup — NO checkRateLimit() call anywhere in the file (verified
+  // by grep). Returns up to 30 + 100 (accent fallback) guest records per query,
+  // each including firstName, lastName, displayName, invitationType, seats,
+  // category, table name+number, AND a lookupToken bound to the requester's IP
+  // subnet (first 3 octets) with a 15-minute validity window.
+
+  // /api/guest/auto-auth — accepts a lookupToken, validates:
+  //   1. decrypts (subject to P0-SEC-3 weak-key bypass, but not required here)
+  //   2. not in usedLookupTokens (one-time, in-memory, cleared every 10 min)
+  //   3. age ≤ 15 min
+  //   4. IP subnet matches the issuer
+  //   → then issues a 30-day guest_session cookie for that guest.
+  // Rate limit: 5 calls/min/IP (easily defeated by IP rotation).
+
+IMPACT: An attacker who knows any wedding slug (publicly visible in URLs,
+  shareable, enumerable via /api/platform/weddings if combined with P0-SEC-1,
+  OR simply known from a shared invitation URL):
+  1. Calls /api/guest/lookup?q=aa, ?q=ab, … ?q=zz (676 queries, no rate limit)
+     → dumps the entire guest list of that wedding (names, tables, categories).
+  2. For each returned lookupToken, calls /api/guest/auto-auth from the same IP
+     within 15 minutes → receives a 30-day guest_session cookie for that guest.
+  3. With each session, reads the guest's full PII (phone, email, personal
+     message, invitation code, encrypted invite link) via /api/guest/me, AND
+     can POST /api/guest/rsvp to mass-DECLINE or mass-CONFIRM invitations,
+     sabotaging the wedding's headcount.
+  The "search lock" only triggers if the attacker already has a guest_session
+  cookie — a fresh attacker has none, so the lock is a no-op. The invitation
+  code is supposed to be the guest's secret; this chain replaces it with "knows
+  a 2-letter prefix of any guest's name + the wedding slug".
+FIX: (a) Add IP-based rate limit to /api/guest/lookup (e.g. 5/15min/IP).
+  (b) Require an additional proof-of-knowledge before issuing a lookupToken
+      (e.g. invitation code prefix or couple's last name).
+  (c) Cap lookupToken validity to 60 seconds and bind to the full IP (not /24).
+  (d) After 3 successful auto-auths per IP per wedding per day, require
+      invitation-code re-verification.
+```
+
+### Routes audited (no P0 found in these)
+- All 50 files under `src/app/api/**/route.ts` (admin, platform, onboarding,
+  guests, guest/*, tables, timeline, couple-story, settings, theme, media,
+  music, music/file, custom-domain, collections/*, qrcode).
+- `src/middleware.ts` (no-op — auth handled per-route, acceptable).
+- `src/lib/{auth,tenant-context,db,guest-auth,rate-limit,types}.ts`.
+- `src/lib/prisma-extensions/tenant-scoped.ts` (extension correctly auto-injects
+  weddingId for findMany/findFirst/count/groupBy/aggregate/create/createMany/
+  updateMany/deleteMany; correctly does NOT inject for findUnique/update/delete/
+  upsert — but every audited route that uses these either uses findFirst
+  pre-check (scoped) or a composite `[weddingId, key]` unique key. No
+  cross-tenant leak found.).
+- `prisma/schema.prisma` (every tenant-scoped model has `weddingId String` with
+  `onDelete: Cascade`; composite uniques `[weddingId, *]]` are correct).
+- `next.config.ts` (no CORS misconfig — no `Access-Control-Allow-Origin: *`
+  with credentials; security headers present).
+- No `$queryRawUnsafe` / `$executeRawUnsafe` anywhere → no SQL injection.
+- File uploads (`/api/media`, `/api/music`) validate extension + MIME whitelist
+  (images, audio, video, pdf, svg) — no executable types; filename is
+  server-generated (`${Date.now()}-${rand}${ext}`) → no path traversal.
+
+### Non-P0 (intentionally excluded, listed for awareness)
+- `.env` is tracked in git despite `.gitignore` listing `.env*` (was committed
+  before the rule). Contents are benign (`DATABASE_URL` only) → P1 hygiene.
+- In-memory rate limiting (`Map`) doesn't work across multiple instances →
+  P1 once multi-instance deploy is planned.
+- 8h admin JWT, 30d guest JWT — long but documented design choice → P2.
+- `sameSite: 'lax'` cookie — acceptable CSRF posture for current routes (all
+  state-changing routes use POST/PUT/DELETE, blocked cross-origin by lax).
+- `typescript.ignoreBuildErrors: true` in next.config.ts — build-quality risk,
+  not a security P0.
+
+### Verdict
+**5 P0 critical security blockers found.** Issues 1–3 (hardcoded secret
+fallbacks) are individually sufficient to block international commercialization:
+combined, they constitute total authentication bypass for BOTH admin and guest
+tiers. Issue 4 is a latent privilege-escalation waiting for a single misconfigured
+user row. Issue 5 is an active unauthenticated-guest-takeover primitive
+exploitable today against any published wedding.
+
+Recommended fix order: P0-SEC-1 + P0-SEC-2 + P0-SEC-3 together (set
+JWT_SECRET + ENCRYPTION_KEY in production env, refuse to start without them,
+rotate keys) → P0-SEC-4 (1-line guard change) → P0-SEC-5 (rate-limit +
+proof-of-knowledge on guest lookup).
