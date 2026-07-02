@@ -70,3 +70,4 @@ server.log
 
 # Local VPS deploy tool (contains no secrets, reads from env)
 /.zscripts/vps-ssh.py
+.env
