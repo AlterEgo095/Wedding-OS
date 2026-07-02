@@ -50,5 +50,16 @@ test
 prompt
 
 server.log
+
+# Tool result artifacts (agent working files, must never be tracked)
+/tool-results/
+
+# Local dev server runtime files
+/.zscripts/dev.pid
+/.zscripts/dev.out.log
+
+# Worklog is a local agent scratchpad, keep out of repo
+/worklog.md
+
 # Skills directory
 /skills/
