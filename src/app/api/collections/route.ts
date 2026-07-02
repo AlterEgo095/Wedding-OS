@@ -1,44 +1,25 @@
-import { NextResponse } from 'next/server'
-import { listCollections, listFamilies } from '@/lib/collections/catalog'
-import { countModules, countVariants, computeQualityScore } from '@/lib/collections/types'
+export const dynamic = 'force-dynamic';
+import { NextRequest, NextResponse } from 'next/server';
+import { withPublicTenant } from '@/lib/tenant-context';
+import { listCollections } from '@/lib/collections';
+import type { Plan } from '@/lib/types';
 
-export const dynamic = 'force-static'
-
-// GET /api/collections — list all Premium Collections (catalog)
-export async function GET() {
-  const collections = listCollections().map((c) => ({
-    id: c.id,
-    name: c.name,
-    family: c.family,
-    category: c.category,
-    tier: c.tier,
-    tagline: c.tagline,
-    description: c.description,
-    coverImage: c.coverImage,
-    completionPct: c.completionPct,
-    version: c.version,
-    designer: c.designer,
-    publishedAt: c.publishedAt,
-    priceFcfa: c.priceFcfa,
-    priceUsd: c.priceUsd,
-    designSystem: c.designSystem,
-    stats: {
-      packs: c.packs.length,
-      modules: countModules(c),
-      variants: countVariants(c),
-      qualityScore: computeQualityScore(c),
-    },
-  }))
-
-  const families = listFamilies().map((f) => ({
-    family: f.family,
-    count: f.collections.length,
-    collectionIds: f.collections.map((c) => c.id),
-  }))
-
-  return NextResponse.json({
-    collections,
-    families,
-    total: collections.length,
-  })
-}
+/**
+ * GET /api/collections — public catalog list, filtered by the resolved wedding's plan.
+ *
+ * Returns all active + published Collections accessible to the caller's billing plan.
+ * Auto-seeds Royal Gold on first call (idempotent — zero manual migration).
+ *
+ * Reuses the existing withPublicTenant middleware (multi-tenant context resolution),
+ * so the same endpoint works on root / (default wedding) and /w/[slug] (tenant).
+ */
+export const GET = withPublicTenant(async (_req, ctx) => {
+  try {
+    const plan = ctx.plan as Plan
+    const collections = await listCollections(plan)
+    return NextResponse.json({ collections })
+  } catch (error) {
+    console.error('List collections error:', error)
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+  }
+})

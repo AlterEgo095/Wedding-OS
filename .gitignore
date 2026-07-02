@@ -63,3 +63,7 @@ server.log
 
 # Skills directory
 /skills/
+# Database files (never track SQLite DBs)
+/db/*.db
+/db/*.db-journal
+/prisma/*.db
