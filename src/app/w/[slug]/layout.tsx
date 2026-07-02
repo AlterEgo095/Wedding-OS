@@ -105,6 +105,24 @@ export default async function WeddingLayout({
     );
   }
 
+  // P1-14: Archived weddings show a branded "souvenirs archivés" page instead
+  // of the live site. The wedding has already taken place — the public pages
+  // (RSVP, programme, etc.) are no longer relevant, but we don't 404 because
+  // the couple may want to share the archived memories link with guests.
+  if (wedding.status === 'ARCHIVED') {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-warm p-6">
+        <div className="max-w-md text-center space-y-4">
+          <div className="text-6xl">📖</div>
+          <h1 className="font-serif text-3xl text-foreground">Souvenirs archivés</h1>
+          <p className="text-muted-foreground">
+            Le mariage de <strong>{wedding.coupleLabel}</strong> a eu lieu. Les souvenirs sont désormais archivés.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <WeddingContextProvider
       wedding={{

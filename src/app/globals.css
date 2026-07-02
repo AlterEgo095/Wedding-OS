@@ -862,3 +862,25 @@ html {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* ═══ P1-DESIGN: Premium card scroll reveal (ExpertiseShowcase) ═══ */
+.premium-card {
+  opacity: 0;
+  transform: translateY(30px);
+  animation: cardReveal 0.7s ease-out forwards;
+}
+
+@keyframes cardReveal {
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .premium-card {
+    opacity: 1;
+    transform: none;
+    animation: none;
+  }
+}
