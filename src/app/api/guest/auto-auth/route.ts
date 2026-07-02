@@ -9,12 +9,20 @@ import {
   validateGuestSession,
   generateInvitationLinkToken,
   decryptId,
+  setGuestSessionCookie,
+  consumeLookupToken, // P2-SEC-12 — replaces module-scope usedLookupTokens Set
 } from '@/lib/guest-auth';
 import { checkRateLimit, getRateLimitKey } from '@/lib/rate-limit';
 import { resolvePublicTenant, runWithTenant } from '@/lib/tenant-context';
+import { logger } from '@/lib/logger'; // P2-SEC-1 — never log error.stack
+import { internalError, badRequest, unauthorized } from '@/lib/api-errors'; // P2-CQ-5
 
-const usedLookupTokens = new Set<string>();
-setInterval(() => { usedLookupTokens.clear(); }, 10 * 60 * 1000);
+// P2-SEC-12 + P2-PERF-15: the module-scope `usedLookupTokens` Set +
+// `setInterval` were deleted. One-time-use lookup tokens are now consumed
+// via `consumeLookupToken(token, issuedAt)` from @/lib/guest-auth, which
+// stores them in a TTL-bound Map pruned by the shared brute-force cleanup
+// interval (registered via instrumentation-node.ts). This closes the 5-min
+// replay window that existed when the Set was cleared wholesale every 10 min.
 
 export async function POST(request: NextRequest) {
   const { context, error: tenantError } = await resolvePublicTenant(request);
@@ -68,41 +76,52 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: 'Trop de tentatives. Veuillez réessayer dans un instant.' }, { status: 429 });
       }
 
-      const body = await request.json();
+      const body = await request.json().catch(() => null); // P2-CQ-6
+      if (!body) {
+        await logGuestAccess({ action: 'ACCESS_DENIED', details: 'Auto-auth attempted with invalid JSON body', ...clientInfo });
+        return badRequest('Requête invalide.');
+      }
       const { lookupToken } = body;
 
       if (!lookupToken || typeof lookupToken !== 'string') {
         await logGuestAccess({ action: 'ACCESS_DENIED', details: 'Auto-auth attempted without lookup token', ...clientInfo });
-        return NextResponse.json({ error: 'Requête invalide.' }, { status: 400 });
+        return badRequest('Requête invalide.');
       }
 
-      if (usedLookupTokens.has(lookupToken)) {
-        await logGuestAccess({ action: 'ACCESS_DENIED', details: 'Reuse of one-time lookup token attempted', ...clientInfo });
-        return NextResponse.json({ error: 'Ce lien de recherche a déjà été utilisé. Veuillez relancer votre recherche.' }, { status: 401 });
-      }
-
+      // P2-SEC-12: decrypt FIRST so we can extract the token's issuedAt
+      // timestamp. The one-time-use check then uses (token, issuedAt) so the
+      // shared TTL cache can also reject tokens whose 15-min timestamp has
+      // expired — even if they're not yet in the cache.
       const decrypted = decryptId(lookupToken);
       if (!decrypted) {
         await logGuestAccess({ action: 'ACCESS_DENIED', details: 'Invalid or tampered lookup token in auto-auth', ...clientInfo });
         return NextResponse.json({ error: 'Cette invitation est privée et exclusivement réservée à son titulaire.' }, { status: 403 });
       }
 
-      usedLookupTokens.add(lookupToken);
-
       const parts = decrypted.split(':');
       if (parts.length < 3) {
         await logGuestAccess({ action: 'ACCESS_DENIED', details: 'Malformed lookup token in auto-auth', ...clientInfo });
-        return NextResponse.json({ error: 'Requête invalide.' }, { status: 400 });
+        return badRequest('Requête invalide.');
       }
 
       const guestId = parts[0];
       const ipHash = parts[1];
       const timestamp = parseInt(parts[2], 10);
 
+      // P2-SEC-12: timestamp expiry check — also enforced inside
+      // consumeLookupToken, but kept here so we can log a distinct
+      // 'expired' access-denied reason before consuming the token.
       const tokenAge = Date.now() - timestamp;
-      if (tokenAge > 15 * 60 * 1000 || tokenAge < 0) {
+      if (tokenAge > 15 * 60 * 1000 || tokenAge < 0 || Number.isNaN(timestamp)) {
         await logGuestAccess({ action: 'ACCESS_DENIED', details: 'Expired lookup token in auto-auth', ...clientInfo });
-        return NextResponse.json({ error: 'Votre recherche a expiré. Veuillez relancer votre recherche.' }, { status: 401 });
+        return unauthorized('Votre recherche a expiré. Veuillez relancer votre recherche.');
+      }
+
+      // P2-SEC-12: one-time-use enforcement — atomic check + record.
+      // Returns false on (a) reuse or (b) timestamp older than TTL.
+      if (!consumeLookupToken(lookupToken, timestamp)) {
+        await logGuestAccess({ action: 'ACCESS_DENIED', details: 'Reuse of one-time lookup token attempted', ...clientInfo });
+        return unauthorized('Ce lien de recherche a déjà été utilisé. Veuillez relancer votre recherche.');
       }
 
       const ipSubnet = clientInfo.ipAddress.split('.').slice(0, 3).join('.');
@@ -146,16 +165,20 @@ export async function POST(request: NextRequest) {
         },
       });
 
-      response.cookies.set({
-        name: 'guest_session', value: session.token,
-        httpOnly: true, secure: process.env.NODE_ENV === 'production',
-        sameSite: 'lax', path: '/', maxAge: 30 * 24 * 60 * 60,
-      });
+      // P2-SEC-4 + P2-CQ-21: use the shared cookie helper so the cookie
+      // attributes (httpOnly, secure, sameSite='strict', maxAge=30d) stay in
+      // sync with the other guest-session cookie sites.
+      setGuestSessionCookie(response, session.token);
 
       return response;
     } catch (error) {
-      console.error('Auto-auth error:', error instanceof Error ? { message: error.message, stack: error.stack } : error);
-      return NextResponse.json({ error: 'Erreur interne du serveur' }, { status: 500 });
+      // P2-SEC-1: NEVER log error.stack — it can leak source paths +
+      // secrets captured by async hooks. Log message + name only.
+      logger.error('Auto-auth error', {
+        errMessage: error instanceof Error ? error.message : String(error),
+        errName: error instanceof Error ? error.name : 'Unknown',
+      });
+      return internalError();
     }
   });
 }

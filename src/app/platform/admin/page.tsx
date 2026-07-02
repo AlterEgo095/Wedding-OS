@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback, useRef, type ReactNode } from 'react'
+import { useState, useEffect, useCallback, useRef, useSyncExternalStore, type ReactNode } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { AnimatePresence, motion } from 'framer-motion'
@@ -90,26 +90,38 @@ import {
 } from 'recharts'
 
 import { PLAN_METADATA, type Plan, type WeddingStatus } from '@/lib/types'
-import { BillingTab } from './BillingTab'
-import { OnboardingTab } from './OnboardingTab'
-import { CollectionsFactoryTab } from './CollectionsFactoryTab'
-import { ThemeCustomizer } from '@/components/admin/ThemeCustomizer'
-import { PenpotStudio } from '@/components/penpot/PenpotStudio'
+import {
+  STATUS_LABELS,
+  STATUS_BADGE_CLASS,
+  PLAN_BADGE_CLASS,
+  ROLE_BADGE_CLASS,
+  PLAN_LIST,
+  WEDDING_STATUS_LIST,
+  getRoleLabel as getRoleLabelShared,
+} from '@/lib/ui-labels'
+import { formatDate, formatDateTime, toDateInput } from '@/lib/format'
+import dynamic from 'next/dynamic'
 
-// Local role labels — we can't import from @/lib/auth because that module
-// imports `next/headers` + Prisma (server-only). Same pattern as
-// /components/admin/UserManager.tsx.
-const ROLE_LABELS: Record<string, string> = {
-  PLATFORM_ADMIN: 'Administrateur Plateforme',
-  SUPER_ADMIN: 'Super Admin',
-  ORGANIZER: 'Organisateur',
-  RECEPTION: 'Réception',
-  CONTROLLER: 'Contrôleur',
-}
+// Heavy tab components are lazy-loaded (P1-UX-9 + P2-PERF-13) so the initial
+// JS bundle for /platform/admin only contains the dashboard shell. Each tab is
+// fetched on first activation. ssr:false for the two design-surface components
+// (PenpotStudio, ThemeCustomizer) which use canvas/iframe APIs unavailable
+// during SSR; the data tabs (Billing, Onboarding, CollectionsFactory) keep
+// ssr:true (default) so they can participate in streaming.
+const BillingTab = dynamic(() => import('./BillingTab').then((m) => m.BillingTab))
+const OnboardingTab = dynamic(() => import('./OnboardingTab').then((m) => m.OnboardingTab))
+const CollectionsFactoryTab = dynamic(() => import('./CollectionsFactoryTab').then((m) => m.CollectionsFactoryTab))
+const ThemeCustomizer = dynamic(() => import('@/components/admin/ThemeCustomizer').then((m) => m.ThemeCustomizer), { ssr: false })
+const PenpotStudio = dynamic(() => import('@/components/penpot/PenpotStudio').then((m) => m.PenpotStudio), { ssr: false })
 
-function getRoleLabel(role: string): string {
-  return ROLE_LABELS[role] || role
-}
+// useSyncExternalStore subscribe placeholder — we only need the getServerSnapshot
+// vs getSnapshot split to detect "are we hydrated yet?" without triggering the
+// react-hooks/set-state-in-effect lint rule. Mirrors the /w/[slug]/admin pattern
+// (P1-UX-7) so the SSR pass and the first client render both produce the same
+// loading skeleton, eliminating the hydration mismatch.
+const emptySubscribe = (): (() => void) => () => {}
+const getTrue = (): boolean => true
+const getFalse = (): boolean => false
 
 // ════════════════════════════════════════════════════════════════════════════
 // Types
@@ -233,39 +245,14 @@ const NAV_ITEMS: NavItem[] = [
   { id: 'collections', label: 'Collections Premium', icon: Crown },
 ]
 
-const WEDDING_STATUSES: WeddingStatus[] = ['DRAFT', 'PUBLISHED', 'COMPLETED', 'ARCHIVED', 'SUSPENDED']
-const PLANS: Plan[] = ['TRIAL', 'ESSENTIEL', 'PREMIUM', 'ELITE']
+const WEDDING_STATUSES = WEDDING_STATUS_LIST
+const PLANS = PLAN_LIST
 
-const STATUS_LABELS: Record<WeddingStatus, string> = {
-  DRAFT: 'Brouillon',
-  PUBLISHED: 'Publié',
-  COMPLETED: 'Terminé',
-  ARCHIVED: 'Archivé',
-  SUSPENDED: 'Suspendu',
-}
-
-const STATUS_BADGE_CLASS: Record<WeddingStatus, string> = {
-  PUBLISHED: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30',
-  DRAFT: 'bg-amber-500/15 text-amber-400 border-amber-500/30',
-  COMPLETED: 'bg-sky-500/15 text-sky-400 border-sky-500/30',
-  ARCHIVED: 'bg-zinc-500/15 text-zinc-400 border-zinc-500/30',
-  SUSPENDED: 'bg-red-500/15 text-red-400 border-red-500/30',
-}
-
-const PLAN_BADGE_CLASS: Record<Plan, string> = {
-  ELITE: 'bg-gold/15 text-gold border-gold/40',
-  PREMIUM: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30',
-  ESSENTIEL: 'bg-gold-dark/15 text-gold-dark border-gold-dark/30',
-  TRIAL: 'bg-zinc-500/15 text-zinc-400 border-zinc-500/30',
-}
-
-const ROLE_BADGE_CLASS: Record<string, string> = {
-  PLATFORM_ADMIN: 'bg-gold/15 text-gold border-gold/40',
-  SUPER_ADMIN: 'bg-gold/15 text-gold border-gold/40',
-  ORGANIZER: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30',
-  RECEPTION: 'bg-zinc-500/15 text-zinc-400 border-zinc-500/30',
-  CONTROLLER: 'bg-zinc-500/15 text-zinc-400 border-zinc-500/30',
-}
+// Re-export the shared getRoleLabel under a local name so existing call sites
+// (getRoleLabel(user.role)) keep working unchanged. The shared helper lives in
+// @/lib/ui-labels and handles the same fallback (raw role string) for unknown
+// roles.
+const getRoleLabel = getRoleLabelShared
 
 // Chart colors per plan — used by the plan-distribution donut chart
 const PLAN_CHART_COLORS: Record<string, string> = {
@@ -374,42 +361,10 @@ function RoleBadge({ role }: { role: string }) {
   )
 }
 
-function formatDate(iso: string | null): string {
-  if (!iso) return '—'
-  try {
-    return new Date(iso).toLocaleDateString('fr-FR', {
-      day: '2-digit',
-      month: 'short',
-      year: 'numeric',
-    })
-  } catch {
-    return '—'
-  }
-}
-
-function formatDateTime(iso: string | null): string {
-  if (!iso) return '—'
-  try {
-    return new Date(iso).toLocaleString('fr-FR', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    })
-  } catch {
-    return '—'
-  }
-}
-
-function toDateInput(iso: string | null): string {
-  if (!iso) return ''
-  try {
-    return new Date(iso).toISOString().slice(0, 10)
-  } catch {
-    return ''
-  }
-}
+// Date / time / money formatters are imported from @/lib/format (P2-CQ-3).
+// The local copies were 1:1 duplicates of the shared helpers — kept the same
+// call sites (`formatDate(iso)`, `formatDateTime(iso)`, `toDateInput(iso)`)
+// so callers don't need updating.
 
 // ════════════════════════════════════════════════════════════════════════════
 // Dashboard tab
@@ -1158,7 +1113,7 @@ function WeddingsTab({ fetchWithAuth }: { fetchWithAuth: (url: string, init?: Re
                       <TableCell>
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon" className="h-8 w-8" disabled={statusChangingId === w.id}>
+                            <Button variant="ghost" size="icon" className="h-11 w-11" disabled={statusChangingId === w.id}>
                               {statusChangingId === w.id ? (
                                 <Loader2 className="w-4 h-4 animate-spin" />
                               ) : (
@@ -1801,7 +1756,7 @@ function UsersTab({ fetchWithAuth }: { fetchWithAuth: (url: string, init?: Reque
                       <TableCell>
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon" className="h-8 w-8">
+                            <Button variant="ghost" size="icon" className="h-11 w-11">
                               <MoreHorizontal className="w-4 h-4" />
                             </Button>
                           </DropdownMenuTrigger>
@@ -2127,10 +2082,17 @@ function AuditTab({ fetchWithAuth }: { fetchWithAuth: (url: string, init?: Reque
 export default function PlatformAdminPage() {
   const router = useRouter()
   const { fetchWithAuth } = usePlatformFetch()
+  // mounted: false on SSR and during the very first client render (hydration),
+  // then true once React swaps to the client snapshot. This lets us render a
+  // stable loading screen during hydration and avoid the P1-UX-7 mismatch
+  // (server HTML has no user, client may have one from localStorage).
+  const mounted = useSyncExternalStore(emptySubscribe, getTrue, getFalse)
   // Initialize user from localStorage on the client (null on SSR).
-  // This mirrors the pattern used by /admin/page.tsx — the SSR pass produces a
-  // neutral loading skeleton, and the first client render hydrates with the
-  // actual user (or stays null and the effect below redirects to /platform/login).
+  // This mirrors the pattern used by /admin/page.tsx + /w/[slug]/admin — the
+  // SSR pass + first client render both produce a neutral loading skeleton,
+  // and the second client render (after `mounted` flips to true) hydrates
+  // with the actual user (or stays null and the effect below redirects to
+  // /platform/login).
   const [user, setUser] = useState<AuthUser | null>(() => {
     if (typeof window === 'undefined') return null
     try {
@@ -2214,9 +2176,12 @@ export default function PlatformAdminPage() {
     }
   }
 
-  // Render a neutral loading skeleton if not authenticated or not a platform
-  // admin (the effect above will redirect to /platform/login).
-  if (!user || (user.role !== 'PLATFORM_ADMIN' && user.role !== 'SUPER_ADMIN')) {
+  // Render a neutral loading skeleton during hydration (mounted=false) or
+  // if not authenticated / not a platform admin (the effect above will
+  // redirect to /platform/login). The `!mounted` gate is the P1-UX-7 fix —
+  // it ensures the SSR HTML and the first client render produce identical
+  // output, eliminating the hydration-mismatch warning.
+  if (!mounted || !user || (user.role !== 'PLATFORM_ADMIN' && user.role !== 'SUPER_ADMIN')) {
     return (
       <div className="h-screen flex items-center justify-center">
         <div className="flex flex-col items-center gap-3">
@@ -2343,7 +2308,7 @@ export default function PlatformAdminPage() {
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-8 w-8 text-muted-foreground"
+                  className="h-11 w-11 text-muted-foreground"
                   onClick={() => setSidebarOpen(false)}
                 >
                   <X className="w-4 h-4" />
@@ -2402,7 +2367,7 @@ export default function PlatformAdminPage() {
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-8 w-8 text-red-400 hover:text-red-300 hover:bg-red-400/10"
+                className="h-11 w-11 text-red-400 hover:text-red-300 hover:bg-red-400/10"
                 onClick={handleLogout}
                 aria-label="Déconnexion"
               >

@@ -10,6 +10,14 @@ import {
   type PaymentMethod,
 } from '@/lib/billing';
 import type { Plan } from '@/lib/types';
+// P2-CQ-2 + P2-SEC-3: shared MAX_PAYMENT_USD_CENTS from @/lib/constants.
+import { MAX_PAYMENT_USD_CENTS } from '@/lib/constants';
+// P2-SEC-1: structured logger (no stack leak).
+import { logger } from '@/lib/logger';
+// P2-CQ-5: standardised API errors.
+import { internalError } from '@/lib/api-errors';
+// P2-SEC-14: writeAuditLog populates ipAddress + userAgent from request.
+import { writeAuditLog } from '@/lib/audit';
 
 /**
  * Per-wedding invoice management (manual billing flow).
@@ -86,11 +94,12 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
     return NextResponse.json({ wedding, invoices });
   } catch (error) {
-    console.error('List invoices error:', error);
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 },
-    );
+    // P2-SEC-1: never log error.stack.
+    logger.error('List invoices error', {
+      errMessage: error instanceof Error ? error.message : String(error),
+      errName: error instanceof Error ? error.name : 'Unknown',
+    });
+    return internalError();
   }
 }
 
@@ -114,7 +123,13 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    const body = await request.json();
+    const body = await request.json().catch(() => null); // P2-CQ-6
+    if (!body) {
+      return NextResponse.json(
+        { error: 'Corps de requête invalide' },
+        { status: 400 },
+      );
+    }
     const {
       plan,
       billingCycle,
@@ -142,7 +157,8 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     }
     if (amountDue !== undefined) {
       const n = Number(amountDue);
-      if (!Number.isFinite(n) || n < 0 || n > 100_000_00) {
+      // P2-CQ-2: shared MAX_PAYMENT_USD_CENTS constant.
+      if (!Number.isFinite(n) || n < 0 || n > MAX_PAYMENT_USD_CENTS) {
         return NextResponse.json(
           { error: 'amountDue must be a positive integer (USD cents) ≤ 1 000 000' },
           { status: 400 },
@@ -214,22 +230,22 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       return { subscription, invoice };
     });
 
-    // ─── Audit log (outside transaction — best-effort) ─────────────────────
-    await db.auditLog.create({
-      data: {
-        weddingId: id,
-        userId: user!.id,
-        action: 'CREATE_INVOICE',
-        details: `Created invoice $${(resolvedAmount / 100).toFixed(2)} for ${wedding.coupleLabel} (plan: ${plan}, cycle: ${cycle})`,
-      },
+    // ─── Audit log (outside transaction — best-effort) (P2-SEC-14) ───────
+    await writeAuditLog({
+      weddingId: id,
+      userId: user!.id,
+      action: 'CREATE_INVOICE',
+      details: `Created invoice $${(resolvedAmount / 100).toFixed(2)} for ${wedding.coupleLabel} (plan: ${plan}, cycle: ${cycle})`,
+      request,
     });
 
     return NextResponse.json(result, { status: 201 });
   } catch (error) {
-    console.error('Create invoice error:', error);
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 },
-    );
+    // P2-SEC-1: never log error.stack.
+    logger.error('Create invoice error', {
+      errMessage: error instanceof Error ? error.message : String(error),
+      errName: error instanceof Error ? error.name : 'Unknown',
+    });
+    return internalError();
   }
 }

@@ -197,6 +197,7 @@ export default function PlatformLoginPage() {
           <Button
             type="submit"
             disabled={loading}
+            aria-describedby="platform-login-submit-status"
             className="w-full bg-gradient-gold hover:opacity-90 text-white font-medium h-11 shadow-lg"
           >
             {loading ? (
@@ -211,7 +212,29 @@ export default function PlatformLoginPage() {
               </>
             )}
           </Button>
+          {/* P1-UX-8: screen-reader-only status explaining why the submit button
+              is disabled (during submission). Sighted users see the inline
+              spinner + "Connexion..." label; non-sighted users get the same
+              context via aria-describedby. */}
+          <span id="platform-login-submit-status" className="sr-only">
+            {loading
+              ? 'Connexion en cours, veuillez patienter.'
+              : 'Bouton de connexion disponible.'}
+          </span>
         </form>
+
+        {/* P1-UX-10: password-reset / account-recovery link. The full
+            self-service reset flow (P1-SEC-9) is deferred to P3 — for now the
+            link opens a pre-filled mailto so the support team can verify
+            identity and reset manually. */}
+        <div className="mt-4 text-center">
+          <a
+            href="mailto:contact@heureux-mariage.com?subject=R%C3%A9initialisation%20mot%20de%20passe"
+            className="text-sm text-muted-foreground hover:text-foreground underline-offset-4 hover:underline transition-colors"
+          >
+            Mot de passe oublié ?
+          </a>
+        </div>
 
         {/* Footer */}
         <div className="mt-6 pt-6 border-t border-white/5">

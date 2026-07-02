@@ -87,3 +87,61 @@ export function extractWeddingSlug(
   if (querySlug && querySlug.trim()) return querySlug.trim();
   return null;
 }
+
+// ─── P2-CQ-9: Settings keys ──────────────────────────────────────────────────
+// Duplicated as bare string literals in 4+ files (onboarding/create-wedding,
+// Footer, GuestSearch, HeroSection, page.tsx). A typo like `brideName` instead
+// of `bride_name` would silently fall back to default with no compile-time
+// error. This `as const` object gives autocomplete + a single rename target.
+//
+// Values are the EXACT strings stored in Settings.key (DB column). The DB
+// schema uses String? (not an enum) so these are advisory — but a future
+// migration could enforce a CHECK constraint using this list.
+export const SETTING_KEYS = {
+  // Couple identity
+  BRIDE_NAME: 'bride_name',
+  GROOM_NAME: 'groom_name',
+  COUPLE_PHOTO_1: 'couple_photo_1',
+  COUPLE_PHOTO_2: 'couple_photo_2',
+  HASHTAG: 'hashtag',
+  // Site presentation
+  SITE_TITLE: 'site_title',
+  SITE_SUBTITLE: 'site_subtitle',
+  WELCOME_MESSAGE: 'welcome_message',
+  INVITATION_MESSAGE: 'invitation_message',
+  // Wedding date / time
+  WEDDING_DATE: 'wedding_date',
+  WEDDING_TIME: 'wedding_time',
+  // Venue
+  VENUE_NAME: 'venue_name',
+  VENUE_CITY: 'venue_city',
+  VENUE_ADDRESS: 'venue_address',
+  VENUE_LAT: 'venue_lat',
+  VENUE_LNG: 'venue_lng',
+  VENUE_REFERENCE: 'venue_reference',
+  VENUE_TIME: 'venue_time',
+  // RSVP
+  RSVP_DEADLINE: 'rsvp_deadline',
+  // Theme (legacy single-color; full theme lives in the Theme model)
+  PRIMARY_COLOR: 'primary_color',
+  // Music
+  MUSIC_ENABLED: 'music_enabled',
+  MUSIC_VOLUME: 'music_volume',
+} as const;
+
+/** TypeScript type: union of all known Settings key strings. */
+export type SettingKey = (typeof SETTING_KEYS)[keyof typeof SETTING_KEYS];
+
+// ─── P2-CQ-4: PLAN_LIST — typed Plan array for UI iteration ──────────────────
+// Defined in src/lib/ui-labels.ts (single source of truth) and re-exported
+// here so callers that already import other constants from this module can
+// also reach PLAN_LIST without a second import. The array is the SAME
+// instance (re-export, not a copy) so identity comparisons hold.
+export { PLAN_LIST } from './ui-labels';
+
+// ─── P1-SEC-9 (future): Password-reset token expiry ──────────────────────────
+// 1 hour — short enough to limit a leaked-reset-link window, long enough for
+// a user to find the email + click through. Reserved for the password-reset
+// flow (P1-SEC-9, currently not implemented). Centralising the constant now
+// means the eventual implementation doesn't pick a different magic number.
+export const PASSWORD_RESET_TOKEN_EXPIRY_HOURS = 1;

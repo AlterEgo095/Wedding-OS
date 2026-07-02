@@ -1,12 +1,48 @@
 export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from 'next/server';
-import { db, tenantDb } from '@/lib/db';
+import { tenantDb } from '@/lib/db';
 import { getAuthUser, hasPermission } from '@/lib/auth';
 import { resolveAdminTenant, runWithTenant } from '@/lib/tenant-context';
 import { v4 as uuidv4 } from 'uuid';
 import * as XLSX from 'xlsx';
+import { logger } from '@/lib/logger'; // P2-SEC-1
+import { internalError } from '@/lib/api-errors'; // P2-CQ-5
+import { writeAuditLog } from '@/lib/audit'; // P2-SEC-14
+import { withRateLimit } from '@/lib/rate-limit'; // P2-SEC-6
+// P2-PERF-2: Prisma's exact-types make it impossible to pass a plain object
+// literal to createMany unless we cast. Import the type so the cast is at
+// least typed (not `any`).
+import { Prisma } from '@prisma/client';
 
-export async function POST(request: NextRequest) {
+/**
+ * P2-PERF-2: Pre-generate unique invitation codes for ALL rows in a single
+ * batch. Returns an array of codes aligned 1:1 with the input rows.
+ *
+ * Strategy: generate one candidate per row, batch-check via single findMany,
+ * regenerate collisions, repeat (bounded by 5 iterations).
+ */
+async function preGenerateCodes(rowCount: number): Promise<string[]> {
+  if (rowCount === 0) return [];
+  const codes: string[] = Array.from({ length: rowCount }, () =>
+    uuidv4().substring(0, 8).toUpperCase(),
+  );
+  for (let iter = 0; iter < 5; iter++) {
+    const conflicts = await tenantDb.guest.findMany({
+      where: { invitationCode: { in: codes } },
+      select: { invitationCode: true },
+    });
+    if (conflicts.length === 0) break;
+    const takenSet = new Set(conflicts.map((c) => c.invitationCode));
+    for (let i = 0; i < codes.length; i++) {
+      if (takenSet.has(codes[i])) codes[i] = uuidv4().substring(0, 8).toUpperCase();
+    }
+  }
+  return codes;
+}
+
+// P2-SEC-6: defined as a local function then wrapped on export so Next.js
+// picks up the rate-limited version while the handler body stays readable.
+async function importGuestsHandler(request: NextRequest) {
   try {
     const user = await getAuthUser(request);
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -35,8 +71,29 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: 'No data found in the file' }, { status: 400 });
       }
 
+      // P2-PERF-2: pre-generate invitation codes for ALL rows in one batch
+      // (1 findMany instead of relying on per-row try/catch on the unique
+      // constraint, which was silently swallowing collisions).
+      const invitationCodes = await preGenerateCodes(rows.length);
+
+      // Parse + validate each row into a guest record (in-memory).
+      // P2-PERF-2: typed as Prisma GuestCreateManyInput fields so we can pass
+      // the array straight to createMany without per-row type assertions.
       const created: string[] = [];
       const errors: string[] = [];
+      const guestData: Array<{
+        firstName: string;
+        lastName: string;
+        displayName: string;
+        invitationType: string;
+        phone: string | null;
+        email: string | null;
+        seats: number;
+        category: string;
+        status: string;
+        personalMessage: string | null;
+        invitationCode: string;
+      }> = [];
 
       for (let i = 0; i < rows.length; i++) {
         const row = rows[i];
@@ -57,45 +114,77 @@ export async function POST(request: NextRequest) {
           const personalMessage = String(row['Message Personnel'] || row['personalMessage'] || '').trim() || null;
           const invitationType = String(row['Type'] || row['invitationType'] || 'individuel').trim();
 
-          const invitationCode = uuidv4().substring(0, 8).toUpperCase();
           const displayName = invitationType === 'couple'
             ? `Couple ${lastName}`
             : `${firstName} ${lastName}`;
 
-          // tenantDb.guest.create auto-injects weddingId from context
-          await tenantDb.guest.create({
-            data: {
-              firstName, lastName, displayName,
-              invitationType,
-              phone, email, seats, category, status, personalMessage,
-              invitationCode,
-            },
+          guestData.push({
+            firstName, lastName, displayName,
+            invitationType,
+            phone, email, seats, category, status, personalMessage,
+            invitationCode: invitationCodes[i],
           });
-
           created.push(`${firstName} ${lastName}`);
         } catch (err) {
           errors.push(`Row ${i + 2}: ${err instanceof Error ? err.message : 'Unknown error'}`);
         }
       }
 
-      await db.auditLog.create({
-        data: {
-          weddingId: context.weddingId,
-          userId: user.id,
-          action: 'IMPORT_GUESTS',
-          details: `Imported ${created.length} guests, ${errors.length} errors`,
-        },
+      // P2-PERF-2: single createMany for all valid rows — replaces the
+      // per-row create loop (was N sequential inserts).
+      let imported = 0;
+      if (guestData.length > 0) {
+        try {
+          const r = await tenantDb.guest.createMany({
+            data: guestData as Prisma.GuestCreateManyInput[],
+          });
+          imported = r.count;
+        } catch (err) {
+          // Fall back to per-row inserts so we can attribute errors to rows.
+          // (Path is rare — only when skipDuplicates can't recover, e.g.
+          // schema mismatch on a column.)
+          logger.warn('createMany failed; falling back to per-row insert', {
+            errMessage: err instanceof Error ? err.message : String(err),
+            errName: err instanceof Error ? err.name : 'Unknown',
+          });
+          for (let i = 0; i < guestData.length; i++) {
+            try {
+              await tenantDb.guest.create({ data: guestData[i] as never });
+              imported++;
+            } catch (rowErr) {
+              errors.push(`Row ${i + 2}: ${rowErr instanceof Error ? rowErr.message : 'Unknown error'}`);
+            }
+          }
+        }
+      }
+
+      // P2-SEC-14: writeAuditLog populates ipAddress + userAgent from request.
+      await writeAuditLog({
+        weddingId: context.weddingId,
+        userId: user.id,
+        action: 'IMPORT_GUESTS',
+        details: `Imported ${imported} guests, ${errors.length} errors`,
+        request,
       });
 
       return NextResponse.json({
-        imported: created.length,
+        imported,
+        skipped: created.length - imported,
         errors: errors.length,
         errorDetails: errors,
         createdGuests: created,
       });
     });
   } catch (error) {
-    console.error('Import guests error:', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    // P2-SEC-1: never log error.stack.
+    logger.error('Import guests error', {
+      errMessage: error instanceof Error ? error.message : String(error),
+      errName: error instanceof Error ? error.name : 'Unknown',
+    });
+    return internalError();
   }
 }
+
+// P2-SEC-6: rate-limit the POST handler (5 requests / 60s per IP).
+// XLSX parsing + bulk insert is DB-heavy.
+export const POST = withRateLimit(5, 60_000)(importGuestsHandler);

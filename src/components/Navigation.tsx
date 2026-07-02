@@ -180,7 +180,7 @@ export default function Navigation() {
                 variant="ghost"
                 size="icon"
                 onClick={() => setMobileOpen(true)}
-                className="text-foreground/70 hover:text-foreground"
+                className="h-11 w-11 text-foreground/70 hover:text-foreground"
                 aria-label="Ouvrir le menu"
               >
                 <Menu className="size-5" />

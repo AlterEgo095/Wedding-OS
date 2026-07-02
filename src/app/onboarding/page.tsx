@@ -834,6 +834,7 @@ export default function OnboardingLeadPage() {
                     <Button
                       type="submit"
                       disabled={isSubmitting}
+                      aria-describedby="onboarding-submit-status"
                       className="btn-premium w-full sm:w-auto bg-gradient-gold text-white hover:opacity-90 rounded-full px-8 py-6 text-base shadow-lg shadow-gold/20 disabled:opacity-60 disabled:shadow-none"
                       aria-label="Envoyer ma demande"
                     >
@@ -849,6 +850,15 @@ export default function OnboardingLeadPage() {
                         </>
                       )}
                     </Button>
+                    {/* P1-UX-8: screen-reader-only status explaining why the submit
+                        button is disabled (during submission). Sighted users see
+                        the inline spinner + "Envoi en cours..." label; non-sighted
+                        users get the same context via aria-describedby. */}
+                    <span id="onboarding-submit-status" className="sr-only">
+                      {isSubmitting
+                        ? 'Envoi de votre demande en cours, veuillez patienter.'
+                        : 'Bouton d’envoi disponible.'}
+                    </span>
 
                     <p className="text-[11px] text-muted-foreground/70 font-display leading-relaxed pt-2 border-t border-border/40">
                       🔒 Vos données restent confidentielles et ne sont utilisées

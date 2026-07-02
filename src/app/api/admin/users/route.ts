@@ -5,21 +5,18 @@ import { getAuthUser, hasPermission, hashPassword } from '@/lib/auth';
 import { resolveAdminTenant } from '@/lib/tenant-context';
 import { isPlatformAdmin } from '@/lib/types';
 import { checkAdminLimit } from '@/lib/plan-limits';
-
-// SECURITY (P1-SEC-6): Centralized password policy. Min 8 chars, must contain
-// at least one letter and one number. Shared by POST (create) and PUT (update).
-const MIN_PASSWORD_LENGTH = 8;
-function isValidPassword(password: string): boolean {
-  if (typeof password !== 'string' || password.length < MIN_PASSWORD_LENGTH) return false;
-  if (!/[a-zA-Z]/.test(password)) return false; // at least one letter
-  if (!/[0-9]/.test(password)) return false;    // at least one digit
-  return true;
-}
-const PASSWORD_POLICY_MSG =
-  `Le mot de passe doit contenir au moins ${MIN_PASSWORD_LENGTH} caractères, dont une lettre et un chiffre.`;
-
-// P1-CQ-12: deduplicated validRoles array (was duplicated in POST + PUT).
-const VALID_ROLES = ['PLATFORM_ADMIN', 'SUPER_ADMIN', 'ORGANIZER', 'RECEPTION', 'CONTROLLER'];
+// P2-CQ-1/2 + P2-SEC-2/3 + P1-SEC-6: shared constants from @/lib/constants.
+import {
+  VALID_ROLES,
+  isValidPassword,
+  PASSWORD_POLICY_MSG,
+} from '@/lib/constants';
+// P2-SEC-1: structured logger (no stack leak).
+import { logger } from '@/lib/logger';
+// P2-CQ-5: standardised API errors.
+import { internalError } from '@/lib/api-errors';
+// P2-SEC-14: writeAuditLog populates ipAddress + userAgent from request.
+import { writeAuditLog } from '@/lib/audit';
 
 // AdminUser is platform-level (not tenant-scoped) — SUPER_ADMIN has weddingId=null.
 // However, non-SUPER_ADMIN users can only see users in their own wedding.
@@ -47,8 +44,12 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ users });
   } catch (error) {
-    console.error('List users error:', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    // P2-SEC-1: never log error.stack.
+    logger.error('List users error', {
+      errMessage: error instanceof Error ? error.message : String(error),
+      errName: error instanceof Error ? error.name : 'Unknown',
+    });
+    return internalError();
   }
 }
 
@@ -66,7 +67,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: tenantError?.message }, { status: tenantError?.status ?? 500 });
     }
 
-    const body = await request.json();
+    const body = await request.json().catch(() => null); // P2-CQ-6
+    if (!body) {
+      return NextResponse.json(
+        { error: 'Corps de requête invalide' },
+        { status: 400 }
+      );
+    }
     const { email, password, name, role, weddingId } = body;
 
     if (!email || !password || !name || !role) {
@@ -74,6 +81,7 @@ export async function POST(request: NextRequest) {
     }
 
     // SECURITY (P1-SEC-6): Enforce password policy on user creation.
+    // P2-CQ-1: isValidPassword now imported from @/lib/constants.
     if (!isValidPassword(password)) {
       return NextResponse.json({ error: PASSWORD_POLICY_MSG }, { status: 400 });
     }
@@ -119,7 +127,11 @@ export async function POST(request: NextRequest) {
       } catch (limitError) {
         // If the limit check itself fails, log and continue — we don't want
         // to block a legitimate write because of an internal accounting error.
-        console.error('Admin limit check failed:', limitError);
+        // P2-SEC-1: structured logger; no stack leak.
+        logger.error('Admin limit check failed', {
+          errMessage: limitError instanceof Error ? limitError.message : String(limitError),
+          errName: limitError instanceof Error ? limitError.name : 'Unknown',
+        });
       }
     }
 
@@ -133,19 +145,23 @@ export async function POST(request: NextRequest) {
       select: { id: true, email: true, name: true, role: true, weddingId: true, createdAt: true, updatedAt: true },
     });
 
-    await db.auditLog.create({
-      data: {
-        weddingId: assignedWeddingId, // null for SUPER_ADMIN
-        userId: user.id,
-        action: 'CREATE_USER',
-        details: `Created user ${email} (role: ${role})`,
-      },
+    // P2-SEC-14: writeAuditLog populates ipAddress + userAgent from request.
+    await writeAuditLog({
+      weddingId: assignedWeddingId, // null for SUPER_ADMIN
+      userId: user.id,
+      action: 'CREATE_USER',
+      details: `Created user ${email} (role: ${role})`,
+      request,
     });
 
     return NextResponse.json({ user: newUser }, { status: 201 });
   } catch (error) {
-    console.error('Create user error:', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    // P2-SEC-1: never log error.stack.
+    logger.error('Create user error', {
+      errMessage: error instanceof Error ? error.message : String(error),
+      errName: error instanceof Error ? error.name : 'Unknown',
+    });
+    return internalError();
   }
 }
 
@@ -157,7 +173,13 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
-    const body = await request.json();
+    const body = await request.json().catch(() => null); // P2-CQ-6
+    if (!body) {
+      return NextResponse.json(
+        { error: 'Corps de requête invalide' },
+        { status: 400 }
+      );
+    }
     const { id, email, name, role, password, weddingId } = body;
 
     if (!id) return NextResponse.json({ error: 'User ID is required' }, { status: 400 });
@@ -173,6 +195,7 @@ export async function PUT(request: NextRequest) {
     }
 
     // SECURITY (P1-SEC-6): Enforce password policy on password reset.
+    // P2-CQ-1: isValidPassword now imported from @/lib/constants.
     if (password !== undefined && password !== null && !isValidPassword(password)) {
       return NextResponse.json({ error: PASSWORD_POLICY_MSG }, { status: 400 });
     }
@@ -194,19 +217,23 @@ export async function PUT(request: NextRequest) {
       select: { id: true, email: true, name: true, role: true, weddingId: true, createdAt: true, updatedAt: true },
     });
 
-    await db.auditLog.create({
-      data: {
-        weddingId: updatedUser.weddingId,
-        userId: user.id,
-        action: 'UPDATE_USER',
-        details: `Updated user ${existing.email}`,
-      },
+    // P2-SEC-14: writeAuditLog populates ipAddress + userAgent from request.
+    await writeAuditLog({
+      weddingId: updatedUser.weddingId,
+      userId: user.id,
+      action: 'UPDATE_USER',
+      details: `Updated user ${existing.email}`,
+      request,
     });
 
     return NextResponse.json({ user: updatedUser });
   } catch (error) {
-    console.error('Update user error:', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    // P2-SEC-1: never log error.stack.
+    logger.error('Update user error', {
+      errMessage: error instanceof Error ? error.message : String(error),
+      errName: error instanceof Error ? error.name : 'Unknown',
+    });
+    return internalError();
   }
 }
 
@@ -228,18 +255,22 @@ export async function DELETE(request: NextRequest) {
 
     await db.adminUser.delete({ where: { id } });
 
-    await db.auditLog.create({
-      data: {
-        weddingId: existing.weddingId,
-        userId: user.id,
-        action: 'DELETE_USER',
-        details: `Deleted user ${existing.email}`,
-      },
+    // P2-SEC-14: writeAuditLog populates ipAddress + userAgent from request.
+    await writeAuditLog({
+      weddingId: existing.weddingId,
+      userId: user.id,
+      action: 'DELETE_USER',
+      details: `Deleted user ${existing.email}`,
+      request,
     });
 
     return NextResponse.json({ message: 'User deleted successfully' });
   } catch (error) {
-    console.error('Delete user error:', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    // P2-SEC-1: never log error.stack.
+    logger.error('Delete user error', {
+      errMessage: error instanceof Error ? error.message : String(error),
+      errName: error instanceof Error ? error.name : 'Unknown',
+    });
+    return internalError();
   }
 }

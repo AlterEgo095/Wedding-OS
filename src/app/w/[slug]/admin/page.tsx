@@ -425,7 +425,7 @@ export default function PerWeddingAdminPage() {
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-8 w-8 text-muted-foreground shrink-0"
+                  className="h-11 w-11 text-muted-foreground shrink-0"
                   onClick={() => setSidebarOpen(false)}
                 >
                   <X className="w-4 h-4" />

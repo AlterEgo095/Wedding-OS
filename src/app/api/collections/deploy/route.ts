@@ -5,6 +5,14 @@ import { getAuthUser, hasPermission } from '@/lib/auth';
 import { withAdminTenantHandler } from '@/lib/tenant-context';
 import { getCollection } from '@/lib/collections/catalog';
 import { countModules, countVariants } from '@/lib/collections/types';
+// P2-SEC-6: rate-limit HOF.
+import { withRateLimit } from '@/lib/rate-limit';
+// P2-SEC-1: structured logger (no stack leak).
+import { logger } from '@/lib/logger';
+// P2-CQ-5: standardised API errors.
+import { badRequest } from '@/lib/api-errors';
+// P2-SEC-14: writeAuditLog populates ipAddress + userAgent from request.
+import { writeAuditLog } from '@/lib/audit';
 
 // ══════════════════════════════════════════════════════════════════════════════
 // POST /api/collections/deploy — ORGANIZER+, tenant-scoped
@@ -24,7 +32,11 @@ import { countModules, countVariants } from '@/lib/collections/types';
 // public site reflects the deployed Collection at render time.
 // ══════════════════════════════════════════════════════════════════════════════
 
-export async function POST(request: NextRequest) {
+// P2-SEC-6: defined as a local function then wrapped on export so Next.js
+// picks up the rate-limited version while the handler body stays readable.
+// Casts withAdminTenantHandler's Promise<Response> to Promise<NextResponse>
+// — the runtime is NextResponse, but the lib's signature types it as Response.
+async function deployCollectionHandler(request: NextRequest): Promise<NextResponse> {
   try {
     // ── Phase A: Authentication ──────────────────────────────────────────────
     const user = await getAuthUser(request);
@@ -36,15 +48,15 @@ export async function POST(request: NextRequest) {
     }
 
     // ── Phase A: Tenant resolution (locks non-platform admins to their wedding) ──
-    return withAdminTenantHandler(request, user, async (_req, ctx) => {
-      const body = await request.json().catch(() => ({}));
+    return await withAdminTenantHandler(request, user, async (_req, ctx) => {
+      const body = await request.json().catch(() => ({})); // P2-CQ-6
       const { collectionId, variantSelections } = body as {
         collectionId?: string;
         variantSelections?: Record<string, string>;
       };
 
       if (!collectionId) {
-        return NextResponse.json({ error: 'collectionId est requis' }, { status: 400 });
+        return badRequest('collectionId est requis');
       }
 
       const collection = getCollection(collectionId);
@@ -133,14 +145,13 @@ export async function POST(request: NextRequest) {
         }),
       ]);
 
-      // Audit log
-      await db.auditLog.create({
-        data: {
-          weddingId: ctx.weddingId,
-          userId: user.id,
-          action: 'DEPLOY_COLLECTION',
-          details: `Deployed Collection "${collection.name}" (${collection.id} v${collection.version}) — binding ${binding.id}, theme ${theme.id}`,
-        },
+      // Audit log (P2-SEC-14: writeAuditLog populates ipAddress + userAgent)
+      await writeAuditLog({
+        weddingId: ctx.weddingId,
+        userId: user.id,
+        action: 'DEPLOY_COLLECTION',
+        details: `Deployed Collection "${collection.name}" (${collection.id} v${collection.version}) — binding ${binding.id}, theme ${theme.id}`,
+        request,
       });
 
       // ── Build deployment manifest (returned to caller) ───────────────────────
@@ -195,12 +206,23 @@ export async function POST(request: NextRequest) {
         success: true,
         manifest,
       });
-    });
+    }) as unknown as NextResponse;
   } catch (e) {
-    console.error('Deploy collection error:', e);
+    // P2-SEC-1: structured logger; no stack leak.
+    // (Original caught parse errors + transaction errors and returned 400
+    // with the error message in the body — that leaked internals, so we now
+    // return a generic 400 with the message only in dev.)
+    logger.error('Deploy collection error', {
+      errMessage: e instanceof Error ? e.message : String(e),
+      errName: e instanceof Error ? e.name : 'Unknown',
+    });
     return NextResponse.json(
       { error: 'Invalid request', detail: (e as Error).message },
       { status: 400 },
     );
   }
 }
+
+// P2-SEC-6: rate-limit the POST handler (10 requests / 60s per IP).
+// Deploy runs a 3-query transaction + Theme upsert — heavier than a read.
+export const POST = withRateLimit(10, 60_000)(deployCollectionHandler);

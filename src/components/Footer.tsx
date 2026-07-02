@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { Heart, Sparkles } from 'lucide-react'
 import Image from 'next/image'
+import { SETTING_KEYS } from '@/lib/constants'
 
 export default function Footer() {
   const currentYear = new Date().getFullYear()
@@ -30,16 +31,16 @@ export default function Footer() {
       .then((data) => {
         const s = data?.settings
         if (s && typeof s === 'object') {
-          const bride = (s.bride_name || '').trim()
-          const groom = (s.groom_name || '').trim()
+          const bride = (s[SETTING_KEYS.BRIDE_NAME] || '').trim()
+          const groom = (s[SETTING_KEYS.GROOM_NAME] || '').trim()
           setGroomName(groom)
           setBrideName(bride)
           if (bride && groom) setCoupleLabel(`${groom} & ${bride}`)
           else if (bride || groom) setCoupleLabel(bride || groom)
-          if (s.hashtag) setHashtag(s.hashtag)
-          if (s.site_subtitle) setDateDisplay(s.site_subtitle)
-          if (s.couple_photo_1) setCouplePhoto1Path(s.couple_photo_1)
-          if (s.couple_photo_2) setCouplePhoto2Path(s.couple_photo_2)
+          if (s[SETTING_KEYS.HASHTAG]) setHashtag(s[SETTING_KEYS.HASHTAG])
+          if (s[SETTING_KEYS.SITE_SUBTITLE]) setDateDisplay(s[SETTING_KEYS.SITE_SUBTITLE])
+          if (s[SETTING_KEYS.COUPLE_PHOTO_1]) setCouplePhoto1Path(s[SETTING_KEYS.COUPLE_PHOTO_1])
+          if (s[SETTING_KEYS.COUPLE_PHOTO_2]) setCouplePhoto2Path(s[SETTING_KEYS.COUPLE_PHOTO_2])
         }
       })
       .catch(() => {})
@@ -61,11 +62,13 @@ export default function Footer() {
           transition={{ duration: 0.6 }}
           className="flex items-center justify-center gap-3 mb-6"
         >
-          <div className="w-14 h-14 md:w-16 md:h-16 rounded-full overflow-hidden gold-border shadow-md shadow-gold/10">
-            <img
+          <div className="relative w-14 h-14 md:w-16 md:h-16 rounded-full overflow-hidden gold-border shadow-md shadow-gold/10">
+            <Image
               src={couplePhoto1Path}
-              alt={groomName}
-              className="w-full h-full object-cover"
+              alt={groomName || 'Photo du mari'}
+              fill
+              sizes="64px"
+              className="object-cover"
             />
           </div>
           <motion.div
@@ -74,11 +77,13 @@ export default function Footer() {
           >
             <Heart className="size-5 text-gold fill-gold/30" />
           </motion.div>
-          <div className="w-14 h-14 md:w-16 md:h-16 rounded-full overflow-hidden gold-border shadow-md shadow-gold/10">
-            <img
+          <div className="relative w-14 h-14 md:w-16 md:h-16 rounded-full overflow-hidden gold-border shadow-md shadow-gold/10">
+            <Image
               src={couplePhoto2Path}
-              alt={brideName}
-              className="w-full h-full object-cover"
+              alt={brideName || 'Photo de la mariée'}
+              fill
+              sizes="64px"
+              className="object-cover"
             />
           </div>
         </motion.div>

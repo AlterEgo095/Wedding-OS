@@ -3,6 +3,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db, tenantDb } from '@/lib/db';
 import { getAuthUser, hasPermission } from '@/lib/auth';
 import { withAdminTenantHandler } from '@/lib/tenant-context';
+// P2-SEC-1: structured logger (no stack leak).
+import { logger } from '@/lib/logger';
+// P2-CQ-5: standardised API errors.
+import { internalError, badRequest } from '@/lib/api-errors';
 
 // All table operations require auth (tables are admin-only — guests don't see them)
 export async function GET(request: NextRequest) {
@@ -29,8 +33,12 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ tables: tablesWithCounts });
     });
   } catch (error) {
-    console.error('List tables error:', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    // P2-SEC-1: never log error.stack.
+    logger.error('List tables error', {
+      errMessage: error instanceof Error ? error.message : String(error),
+      errName: error instanceof Error ? error.name : 'Unknown',
+    });
+    return internalError();
   }
 }
 
@@ -43,7 +51,8 @@ export async function POST(request: NextRequest) {
     }
 
     return withAdminTenantHandler(request, user, async (_req, ctx) => {
-      const body = await request.json();
+      const body = await request.json().catch(() => null); // P2-CQ-6
+      if (!body) return badRequest('Corps de requête invalide');
       const { name, number, capacity, location } = body;
       if (!name || number === undefined) {
         return NextResponse.json({ error: 'Name and number are required' }, { status: 400 });
@@ -77,8 +86,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ table }, { status: 201 });
     });
   } catch (error) {
-    console.error('Create table error:', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    // P2-SEC-1: never log error.stack.
+    logger.error('Create table error', {
+      errMessage: error instanceof Error ? error.message : String(error),
+      errName: error instanceof Error ? error.name : 'Unknown',
+    });
+    return internalError();
   }
 }
 
@@ -91,7 +104,8 @@ export async function PUT(request: NextRequest) {
     }
 
     return withAdminTenantHandler(request, user, async (_req, ctx) => {
-      const body = await request.json();
+      const body = await request.json().catch(() => null); // P2-CQ-6
+      if (!body) return badRequest('Corps de requête invalide');
       const { id, name, number, capacity, location } = body;
       if (!id) return NextResponse.json({ error: 'Table ID is required' }, { status: 400 });
 
@@ -127,8 +141,12 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ table });
     });
   } catch (error) {
-    console.error('Update table error:', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    // P2-SEC-1: never log error.stack.
+    logger.error('Update table error', {
+      errMessage: error instanceof Error ? error.message : String(error),
+      errName: error instanceof Error ? error.name : 'Unknown',
+    });
+    return internalError();
   }
 }
 
@@ -171,7 +189,11 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ message: 'Table deleted successfully' });
     });
   } catch (error) {
-    console.error('Delete table error:', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    // P2-SEC-1: never log error.stack.
+    logger.error('Delete table error', {
+      errMessage: error instanceof Error ? error.message : String(error),
+      errName: error instanceof Error ? error.name : 'Unknown',
+    });
+    return internalError();
   }
 }

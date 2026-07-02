@@ -98,11 +98,11 @@ import {
   BILLING_CYCLE_LABELS,
   PAYMENT_METHOD_LABELS,
   resolveAmountUsdCents,
-  usdCentsToFcfa,
   buildWhatsAppMessage,
   type BillingCycle,
   type PaymentMethod,
 } from '@/lib/billing'
+import { formatUsd, formatFcfa, formatDate, toDateInput } from '@/lib/format'
 
 // ══════════════════════════════════════════════════════════════════════════════
 // Types — mirror the API responses (Task 7-a contracts)
@@ -341,29 +341,11 @@ const EMPTY_FORM: WizardFormState = {
 // Helpers
 // ══════════════════════════════════════════════════════════════════════════════
 
-function formatUsd(cents: number): string {
-  return `$${(cents / 100).toFixed(2)}`
-}
-
-function formatFcfa(cents: number): string {
-  return `${usdCentsToFcfa(cents).toLocaleString('fr-FR')} FCFA`
-}
-
-function formatDate(iso: string | null): string {
-  if (!iso) return '—'
-  return new Date(iso).toLocaleDateString('fr-FR', {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-  })
-}
-
-function toDateInput(iso: string | null): string {
-  if (!iso) return ''
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return ''
-  return d.toISOString().slice(0, 10)
-}
+// P2-CQ-3: formatters imported from @/lib/format — local copies deleted.
+// formatUsd / formatFcfa / formatDate / toDateInput are imported from
+// @/lib/format. The previous local `formatFcfa` used `usdCentsToFcfa(cents)`;
+// the lib version computes the same value inline via FCFA_TO_USD_RATE —
+// functionally identical.
 
 /** Generate a random 12-character password (mixed alphanumeric). */
 function generateRandomPassword(length = 12): string {

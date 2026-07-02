@@ -3,6 +3,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db, tenantDb } from '@/lib/db';
 import { getAuthUser, hasPermission } from '@/lib/auth';
 import { withPublicTenant, withAdminTenantHandler } from '@/lib/tenant-context';
+// P2-SEC-1: structured logger (no stack leak).
+import { logger } from '@/lib/logger';
+// P2-CQ-5: standardised API errors.
+import { internalError, badRequest } from '@/lib/api-errors';
 
 // GET /api/settings — public, returns all settings for the resolved wedding
 export const GET = withPublicTenant(async (_req, ctx) => {
@@ -17,8 +21,12 @@ export const GET = withPublicTenant(async (_req, ctx) => {
 
     return NextResponse.json({ settings: settingsMap, wedding: { slug: ctx.slug, isDefault: ctx.isDefault, status: ctx.status, plan: ctx.plan } });
   } catch (error) {
-    console.error('Get settings error:', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    // P2-SEC-1: never log error.stack.
+    logger.error('Get settings error', {
+      errMessage: error instanceof Error ? error.message : String(error),
+      errName: error instanceof Error ? error.name : 'Unknown',
+    });
+    return internalError();
   }
 });
 
@@ -32,7 +40,8 @@ export async function PUT(request: NextRequest) {
     }
 
     return withAdminTenantHandler(request, user, async (_req, ctx) => {
-      const body = await request.json();
+      const body = await request.json().catch(() => null); // P2-CQ-6
+      if (!body) return badRequest('Corps de requête invalide');
       const { settings } = body as { settings: Record<string, string> };
 
       if (!settings || typeof settings !== 'object') {
@@ -65,7 +74,11 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ settings: settingsMap });
     });
   } catch (error) {
-    console.error('Update settings error:', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    // P2-SEC-1: never log error.stack.
+    logger.error('Update settings error', {
+      errMessage: error instanceof Error ? error.message : String(error),
+      errName: error instanceof Error ? error.name : 'Unknown',
+    });
+    return internalError();
   }
 }

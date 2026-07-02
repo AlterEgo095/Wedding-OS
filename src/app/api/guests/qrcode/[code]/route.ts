@@ -5,6 +5,8 @@ import { getAuthUser, hasPermission } from '@/lib/auth';
 import { validateGuestSession, logGuestAccess, getClientInfo, generateInvitationLinkToken } from '@/lib/guest-auth';
 import { resolvePublicTenant, resolveAdminTenant, runWithTenant } from '@/lib/tenant-context';
 import QRCode from 'qrcode';
+import { logger } from '@/lib/logger'; // P2-SEC-1
+import { internalError } from '@/lib/api-errors'; // P2-CQ-5
 
 /**
  * QR Code Generation API — with access control (tenant-scoped since Phase 2)
@@ -81,8 +83,26 @@ export async function GET(
         );
       }
 
-      const baseUrl = process.env.NEXT_PUBLIC_BASE_URL ||
-        `${request.headers.get('x-forwarded-proto') || 'https'}://${request.headers.get('host') || 'localhost:3000'}`;
+      // P2-SEC-11: never trust request.headers.get('host') — an attacker
+      // can send an arbitrary Host header to make the QR code resolve to a
+      // lookalike domain. Use the configured NEXT_PUBLIC_BASE_URL instead.
+      // In dev without NEXT_PUBLIC_BASE_URL, fall back to localhost:3000.
+      // In prod without NEXT_PUBLIC_BASE_URL, fail closed (500) rather than
+      // mint a QR pointing at an attacker-controlled host.
+      const baseUrl =
+        process.env.NEXT_PUBLIC_BASE_URL ||
+        (process.env.NODE_ENV === 'production'
+          ? ''
+          : 'http://localhost:3000');
+      if (!baseUrl) {
+        // P2-SEC-11: configuration error — refuse to mint a QR code rather
+        // than fall back to the Host header.
+        logger.error('QR code route: NEXT_PUBLIC_BASE_URL not configured', {});
+        return NextResponse.json(
+          { error: 'Configuration manquante: NEXT_PUBLIC_BASE_URL' },
+          { status: 500 }
+        );
+      }
 
       const encryptedToken = generateInvitationLinkToken(code);
       // For multi-tenant, encode the wedding slug in the QR URL so it lands on /w/{slug}/invite/{token}
@@ -113,7 +133,11 @@ export async function GET(
       });
     });
   } catch (error) {
-    console.error('QR code generation error:', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    // P2-SEC-1: never log error.stack.
+    logger.error('QR code generation error', {
+      errMessage: error instanceof Error ? error.message : String(error),
+      errName: error instanceof Error ? error.name : 'Unknown',
+    });
+    return internalError();
   }
 }

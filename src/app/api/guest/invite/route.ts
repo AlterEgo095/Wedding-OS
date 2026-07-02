@@ -7,9 +7,12 @@ import {
   logGuestAccess,
   getClientInfo,
   createGuestSession,
+  setGuestSessionCookie, // P2-SEC-4 + P2-CQ-21
 } from '@/lib/guest-auth';
 import { getAuthUser, hasPermission } from '@/lib/auth';
 import { resolvePublicTenant, runWithTenant, resolveAdminTenant } from '@/lib/tenant-context';
+import { logger } from '@/lib/logger'; // P2-SEC-1 — never log error.stack
+import { internalError } from '@/lib/api-errors'; // P2-CQ-5
 
 // GET /api/guest/invite?token=ENCRYPTED_TOKEN
 // Public: Validates an encrypted invitation link token and auto-authenticates the guest
@@ -122,16 +125,18 @@ export async function GET(request: NextRequest) {
         },
       });
 
-      response.cookies.set({
-        name: 'guest_session', value: session.token,
-        httpOnly: true, secure: process.env.NODE_ENV === 'production',
-        sameSite: 'lax', path: '/', maxAge: 30 * 24 * 60 * 60,
-      });
+      // P2-SEC-4 + P2-CQ-21: shared cookie helper ensures sameSite='strict'.
+      setGuestSessionCookie(response, session.token);
 
       return response;
     } catch (error) {
-      console.error('Invite link error:', error instanceof Error ? { message: error.message, stack: error.stack } : error);
-      return NextResponse.json({ error: 'Erreur interne du serveur' }, { status: 500 });
+      // P2-SEC-1: NEVER log error.stack — it can leak source paths +
+      // secrets captured by async hooks. Log message + name only.
+      logger.error('Invite link error', {
+        errMessage: error instanceof Error ? error.message : String(error),
+        errName: error instanceof Error ? error.name : 'Unknown',
+      });
+      return internalError();
     }
   });
 }
@@ -186,7 +191,11 @@ export async function POST(request: NextRequest) {
       });
     });
   } catch (error) {
-    console.error('Generate invite link error:', error);
-    return NextResponse.json({ error: 'Erreur interne du serveur' }, { status: 500 });
+    // P2-SEC-1: never log error.stack. Use structured logger instead of console.error.
+    logger.error('Generate invite link error', {
+      errMessage: error instanceof Error ? error.message : String(error),
+      errName: error instanceof Error ? error.name : 'Unknown',
+    });
+    return internalError();
   }
 }
