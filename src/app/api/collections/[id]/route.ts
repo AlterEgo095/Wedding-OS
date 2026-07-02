@@ -1,32 +1,25 @@
-import { NextResponse } from 'next/server'
-import { getCollection } from '@/lib/collections/catalog'
-import { countModules, countVariants, computeQualityScore } from '@/lib/collections/types'
+export const dynamic = 'force-dynamic';
+import { NextRequest, NextResponse } from 'next/server';
+import { withPublicTenant } from '@/lib/tenant-context';
+import { getCollection } from '@/lib/collections';
+import type { Plan } from '@/lib/types';
 
-export const dynamic = 'force-static'
-
-// GET /api/collections/[id] — full Collection detail with all packs/modules/variants
-export async function GET(
-  _req: Request,
-  { params }: { params: Promise<{ id: string }> },
-) {
-  const { id } = await params
-  const collection = getCollection(id)
-
-  if (!collection) {
-    return NextResponse.json(
-      { error: 'Collection not found', id },
-      { status: 404 },
-    )
+/**
+ * GET /api/collections/[id] — public detail (with variants), filtered by plan.
+ *
+ * Returns the Collection + its variants, or 404 if not found / not accessible.
+ */
+export const GET = withPublicTenant(async (req: NextRequest, ctx) => {
+  try {
+    const id = req.nextUrl.pathname.split('/').pop() as string
+    const plan = ctx.plan as Plan
+    const collection = await getCollection(id, plan)
+    if (!collection) {
+      return NextResponse.json({ error: 'Collection introuvable' }, { status: 404 })
+    }
+    return NextResponse.json({ collection })
+  } catch (error) {
+    console.error('Get collection error:', error)
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
-
-  return NextResponse.json({
-    collection,
-    stats: {
-      packs: collection.packs.length,
-      modules: countModules(collection),
-      variants: countVariants(collection),
-      qualityScore: computeQualityScore(collection),
-      completionPct: collection.completionPct,
-    },
-  })
-}
+})
