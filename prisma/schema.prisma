@@ -384,10 +384,15 @@ model AuditLog {
   user      AdminUser? @relation(fields: [userId], references: [id], onDelete: SetNull)
   action    String
   details   String?
+  // P1-SEC-12: forensic fields — IP + UserAgent for security audits.
+  // Both nullable for backward compat (existing rows have neither).
+  ipAddress String?
+  userAgent  String?
   createdAt DateTime  @default(now())
 
   @@index([weddingId, createdAt])
   @@index([userId])
+  @@index([ipAddress])
 }
 
 // ══════════════════════════════════════════════════════════════════════════════

@@ -8,9 +8,15 @@ import { writeFile, unlink, mkdir } from 'fs/promises';
 import path from 'path';
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
-const ALLOWED_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg', '.mp4', '.webm', '.pdf'];
+// SECURITY (P1-SEC-13): SVG removed from allowed list — SVG can carry
+// inline <script> tags and event handlers that execute as same-origin JS
+// when served from /uploads/*. This is a stored-XSS vector. If SVG support
+// is required in the future, serve them with Content-Disposition: attachment
+// + Content-Type: image/svg+xml AND sanitize the XML server-side (DOMPurify
+// doesn't run server-side; use @mapbox/svg-transform or similar).
+const ALLOWED_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.mp4', '.webm', '.pdf'];
 const ALLOWED_MIME_TYPES = [
-  'image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/svg+xml',
+  'image/jpeg', 'image/png', 'image/gif', 'image/webp',
   'video/mp4', 'video/webm',
   'application/pdf',
 ];

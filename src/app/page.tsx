@@ -70,6 +70,8 @@ function HomeContent() {
   const [settings, setSettings] = useState<VenueSettings | null>(null)
   const [musicSettings, setMusicSettings] = useState<{ file: string; volume: number; enabled: boolean; url: string }>({ file: '', volume: 0.25, enabled: false, url: '' })
   const [loading, setLoading] = useState(true)
+  // P1-UX-3: surface fetch errors to the user (previously only console.error'd).
+  const [fetchError, setFetchError] = useState<string | null>(null)
 
   // Floating "Demander mon mariage" CTA dismiss state (persisted across reloads)
   const [ctaDismissed, setCtaDismissed] = useState(false)
@@ -233,6 +235,10 @@ function HomeContent() {
         }
       } catch (error) {
         console.error('Error fetching data:', error)
+        // P1-UX-3: show a non-blocking error banner instead of failing silently.
+        setFetchError(
+          "Impossible de charger certaines informations du mariage. Veuillez rafraîchir la page."
+        )
       } finally {
         setLoading(false)
       }
@@ -250,6 +256,27 @@ function HomeContent() {
   // Regular landing page content (shown when not authenticated or admin is viewing)
   const regularContent = (
     <>
+      {/* P1-UX-3: non-blocking error banner for failed data fetches */}
+      {fetchError ? (
+        <div
+          role="alert"
+          aria-live="polite"
+          className="mx-auto max-w-3xl mt-4 px-4"
+        >
+          <div className="rounded-md border border-amber-300/50 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-700/50 p-3 text-sm text-amber-900 dark:text-amber-200 flex items-center justify-between gap-3">
+            <span>{fetchError}</span>
+            <button
+              type="button"
+              onClick={() => setFetchError(null)}
+              aria-label="Fermer"
+              className="text-amber-700 dark:text-amber-300 hover:underline min-h-[44px] min-w-[44px] px-2"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+      ) : null}
+
       {/* Our Story Timeline */}
       <OurStory stories={stories} />
 
