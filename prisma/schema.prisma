@@ -30,15 +30,23 @@ model Wedding {
   plan            String        @default("TRIAL") // TRIAL, ESSENTIEL, PREMIUM, ELITE
   customDomain    String?       @unique // e.g. "mariage-sophie.fr" (Premium/Élite only)
   isDefault       Boolean       @default(false) // marks the legacy wedding served at "/"
-  // ── Phase C — Collection as central entity ────────────────────────────────
-  // The Wedding references its currently-deployed Collection + version. The
-  // full binding history lives in WeddingCollectionBinding (1:N below). Both
-  // fields are nullable so existing weddings remain backward-compatible.
-  collectionId        String?  // e.g. "royal-gold"
-  collectionVersion   String?  // e.g. "1.0.0"
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
   publishedAt     DateTime?
+
+  // ─── Collection Engine (Phase 1 — additive, nullable for zero regression) ───
+  // When a couple picks a Collection Product, the Wedding is linked to it so the
+  // ThemeInjector + LuxuryVisualEngine hydrate from the Collection's seeds.
+  // Nullable: existing weddings have collectionId = null → behavior unchanged.
+  collectionId    String?
+  collection      Collection?   @relation(fields: [collectionId], references: [id])
+  variantId       String?
+  // P1+P2 — denormalized version snapshot (mirrors WeddingCollectionBinding.collectionVersion
+  // for fast reads at render time without a join).
+  collectionVersion String?
+
+  // P1 — full binding history (1:N, one ACTIVE per wedding enforced by unique constraint).
+  collectionBindings WeddingCollectionBinding[]
 
   // Relations — every tenant-scoped entity points back to its Wedding
   admins          AdminUser[]
@@ -57,7 +65,6 @@ model Wedding {
   usageCounters   UsageCounter[]
   invitations     Invitation[]
   invoices        Invoice[]
-  collectionBindings WeddingCollectionBinding[]
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -71,13 +78,20 @@ model AdminUser {
   email        String     @unique
   password     String
   name         String
-  role         String     @default("CONTROLLER") // SUPER_ADMIN, ORGANIZER, CONTROLLER, RECEPTION
+  // Roles: SUPER_ADMIN, PLATFORM_ADMIN, ORGANIZER, RECEPTION, CONTROLLER,
+  //        DESIGNER (Phase 4 — Designer Portal access),
+  //        ART_DIRECTOR (Phase 4 — validates submissions)
+  role         String     @default("CONTROLLER")
   weddingId    String?    // null for SUPER_ADMIN (platform-wide); set for ORGANIZER/STAFF
   lastLoginAt  DateTime?
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
   wedding      Wedding?   @relation(fields: [weddingId], references: [id], onDelete: Cascade)
   auditLogs    AuditLog[]
+  // Phase 4 — Collections authored by this designer (inverse of Collection.authorId).
+  authoredCollections Collection[] @relation("CollectionAuthor")
+  // P1 — WeddingCollectionBinding deployments authored by this user.
+  collectionBindings  WeddingCollectionBinding[]
 
   // ── P1-SEC-8: TOTP-based 2FA for platform admins ─────────────────────────
   // twoFactorSecret: TOTP secret (encrypted-at-rest via encryptId/decryptId
@@ -454,34 +468,169 @@ model Lead {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// PHASE C — COLLECTION BINDING (Collection as central entity)
+// COLLECTION ENGINE — Phase 1 (AENEWS Wedding OS Enterprise)
+// ══════════════════════════════════════════════════════════════════════════════
+// A Collection Product is a commercial product that encapsulates a complete
+// wedding design (theme seed + luxury preset + Penpot file reference) ready to
+// be deployed automatically on a new wedding.
+//
+// Design principles (per validated spec):
+//   - Wedding OS does NOT design — Penpot is the Studio. The Collection only
+//     references Penpot files + stores the seed data.
+//   - Additive only: every field is nullable or has a default. Existing
+//     weddings have collectionId = null → behavior unchanged (DEFAULT_THEME).
+//   - The Collection Engine ORCHESTRATES existing motors (Theme Engine,
+//     ThemeInjector, LuxuryVisualEngine, PenpotStudio) — it does NOT replace
+//     them.
+//
+// Phase 1 scope (minimal, immediately useful):
+//   - Collection exists and can be selected/associated with a wedding
+//   - Apply flow upserts Theme row + hydrates luxury preset
+//   - Royal Gold is the first seeded Collection
+//   - Modules (34 slots), Designer Portal, lifecycle 6-state, marketplace UI
+//     are deferred to later phases (per user's phased recommendation).
+// ══════════════════════════════════════════════════════════════════════════════
+
+model Collection {
+  id              String   @id @default(cuid())
+  slug            String   @unique // e.g. "royal-gold" — used in catalog URLs
+  name            String   // display name, e.g. "Royal Gold"
+  description     String?
+  thumbnailUrl    String?
+  isActive        Boolean  @default(true) // visible in catalog when true
+  isPublished     Boolean  @default(true) // published/commercialized gate (Phase 1: always true for seed)
+  sortOrder       Int      @default(0)
+  category        String   @default("LUXURY") // LUXURY, CLASSIC, AFRICAN, MINIMAL, DESTINATION, ...
+  tier            String   @default("FREE") // marketplace tier: FREE, PREMIUM, EXCLUSIVE, ENTERPRISE, ...
+
+  // Penpot master file reference (the design source of truth lives in Penpot)
+  penpotFileUrl   String?
+  penpotFileId    String?
+
+  // Theme seed — applied to the Wedding's Theme row on deployment.
+  // JSON shape: { primaryColor, accentColor, fontDisplay, fontBody, layout }
+  themeSeed       String   // JSON string (SQLite has no native Json type — stored as text)
+
+  // Luxury preset — hydrates LuxuryVisualEngine via ThemeInjector.
+  // JSON shape: { theme: 'gold'|'rose'|'champagne'|'midnight', effects: {...}, intensity, density, speed, haloCount }
+  // Nullable: when null, the LuxuryVisualEngine falls back to its localStorage behavior (unchanged).
+  luxuryPreset    String?
+
+  // ─── Phase 4 — Lifecycle 6 états (spec §3) ──────────────────────────────
+  // status: BROUILLON | EN_COURS | VALIDATION | PUBLIE | COMMERCIALISE | ARCHIVE
+  // Default COMMERCIALISE for backward compat with Phase 1/2/3 seed Collections
+  // (they are already deployable, so they start in the terminal "commercialized" state).
+  status          String   @default("COMMERCIALISE")
+  // semver snapshot tag (e.g. "1.0.0"). Bumped on each VALIDATION transition.
+  version         String   @default("0.1.0")
+  // Designer who authored this Collection (nullable for legacy seed Collections).
+  authorId        String?
+  author          AdminUser? @relation("CollectionAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+  // Lifecycle timestamps (set when entering the corresponding state).
+  submittedAt     DateTime? // EN_COURS → VALIDATION
+  publishedAt     DateTime? // VALIDATION → PUBLIE
+  commercializedAt DateTime? // PUBLIE → COMMERCIALISE
+  archivedAt      DateTime? // * → ARCHIVE
+
+  // ─── Phase 5 — Penpot Collection Builder (auto-detection cache) ──────────
+  // Designer-scoped Penpot API token (encrypted at rest in a future hardening
+  // pass; for now stored as plaintext like other config). When null, the
+  // global PENPOT_API_TOKEN env var is used.
+  penpotTokenId   String?
+  // Last time auto-detection ran successfully (cache for 304 short-circuit +
+  // UI freshness indicator). Null = never synced.
+  lastFrameSyncAt DateTime?
+  // Cached quality score (0-100). Computed by computeQualityScore() and
+  // refreshed on each auto-detect / module update / transition. Null = never
+  // computed (legacy Collections from Phase 1-4 have null until first compute).
+  qualityScore    Int?
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  variants        CollectionVariant[]
+  modules         CollectionModule[]
+  weddings        Wedding[]
+}
+
+model CollectionVariant {
+  id              String   @id @default(cuid())
+  collectionId    String
+  collection      Collection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  code            String   // "A" | "B" | "C" | "D"
+  name            String   // display name, e.g. "Version A — Soirée"
+  // JSON shape: { primaryColor?, accentColor?, fontDisplay?, fontBody? } — overrides Collection.themeSeed
+  paletteOverride String?
+  penpotPageId    String?  // Penpot page ID specific to this variant
+  isDefault       Boolean  @default(false)
+  createdAt       DateTime @default(now())
+
+  @@unique([collectionId, code])
+  @@index([collectionId])
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Collection Engine — Phase 2: Module Slots (5 packs × 34 slots)
+// ══════════════════════════════════════════════════════════════════════════════
+// Each Collection Product must declare 34 module slots across 5 packs:
+//   Pack 1 — WEBSITE      (10 slots: hero, countdown, story, gallery, programme, rsvp, footer, loader, splash, systemPages)
+//   Pack 2 — INVITATIONS  (8 slots: standard, vip, famille, couple, presse, sponsor, numerique, impression)
+//   Pack 3 — PRINT        (8 slots: badge, qr, parking, floorPlan, tableNumber, placeCard, remerciement, livreOr)
+//   Pack 4 — COMMUNICATION(8 slots: whatsapp, facebook, instagram, story, email, banner, affiche, rollup)
+//   Pack 5 — LUXURY       (1 composite, stored in Collection.luxuryPreset — no row needed here)
+//
+// Each slot maps to a Penpot frame ID. When frameId is null, the slot is
+// "unmapped" and the renderer falls back to the existing component (zero regression).
+// Completeness validation (§4.8): a Collection can be PUBLIÉ only when all 34 slots are mapped.
+model CollectionModule {
+  id              String   @id @default(cuid())
+  collectionId    String
+  collection      Collection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  pack            String   // "WEBSITE" | "INVITATIONS" | "PRINT" | "COMMUNICATION"
+  slot            String   // e.g. "hero", "vip", "badge", "whatsapp"
+  label           String   // human-readable label, e.g. "Section héros"
+  // Penpot frame reference — null means "unmapped" (renderer falls back to existing component)
+  frameId         String?
+  penpotPageId    String?
+  // Phase 5 — original frame name as authored in Penpot (for diagnostics +
+  // drift detection: if the designer renames the frame, autoMapped=false rows
+  // surface the mismatch on next sync).
+  frameName       String?
+  // Phase 5 — true when the mapping was set by auto-detection, false when the
+  // designer manually overrode it. Manual overrides are preserved on re-sync.
+  autoMapped      Boolean  @default(false)
+  // For INVITATIONS pack only: which guest tier this slot serves (STANDARD/VIP/FAMILLE/COUPLE/PRESSE/SPONSOR)
+  // null for all other packs.
+  guestTier       String?
+  sortOrder       Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([collectionId, pack, slot])
+  @@index([collectionId])
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// PHASE C — COLLECTION BINDING (P1 — Collection as central entity)
 // ══════════════════════════════════════════════════════════════════════════════
 // A WeddingCollectionBinding records the deployment of a Premium Collection
-// (Royal Gold, Royal Black, …) to a Wedding. There is at most one ACTIVE
-// binding per wedding (enforced by `@@unique([weddingId])`), but the table
-// keeps a small history: when a new Collection is deployed, the existing row
-// is updated in place (status flips to DEPLOYED, previous manifest is
-// archived in the `manifest` JSON column).
-//
-// The deploy endpoint (POST /api/collections/deploy) upserts this row and also
-// mirrors collectionId + collectionVersion onto the Wedding itself for fast
-// reads at render time (avoids an extra join on the public site).
-//
-// The `manifest` column stores the full deployment manifest as JSON:
-//   { collectionId, collectionName, collectionVersion, designSystem,
-//     variantSelections, deployedAt, deployedBy }
+// to a Wedding. There is at most one ACTIVE binding per wedding (enforced by
+// `@@unique([weddingId])`), but the table keeps a small history: when a new
+// Collection is deployed, the existing row is updated in place (status flips
+// to DEPLOYED, previous manifest is archived in the `manifest` JSON column).
 // ══════════════════════════════════════════════════════════════════════════════
 
 model WeddingCollectionBinding {
   id                String   @id @default(cuid())
   weddingId         String   @unique // one active binding per wedding
   wedding           Wedding  @relation(fields: [weddingId], references: [id], onDelete: Cascade)
-  collectionId      String   // e.g. "royal-gold" — references PremiumCollection.id in catalog.ts
+  collectionId      String   // references Collection.id (kept as plain string for history snapshot)
   collectionVersion String   // e.g. "1.0.0"
   manifest          String   // JSON: full deployment manifest (variant selections, design system, etc.)
   status            String   @default("DEPLOYED") // DEPLOYED, ARCHIVED, ROLLED_BACK
   deployedAt        DateTime @default(now())
   deployedByUserId  String?  // AdminUser.id of the deployer (null for system/migration)
+  deployedBy        AdminUser? @relation(fields: [deployedByUserId], references: [id], onDelete: SetNull)
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 
@@ -490,24 +639,12 @@ model WeddingCollectionBinding {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// P1-SEC-9: Password reset tokens
+// P1-SEC-9 — PASSWORD RESET TOKENS
 // ══════════════════════════════════════════════════════════════════════════════
-// DB-backed password-reset tokens. The `token` column stores a SHA-256 hash
-// (never the raw token) so a DB read alone cannot be used to reset passwords.
-// The raw token is returned ONCE from generateResetToken() and must be sent
-// back by the user to /api/platform/password-reset/confirm.
-//
-// Lifecycle:
-//   1. /api/platform/password-reset/request generates a token, stores its hash,
-//      returns the raw token in the response (dev/demo only — in prod, this
-//      would be emailed via a mailto: link).
-//   2. User clicks the reset link, which contains the raw token.
-//   3. /api/platform/password-reset/confirm receives { token, newPassword },
-//      hashes the token, finds the matching row, checks expiresAt + usedAt,
-//      hashes the new password, updates AdminUser.password, marks the token
-//      used.
-//   4. Tokens expire after 1h (PASSWORD_RESET_TOKEN_EXPIRY_HOURS in constants).
-//   5. Tokens can only be used once (usedAt set on confirm).
+// Time-limited, single-use tokens for the platform password-reset flow.
+// The raw token is sent to the user via email; only its SHA-256 hash is stored.
+// ══════════════════════════════════════════════════════════════════════════════
+
 model PasswordResetToken {
   id        String    @id @default(cuid())
   email     String    // the AdminUser.email the reset is for (denormalized for lookup)
