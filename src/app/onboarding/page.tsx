@@ -159,7 +159,8 @@ const leadSchema = z.object({
     .email("Format d'email invalide"),
   phone: z.string().max(40, 'Maximum 40 caractères').optional().nullable(),
   plan: z.enum(['TRIAL', 'ESSENTIEL', 'PREMIUM', 'ELITE'], {
-    errorMap: () => ({ message: 'Veuillez sélectionner un plan' }),
+    // P3: Zod v4 replaced `errorMap` with `message` / `error`.
+    message: 'Veuillez sélectionner un plan',
   }),
   message: z.string().max(2000, 'Maximum 2000 caractères').optional().nullable(),
 })

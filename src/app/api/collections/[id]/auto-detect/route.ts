@@ -8,9 +8,11 @@ import {
   linkPenpotFile,
   ApplyError,
   type AutoMapEntry,
+  type AutoMapResult,
 } from '@/lib/collections';
 import { detectFramesFromPenpotFile } from '@/lib/penpot/autoDetect';
 import { describePenpotClientState } from '@/lib/penpot/client';
+import type { QualityReport } from '@/lib/collections/quality';
 
 /**
  * POST /api/collections/[id]/auto-detect — run Penpot auto-detection on a Collection.
@@ -92,7 +94,7 @@ export async function POST(request: NextRequest) {
 
       // 3. Optional: apply the mapping to CollectionModule rows
       const applyMapping = body.applyMapping !== false; // default true
-      let mapping = null;
+      let mapping: AutoMapResult | null = null;
       if (applyMapping && report.errors.length === 0) {
         const entries: AutoMapEntry[] = report.entries.map((e) => ({
           frameId: e.frameId,
@@ -124,7 +126,7 @@ export async function POST(request: NextRequest) {
       }
 
       // 4. Recompute + cache the quality score (best-effort, non-blocking)
-      let quality = null;
+      let quality: QualityReport | null = null;
       if (mapping) {
         try {
           const { computeQualityScore } = await import('@/lib/collections/quality');

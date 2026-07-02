@@ -97,7 +97,16 @@ export async function PUT(request: NextRequest) {
       const existing = await tenantDb.coupleStory.findFirst({ where: { id } });
       if (!existing) return NextResponse.json({ error: 'Story not found' }, { status: 404 });
 
-      const updateData: Record<string, unknown> = {};
+      // P3: Declare a concrete field shape (no index signature) so Prisma's
+      // Exact<> utility accepts the object. Record<string, unknown> is rejected
+      // because its index signature is incompatible with Exact<>.
+      const updateData: {
+        title?: string;
+        description?: string;
+        date?: string;
+        imageUrl?: string | null;
+        order?: number;
+      } = {};
       if (title !== undefined) updateData.title = title;
       if (description !== undefined) updateData.description = description;
       if (date !== undefined) updateData.date = date;

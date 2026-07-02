@@ -175,7 +175,8 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     const result = await db.$transaction(async (tx) => {
       let subscription = await tx.subscription.findUnique({
         where: { weddingId: id },
-        select: { id: true, plan: true, status: true },
+        // P3: include `currency` so the update branch can read the prior value.
+        select: { id: true, plan: true, status: true, currency: true },
       });
 
       if (!subscription) {
@@ -191,7 +192,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
             whatsappPhone: whatsappPhone ? String(whatsappPhone).trim() : null,
             notes: notes ? String(notes) : null,
           },
-          select: { id: true, plan: true, status: true },
+          select: { id: true, plan: true, status: true, currency: true },
         });
       } else {
         // Sync the subscription with the new invoice being issued.
@@ -207,7 +208,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
             whatsappPhone: whatsappPhone ? String(whatsappPhone).trim() : null,
             notes: notes ? String(notes) : null,
           },
-          select: { id: true, plan: true, status: true },
+          select: { id: true, plan: true, status: true, currency: true },
         });
       }
 

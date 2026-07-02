@@ -949,13 +949,16 @@ export async function applyCollection(params: {
 
   // Merge: keep existing penpot.tokens if present (couple may have pushed from Studio),
   // but update the file reference to the Collection's master file.
+  // P3: type the existing penpot blob so we can safely read fileUrl/fileId/pageId.
+  const existingPenpot: { fileUrl?: string | null; fileId?: string | null; pageId?: string | null } =
+    typeof existingCustomizations.penpot === 'object' && existingCustomizations.penpot
+      ? (existingCustomizations.penpot as { fileUrl?: string | null; fileId?: string | null; pageId?: string | null })
+      : {};
   const penpotIntegration = {
-    ...(typeof existingCustomizations.penpot === 'object' && existingCustomizations.penpot
-      ? (existingCustomizations.penpot as Record<string, unknown>)
-      : {}),
-    fileUrl: collection.penpotFileUrl ?? existingCustomizations.penpot?.fileUrl ?? null,
-    fileId: collection.penpotFileId ?? existingCustomizations.penpot?.fileId ?? null,
-    pageId: variant.penpotPageId ?? existingCustomizations.penpot?.pageId ?? null,
+    ...existingPenpot,
+    fileUrl: collection.penpotFileUrl ?? existingPenpot.fileUrl ?? null,
+    fileId: collection.penpotFileId ?? existingPenpot.fileId ?? null,
+    pageId: variant.penpotPageId ?? existingPenpot.pageId ?? null,
     tokens: themeToPenpotTokens(finalTheme),
     lastSyncedAt: new Date().toISOString(),
   }

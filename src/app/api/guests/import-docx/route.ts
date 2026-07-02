@@ -388,8 +388,11 @@ async function docxImportHandler(request: NextRequest) {
             result.tablesUpdated++;
           }
         } else {
+          // P3: pass weddingId explicitly — extension auto-injects at runtime
+          // but the static create-input type requires it.
           table = await tenantDb.table.create({
             data: {
+              weddingId: context.weddingId,
               number: parsedTable.number,
               name: parsedTable.name,
               capacity: Math.max(8, parsedTable.guests.length),
@@ -456,9 +459,11 @@ async function docxImportHandler(request: NextRequest) {
               ? `Couple ${parsedGuest.lastName}`
               : `${parsedGuest.firstName} ${parsedGuest.lastName}`;
 
-            // tenantDb.guest.create auto-injects weddingId from context
+            // tenantDb.guest.create auto-injects weddingId from context.
+            // P3: pass weddingId explicitly to satisfy Prisma's static types.
             await tenantDb.guest.create({
               data: {
+                weddingId: context.weddingId,
                 firstName: parsedGuest.firstName,
                 lastName: parsedGuest.lastName,
                 displayName,

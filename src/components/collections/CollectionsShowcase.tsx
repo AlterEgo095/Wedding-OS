@@ -15,8 +15,15 @@ import {
 import { Separator } from '@/components/ui/separator'
 import { DesignRenderer } from '@/components/collections/designs/DesignRenderer'
 import type { PremiumCollection, PackId, CollectionPack } from '@/lib/collections/types'
+import { countModules, countVariants } from '@/lib/collections/types'
+import { COLLECTIONS } from '@/lib/collections/catalog'
 
-// ─── Public catalog type (lightweight, for fetch) ──────────────────────────────
+// ─── Public catalog type (summary view derived from PremiumCollection) ────────
+// P3: Previously this component fetched /api/collections (which returns DB
+// CollectionPublic rows — a completely different shape) and crashed at runtime
+// because `c.stats` was undefined. The showcase is the Phase 6 "Premium
+// Collection Factory" — it displays the static COLLECTIONS catalog, so we now
+// derive PublicCollection[] from the static catalog directly (no fetch).
 interface PublicCollection {
   id: string
   name: string
@@ -35,6 +42,36 @@ interface PublicCollection {
   designSystem: PremiumCollection['designSystem']
   stats: { packs: number; modules: number; variants: number; qualityScore: number }
 }
+
+/** Map a full PremiumCollection to the lightweight PublicCollection summary. */
+function toPublicCollection(c: PremiumCollection): PublicCollection {
+  return {
+    id: c.id,
+    name: c.name,
+    family: c.family,
+    category: c.category,
+    tier: c.tier,
+    tagline: c.tagline,
+    description: c.description,
+    coverImage: c.coverImage,
+    completionPct: c.completionPct,
+    version: c.version,
+    designer: c.designer,
+    publishedAt: c.publishedAt,
+    priceFcfa: c.priceFcfa,
+    priceUsd: c.priceUsd,
+    designSystem: c.designSystem,
+    stats: {
+      packs: c.packs.length,
+      modules: countModules(c),
+      variants: countVariants(c),
+      qualityScore: c.completionPct,
+    },
+  }
+}
+
+// Pre-compute the public catalog once (static data — never changes at runtime).
+const PUBLIC_CATALOG: PublicCollection[] = COLLECTIONS.map(toPublicCollection)
 
 // ─── Couple preview data (Phase B — no hardcoded "Josué" / "Hornella") ─────────
 // Fetched from /api/settings (tenant-aware). Falls back to neutral placeholders
@@ -304,11 +341,11 @@ function CollectionDetail({ collection, onClose }: { collection: PublicCollectio
       .catch(() => {})
   }, [])
 
+  // P3: resolve the full PremiumCollection from the static catalog (no fetch).
+  // The detail API /api/collections/[id] returns DB rows with a different shape;
+  // the showcase's pack/module/variant rendering requires the static catalog.
   useEffect(() => {
-    fetch(`/api/collections/${collection.id}`)
-      .then((r) => r.json())
-      .then((d) => setFullCollection(d.collection))
-      .catch(() => {})
+    setFullCollection(COLLECTIONS.find((c) => c.id === collection.id) ?? null)
   }, [collection.id])
 
   const ds = collection.designSystem
@@ -441,21 +478,17 @@ function CollectionDetail({ collection, onClose }: { collection: PublicCollectio
 // ══════════════════════════════════════════════════════════════════════════════
 
 export default function CollectionsShowcase() {
-  const [collections, setCollections] = useState<PublicCollection[]>([])
-  const [families, setFamilies] = useState<{ family: string; count: number }[]>([])
-  const [loading, setLoading] = useState(true)
+  // P3: use the static catalog directly (no fetch). The showcase is the Phase 6
+  // "Premium Collection Factory" — it displays the COLLECTIONS catalog, not the
+  // DB Collection rows served by /api/collections (which have a different shape).
+  const [collections] = useState<PublicCollection[]>(PUBLIC_CATALOG)
+  const [families] = useState<{ family: string; count: number }[]>(() => {
+    const map = new Map<string, number>()
+    for (const c of PUBLIC_CATALOG) map.set(c.family, (map.get(c.family) || 0) + 1)
+    return Array.from(map.entries()).map(([family, count]) => ({ family, count }))
+  })
+  const [loading] = useState(false)
   const [selected, setSelected] = useState<PublicCollection | null>(null)
-
-  useEffect(() => {
-    fetch('/api/collections')
-      .then((r) => r.json())
-      .then((d) => {
-        setCollections(d.collections || [])
-        setFamilies(d.families || [])
-      })
-      .catch(() => {})
-      .finally(() => setLoading(false))
-  }, [])
 
   const grouped = useMemo(() => {
     const map = new Map<string, PublicCollection[]>()

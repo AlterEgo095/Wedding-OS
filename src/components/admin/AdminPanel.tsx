@@ -120,9 +120,13 @@ export default function AdminPanel({ isOpen, onClose, onAdminStateChange }: Admi
       .catch(() => {})
   }, [])
 
-  const handleLogin = useCallback((newToken: string, newUser: AuthUser) => {
+  const handleLogin = useCallback((newUser: AuthUser) => {
     sessionExpiredRef.current = false
-    setToken(newToken)
+    // P3: P1-SEC-3 made the httpOnly cookie the auth path — the login API no
+    // longer returns a token in the body. Set a non-null sentinel so `token`
+    // state (used for UI gating + passed to child managers) is truthy. The
+    // server authenticates via the cookie, not this Bearer value.
+    setToken('http-only-cookie')
     setUser(newUser)
     onAdminStateChange?.(true)
   }, [onAdminStateChange])
@@ -294,7 +298,7 @@ export default function AdminPanel({ isOpen, onClose, onAdminStateChange }: Admi
                   <Button
                     variant="ghost"
                     className="w-full justify-start text-red-400 hover:text-red-300 hover:bg-red-400/10 text-sm"
-                    onClick={handleLogout}
+                    onClick={() => handleLogout()}
                   >
                     <LogOut className="w-4 h-4 mr-2" />
                     Déconnexion
@@ -378,7 +382,7 @@ export default function AdminPanel({ isOpen, onClose, onAdminStateChange }: Admi
                         <Button
                           variant="ghost"
                           className="w-full justify-start text-red-400 hover:text-red-300 hover:bg-red-400/10 text-sm"
-                          onClick={handleLogout}
+                          onClick={() => handleLogout()}
                         >
                           <LogOut className="w-4 h-4 mr-2" />
                           Déconnexion

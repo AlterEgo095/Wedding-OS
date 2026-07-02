@@ -150,12 +150,15 @@ export async function GET(request: NextRequest) {
         const lookupToken = encryptId(tokenPayload);
 
         const hasDisplayName = guest.displayName;
+        // P3: `cleaned` is only non-null when !hasDisplayName, but TS can't
+        // narrow across the ternary. Compute once and assert non-null in the
+        // branch that uses it.
         const cleaned = hasDisplayName ? null : cleanGuestName(guest.firstName, guest.lastName);
-        const isCouple = hasDisplayName ? guest.invitationType === 'couple' : cleaned.isCouple;
-        const displayText = hasDisplayName ? guest.displayName : cleaned.displayName;
+        const isCouple = hasDisplayName ? guest.invitationType === 'couple' : cleaned!.isCouple;
+        const displayText = hasDisplayName ? guest.displayName : cleaned!.displayName;
         const greeting = hasDisplayName
           ? (isCouple ? `Invitation exclusive pour le ${guest.displayName}` : `Invitation exclusive pour ${guest.displayName}`)
-          : cleaned.greeting;
+          : cleaned!.greeting;
 
         return {
           name: displayText,

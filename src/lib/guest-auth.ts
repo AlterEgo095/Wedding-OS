@@ -3,6 +3,7 @@ import crypto from 'crypto';
 import { NextResponse } from 'next/server';
 import { db, tenantDb } from './db';
 import { devFallbackSecret } from './auth';
+import { getTenantContext } from './tenant-context';
 
 // ─── Configuration ───
 // SECURITY (P0-SEC-2): Previously fell back to 'dev-only-secret' which is
@@ -323,9 +324,13 @@ export async function createGuestSession(
   const expiresAt = new Date();
   expiresAt.setDate(expiresAt.getDate() + SESSION_EXPIRY_DAYS);
 
-  // weddingId is auto-injected by tenant extension when context is active
+  // weddingId is auto-injected by tenant extension when context is active.
+  // P3: also pass it explicitly so Prisma's static types are satisfied (the
+  // extension relaxes the runtime contract but not the create-input type).
+  const tenantCtx = getTenantContext();
   const session = await tenantDb.guestSession.create({
     data: {
+      weddingId: tenantCtx!.weddingId,
       guestId,
       token,
       userAgent: userAgent || null,
@@ -445,8 +450,13 @@ export async function logGuestAccess(params: {
   const deviceInfoJson = JSON.stringify(parsedDevice);
   const fingerprint = generateFingerprint(params.userAgent || 'unknown', params.ipAddress || 'unknown');
 
+  // P3: pass weddingId explicitly (extension auto-injects at runtime, but the
+  // static create-input type requires it). logGuestAccess is only called within
+  // a tenant context (the guest-facing routes are wrapped in withPublicTenant).
+  const tenantCtx = getTenantContext();
   await tenantDb.guestAccessLog.create({
     data: {
+      weddingId: tenantCtx!.weddingId,
       guestId: params.guestId || null,
       action: params.action,
       details: params.details || null,

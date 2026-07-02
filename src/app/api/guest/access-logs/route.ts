@@ -1,6 +1,6 @@
 export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from 'next/server';
-import { tenantDb } from '@/lib/db';
+import { tenantDb, db } from '@/lib/db';
 import { getAuthUser, hasPermission } from '@/lib/auth';
 import { resolveAdminTenant, runWithTenant } from '@/lib/tenant-context';
 
@@ -93,7 +93,8 @@ export async function GET(request: NextRequest) {
         .slice(0, 10)
         .map(([ip, count]) => ({ ip, count }));
 
-      const categoryBreakdown = await tenantDb.guest.groupBy({
+      // P3: cast groupBy to the base Prisma callable (extension makes it a union).
+      const categoryBreakdown = await (tenantDb.guest.groupBy as typeof db.guest.groupBy)({
         by: ['category'],
         _count: { id: true },
       });
