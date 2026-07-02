@@ -94,6 +94,12 @@ export interface DesignSystem {
   fontDisplay: string   // headings font family
   fontBody: string      // body font family
   decorative?: 'gold-foil' | 'silver-foil' | 'floral' | 'geometric' | 'african' | 'coastal'
+  // Aliases used by the deploy route when mapping a Collection's design system
+  // onto the Theme model. `accent` mirrors `secondary`; `layout` is the page
+  // layout preset ('classic' | 'modern' | 'minimal'). Both optional for
+  // backward compat with Collections authored before these fields existed.
+  accent?: string
+  layout?: string
 }
 
 // ─── Variant (a concrete design for a module) ─────────────────────────────────

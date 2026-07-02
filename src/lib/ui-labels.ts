@@ -87,6 +87,9 @@ export const ROLE_LABELS: Record<Role, string> = {
   ORGANIZER: 'Organisateur',
   RECEPTION: 'Réception',
   CONTROLLER: 'Contrôleur',
+  // Phase 5 — Designer Portal roles.
+  DESIGNER: 'Designer',
+  ART_DIRECTOR: 'Directeur Artistique',
 };
 
 // Tailwind badge classes — matches page.tsx:262-268. SUPER_ADMIN shares the
@@ -97,6 +100,9 @@ export const ROLE_BADGE_CLASS: Record<Role, string> = {
   ORGANIZER: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30',
   RECEPTION: 'bg-zinc-500/15 text-zinc-400 border-zinc-500/30',
   CONTROLLER: 'bg-zinc-500/15 text-zinc-400 border-zinc-500/30',
+  // Phase 5 — Designer Portal roles (purple family for design/creative).
+  DESIGNER: 'bg-purple-500/15 text-purple-400 border-purple-500/30',
+  ART_DIRECTOR: 'bg-fuchsia-500/15 text-fuchsia-400 border-fuchsia-500/30',
 };
 
 /**

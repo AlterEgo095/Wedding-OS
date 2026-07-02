@@ -1,6 +1,6 @@
 export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from 'next/server';
-import { tenantDb } from '@/lib/db';
+import { tenantDb, db } from '@/lib/db';
 import { validateGuestSession, getClientInfo } from '@/lib/guest-auth';
 import { getAuthUser, hasPermission } from '@/lib/auth';
 import { resolvePublicTenant, runWithTenant, resolveAdminTenant } from '@/lib/tenant-context';
@@ -130,7 +130,8 @@ export async function GET(request: NextRequest) {
           _sum: { seats: true }, where: { status: 'CONFIRMED' },
         });
 
-        const byCategory = await tenantDb.guest.groupBy({
+        // P3: cast groupBy to the base Prisma callable (extension makes it a union).
+        const byCategory = await (tenantDb.guest.groupBy as typeof db.guest.groupBy)({
           by: ['category'], _count: { id: true },
         });
 

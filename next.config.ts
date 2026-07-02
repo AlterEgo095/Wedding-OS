@@ -61,17 +61,12 @@ const securityHeaders = [
 
 const nextConfig: NextConfig = {
   output: "standalone",
-  // P1-PROD-4: TypeScript checking in production builds.
-  // TEMPORARILY set to true to unblock the first VPS Docker deploy after the
-  // P1+P2 + Phase 5 merge. There are 41 pre-existing type errors (Prisma
-  // Exact<> strictness, PenpotStudio, guest-auth, AdminPanel) that predate
-  // the P1+P2 work and are NOT runtime bugs — the app runs correctly.
-  // P3 TODO: fix all 41 type errors, then set back to false.
+  // P3: TypeScript checking in production builds — RE-ENABLED.
+  // All 41 type errors from the P1+P2 / Phase 5 merge have been fixed in P3.
+  // ESLint during build is handled by `bun run lint` (Next.js 16 removed the
+  // `eslint` key from next.config — use .eslintrc / eslint.config instead).
   typescript: {
-    ignoreBuildErrors: true,
-  },
-  eslint: {
-    ignoreDuringBuilds: true,
+    ignoreBuildErrors: false,
   },
   reactStrictMode: true,
   images: {

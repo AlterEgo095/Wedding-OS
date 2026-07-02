@@ -106,7 +106,15 @@ export async function PUT(request: NextRequest) {
       const existing = await tenantDb.eventTimeline.findFirst({ where: { id } });
       if (!existing) return NextResponse.json({ error: 'Event not found' }, { status: 404 });
 
-      const updateData: Record<string, unknown> = {};
+      // P3: Concrete field shape (no index signature) for Prisma Exact<> compat.
+      const updateData: {
+        time?: string;
+        activity?: string;
+        location?: string;
+        description?: string;
+        icon?: string;
+        order?: number;
+      } = {};
       if (time !== undefined) updateData.time = time;
       if (activity !== undefined) updateData.activity = activity;
       if (location !== undefined) updateData.location = location;

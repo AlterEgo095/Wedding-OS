@@ -72,6 +72,11 @@ interface Guest {
   id: string
   firstName: string
   lastName: string
+  // P3: displayName + invitationType exist in the Prisma schema (lines 216/214
+  // of schema.prisma) but were missing from this local interface, causing TS
+  // errors in openEditDialog. Added here for type completeness.
+  displayName: string | null
+  invitationType: string
   phone: string | null
   email: string | null
   tableId: string | null
@@ -535,7 +540,7 @@ export default function GuestManager({ token, onSessionExpired }: GuestManagerPr
       firstName: guest.firstName,
       lastName: guest.lastName,
       displayName: guest.displayName || '',
-      invitationType: (guest as Record<string, unknown>).invitationType as string || 'individuel',
+      invitationType: guest.invitationType || 'individuel',
       phone: guest.phone || '',
       email: guest.email || '',
       tableId: guest.tableId || '',

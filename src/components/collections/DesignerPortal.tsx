@@ -234,7 +234,7 @@ export function DesignerPortal() {
             Chaque transition est journalisée.
           </p>
         </div>
-        <Button variant="outline" size="sm" onClick={fetchCollections}>
+        <Button variant="outline" size="sm" onClick={() => fetchCollections()}>
           <RefreshCw className="h-4 w-4 mr-2" />
           Rafraîchir
         </Button>

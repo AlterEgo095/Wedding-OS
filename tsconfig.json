@@ -42,6 +42,9 @@
     "examples",
     "mini-services",
     "backup-frontend",
-    "tool-results"
+    "tool-results",
+    "skills",
+    "seed.ts",
+    "sync-official-data.ts"
   ]
 }

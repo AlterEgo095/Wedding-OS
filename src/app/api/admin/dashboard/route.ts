@@ -46,7 +46,10 @@ export async function GET(request: NextRequest) {
           orderBy: { createdAt: 'desc' },
           include: { user: { select: { name: true, email: true } } },
         }),
-        tenantDb.guest.groupBy({
+        // P3: tenantDb.guest.groupBy is a union type after $extends (not callable
+        // per TS). Cast to the base Prisma callable — the extension only injects
+        // weddingId into `where` at runtime, the call signature is unchanged.
+        (tenantDb.guest.groupBy as typeof db.guest.groupBy)({
           by: ['category'],
           _count: { category: true },
         }),

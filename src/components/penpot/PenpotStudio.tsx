@@ -373,10 +373,10 @@ export function PenpotStudio({ slug, onIntegrationChange }: PenpotStudioProps) {
 
   const isLinked = !!(integration.fileId && integration.fileUrl)
   const viewUrl = isLinked
-    ? buildPenpotViewUrl(integration.fileId!, integration.pageId)
+    ? buildPenpotViewUrl(integration.fileId!, integration.pageId ?? null)
     : null
   const editUrl = isLinked
-    ? buildPenpotEditUrl(integration.fileId!, integration.pageId)
+    ? buildPenpotEditUrl(integration.fileId!, integration.pageId ?? null)
     : null
 
   return (

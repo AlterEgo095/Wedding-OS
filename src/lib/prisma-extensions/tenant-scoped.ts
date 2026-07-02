@@ -80,63 +80,67 @@ const DATA_OPERATIONS = new Set(['create', 'createMany', 'createManyAndReturn'])
  */
 export const tenantScopedExtension = Prisma.defineExtension({
   name: 'tenant-scoped',
-  query: {
-    // For each tenant-scoped model, intercept all operations.
-    ...Object.fromEntries(
-      Array.from(TENANT_SCOPED_MODELS).map((modelName) => [
-        // Prisma's $extends query callback uses the lowercase model name
-        // as it appears in the PrismaClient (e.g. "guest", "table").
-        modelName.charAt(0).toLowerCase() + modelName.slice(1),
-        {
-          async $allOperations({ operation, args, query }: {
-            operation: string;
-            args: any;
-            query: (args: any) => Promise<any>;
-          }) {
-            const ctx = getTenantContext();
+  // P3: The query interceptors are built dynamically (one $allOperations per
+  // tenant-scoped model) via Object.fromEntries. Prisma's precise per-model
+  // query-extension type (DynamicQueryExtensionArgs) cannot infer the shape of
+  // a string-indexed record, so we cast through the official type. The runtime
+  // behaviour is unchanged — every tenant-scoped model gets the same
+  // weddingId-injecting $allOperations callback.
+  query: Object.fromEntries(
+    Array.from(TENANT_SCOPED_MODELS).map((modelName) => [
+      modelName.charAt(0).toLowerCase() + modelName.slice(1),
+      {
+        async $allOperations({ operation, args, query }: {
+          operation: string;
+          args: any;
+          query: (args: any) => Promise<any>;
+        }) {
+          const ctx = getTenantContext();
 
-            // No tenant context — pass through unchanged (legacy compat).
-            if (!ctx) {
-              return query(args);
-            }
+          // No tenant context — pass through unchanged (legacy compat).
+          if (!ctx) {
+            return query(args);
+          }
 
-            // Inject weddingId into WHERE clause for filter operations.
-            if (WHERE_OPERATIONS.has(operation)) {
-              args.where = {
-                ...(args.where ?? {}),
+          // Inject weddingId into WHERE clause for filter operations.
+          if (WHERE_OPERATIONS.has(operation)) {
+            args.where = {
+              ...(args.where ?? {}),
+              weddingId: ctx.weddingId,
+            };
+          }
+
+          // Inject weddingId into DATA payload for insert operations.
+          if (DATA_OPERATIONS.has(operation)) {
+            if (operation === 'create') {
+              args.data = {
+                ...(args.data ?? {}),
                 weddingId: ctx.weddingId,
               };
-            }
-
-            // Inject weddingId into DATA payload for insert operations.
-            if (DATA_OPERATIONS.has(operation)) {
-              if (operation === 'create') {
-                args.data = {
-                  ...(args.data ?? {}),
+            } else if (operation === 'createMany' || operation === 'createManyAndReturn') {
+              if (Array.isArray(args.data)) {
+                args.data = args.data.map((d: any) => ({
+                  ...d,
                   weddingId: ctx.weddingId,
-                };
-              } else if (operation === 'createMany' || operation === 'createManyAndReturn') {
-                if (Array.isArray(args.data)) {
-                  args.data = args.data.map((d: any) => ({
-                    ...d,
-                    weddingId: ctx.weddingId,
-                  }));
-                } else if (args.data && typeof args.data === 'object') {
-                  // Single-object createMany variant (rare)
-                  args.data = { ...args.data, weddingId: ctx.weddingId };
-                }
+                }));
+              } else if (args.data && typeof args.data === 'object') {
+                // Single-object createMany variant (rare)
+                args.data = { ...args.data, weddingId: ctx.weddingId };
               }
             }
+          }
 
-            // For findUnique / update / delete / upsert — NO auto-injection.
-            // Routes must use findFirst with explicit weddingId, or use the
-            // composite unique key (e.g. where: { weddingId_key: { weddingId, key } }).
-            return query(args);
-          },
+          // For findUnique / update / delete / upsert — NO auto-injection.
+          // Routes must use findFirst with explicit weddingId, or use the
+          // composite unique key (e.g. where: { weddingId_key: { weddingId, key } }).
+          return query(args);
         },
-      ])
-    ),
-  },
+      },
+    ])
+  ) as any,  // P3: Prisma doesn't export a public type for a dynamically-built
+            // query-extension record (Object.fromEntries is string-indexed).
+            // The runtime behaviour is correct and uniform across models; the
+            // cast is internal to this module and doesn't affect callers.
 });
 
 // ──── Helper: assert that an entity belongs to the current tenant ─────────────

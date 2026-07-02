@@ -288,8 +288,10 @@ async function createWeddingHandler(request: NextRequest) {
       convertedWeddingId: string | null;
     } | null = null;
     if (leadId) {
+      // P3: `leadId` is `unknown` — narrow to string for the Prisma where clause.
+      const leadIdStr = typeof leadId === 'string' ? leadId : String(leadId);
       leadToConvert = await db.lead.findUnique({
-        where: { id: leadId },
+        where: { id: leadIdStr },
         select: {
           id: true,
           status: true,
@@ -351,7 +353,9 @@ async function createWeddingHandler(request: NextRequest) {
           coupleLabel,
           weddingDate:
             weddingDate && weddingDate !== '' ? new Date(String(weddingDate)) : null,
-          timezone: timezone || 'Africa/Kinshasa',
+          // P3: `timezone` is `unknown` (from Record<string, unknown> body) —
+          // narrow to string before passing to the non-nullable schema field.
+          timezone: typeof timezone === 'string' ? timezone : 'Africa/Kinshasa',
           venueName: venueName && typeof venueName === 'string' ? venueName.trim() || null : null,
           venueCity: venueCity && typeof venueCity === 'string' ? venueCity.trim() || null : null,
           status: shouldPublish ? 'PUBLISHED' : 'DRAFT',
