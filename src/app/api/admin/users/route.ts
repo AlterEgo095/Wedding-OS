@@ -6,6 +6,21 @@ import { resolveAdminTenant } from '@/lib/tenant-context';
 import { isPlatformAdmin } from '@/lib/types';
 import { checkAdminLimit } from '@/lib/plan-limits';
 
+// SECURITY (P1-SEC-6): Centralized password policy. Min 8 chars, must contain
+// at least one letter and one number. Shared by POST (create) and PUT (update).
+const MIN_PASSWORD_LENGTH = 8;
+function isValidPassword(password: string): boolean {
+  if (typeof password !== 'string' || password.length < MIN_PASSWORD_LENGTH) return false;
+  if (!/[a-zA-Z]/.test(password)) return false; // at least one letter
+  if (!/[0-9]/.test(password)) return false;    // at least one digit
+  return true;
+}
+const PASSWORD_POLICY_MSG =
+  `Le mot de passe doit contenir au moins ${MIN_PASSWORD_LENGTH} caractères, dont une lettre et un chiffre.`;
+
+// P1-CQ-12: deduplicated validRoles array (was duplicated in POST + PUT).
+const VALID_ROLES = ['PLATFORM_ADMIN', 'SUPER_ADMIN', 'ORGANIZER', 'RECEPTION', 'CONTROLLER'];
+
 // AdminUser is platform-level (not tenant-scoped) — SUPER_ADMIN has weddingId=null.
 // However, non-SUPER_ADMIN users can only see users in their own wedding.
 export async function GET(request: NextRequest) {
@@ -58,12 +73,16 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Email, password, name, and role are required' }, { status: 400 });
     }
 
+    // SECURITY (P1-SEC-6): Enforce password policy on user creation.
+    if (!isValidPassword(password)) {
+      return NextResponse.json({ error: PASSWORD_POLICY_MSG }, { status: 400 });
+    }
+
     // Phase 3 ÉTAPE 6: accept the canonical PLATFORM_ADMIN name AND the legacy
     // SUPER_ADMIN alias so the UI can use either without a 400. Both are
     // treated identically downstream (see isPlatformAdmin() in lib/types.ts).
-    const validRoles = ['PLATFORM_ADMIN', 'SUPER_ADMIN', 'ORGANIZER', 'RECEPTION', 'CONTROLLER'];
-    if (!validRoles.includes(role)) {
-      return NextResponse.json({ error: 'Invalid role. Must be one of: ' + validRoles.join(', ') }, { status: 400 });
+    if (!VALID_ROLES.includes(role)) {
+      return NextResponse.json({ error: 'Invalid role. Must be one of: ' + VALID_ROLES.join(', ') }, { status: 400 });
     }
 
     const existing = await db.adminUser.findUnique({ where: { email: email.toLowerCase() } });
@@ -148,10 +167,14 @@ export async function PUT(request: NextRequest) {
 
     if (role) {
       // Phase 3 ÉTAPE 6: accept both canonical PLATFORM_ADMIN and legacy SUPER_ADMIN.
-      const validRoles = ['PLATFORM_ADMIN', 'SUPER_ADMIN', 'ORGANIZER', 'RECEPTION', 'CONTROLLER'];
-      if (!validRoles.includes(role)) {
+      if (!VALID_ROLES.includes(role)) {
         return NextResponse.json({ error: 'Invalid role' }, { status: 400 });
       }
+    }
+
+    // SECURITY (P1-SEC-6): Enforce password policy on password reset.
+    if (password !== undefined && password !== null && !isValidPassword(password)) {
+      return NextResponse.json({ error: PASSWORD_POLICY_MSG }, { status: 400 });
     }
 
     const updateData: Record<string, unknown> = {};

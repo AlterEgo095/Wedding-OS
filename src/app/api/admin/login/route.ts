@@ -1,7 +1,7 @@
 export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { verifyPassword, generateToken, checkLoginRateLimit, resetLoginRateLimit } from '@/lib/auth';
+import { verifyPassword, generateToken, checkLoginRateLimit, resetLoginRateLimit, setAuthCookie } from '@/lib/auth';
 import { getRateLimitKey, checkRateLimit, withSecurityHeaders } from '@/lib/rate-limit';
 
 export async function POST(request: NextRequest) {
@@ -74,6 +74,12 @@ export async function POST(request: NextRequest) {
         weddingId: user.weddingId,
       },
     });
+
+    // SECURITY (P1-SEC-4): Set httpOnly cookie in addition to returning the
+    // token in the JSON body. The cookie is the secure default — the body
+    // token is kept for backwards compatibility with clients that read it,
+    // but new clients should rely on the cookie (auto-sent, not XSS-exfiltrable).
+    setAuthCookie(response, token);
 
     return withSecurityHeaders(response);
   } catch (error) {

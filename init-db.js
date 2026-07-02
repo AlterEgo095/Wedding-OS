@@ -221,15 +221,27 @@ async function seedData() {
   console.log('🌱 Seeding database...');
 
   // Create Super Admin user
+  // SECURITY (P1-SEC-1): In production, ADMIN_PASSWORD must be set in the env.
+  // The hardcoded fallback is ONLY for local development convenience.
   const adminEmail = process.env.ADMIN_EMAIL || 'admin@heureuxmariage.aenews.net';
-  const adminPassword = process.env.ADMIN_PASSWORD || 'HeureuxMariage2026!';
+  const adminPassword = process.env.ADMIN_PASSWORD;
+  if (!adminPassword) {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error(
+        'FATAL: ADMIN_PASSWORD env var is required in production. ' +
+        'Set it in your .env file with a strong password (min 12 chars).'
+      );
+    }
+    console.warn('WARNING: ADMIN_PASSWORD not set — using dev-only default. Set ADMIN_PASSWORD in .env for production.');
+  }
+  const effectivePassword = adminPassword || 'HeureuxMariage2026!';
 
   const existingAdmin = await prisma.adminUser.findUnique({
     where: { email: adminEmail },
   });
 
   if (!existingAdmin) {
-    const hashedPassword = await bcrypt.hash(adminPassword, 12);
+    const hashedPassword = await bcrypt.hash(effectivePassword, 12);
     await prisma.adminUser.create({
       data: {
         email: adminEmail,
