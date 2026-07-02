@@ -1,5 +1,6 @@
-export const dynamic = "force-dynamic";
+export const revalidate = 60; // P2-PERF-10: ISR — public timeline cached 60s, invalidated on mutation
 import { NextRequest, NextResponse } from 'next/server';
+import { revalidatePath } from 'next/cache';
 import { db, tenantDb } from '@/lib/db';
 import { getAuthUser, hasPermission } from '@/lib/auth';
 import { withPublicTenant, withAdminTenantHandler } from '@/lib/tenant-context';
@@ -7,12 +8,15 @@ import { withPublicTenant, withAdminTenantHandler } from '@/lib/tenant-context';
 import { logger } from '@/lib/logger';
 // P2-CQ-5: standardised API errors.
 import { internalError, badRequest } from '@/lib/api-errors';
+// P2-SEC-14 + P2-CQ-7: writeAuditLog populates ipAddress + userAgent from request.
+import { writeAuditLog } from '@/lib/audit';
 
 // GET /api/timeline — public, returns all timeline events for the resolved wedding
 export const GET = withPublicTenant(async (_req, _ctx) => {
   try {
     const events = await tenantDb.eventTimeline.findMany({
       orderBy: { order: 'asc' },
+      take: 200, // P2-PERF-4: bound public list (no wedding should exceed 200 events)
       // weddingId auto-injected
     });
     return NextResponse.json({ events });
@@ -56,14 +60,19 @@ export async function POST(request: NextRequest) {
         },
       });
 
-      await db.auditLog.create({
-        data: {
-          weddingId: ctx.weddingId,
-          userId: user.id,
-          action: 'CREATE_TIMELINE',
-          details: `Created timeline event: ${activity}`,
-        },
+      await writeAuditLog({
+        weddingId: ctx.weddingId,
+        userId: user.id,
+        action: 'CREATE_TIMELINE',
+        details: `Created timeline event: ${activity}`,
+        request,
       });
+
+      // P2-PERF-10: invalidate ISR caches for this resource + public pages.
+      revalidatePath('/api/timeline');
+      revalidatePath('/w/[slug]', 'page');
+      revalidatePath('/w/[slug]/invite/[code]', 'page');
+      revalidatePath('/');
 
       return NextResponse.json({ event }, { status: 201 });
     });
@@ -107,14 +116,19 @@ export async function PUT(request: NextRequest) {
 
       const event = await tenantDb.eventTimeline.update({ where: { id }, data: updateData });
 
-      await db.auditLog.create({
-        data: {
-          weddingId: ctx.weddingId,
-          userId: user.id,
-          action: 'UPDATE_TIMELINE',
-          details: `Updated timeline event: ${existing.activity}`,
-        },
+      await writeAuditLog({
+        weddingId: ctx.weddingId,
+        userId: user.id,
+        action: 'UPDATE_TIMELINE',
+        details: `Updated timeline event: ${existing.activity}`,
+        request,
       });
+
+      // P2-PERF-10: invalidate ISR caches for this resource + public pages.
+      revalidatePath('/api/timeline');
+      revalidatePath('/w/[slug]', 'page');
+      revalidatePath('/w/[slug]/invite/[code]', 'page');
+      revalidatePath('/');
 
       return NextResponse.json({ event });
     });
@@ -147,14 +161,19 @@ export async function DELETE(request: NextRequest) {
 
       await tenantDb.eventTimeline.delete({ where: { id } });
 
-      await db.auditLog.create({
-        data: {
-          weddingId: ctx.weddingId,
-          userId: user.id,
-          action: 'DELETE_TIMELINE',
-          details: `Deleted timeline event: ${existing.activity}`,
-        },
+      await writeAuditLog({
+        weddingId: ctx.weddingId,
+        userId: user.id,
+        action: 'DELETE_TIMELINE',
+        details: `Deleted timeline event: ${existing.activity}`,
+        request,
       });
+
+      // P2-PERF-10: invalidate ISR caches for this resource + public pages.
+      revalidatePath('/api/timeline');
+      revalidatePath('/w/[slug]', 'page');
+      revalidatePath('/w/[slug]/invite/[code]', 'page');
+      revalidatePath('/');
 
       return NextResponse.json({ message: 'Timeline event deleted successfully' });
     });

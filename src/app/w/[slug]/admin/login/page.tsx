@@ -9,7 +9,8 @@
 //   - Luxury dark gradient background with gold glow
 //   - Glass card with gold border, framer-motion entrance
 //   - Specific error messages for 401 / 403 / 429
-//   - On success → persist token+user in localStorage, push to /w/{slug}/admin
+//   - On success → httpOnly auth cookie is set by the API (P1-SEC-3); we just
+//     cache `admin_user` in localStorage for UI display, push to /w/{slug}/admin
 
 'use client';
 
@@ -67,6 +68,7 @@ export default function PerWeddingLoginPage() {
           'Content-Type': 'application/json',
           'X-Wedding-Slug': slug,
         },
+        credentials: 'include', // P1-SEC-3: send + receive httpOnly auth cookie.
         body: JSON.stringify({ email, password }),
       });
 
@@ -94,11 +96,15 @@ export default function PerWeddingLoginPage() {
         return;
       }
 
-      // Success — persist session the same way the legacy admin does so all
-      // existing admin components find the token via localStorage.
-      localStorage.setItem('admin_token', data.token);
-      localStorage.setItem('admin_user', JSON.stringify(data.user));
-      const userName = (data.user as { name?: string })?.name || '';
+      // Success — P1-SEC-3: NO `admin_token` localStorage write. The httpOnly
+      // cookie set by the server is the secure auth path. We keep `admin_user`
+      // for UI display only.
+      try {
+        localStorage.setItem('admin_user', JSON.stringify(data.user));
+      } catch {
+        /* ignore — localStorage may be unavailable */
+      }
+      const userName = (data.user as { name?: string } | undefined)?.name || '';
       toast.success(`Bienvenue${userName ? `, ${userName}` : ''} !`);
       router.push(`/w/${slug}/admin`);
     } catch {

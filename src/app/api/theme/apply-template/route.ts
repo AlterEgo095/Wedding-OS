@@ -4,6 +4,10 @@ import { db } from '@/lib/db';
 import { getAuthUser, hasPermission } from '@/lib/auth';
 import { withAdminTenantHandler } from '@/lib/tenant-context';
 import { getTemplate, normalizeHexColor } from '@/lib/themes/templates';
+// P2-CQ-5: standardised API errors.
+import { badRequest } from '@/lib/api-errors';
+// P2-CQ-7: writeAuditLog populates ipAddress + userAgent from request.
+import { writeAuditLog } from '@/lib/audit';
 
 // POST /api/theme/apply-template — ORGANIZER+, applies a predefined template
 export async function POST(request: NextRequest) {
@@ -15,7 +19,8 @@ export async function POST(request: NextRequest) {
     }
 
     return withAdminTenantHandler(request, user, async (_req, ctx) => {
-      const body = await request.json();
+      const body = await request.json().catch(() => null); // P2-CQ-6
+      if (!body) return badRequest('Corps de requête invalide');
       const { templateId } = body as { templateId?: string };
 
       if (!templateId) {
@@ -47,13 +52,13 @@ export async function POST(request: NextRequest) {
         },
       });
 
-      await db.auditLog.create({
-        data: {
-          weddingId: ctx.weddingId,
-          userId: user.id,
-          action: 'APPLY_THEME_TEMPLATE',
-          details: `Applied template: ${template.name} (${template.id})`,
-        },
+      // P2-CQ-7: writeAuditLog populates ipAddress + userAgent from request.
+      await writeAuditLog({
+        weddingId: ctx.weddingId,
+        userId: user.id,
+        action: 'APPLY_THEME_TEMPLATE',
+        details: `Applied template: ${template.name} (${template.id})`,
+        request,
       });
 
       return NextResponse.json({

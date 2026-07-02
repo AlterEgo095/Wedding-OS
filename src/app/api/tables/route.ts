@@ -1,5 +1,6 @@
-export const dynamic = "force-dynamic";
+export const revalidate = 60; // P2-PERF-10: ISR — tables list cached 60s, invalidated on mutation
 import { NextRequest, NextResponse } from 'next/server';
+import { revalidatePath } from 'next/cache';
 import { db, tenantDb } from '@/lib/db';
 import { getAuthUser, hasPermission } from '@/lib/auth';
 import { withAdminTenantHandler } from '@/lib/tenant-context';
@@ -7,6 +8,8 @@ import { withAdminTenantHandler } from '@/lib/tenant-context';
 import { logger } from '@/lib/logger';
 // P2-CQ-5: standardised API errors.
 import { internalError, badRequest } from '@/lib/api-errors';
+// P2-SEC-14 + P2-CQ-7: writeAuditLog populates ipAddress + userAgent from request.
+import { writeAuditLog } from '@/lib/audit';
 
 // All table operations require auth (tables are admin-only — guests don't see them)
 export async function GET(request: NextRequest) {
@@ -21,6 +24,7 @@ export async function GET(request: NextRequest) {
       const tables = await tenantDb.table.findMany({
         include: { _count: { select: { guests: true } } },
         orderBy: { number: 'asc' },
+        take: 200, // P2-PERF-4: bound admin list (no wedding should exceed 200 tables)
         // weddingId auto-injected
       });
 
@@ -75,13 +79,18 @@ export async function POST(request: NextRequest) {
         },
       });
 
-      await db.auditLog.create({
-        data: {
-          weddingId: ctx.weddingId, userId: user.id,
-          action: 'CREATE_TABLE',
-          details: `Created table ${name} (#${number})`,
-        },
+      await writeAuditLog({
+        weddingId: ctx.weddingId, userId: user.id,
+        action: 'CREATE_TABLE',
+        details: `Created table ${name} (#${number})`,
+        request,
       });
+
+      // P2-PERF-10: invalidate ISR caches for this resource + public pages.
+      revalidatePath('/api/tables');
+      revalidatePath('/w/[slug]', 'page');
+      revalidatePath('/w/[slug]/invite/[code]', 'page');
+      revalidatePath('/');
 
       return NextResponse.json({ table }, { status: 201 });
     });
@@ -130,13 +139,18 @@ export async function PUT(request: NextRequest) {
 
       const table = await tenantDb.table.update({ where: { id }, data: updateData });
 
-      await db.auditLog.create({
-        data: {
-          weddingId: ctx.weddingId, userId: user.id,
-          action: 'UPDATE_TABLE',
-          details: `Updated table ${existing.name}`,
-        },
+      await writeAuditLog({
+        weddingId: ctx.weddingId, userId: user.id,
+        action: 'UPDATE_TABLE',
+        details: `Updated table ${existing.name}`,
+        request,
       });
+
+      // P2-PERF-10: invalidate ISR caches for this resource + public pages.
+      revalidatePath('/api/tables');
+      revalidatePath('/w/[slug]', 'page');
+      revalidatePath('/w/[slug]/invite/[code]', 'page');
+      revalidatePath('/');
 
       return NextResponse.json({ table });
     });
@@ -178,13 +192,18 @@ export async function DELETE(request: NextRequest) {
 
       await tenantDb.table.delete({ where: { id } });
 
-      await db.auditLog.create({
-        data: {
-          weddingId: ctx.weddingId, userId: user.id,
-          action: 'DELETE_TABLE',
-          details: `Deleted table ${existing.name}`,
-        },
+      await writeAuditLog({
+        weddingId: ctx.weddingId, userId: user.id,
+        action: 'DELETE_TABLE',
+        details: `Deleted table ${existing.name}`,
+        request,
       });
+
+      // P2-PERF-10: invalidate ISR caches for this resource + public pages.
+      revalidatePath('/api/tables');
+      revalidatePath('/w/[slug]', 'page');
+      revalidatePath('/w/[slug]/invite/[code]', 'page');
+      revalidatePath('/');
 
       return NextResponse.json({ message: 'Table deleted successfully' });
     });

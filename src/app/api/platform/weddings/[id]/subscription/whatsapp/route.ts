@@ -9,6 +9,8 @@ import {
   type BillingCycle,
 } from '@/lib/billing';
 import type { Plan } from '@/lib/types';
+// P2-CQ-7: writeAuditLog populates ipAddress + userAgent from request.
+import { writeAuditLog } from '@/lib/audit';
 
 /**
  * POST /api/platform/weddings/{id}/subscription/whatsapp
@@ -143,13 +145,13 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     }
 
     // ─── Audit log ─────────────────────────────────────────────────────────
-    await db.auditLog.create({
-      data: {
-        weddingId: id,
-        userId: user!.id,
-        action: 'BILLING_WHATSAPP_SENT',
-        details: `Generated WhatsApp billing message for ${wedding.coupleLabel} (plan: ${plan}, amount: $${(amountUsdCents / 100).toFixed(2)}, recipient: ${recipient ?? 'unspecified'})`,
-      },
+    // P2-CQ-7: writeAuditLog populates ipAddress + userAgent from request.
+    await writeAuditLog({
+      weddingId: id,
+      userId: user!.id,
+      action: 'BILLING_WHATSAPP_SENT',
+      details: `Generated WhatsApp billing message for ${wedding.coupleLabel} (plan: ${plan}, amount: $${(amountUsdCents / 100).toFixed(2)}, recipient: ${recipient ?? 'unspecified'})`,
+      request,
     });
 
     return NextResponse.json({

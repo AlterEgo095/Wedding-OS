@@ -12,6 +12,11 @@ import {
 import { toast } from 'sonner'
 
 import LoginForm from '@/components/admin/LoginForm'
+// P1-SEC-3: auth is now cookie-based. The admin shell checks auth status via
+// /api/me on mount (no localStorage token read). All child components still
+// take a `token` prop for backwards compat — they send
+// `Authorization: Bearer ${token}` which is empty; the server's
+// getTokenFromRequest falls back to the httpOnly auth_token cookie.
 import Dashboard from '@/components/admin/Dashboard'
 import GuestManager from '@/components/admin/GuestManager'
 import TableManager from '@/components/admin/TableManager'
@@ -73,26 +78,42 @@ const NAV_ITEMS: NavItem[] = [
 ]
 
 export default function AdminPage() {
-  const [token, setToken] = useState<string | null>(() => {
-    if (typeof window !== 'undefined') {
-      return localStorage.getItem('admin_token')
-    }
-    return null
-  })
-  const [user, setUser] = useState<AuthUser | null>(() => {
-    if (typeof window !== 'undefined') {
-      try {
-        const saved = localStorage.getItem('admin_user')
-        return saved ? JSON.parse(saved) : null
-      } catch {
-        return null
-      }
-    }
-    return null
-  })
+  // P1-SEC-3: token is no longer stored in localStorage. We keep the `token`
+  // state for backwards-compat with child components (Dashboard,
+  // GuestManager, …) that still send `Authorization: Bearer ${token}` —
+  // they'll send an empty bearer, and the server falls back to the
+  // httpOnly auth_token cookie. The empty string is the no-op value.
+  const [token, setToken] = useState<string>('')
+  const [user, setUser] = useState<AuthUser | null>(null)
+  const [authChecked, setAuthChecked] = useState(false)
   const [activeTab, setActiveTab] = useState<TabId>('dashboard')
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const sessionExpiredRef = useRef(false)
+
+  // P1-SEC-3: check auth status on mount via /api/me. The httpOnly cookie is
+  // sent automatically (same-origin fetch). If 200, populate user state. If
+  // 401, user stays null and the LoginForm renders.
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      try {
+        const res = await fetch('/api/me', { credentials: 'include' })
+        if (cancelled) return
+        if (res.ok) {
+          const data = await res.json()
+          if (data?.user) {
+            setUser(data.user as AuthUser)
+            setToken('') // empty — server uses cookie
+          }
+        }
+      } catch {
+        /* network error — leave user as null, LoginForm will show */
+      } finally {
+        if (!cancelled) setAuthChecked(true)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [])
 
   // Couple label from settings (avoids hardcoding "Josué & Hornella"). Defaults
   // to a generic "Mariage" until the settings fetch resolves.
@@ -111,17 +132,30 @@ export default function AdminPage() {
       .catch(() => {})
   }, [])
 
-  const handleLogin = useCallback((newToken: string, newUser: AuthUser) => {
+  // P1-SEC-3: LoginForm now passes only `user` (the auth cookie was set by
+  // the login API). We keep `token` as an empty string for child-component
+  // backwards-compat.
+  const handleLogin = useCallback((newUser: AuthUser) => {
     sessionExpiredRef.current = false
-    setToken(newToken)
+    setToken('')
     setUser(newUser)
   }, [])
 
-  const handleLogout = useCallback((showMessage = true) => {
-    setToken(null)
+  const handleLogout = useCallback(async (showMessage = true) => {
+    // Best-effort server-side logout (clears the httpOnly cookie).
+    try {
+      await fetch('/api/admin/logout', { method: 'POST', credentials: 'include' })
+    } catch {
+      /* ignore — clear local state anyway */
+    }
+    setToken('')
     setUser(null)
-    localStorage.removeItem('admin_token')
-    localStorage.removeItem('admin_user')
+    try {
+      localStorage.removeItem('admin_token') // legacy cleanup (no-op if empty)
+      localStorage.removeItem('admin_user')
+    } catch {
+      /* ignore */
+    }
     if (showMessage) toast.success('Déconnexion réussie')
   }, [])
 
@@ -142,7 +176,9 @@ export default function AdminPage() {
   )
 
   const renderContent = () => {
-    if (!token) return null
+    // P1-SEC-3: gate on `user` (not `token`) since token is now always ''
+    // and the httpOnly cookie is the real auth signal.
+    if (!user) return null
 
     switch (activeTab) {
       case 'dashboard':
@@ -171,6 +207,20 @@ export default function AdminPage() {
   }
 
   const activeNavItem = visibleNavItems.find((item) => item.id === activeTab)
+
+  // P1-SEC-3: show a loading skeleton until the /api/me check completes.
+  // This prevents a flash of the LoginForm for users who ARE authenticated
+  // (their cookie exists but hasn't been read yet).
+  if (!authChecked) {
+    return (
+      <div className="h-screen flex items-center justify-center">
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-8 h-8 rounded-full bg-gradient-gold animate-pulse" />
+          <p className="text-xs text-muted-foreground">Chargement…</p>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="h-screen flex" style={{
@@ -202,7 +252,7 @@ export default function AdminPage() {
         <Separator className="bg-white/10" />
 
         {/* Nav Items */}
-        {token && user && (
+        {user && (
           <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar py-2">
             <nav className="px-2 space-y-1">
               {visibleNavItems.map((item) => {
@@ -232,7 +282,7 @@ export default function AdminPage() {
           </div>
         )}
 
-        {token && user && (
+        {user && (
           <>
             <Separator className="bg-white/10" />
             <div className="p-3">
@@ -375,19 +425,19 @@ export default function AdminPage() {
           </Button>
 
           <div className="flex items-center gap-2">
-            {activeNavItem && token && user && (
+            {activeNavItem && user && (
               <>
                 <activeNavItem.icon className="w-4 h-4 text-gold" />
                 <h1 className="font-semibold text-sm">{activeNavItem.label}</h1>
               </>
             )}
-            {!token && (
+            {!user && (
               <h1 className="font-semibold text-sm gold-gradient">Administration</h1>
             )}
           </div>
 
           <div className="ml-auto flex items-center gap-2">
-            {!token && (
+            {!user && (
               <Button
                 variant="ghost"
                 size="sm"
@@ -404,7 +454,7 @@ export default function AdminPage() {
         {/* Content — Scrollable area */}
         <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar">
           <AnimatePresence mode="wait">
-            {token && user ? (
+            {user ? (
               <motion.div
                 key={activeTab}
                 initial={{ opacity: 0, y: 10 }}
@@ -430,7 +480,7 @@ export default function AdminPage() {
         </div>
 
         {/* Mobile Bottom Tab Bar */}
-        {token && user && (
+        {user && (
           <nav className="md:hidden shrink-0 flex items-center border-t border-white/10 bg-white/[0.02] safe-area-pb">
             {visibleNavItems.slice(0, 5).map((item) => {
               const isActive = activeTab === item.id

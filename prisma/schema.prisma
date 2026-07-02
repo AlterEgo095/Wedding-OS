@@ -79,6 +79,17 @@ model AdminUser {
   wedding      Wedding?   @relation(fields: [weddingId], references: [id], onDelete: Cascade)
   auditLogs    AuditLog[]
 
+  // ── P1-SEC-8: TOTP-based 2FA for platform admins ─────────────────────────
+  // twoFactorSecret: TOTP secret (encrypted-at-rest via encryptId/decryptId
+  //   in lib/two-factor.ts). null when 2FA has never been set up.
+  // twoFactorEnabled: flipped to true only after the user verifies a TOTP
+  //   code during setup. Until then, the secret is "pending confirmation".
+  // twoFactorBackupCodes: JSON array of SHA-256-hashed one-time backup codes.
+  //   Cleared on disable. null when 2FA is off.
+  twoFactorSecret       String?
+  twoFactorEnabled      Boolean    @default(false)
+  twoFactorBackupCodes  String?
+
   @@index([weddingId])
 }
 
@@ -476,4 +487,34 @@ model WeddingCollectionBinding {
 
   @@index([collectionId])
   @@index([status])
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// P1-SEC-9: Password reset tokens
+// ══════════════════════════════════════════════════════════════════════════════
+// DB-backed password-reset tokens. The `token` column stores a SHA-256 hash
+// (never the raw token) so a DB read alone cannot be used to reset passwords.
+// The raw token is returned ONCE from generateResetToken() and must be sent
+// back by the user to /api/platform/password-reset/confirm.
+//
+// Lifecycle:
+//   1. /api/platform/password-reset/request generates a token, stores its hash,
+//      returns the raw token in the response (dev/demo only — in prod, this
+//      would be emailed via a mailto: link).
+//   2. User clicks the reset link, which contains the raw token.
+//   3. /api/platform/password-reset/confirm receives { token, newPassword },
+//      hashes the token, finds the matching row, checks expiresAt + usedAt,
+//      hashes the new password, updates AdminUser.password, marks the token
+//      used.
+//   4. Tokens expire after 1h (PASSWORD_RESET_TOKEN_EXPIRY_HOURS in constants).
+//   5. Tokens can only be used once (usedAt set on confirm).
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  email     String    // the AdminUser.email the reset is for (denormalized for lookup)
+  token     String    @unique // SHA-256 hash of the raw token (never the raw token)
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([email])
 }

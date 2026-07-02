@@ -272,8 +272,13 @@ const CHART_TOOLTIP_STYLE = {
 } as const
 
 // ════════════════════════════════════════════════════════════════════════════
-// usePlatformFetch — wraps fetch with Bearer token + session-expiry handling
+// usePlatformFetch — wraps fetch with cookie auth + session-expiry handling
 // ════════════════════════════════════════════════════════════════════════════
+// P1-SEC-3: previously sent `Authorization: Bearer <token>` with a token
+// read from localStorage. Now sends `credentials: 'include'` so the
+// httpOnly `auth_token` cookie is attached automatically (XSS-resistant —
+// client JS cannot read the cookie). The Authorization header is no longer
+// set; the server's getTokenFromRequest falls back to the cookie.
 
 function usePlatformFetch() {
   const router = useRouter()
@@ -282,9 +287,14 @@ function usePlatformFetch() {
   const onSessionExpired = useCallback(() => {
     if (sessionExpiredRef.current) return
     sessionExpiredRef.current = true
+    // P1-SEC-3: best-effort cookie clear via logout endpoint.
     try {
-      localStorage.removeItem('admin_token')
-      localStorage.removeItem('admin_user')
+      fetch('/api/platform/logout', { method: 'POST', credentials: 'include' })
+    } catch {
+      /* ignore */
+    }
+    try {
+      localStorage.removeItem('admin_user') // UI-only cache; no token to clear
     } catch {
       /* ignore */
     }
@@ -292,25 +302,20 @@ function usePlatformFetch() {
     router.replace('/platform/login')
   }, [router])
 
-  const getToken = useCallback(() => {
-    if (typeof window === 'undefined') return null
-    return localStorage.getItem('admin_token')
-  }, [])
-
   const fetchWithAuth = useCallback(
     async (url: string, init?: RequestInit): Promise<Response | null> => {
-      const token = getToken()
-      if (!token) {
-        onSessionExpired()
-        return null
-      }
       let res: Response
       try {
         res = await fetch(url, {
           ...init,
+          credentials: 'include', // P1-SEC-3: send the httpOnly auth cookie.
           headers: {
             ...(init?.headers || {}),
-            Authorization: `Bearer ${token}`,
+            // P1-SEC-7: attach CSRF token on state-changing requests.
+            // The token is read from the csrf_token cookie (httpOnly=false)
+            // and mirrored into the X-CSRF-Token header for the double-submit
+            // pattern.
+            ...maybeCsrfHeader(init?.method || 'GET'),
           },
         })
       } catch {
@@ -322,15 +327,45 @@ function usePlatformFetch() {
         return null
       }
       if (res.status === 403) {
-        toast.error('Accès refusé')
+        // Could be a CSRF rejection OR a permission denial. Surface the
+        // server's error message; the user can retry.
+        try {
+          const body = await res.clone().json()
+          toast.error(body?.error || 'Accès refusé')
+        } catch {
+          toast.error('Accès refusé')
+        }
         return null
       }
       return res
     },
-    [getToken, onSessionExpired]
+    [onSessionExpired]
   )
 
-  return { fetchWithAuth, onSessionExpired, getToken }
+  return { fetchWithAuth, onSessionExpired }
+}
+
+/**
+ * Build the X-CSRF-Token header for state-changing requests. Reads the
+ * `csrf_token` cookie (httpOnly=false, set by /api/csrf-token or the login
+ * endpoint). Returns an empty object for GET requests (no CSRF needed).
+ *
+ * Returns an empty object if the cookie is missing — the server will reject
+ * with 403 "Token CSRF invalide". The caller's UI should then prompt a
+ * refresh of the CSRF token (e.g. by reloading the page).
+ */
+function maybeCsrfHeader(method: string): Record<string, string> {
+  const m = method.toUpperCase()
+  if (m !== 'POST' && m !== 'PUT' && m !== 'DELETE' && m !== 'PATCH') {
+    return {}
+  }
+  if (typeof document === 'undefined') return {}
+  const match = document.cookie
+    .split('; ')
+    .find((row) => row.startsWith('csrf_token='))
+  if (!match) return {}
+  const token = match.split('=').slice(1).join('=')
+  return token ? { 'X-CSRF-Token': token } : {}
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -2085,32 +2120,48 @@ export default function PlatformAdminPage() {
   // mounted: false on SSR and during the very first client render (hydration),
   // then true once React swaps to the client snapshot. This lets us render a
   // stable loading screen during hydration and avoid the P1-UX-7 mismatch
-  // (server HTML has no user, client may have one from localStorage).
+  // (server HTML has no user, client may have one from the cookie).
   const mounted = useSyncExternalStore(emptySubscribe, getTrue, getFalse)
-  // Initialize user from localStorage on the client (null on SSR).
-  // This mirrors the pattern used by /admin/page.tsx + /w/[slug]/admin — the
-  // SSR pass + first client render both produce a neutral loading skeleton,
-  // and the second client render (after `mounted` flips to true) hydrates
-  // with the actual user (or stays null and the effect below redirects to
-  // /platform/login).
-  const [user, setUser] = useState<AuthUser | null>(() => {
-    if (typeof window === 'undefined') return null
-    try {
-      const token = localStorage.getItem('admin_token')
-      const rawUser = localStorage.getItem('admin_user')
-      if (!token || !rawUser) return null
-      return JSON.parse(rawUser) as AuthUser
-    } catch {
-      return null
-    }
-  })
+  // P1-SEC-3: user state is hydrated from /api/me on mount (cookie-based
+  // auth — no localStorage token read).
+  const [user, setUser] = useState<AuthUser | null>(null)
+  const [authChecked, setAuthChecked] = useState(false)
   const [activeTab, setActiveTab] = useState<TabId>('dashboard')
   const [sidebarOpen, setSidebarOpen] = useState(false)
 
-  // Auth gate — redirect to /platform/login if not authenticated or not a
-  // platform admin. Runs once on mount. No setState here (avoids the
-  // `react-hooks/set-state-in-effect` warning) — the redirect is a side effect.
+  // P1-SEC-3: check auth status on mount via /api/me. The httpOnly cookie is
+  // sent automatically (same-origin fetch). If 200, populate user state. If
+  // 401, user stays null and the effect below redirects to /platform/login.
   useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      try {
+        const res = await fetch('/api/me', { credentials: 'include' })
+        if (cancelled) return
+        if (res.ok) {
+          const data = await res.json()
+          if (data?.user) {
+            setUser(data.user as AuthUser)
+            try {
+              localStorage.setItem('admin_user', JSON.stringify(data.user))
+            } catch {
+              /* ignore */
+            }
+          }
+        }
+      } catch {
+        /* network error — leave user as null */
+      } finally {
+        if (!cancelled) setAuthChecked(true)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [])
+
+  // Auth gate — redirect to /platform/login if not authenticated or not a
+  // platform admin. Runs once authChecked flips to true.
+  useEffect(() => {
+    if (!authChecked) return
     if (!user) {
       toast.error('Veuillez vous connecter')
       router.replace('/platform/login')
@@ -2120,17 +2171,16 @@ export default function PlatformAdminPage() {
       toast.error('Accès refusé')
       router.replace('/platform/login')
     }
-  }, [user, router])
+  }, [authChecked, user, router])
 
   const handleLogout = useCallback(async () => {
-    // Best-effort server-side logout (clears the httpOnly cookie)
+    // Best-effort server-side logout (clears the httpOnly cookie + CSRF cookie)
     try {
-      await fetch('/api/platform/logout', { method: 'POST' })
+      await fetch('/api/platform/logout', { method: 'POST', credentials: 'include' })
     } catch {
       /* ignore — clear local anyway */
     }
     try {
-      localStorage.removeItem('admin_token')
       localStorage.removeItem('admin_user')
     } catch {
       /* ignore */
@@ -2177,11 +2227,10 @@ export default function PlatformAdminPage() {
   }
 
   // Render a neutral loading skeleton during hydration (mounted=false) or
-  // if not authenticated / not a platform admin (the effect above will
-  // redirect to /platform/login). The `!mounted` gate is the P1-UX-7 fix —
-  // it ensures the SSR HTML and the first client render produce identical
-  // output, eliminating the hydration-mismatch warning.
-  if (!mounted || !user || (user.role !== 'PLATFORM_ADMIN' && user.role !== 'SUPER_ADMIN')) {
+  // while the /api/me auth check is in flight (authChecked=false). Once
+  // authChecked is true and user is null (or not a platform admin), the
+  // effect above will redirect to /platform/login.
+  if (!mounted || !authChecked || !user || (user.role !== 'PLATFORM_ADMIN' && user.role !== 'SUPER_ADMIN')) {
     return (
       <div className="h-screen flex items-center justify-center">
         <div className="flex flex-col items-center gap-3">

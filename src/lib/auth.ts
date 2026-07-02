@@ -1,8 +1,12 @@
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
+import { createHash } from 'node:crypto';
+import os from 'node:os';
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from './db';
 import { isPlatformAdmin, normalizeRole, type Role } from './types';
+
+// P2-SEC-9: dev-fallback secret is now derived from machine signals (not hardcoded).
 
 // JWT_SECRET — lazy initialization. In production, the env var is REQUIRED.
 // A missing JWT_SECRET in production throws on first use (not at module load,
@@ -13,7 +17,35 @@ import { isPlatformAdmin, normalizeRole, type Role } from './types';
 // hardcoded string 'wedding-platform-dev-secret-key-not-for-production' in
 // production, allowing anyone with source-code access to forge admin JWTs.
 // This is now a hard failure in production.
+//
+// SECURITY (P2-SEC-9): The dev-only fallback used to be a hardcoded string
+// in source control — anyone with the source could forge tokens in dev. It
+// is now derived from machine-specific signals (cwd + hostname + username)
+// via SHA-256. The value is stable across restarts on the same machine (so
+// dev sessions don't invalidate every `next dev` restart) but differs on
+// other machines/developers.
 let _jwtSecret: string | null = null;
+
+/**
+ * Derive a stable, machine-specific dev-fallback secret for a named purpose.
+ * Used ONLY when the production env var is absent in development — never
+ * active in production (production throws a FATAL error).
+ *
+ * Stability: the same machine (cwd + hostname + username) produces the same
+ * secret across restarts, so dev sessions survive `next dev` reloads.
+ * Unpredictability: each developer's machine produces a different secret, so
+ * a token forged on one laptop doesn't work on another.
+ *
+ * @param purpose e.g. 'admin-jwt', 'guest-jwt', 'encryption-key'
+ */
+export function devFallbackSecret(purpose: string): string {
+  const username = (() => {
+    try { return os.userInfo().username; } catch { return 'unknown'; }
+  })();
+  const seed = `${purpose}:${process.cwd()}:${os.hostname()}:${username}`;
+  return createHash('sha256').update(seed).digest('hex');
+}
+
 function getJwtSecret(): string {
   if (_jwtSecret !== null) return _jwtSecret;
   const env = process.env.JWT_SECRET;
@@ -33,11 +65,13 @@ function getJwtSecret(): string {
     );
   }
   // Dev-only fallback — never active in production.
+  // P2-SEC-9: derived from machine signals (not hardcoded) so source-code
+  // access alone is not enough to forge tokens in dev.
   console.warn(
     'WARNING: JWT_SECRET not set — using insecure dev-only fallback. ' +
     'Set JWT_SECRET in your .env file with: openssl rand -base64 48'
   );
-  _jwtSecret = 'wedding-platform-dev-secret-key-not-for-production';
+  _jwtSecret = devFallbackSecret('admin-jwt');
   return _jwtSecret;
 }
 
@@ -103,9 +137,19 @@ export function verifyToken(token: string): AuthUser | null {
 }
 
 export function getTokenFromRequest(request: NextRequest): string | null {
+  // P1-SEC-3: Authorization header is kept as a fallback for any client that
+  // still sends it, but the httpOnly `auth_token` cookie is the primary auth
+  // path. If the Authorization header is present but the bearer value is
+  // empty (e.g. `Bearer ` with no token, which is what client components
+  // now send because they no longer have a token in localStorage), fall
+  // through to the cookie.
   const authHeader = request.headers.get('authorization');
   if (authHeader?.startsWith('Bearer ')) {
-    return authHeader.substring(7);
+    const bearerToken = authHeader.substring(7).trim();
+    if (bearerToken) {
+      return bearerToken;
+    }
+    // Empty bearer — fall through to cookie lookup.
   }
   const token = request.cookies.get('auth_token')?.value;
   return token || null;

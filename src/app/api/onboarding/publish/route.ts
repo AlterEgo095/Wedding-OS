@@ -8,6 +8,8 @@ import { invalidateWeddingCache } from '@/lib/tenant-context';
 // COMPLETED → PUBLISHED and ARCHIVED → PUBLISHED, which the canonical
 // /api/platform/weddings/[id] route rejects).
 import { isValidTransition, getAllowedTransitions } from '@/lib/wedding-status';
+// P2-CQ-7: writeAuditLog populates ipAddress + userAgent from request.
+import { writeAuditLog } from '@/lib/audit';
 
 /**
  * POST /api/onboarding/publish    (PLATFORM_ADMIN)
@@ -96,13 +98,13 @@ export async function POST(request: NextRequest) {
 
     invalidateWeddingCache(wedding.slug);
 
-    await db.auditLog.create({
-      data: {
-        weddingId: null,
-        userId: user!.id,
-        action: 'PUBLISH_WEDDING',
-        details: `Published wedding ${wedding.slug}`,
-      },
+    // P2-CQ-7: writeAuditLog populates ipAddress + userAgent from request.
+    await writeAuditLog({
+      weddingId: null,
+      userId: user!.id,
+      action: 'PUBLISH_WEDDING',
+      details: `Published wedding ${wedding.slug}`,
+      request,
     });
 
     return NextResponse.json({ wedding: updated });

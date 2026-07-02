@@ -16,6 +16,12 @@ import { logger } from '@/lib/logger';
 import { internalError } from '@/lib/api-errors';
 // P2-SEC-14: writeAuditLog populates ipAddress + userAgent from request.
 import { writeAuditLog } from '@/lib/audit';
+// P1-SEC-7: CSRF double-submit token — issued alongside the auth cookie so the
+// client has it immediately after login (no extra round-trip to /api/csrf-token).
+import { generateCsrfToken, setCsrfCookie } from '@/lib/csrf';
+// P1-SEC-8: TOTP 2FA challenge — if the user has 2FA enabled, return a
+// short-lived challenge token instead of setting the auth cookie.
+import { generateChallengeToken } from '@/lib/two-factor';
 
 /**
  * Platform admin login endpoint.
@@ -95,6 +101,41 @@ export async function POST(request: NextRequest) {
 
     resetLoginRateLimit(normalizedEmail);
 
+    // ─── P1-SEC-8: 2FA check ───────────────────────────────────────────────
+    // If the user has 2FA enabled, do NOT issue the auth cookie yet. Return a
+    // short-lived challenge token that allows ONLY /api/platform/2fa/login.
+    // The client UI must prompt for a 6-digit TOTP code and POST it with the
+    // challenge token to /api/platform/2fa/login, which verifies the code and
+    // only then sets the auth cookie.
+    if (user.twoFactorEnabled) {
+      // Best-effort audit: record the 2FA challenge issuance.
+      await writeAuditLog({
+        weddingId: null,
+        userId: user.id,
+        action: 'PLATFORM_LOGIN_2FA_CHALLENGE',
+        details: `2FA challenge issued for ${user.email}`,
+        request,
+      });
+
+      const challengeToken = generateChallengeToken(user.id, user.email);
+      const twoFactorResponse = NextResponse.json({
+        requiresTwoFactor: true,
+        challengeToken,
+        // Echo the user's email + name so the UI can personalize the 2FA
+        // prompt ("Enter the code from your authenticator for
+        // admin@heureux-mariage.com"). Never echo the secret.
+        email: user.email,
+        name: user.name,
+      });
+      // P1-SEC-7: even though we don't set the auth cookie here, we DO set a
+      // fresh CSRF cookie so the subsequent /api/platform/2fa/login POST has
+      // a valid double-submit pair. (2fa/login is in CSRF_EXEMPT_PATHS, so
+      // technically not required — but defense-in-depth.)
+      const csrfToken = generateCsrfToken();
+      setCsrfCookie(twoFactorResponse, csrfToken);
+      return withSecurityHeaders(twoFactorResponse);
+    }
+
     // ─── Issue JWT + cookie ────────────────────────────────────────────────
     // generateToken() embeds weddingId (null here) + isPlatformAdmin flag.
     const token = generateToken({
@@ -130,8 +171,19 @@ export async function POST(request: NextRequest) {
       weddingId: user.weddingId,
     };
 
-    const response = NextResponse.json({ user: publicUser, token });
+    // P1-SEC-7: issue CSRF token here so the client can make authenticated
+    // POSTs immediately after login (no extra /api/csrf-token round-trip).
+    const csrfToken = generateCsrfToken();
+
+    // P1-SEC-3: token is no longer returned in the body — the httpOnly
+    // `auth_token` cookie set below is the secure path. The `user` object
+    // is kept so the client can render the admin shell without an extra
+    // /api/me round-trip. `csrfToken` is echoed so the client can prime its
+    // in-memory cache without reading document.cookie.
+    const response = NextResponse.json({ user: publicUser, csrfToken });
     setAuthCookie(response, token);
+    // P1-SEC-7: set the CSRF double-submit cookie (httpOnly=false).
+    setCsrfCookie(response, csrfToken);
     return withSecurityHeaders(response);
   } catch (error) {
     // P2-SEC-1: never log error.stack.

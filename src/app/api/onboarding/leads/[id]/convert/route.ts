@@ -2,6 +2,9 @@ export const dynamic = 'force-dynamic';
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getAuthUser, requirePlatformAdmin } from '@/lib/auth';
+import { getClientInfo } from '@/lib/guest-auth';
+import { internalError } from '@/lib/api-errors';
+import { logger } from '@/lib/logger';
 
 /**
  * POST /api/onboarding/leads/{id}/convert    (PLATFORM_ADMIN)
@@ -98,31 +101,43 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    const updated = await db.lead.update({
-      where: { id },
-      data: {
-        status: 'CONVERTED',
-        convertedWeddingId: wedding.id,
-        convertedAt: new Date(),
-      },
-      select: LEAD_ADMIN_SELECT,
-    });
+    // P2-CQ-7: resolve IP/UA before the tx.
+    const client = getClientInfo(request);
 
-    await db.auditLog.create({
-      data: {
-        weddingId: null,
-        userId: user!.id,
-        action: 'LEAD_CONVERTED',
-        details: `Lead "${lead.coupleLabel}" (${lead.email}) converted to wedding ${wedding.slug}`,
-      },
+    // P1-CQ-17: lead.update + auditLog.create in a single tx — if the audit
+    // write fails, the conversion rolls back too (no orphan converted lead
+    // without an audit trail).
+    const updated = await db.$transaction(async (tx) => {
+      const updatedLead = await tx.lead.update({
+        where: { id },
+        data: {
+          status: 'CONVERTED',
+          convertedWeddingId: wedding.id,
+          convertedAt: new Date(),
+        },
+        select: LEAD_ADMIN_SELECT,
+      });
+
+      await tx.auditLog.create({
+        data: {
+          weddingId: null,
+          userId: user!.id,
+          action: 'LEAD_CONVERTED',
+          details: `Lead "${lead.coupleLabel}" (${lead.email}) converted to wedding ${wedding.slug}`,
+          ipAddress: client.ipAddress ?? null,
+          userAgent: client.userAgent ?? null,
+        },
+      });
+
+      return updatedLead;
     });
 
     return NextResponse.json({ lead: updated });
   } catch (error) {
-    console.error('Convert lead error:', error);
-    return NextResponse.json(
-      { error: 'Erreur interne du serveur.' },
-      { status: 500 },
-    );
+    logger.error('convert-lead failed', {
+      errMessage: error instanceof Error ? error.message : String(error),
+      errName: error instanceof Error ? error.name : 'Unknown',
+    });
+    return internalError();
   }
 }

@@ -1,6 +1,6 @@
 export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from 'next/server';
-import { db, tenantDb } from '@/lib/db';
+import { tenantDb } from '@/lib/db';
 import { validateGuestSession, getClientInfo } from '@/lib/guest-auth';
 import { getAuthUser, hasPermission } from '@/lib/auth';
 import { resolvePublicTenant, runWithTenant, resolveAdminTenant } from '@/lib/tenant-context';
@@ -8,6 +8,8 @@ import { resolvePublicTenant, runWithTenant, resolveAdminTenant } from '@/lib/te
 import { logger } from '@/lib/logger';
 // P2-CQ-5: standardised API errors.
 import { internalError, badRequest } from '@/lib/api-errors';
+// P2-CQ-7: writeAuditLog populates ipAddress + userAgent from request.
+import { writeAuditLog } from '@/lib/audit';
 
 /**
  * RSVP API — Guest confirms or declines invitation (tenant-scoped)
@@ -68,13 +70,13 @@ export async function POST(request: NextRequest) {
         },
       });
 
-      await db.auditLog.create({
-        data: {
-          weddingId: context.weddingId,
-          userId: null, // guest action, not admin
-          action: 'GUEST_RSVP',
-          details: `Guest ${existing.firstName} ${existing.lastName} RSVP: ${status}`,
-        },
+      // P2-CQ-7: writeAuditLog populates ipAddress + userAgent from request.
+      await writeAuditLog({
+        weddingId: context.weddingId,
+        userId: null, // guest action, not admin
+        action: 'GUEST_RSVP',
+        details: `Guest ${existing.firstName} ${existing.lastName} RSVP: ${status}`,
+        request,
       });
 
       return NextResponse.json({
@@ -174,12 +176,13 @@ export async function PUT(request: NextRequest) {
         data: { status: 'PENDING', rsvpAt: null, rsvpMessage: null, rsvpPlusOne: false },
       });
 
-      await db.auditLog.create({
-        data: {
-          weddingId: context.weddingId, userId: user.id,
-          action: 'RESET_RSVP',
-          details: `${result.count} RSVPs reset to PENDING`,
-        },
+      // P2-CQ-7: writeAuditLog populates ipAddress + userAgent from request.
+      await writeAuditLog({
+        weddingId: context.weddingId,
+        userId: user.id,
+        action: 'RESET_RSVP',
+        details: `${result.count} RSVPs reset to PENDING`,
+        request,
       });
 
       return NextResponse.json({

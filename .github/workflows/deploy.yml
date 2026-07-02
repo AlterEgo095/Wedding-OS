@@ -1,0 +1,118 @@
+# ══════════════════════════════════════════════════════════════════════════════
+# deploy.yml — P1-PROD-3: Manual production deploy workflow.
+# ══════════════════════════════════════════════════════════════════════════════
+#
+# Trigger: workflow_dispatch (manual). The dispatcher can pick the git ref
+# (branch / tag / SHA) to deploy via the `ref` input. Defaults to `main`.
+#
+# What it does (run on the production VPS over SSH):
+#   1. cd into the project dir on the VPS.
+#   2. git fetch + checkout the selected ref.
+#   3. docker compose -f docker-compose.prod.yml up -d --build
+#   4. Wait for the container health check to flip to healthy.
+#   5. Hit https://heureuxmariage.aenews.net/api/health to confirm the new
+#      revision is live and the DB connection is healthy.
+#
+# Required GitHub secrets (Settings → Secrets and variables → Actions):
+#   - SSH_HOST       — production VPS hostname or IP (e.g. heureuxmariage.aenews.net)
+#   - SSH_USER       — SSH user with docker access (e.g. deploy)
+#   - SSH_PRIVATE_KEY — PEM-encoded private key matching the user's authorized_keys
+#   - DEPLOY_PATH    — absolute path on the VPS where the repo is checked out
+#                      (e.g. /srv/wedding-platform)
+#
+# Why manual trigger and not auto-deploy on push to main:
+#   - Production deploys should be intentional. A failed CI step on `main`
+#     (e.g. migrate drift) should NOT propagate to production.
+#   - The dispatcher is expected to eyeball the CI run for `main` before
+#     triggering this workflow. See PULL_REQUEST_TEMPLATE.md for the manual
+#     verification checklist.
+#   - Future: add a Slack/Teams approval gate before the SSH step (GitHub
+#     Environments + required reviewers) once the team grows.
+# ══════════════════════════════════════════════════════════════════════════════
+
+name: Deploy (production)
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Git ref to deploy (branch / tag / SHA)"
+        required: true
+        default: "main"
+        type: string
+
+# One deploy at a time per environment — prevents two concurrent `up --build`
+# racing on the same VPS.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: SSH → pull → compose up → health check
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 20
+    steps:
+      - name: Validate inputs
+        run: |
+          if [ -z "${{ secrets.SSH_HOST }}" ] || [ -z "${{ secrets.SSH_USER }}" ] || [ -z "${{ secrets.SSH_PRIVATE_KEY }}" ] || [ -z "${{ secrets.DEPLOY_PATH }}" ]; then
+            echo "::error::Missing required secrets. Configure SSH_HOST, SSH_USER, SSH_PRIVATE_KEY, DEPLOY_PATH in repo Settings → Secrets."
+            exit 1
+          fi
+          echo "Deploying ref: ${{ inputs.ref }}"
+
+      - name: Configure SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H ${{ secrets.SSH_HOST }} >> ~/.ssh/known_hosts 2>/dev/null || true
+
+      - name: Pull + checkout ref + compose up --build
+        run: |
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=15 ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} \
+            "set -e; \
+             cd '${{ secrets.DEPLOY_PATH }}'; \
+             git fetch --all --tags; \
+             git checkout '${{ inputs.ref }}'; \
+             git reset --hard 'origin/${{ inputs.ref }}' 2>/dev/null || git reset --hard '${{ inputs.ref }}'; \
+             echo '--- docker compose up -d --build ---'; \
+             docker compose -f docker-compose.prod.yml up -d --build"
+
+      - name: Wait for container health
+        run: |
+          echo "Waiting for wedding-app to become healthy (up to 120s)..."
+          for i in $(seq 1 24); do
+            STATUS=$(ssh -o StrictHostKeyChecking=accept-new ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} \
+              "docker inspect --format='{{.State.Health.Status}}' wedding-app 2>/dev/null || echo missing")
+            echo "  attempt $i: status=$STATUS"
+            if [ "$STATUS" = "healthy" ]; then
+              echo "Container is healthy."
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "::error::Container did not become healthy within 120s."
+          ssh -o StrictHostKeyChecking=accept-new ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} \
+            "docker logs --tail 80 wedding-app || true"
+          exit 1
+
+      - name: External health check (https://heureuxmariage.aenews.net/api/health)
+        run: |
+          sleep 5
+          echo "Hitting /api/health on the public domain..."
+          CODE=$(curl -sS -o /tmp/health.json -w '%{http_code}' --max-time 15 \
+            https://heureuxmariage.aenews.net/api/health || echo "000")
+          echo "HTTP status: $CODE"
+          cat /tmp/health.json
+          echo ""
+          if [ "$CODE" != "200" ]; then
+            echo "::error::Health endpoint did not return 200 (got $CODE). Check the container logs."
+            exit 1
+          fi
+          if ! grep -q '"status":"ok"' /tmp/health.json && ! grep -q '"status": "ok"' /tmp/health.json; then
+            echo "::error::Health endpoint returned 200 but status was not 'ok'. Investigate the DB connection."
+            exit 1
+          fi
+          echo "✅ Production deploy verified."

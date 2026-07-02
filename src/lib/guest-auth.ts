@@ -2,6 +2,7 @@ import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import { NextResponse } from 'next/server';
 import { db, tenantDb } from './db';
+import { devFallbackSecret } from './auth';
 
 // ─── Configuration ───
 // SECURITY (P0-SEC-2): Previously fell back to 'dev-only-secret' which is
@@ -40,7 +41,7 @@ function getGuestJwtSecret(): string {
     'WARNING: JWT_SECRET not set — using insecure dev-only guest JWT fallback. ' +
     'Set JWT_SECRET in your .env file with: openssl rand -base64 48'
   );
-  _guestJwtSecret = 'dev-only-secret-guest-session';
+  _guestJwtSecret = devFallbackSecret('guest-jwt');
   return _guestJwtSecret;
 }
 
@@ -67,7 +68,10 @@ function getEncryptionKeySource(): string {
     'WARNING: ENCRYPTION_KEY not set — using insecure dev-only fallback. ' +
     'Set ENCRYPTION_KEY in your .env file with: openssl rand -base64 48'
   );
-  _encryptionKeySource = 'dev-encryption-key';
+  // P2-SEC-9: derived from machine signals (not hardcoded). The downstream
+  // getEncryptionKey() derives a 32-byte AES-256 key via SHA-256, so any
+  // stable source string ≥ 32 chars works correctly here.
+  _encryptionKeySource = devFallbackSecret('encryption-key');
   return _encryptionKeySource;
 }
 

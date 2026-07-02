@@ -9,6 +9,8 @@ import path from 'path';
 import { logger } from '@/lib/logger';
 // P2-CQ-5: standardised API errors.
 import { internalError, badRequest } from '@/lib/api-errors';
+// P2-SEC-14 + P2-CQ-7: writeAuditLog populates ipAddress + userAgent from request.
+import { writeAuditLog } from '@/lib/audit';
 
 const MAX_FILE_SIZE = 30 * 1024 * 1024; // 30MB for audio files
 const ALLOWED_EXTENSIONS = ['.mp3', '.wav', '.ogg', '.m4a', '.aac'];
@@ -119,12 +121,11 @@ export async function POST(request: NextRequest) {
       await setMusicSetting(ctx, 'music_original_name', file.name);
       await setMusicSetting(ctx, 'music_enabled', 'true');
 
-      await db.auditLog.create({
-        data: {
-          weddingId: ctx.weddingId, userId: user.id,
-          action: 'UPLOAD_MUSIC',
-          details: `Musique d'ambiance uploadée: ${file.name}`,
-        },
+      await writeAuditLog({
+        weddingId: ctx.weddingId, userId: user.id,
+        action: 'UPLOAD_MUSIC',
+        details: `Musique d'ambiance uploadée: ${file.name}`,
+        request,
       });
 
       const settings = {
@@ -168,12 +169,11 @@ export async function PUT(request: NextRequest) {
         await setMusicSetting(ctx, 'music_volume', v.toFixed(2));
       }
 
-      await db.auditLog.create({
-        data: {
-          weddingId: ctx.weddingId, userId: user.id,
-          action: 'UPDATE_MUSIC_SETTINGS',
-          details: `Paramètres musique: enabled=${enabled ?? 'unchanged'}, volume=${volume ?? 'unchanged'}`,
-        },
+      await writeAuditLog({
+        weddingId: ctx.weddingId, userId: user.id,
+        action: 'UPDATE_MUSIC_SETTINGS',
+        details: `Paramètres musique: enabled=${enabled ?? 'unchanged'}, volume=${volume ?? 'unchanged'}`,
+        request,
       });
 
       const musicFile = await getMusicSetting(ctx, 'music_file');
@@ -221,12 +221,11 @@ export async function DELETE(request: NextRequest) {
       await setMusicSetting(ctx, 'music_original_name', '');
       await setMusicSetting(ctx, 'music_enabled', 'false');
 
-      await db.auditLog.create({
-        data: {
-          weddingId: ctx.weddingId, userId: user.id,
-          action: 'DELETE_MUSIC',
-          details: 'Musique d\'ambiance supprimée',
-        },
+      await writeAuditLog({
+        weddingId: ctx.weddingId, userId: user.id,
+        action: 'DELETE_MUSIC',
+        details: 'Musique d\'ambiance supprimée',
+        request,
       });
 
       return NextResponse.json({

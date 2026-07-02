@@ -7,20 +7,24 @@ import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Crown, Shield, Mail, Lock, Loader2, ArrowLeft, AlertTriangle } from 'lucide-react'
+import { Crown, Shield, Mail, Lock, Loader2, ArrowLeft, AlertTriangle, KeyRound } from 'lucide-react'
 import { toast } from 'sonner'
 
 /**
  * Platform super-admin login.
  *
- * POSTs credentials to /api/platform/login. On success the API returns
- * `{ user, token }` AND sets an httpOnly `auth_token` cookie (so server-side
- * requests in subsequent SSR passes are authenticated too). We mirror the
- * token + user in localStorage for the client-side admin shell which uses
- * `Authorization: Bearer <token>` headers.
+ * P1-SEC-3 (cookie migration): the API no longer returns a token in the body.
+ * The httpOnly `auth_token` cookie set by /api/platform/login is the secure
+ * auth path. We keep `admin_user` in localStorage for UI display only.
  *
- * The endpoint returns 403 if the user is not PLATFORM_ADMIN — we surface a
- * clear message and offer a link back to the legacy wedding admin at /admin.
+ * P1-SEC-8 (2FA): if the user has TOTP 2FA enabled, /api/platform/login
+ * returns `{ requiresTwoFactor: true, challengeToken }` instead of setting
+ * the auth cookie. We show a 6-digit TOTP input; the user enters a code
+ * from their authenticator; we POST { challengeToken, token } to
+ * /api/platform/2fa/login, which verifies + sets the auth cookie.
+ *
+ * P1-SEC-9 (password reset): the "Mot de passe oublié ?" link now opens
+ * /platform/forgot-password (a real self-service flow).
  */
 export default function PlatformLoginPage() {
   const router = useRouter()
@@ -36,6 +40,13 @@ export default function PlatformLoginPage() {
   >(null)
   const [errorMessage, setErrorMessage] = useState('')
 
+  // ── 2FA flow state ────────────────────────────────────────────────────────
+  const [twoFactorRequired, setTwoFactorRequired] = useState(false)
+  const [challengeToken, setChallengeToken] = useState<string>('')
+  const [twoFactorEmail, setTwoFactorEmail] = useState<string>('')
+  const [twoFactorName, setTwoFactorName] = useState<string>('')
+  const [totpCode, setTotpCode] = useState('')
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
@@ -46,14 +57,38 @@ export default function PlatformLoginPage() {
       const res = await fetch('/api/platform/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include', // P1-SEC-3: send + receive httpOnly cookies.
         body: JSON.stringify({ email, password }),
       })
 
       const data = await res.json().catch(() => ({}))
 
       if (res.ok) {
-        localStorage.setItem('admin_token', data.token)
-        localStorage.setItem('admin_user', JSON.stringify(data.user))
+        // ── P1-SEC-8: 2FA branch ──────────────────────────────────────────────
+        // If the user has 2FA enabled, the server returns a challenge token
+        // instead of setting the auth cookie. We transition to the 2FA step
+        // (TOTP input) and POST the challengeToken + TOTP code to
+        // /api/platform/2fa/login on the next submit.
+        if (data.requiresTwoFactor) {
+          setChallengeToken(data.challengeToken)
+          setTwoFactorEmail(data.email || email)
+          setTwoFactorName(data.name || '')
+          setTwoFactorRequired(true)
+          setTotpCode('')
+          setLoading(false)
+          return
+        }
+
+        // P1-SEC-3: NO `admin_token` localStorage write. The httpOnly cookie
+        // set by the server is the secure auth path. We keep `admin_user`
+        // for UI display only.
+        if (data.user) {
+          try {
+            localStorage.setItem('admin_user', JSON.stringify(data.user))
+          } catch {
+            /* ignore — localStorage may be unavailable */
+          }
+        }
         toast.success(`Bienvenue, ${data.user?.name || 'Administrateur'} !`)
         router.push('/platform/admin')
         return
@@ -86,6 +121,167 @@ export default function PlatformLoginPage() {
     } finally {
       setLoading(false)
     }
+  }
+
+  // ── 2FA submit handler ────────────────────────────────────────────────────
+  const handleTwoFactorSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setLoading(true)
+    setErrorKind(null)
+    setErrorMessage('')
+
+    try {
+      const res = await fetch('/api/platform/2fa/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ challengeToken, token: totpCode }),
+      })
+
+      const data = await res.json().catch(() => ({}))
+
+      if (res.ok) {
+        if (data.user) {
+          try {
+            localStorage.setItem('admin_user', JSON.stringify(data.user))
+          } catch {
+            /* ignore */
+          }
+        }
+        toast.success(`Bienvenue, ${data.user?.name || 'Administrateur'} !`)
+        router.push('/platform/admin')
+        return
+      }
+
+      if (res.status === 429) {
+        setErrorKind('rate')
+        setErrorMessage('Trop de tentatives 2FA. Réessayez plus tard.')
+        toast.error('Trop de tentatives 2FA. Réessayez plus tard.')
+      } else {
+        setErrorKind('generic')
+        setErrorMessage(data.error || 'Code TOTP invalide')
+        toast.error(data.error || 'Code TOTP invalide')
+      }
+    } catch {
+      setErrorKind('generic')
+      setErrorMessage('Erreur de connexion au serveur')
+      toast.error('Erreur de connexion au serveur')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // ── 2FA step UI ───────────────────────────────────────────────────────────
+  if (twoFactorRequired) {
+    return (
+      <div className="flex items-center justify-center min-h-screen p-4">
+        <motion.div
+          initial={{ opacity: 0, y: 20, scale: 0.95 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          transition={{ duration: 0.5, ease: 'easeOut' }}
+          className="glass-card gold-border w-full max-w-md p-8 relative overflow-hidden"
+        >
+          <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-gold/40 to-transparent" />
+
+          <div className="flex flex-col items-center mb-8">
+            <motion.div
+              initial={{ scale: 0, rotate: -10 }}
+              animate={{ scale: 1, rotate: 0 }}
+              transition={{ delay: 0.15, type: 'spring', stiffness: 200 }}
+              className="w-16 h-16 rounded-full bg-gradient-gold flex items-center justify-center mb-4 shadow-lg relative"
+            >
+              <KeyRound className="w-8 h-8 text-white" />
+              <div className="absolute -inset-1 rounded-full border border-gold/30 animate-pulse" />
+            </motion.div>
+            <h2 className="text-2xl font-bold gold-gradient font-display tracking-wide">
+              Vérification 2FA
+            </h2>
+            <p className="text-sm text-muted-foreground mt-1.5 text-center">
+              Entrez le code à 6 chiffres de votre application d&apos;authentification
+              {twoFactorEmail && (
+                <>
+                  <br />
+                  <span className="text-xs text-muted-foreground/80">pour {twoFactorEmail}</span>
+                </>
+              )}
+            </p>
+          </div>
+
+          <form onSubmit={handleTwoFactorSubmit} className="space-y-5">
+            <div className="space-y-2">
+              <Label htmlFor="totp" className="text-sm font-medium">
+                Code TOTP
+              </Label>
+              <Input
+                id="totp"
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                maxLength={6}
+                placeholder="123456"
+                value={totpCode}
+                onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                className="bg-white/5 border-white/10 focus:border-gold/50 text-center text-2xl tracking-[0.5em] font-mono"
+                required
+                disabled={loading}
+                autoComplete="one-time-code"
+                autoFocus
+              />
+            </div>
+
+            {errorKind && (
+              <motion.p
+                initial={{ opacity: 0, y: -5 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="text-sm text-red-400 bg-red-400/10 border border-red-400/30 rounded-md p-2 text-center"
+              >
+                {errorMessage}
+              </motion.p>
+            )}
+
+            <Button
+              type="submit"
+              disabled={loading || totpCode.length !== 6}
+              aria-describedby="platform-2fa-submit-status"
+              className="w-full bg-gradient-gold hover:opacity-90 text-white font-medium h-11 shadow-lg"
+            >
+              {loading ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Vérification...
+                </>
+              ) : (
+                <>
+                  <Shield className="mr-2 h-4 w-4" />
+                  Valider
+                </>
+              )}
+            </Button>
+            <span id="platform-2fa-submit-status" className="sr-only">
+              {loading
+                ? 'Vérification du code en cours.'
+                : 'Bouton de validation disponible.'}
+            </span>
+          </form>
+
+          <div className="mt-4 text-center">
+            <button
+              type="button"
+              onClick={() => {
+                setTwoFactorRequired(false)
+                setChallengeToken('')
+                setTotpCode('')
+                setErrorKind(null)
+                setErrorMessage('')
+              }}
+              className="text-sm text-muted-foreground hover:text-foreground underline-offset-4 hover:underline transition-colors"
+            >
+              ← Revenir à la connexion
+            </button>
+          </div>
+        </motion.div>
+      </div>
+    )
   }
 
   return (
@@ -223,17 +419,17 @@ export default function PlatformLoginPage() {
           </span>
         </form>
 
-        {/* P1-UX-10: password-reset / account-recovery link. The full
-            self-service reset flow (P1-SEC-9) is deferred to P3 — for now the
-            link opens a pre-filled mailto so the support team can verify
-            identity and reset manually. */}
-        <div className="mt-4 text-center">
-          <a
-            href="mailto:contact@heureux-mariage.com?subject=R%C3%A9initialisation%20mot%20de%20passe"
+        {/* P1-SEC-9: password-reset link now opens the self-service flow at
+            /platform/forgot-password. The previous mailto: fallback is still
+            available as a secondary link for users without access to the
+            self-service form (e.g. if email-sending is not yet integrated). */}
+        <div className="mt-4 text-center space-y-1">
+          <Link
+            href="/platform/forgot-password"
             className="text-sm text-muted-foreground hover:text-foreground underline-offset-4 hover:underline transition-colors"
           >
             Mot de passe oublié ?
-          </a>
+          </Link>
         </div>
 
         {/* Footer */}

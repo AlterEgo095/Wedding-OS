@@ -117,8 +117,8 @@ RUN chown -R nextjs:nodejs /app/.next /app/node_modules /app/prisma && \
 EXPOSE 3000
 
 # ── Health Check ──
-HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-  CMD wget --no-verbose --tries=1 --spider http://127.0.0.1:3000/ || exit 1
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+  CMD wget --no-verbose --tries=1 --spider http://127.0.0.1:3000/api/health || exit 1
 
 # ── Start via entrypoint (init-db + server) ──
 ENTRYPOINT ["sh", "./docker-entrypoint.sh"]

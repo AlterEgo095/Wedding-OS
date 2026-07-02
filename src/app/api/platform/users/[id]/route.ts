@@ -3,6 +3,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getAuthUser, requirePlatformAdmin, hashPassword } from '@/lib/auth';
 import { normalizeRole, isPlatformAdmin, type Role } from '@/lib/types';
+// P2-CQ-5: standardised API errors.
+import { badRequest } from '@/lib/api-errors';
+// P2-CQ-7: writeAuditLog populates ipAddress + userAgent from request.
+import { writeAuditLog } from '@/lib/audit';
 
 /**
  * Per-user operations for the platform admin.
@@ -92,8 +96,9 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    const body = await request.json();
-    const { name, role, weddingId, password } = body ?? {};
+    const body = await request.json().catch(() => null); // P2-CQ-6
+    if (!body) return badRequest('Corps de requête invalide');
+    const { name, role, weddingId, password } = body;
 
     // ─── Validate provided fields ───────────────────────────────────────────
     let trimmedName: string | undefined;
@@ -214,13 +219,13 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
 
     // ─── Audit log ──────────────────────────────────────────────────────────
     // Never include the password VALUE — only the field name "password".
-    await db.auditLog.create({
-      data: {
-        weddingId: null, // platform-level event
-        userId: user!.id,
-        action: 'UPDATE_USER',
-        details: `Updated user ${existing.email} (fields: ${Object.keys(updateData).join(', ')})`,
-      },
+    // P2-CQ-7: writeAuditLog populates ipAddress + userAgent from request.
+    await writeAuditLog({
+      weddingId: null, // platform-level event
+      userId: user!.id,
+      action: 'UPDATE_USER',
+      details: `Updated user ${existing.email} (fields: ${Object.keys(updateData).join(', ')})`,
+      request,
     });
 
     return NextResponse.json({ user: updated });
@@ -287,13 +292,13 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     await db.adminUser.delete({ where: { id } });
 
     // ─── Audit log ──────────────────────────────────────────────────────────
-    await db.auditLog.create({
-      data: {
-        weddingId: null, // platform-level event
-        userId: user!.id,
-        action: 'DELETE_USER',
-        details: `Deleted user ${existing.email} (${existing.role})`,
-      },
+    // P2-CQ-7: writeAuditLog populates ipAddress + userAgent from request.
+    await writeAuditLog({
+      weddingId: null, // platform-level event
+      userId: user!.id,
+      action: 'DELETE_USER',
+      details: `Deleted user ${existing.email} (${existing.role})`,
+      request,
     });
 
     return NextResponse.json({ success: true });

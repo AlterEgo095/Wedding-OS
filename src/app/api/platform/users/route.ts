@@ -11,6 +11,8 @@ import { logger } from '@/lib/logger';
 import { internalError } from '@/lib/api-errors';
 // P2-SEC-14: writeAuditLog populates ipAddress + userAgent from request.
 import { writeAuditLog } from '@/lib/audit';
+// P2-CQ-7: getClientInfo to resolve IP/UA for tx-scoped audit writes.
+import { getClientInfo } from '@/lib/guest-auth';
 
 /**
  * Platform-wide user management.
@@ -216,31 +218,56 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // ─── Hash password + persist ────────────────────────────────────────
+    // ─── Hash password + persist (P1-CQ-17: user + auditLog in tx) ───────
     const hashedPassword = await hashPassword(password);
 
-    const created = await db.adminUser.create({
-      data: {
-        name: trimmedName,
-        email: normalizedEmail,
-        password: hashedPassword,
-        role: normalizedRole,
-        weddingId: finalWeddingId,
-      },
-      select: USER_LIST_SELECT,
-    });
+    // P2-CQ-7: resolve IP/UA before the tx so the tx-scoped auditLog.create
+    // can capture them in a single row.
+    const client = getClientInfo(request);
 
-    // ─── Audit log (P2-SEC-14: writeAuditLog populates ipAddress + userAgent) ─
-    await writeAuditLog({
-      weddingId: null, // platform-level event
-      userId: user!.id,
-      action: 'CREATE_USER',
-      details: `Created user ${normalizedEmail} (${normalizedRole})`,
-      request,
+    const created = await db.$transaction(async (tx) => {
+      const userRow = await tx.adminUser.create({
+        data: {
+          name: trimmedName,
+          email: normalizedEmail,
+          password: hashedPassword,
+          role: normalizedRole,
+          weddingId: finalWeddingId,
+        },
+        select: USER_LIST_SELECT,
+      });
+
+      await tx.auditLog.create({
+        data: {
+          weddingId: null, // platform-level event
+          userId: user!.id,
+          action: 'CREATE_USER',
+          details: `Created user ${normalizedEmail} (${normalizedRole})`,
+          ipAddress: client.ipAddress ?? null,
+          userAgent: client.userAgent ?? null,
+        },
+      });
+
+      return userRow;
     });
 
     return NextResponse.json({ user: created }, { status: 201 });
-  } catch (error) {
+  } catch (error: unknown) {
+    // P1-CQ-18: catch unique-constraint violations (email already exists).
+    // The pre-flight findUnique above is a TOCTOU race window — two
+    // concurrent POSTs with the same email can both pass the check and the
+    // second create() throws P2002. Catch it and return 409 instead of 500.
+    if (
+      typeof error === 'object' &&
+      error !== null &&
+      'code' in error &&
+      (error as { code: string }).code === 'P2002'
+    ) {
+      return NextResponse.json(
+        { error: 'Cet email est déjà utilisé' },
+        { status: 409 }
+      );
+    }
     // P2-SEC-1: never log error.stack.
     logger.error('Create platform user error', {
       errMessage: error instanceof Error ? error.message : String(error),
