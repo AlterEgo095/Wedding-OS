@@ -20,8 +20,20 @@ chown -R nextjs:nodejs /app/public/uploads 2>/dev/null || true
 chown -R nextjs:nodejs /app/logs 2>/dev/null || true
 
 # Run database initialization as nextjs user (creates tables + seeds data)
+# P0-ARCH-2: init-db.js is a legacy Phase-1 script that creates only 10 of the
+# 19 Prisma models. We keep it for idempotent seeding of the default wedding /
+# admin user, but ALSO run `prisma db push` to ensure ALL models and columns
+# from prisma/schema.prisma exist on the volume. Without this, the first
+# tenant-scoped query on a fresh volume throws `no such column: weddingId`
+# (Prisma P2022) and platform routes throw `no such table: Wedding`.
 echo "📦 Initializing database..."
 su-exec nextjs node init-db.js 2>/dev/null || node init-db.js
+
+echo "🔧 Syncing Prisma schema (db push)..."
+su-exec nextjs node node_modules/prisma/build/index.js db push --skip-generate --accept-data-loss 2>/dev/null \
+  || node node_modules/prisma/build/index.js db push --skip-generate --accept-data-loss 2>/dev/null \
+  || npx prisma db push --skip-generate --accept-data-loss 2>/dev/null \
+  || echo "⚠️ prisma db push failed — assuming schema is already in sync"
 
 # Fix ownership again after init-db.js may have created new files
 chown -R nextjs:nodejs /app/db/ 2>/dev/null || true

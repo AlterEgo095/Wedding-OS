@@ -10,10 +10,18 @@ import {
 } from '@/lib/guest-auth';
 import { cleanGuestName } from '@/lib/guest-utils';
 import { resolvePublicTenant, runWithTenant } from '@/lib/tenant-context';
+import { checkRateLimit, getRateLimitKey } from '@/lib/rate-limit';
 
 /**
  * Guest Lookup API — Name-based search with lookupToken security
  * Tenant-aware since Phase 2: only searches guests in the resolved wedding.
+ *
+ * SECURITY (P0-SEC-5): Previously had NO rate limit, allowing unauthenticated
+ * attackers to enumerate the entire guest list (PII: names, table numbers,
+ * seats, category) by firing thousands of name searches. Now rate-limited to
+ * 5 searches/minute per IP — matches the auto-auth rate limit and allows
+ * legitimate use (a guest typically searches 1-3 times to find their name)
+ * while blocking mass enumeration.
  */
 
 export async function GET(request: NextRequest) {
@@ -29,6 +37,21 @@ export async function GET(request: NextRequest) {
   return runWithTenant(context, async () => {
     try {
       const clientInfo = getClientInfo(request);
+      const rateLimitKey = getRateLimitKey(request);
+
+      // P0-SEC-5: Rate limit guest lookups to prevent PII enumeration.
+      // 5 searches/minute per IP — same ceiling as auto-auth.
+      if (!checkRateLimit(`guest-lookup-${rateLimitKey}`, 5, 60 * 1000)) {
+        await logGuestAccess({
+          action: 'LOOKUP_RATE_LIMITED',
+          details: `Guest lookup rate limited: ${rateLimitKey}`,
+          ...clientInfo,
+        }).catch(() => {});
+        return NextResponse.json(
+          { error: 'Trop de recherches. Veuillez r\u00e9essayer dans un instant.' },
+          { status: 429 }
+        );
+      }
 
       // SECURITY: Search Lock — If guest already has an active session, block
       const guestToken = request.cookies.get('guest_session')?.value;

@@ -3,16 +3,72 @@ import crypto from 'crypto';
 import { db, tenantDb } from './db';
 
 // ─── Configuration ───
-const GUEST_JWT_SECRET = (process.env.JWT_SECRET || 'dev-only-secret') + '-guest-session';
+// SECURITY (P0-SEC-2): Previously fell back to 'dev-only-secret' which is
+// public knowledge and would allow guest-session JWT forgery in production.
+// Now resolved lazily via getGuestJwtSecret() which fails-fast in production.
 const GUEST_TOKEN_EXPIRY = '30d'; // Long-lived for convenience
 const GUEST_COOKIE_NAME = 'guest_session';
 const SESSION_EXPIRY_DAYS = parseInt(process.env.GUEST_SESSION_DAYS || '30', 10);
-const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || process.env.JWT_SECRET || 'dev-encryption-key';
+// SECURITY (P0-SEC-3): Previously fell back to 'dev-encryption-key' which is
+// public knowledge and would allow invitation-link token forgery in production.
+// Now resolved lazily via getEncryptionKeySource() which fails-fast in production.
 const ENCRYPTION_ALGORITHM = 'aes-256-gcm';
 const IV_LENGTH = 16;
 const TAG_LENGTH = 16;
 const BRUTE_FORCE_BAN_MINUTES = parseInt(process.env.BRUTE_FORCE_BAN_MINUTES || '60', 10);
 const MAX_LOGIN_ATTEMPTS_PER_HOUR = parseInt(process.env.MAX_LOGIN_ATTEMPTS_PER_HOUR || '10', 10);
+
+let _guestJwtSecret: string | null = null;
+function getGuestJwtSecret(): string {
+  if (_guestJwtSecret !== null) return _guestJwtSecret;
+  const env = process.env.JWT_SECRET;
+  if (env && env.length >= 32) {
+    _guestJwtSecret = env + '-guest-session';
+    return _guestJwtSecret;
+  }
+  const isProd =
+    process.env.NODE_ENV === 'production' &&
+    process.env.NEXT_PHASE !== 'phase-production-build';
+  if (isProd) {
+    throw new Error(
+      'FATAL: JWT_SECRET is missing or too short (<32 chars) in production. ' +
+      'Guest session authentication is disabled until JWT_SECRET is set.'
+    );
+  }
+  console.warn(
+    'WARNING: JWT_SECRET not set — using insecure dev-only guest JWT fallback. ' +
+    'Set JWT_SECRET in your .env file with: openssl rand -base64 48'
+  );
+  _guestJwtSecret = 'dev-only-secret-guest-session';
+  return _guestJwtSecret;
+}
+
+let _encryptionKeySource: string | null = null;
+function getEncryptionKeySource(): string {
+  if (_encryptionKeySource !== null) return _encryptionKeySource;
+  const env =
+    process.env.ENCRYPTION_KEY ||
+    process.env.JWT_SECRET;
+  if (env && env.length >= 32) {
+    _encryptionKeySource = env;
+    return _encryptionKeySource;
+  }
+  const isProd =
+    process.env.NODE_ENV === 'production' &&
+    process.env.NEXT_PHASE !== 'phase-production-build';
+  if (isProd) {
+    throw new Error(
+      'FATAL: ENCRYPTION_KEY is missing or too short (<32 chars) in production. ' +
+      'Invitation link encryption is disabled until ENCRYPTION_KEY is set.'
+    );
+  }
+  console.warn(
+    'WARNING: ENCRYPTION_KEY not set — using insecure dev-only fallback. ' +
+    'Set ENCRYPTION_KEY in your .env file with: openssl rand -base64 48'
+  );
+  _encryptionKeySource = 'dev-encryption-key';
+  return _encryptionKeySource;
+}
 
 export interface GuestTokenPayload {
   guestId: string;
@@ -25,7 +81,7 @@ export interface GuestTokenPayload {
 // Used to encrypt guest IDs in URLs so they can't be enumerated
 function getEncryptionKey(): Buffer {
   // Derive a 32-byte key from the encryption key string
-  return crypto.createHash('sha256').update(ENCRYPTION_KEY).digest();
+  return crypto.createHash('sha256').update(getEncryptionKeySource()).digest();
 }
 
 export function encryptId(id: string): string {
@@ -154,12 +210,12 @@ setInterval(() => {
 
 // ─── Token Generation ───
 export function generateGuestToken(payload: GuestTokenPayload): string {
-  return jwt.sign(payload, GUEST_JWT_SECRET, { expiresIn: GUEST_TOKEN_EXPIRY });
+  return jwt.sign(payload, getGuestJwtSecret(), { expiresIn: GUEST_TOKEN_EXPIRY });
 }
 
 export function verifyGuestToken(token: string): GuestTokenPayload | null {
   try {
-    return jwt.verify(token, GUEST_JWT_SECRET) as GuestTokenPayload;
+    return jwt.verify(token, getGuestJwtSecret()) as GuestTokenPayload;
   } catch {
     return null;
   }

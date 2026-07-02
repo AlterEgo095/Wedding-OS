@@ -276,7 +276,25 @@ export async function resolveAdminTenant(
   // Non-platform admin: lock to their own wedding (ignore X-Wedding-Slug header
   // to prevent cross-tenant access). Uses isPlatformAdmin() so BOTH PLATFORM_ADMIN
   // and legacy SUPER_ADMIN are treated as platform-wide.
-  if (!isPlatformAdmin(user.role) && user.weddingId) {
+  //
+  // SECURITY (P0-SEC-4): If a non-platform-admin user has NO weddingId (null /
+  // undefined), they MUST be rejected — otherwise they fall through to the
+  // platform-admin path below and can act as platform admin on the default
+  // wedding (or any wedding via X-Wedding-Slug header). This was a privilege
+  // escalation allowing a misconfigured ORGANIZER/RECEPTION/CONTROLLER account
+  // to bypass tenant locking.
+  if (!isPlatformAdmin(user.role)) {
+    if (!user.weddingId) {
+      return {
+        context: null,
+        wedding: null,
+        error: {
+          status: 403,
+          message:
+            'Votre compte n\u2019est rattach\u00e9 \u00e0 aucun mariage. Contactez un administrateur de la plateforme.',
+        },
+      };
+    }
     // Need slug for context — fetch wedding by ID
     const wedding = await db.wedding.findUnique({
       where: { id: user.weddingId },
