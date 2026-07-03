@@ -90,9 +90,13 @@ export async function GET(request: NextRequest) {
         str.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
       const normalizedSearch = normalizeForSearch(searchTerm);
 
-      // findMany is auto-scoped by tenant extension — only returns guests in current wedding
+      // DEFENSE-IN-DEPTH (Mission 1.0 Phase G): explicit weddingId in where clause.
+      // The tenant-scoped extension auto-injects weddingId, but ALS propagation can
+      // break (see preview-invitation:43-50). The explicit where guarantees scoping
+      // even if the extension's getTenantContext() returns undefined.
       let guests = await tenantDb.guest.findMany({
         where: {
+          weddingId: context.weddingId,
           OR: [
             { firstName: { contains: searchTerm } },
             { lastName: { contains: searchTerm } },
@@ -111,6 +115,7 @@ export async function GET(request: NextRequest) {
       if (guests.length < 3) {
         const allPotentialMatches = await tenantDb.guest.findMany({
           where: {
+            weddingId: context.weddingId,
             OR: [
               { firstName: { contains: searchTerm.substring(0, 2) } },
               { lastName: { contains: searchTerm.substring(0, 2) } },

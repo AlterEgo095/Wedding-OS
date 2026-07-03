@@ -45,6 +45,7 @@
     "tool-results",
     "skills",
     "seed.ts",
-    "sync-official-data.ts"
+    "sync-official-data.ts",
+    "archive"
   ]
 }

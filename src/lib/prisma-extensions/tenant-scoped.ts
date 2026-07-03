@@ -97,8 +97,21 @@ export const tenantScopedExtension = Prisma.defineExtension({
         }) {
           const ctx = getTenantContext();
 
-          // No tenant context — pass through unchanged (legacy compat).
+          // FAIL-CLOSED (Mission 1.0 Phase F): tenant-scoped models MUST be
+          // accessed within a tenant context. For operations that auto-inject
+          // weddingId (WHERE_OPERATIONS + DATA_OPERATIONS), an absent context
+          // means the query runs UNSCOPED — a cross-tenant data leak (P0).
+          // Reject the query instead of passing through.
+          // For findUnique/update/delete/upsert (no auto-injection), the caller
+          // is responsible for explicit weddingId — allow pass-through.
           if (!ctx) {
+            if (WHERE_OPERATIONS.has(operation) || DATA_OPERATIONS.has(operation)) {
+              throw new Error(
+                `Tenant context required for ${modelName}.${operation} but none is active. ` +
+                'Wrap the calling code in runWithTenant(), or use the raw db client ' +
+                'for platform-level (cross-tenant) queries.'
+              );
+            }
             return query(args);
           }
 

@@ -49,8 +49,10 @@ export async function POST(request: NextRequest) {
             ...clientInfo,
           });
 
+          // DEFENSE-IN-DEPTH (Mission 1.0 Phase G): explicit weddingId prevents
+          // cross-tenant session reuse if ALS context breaks.
           const existingGuest = await tenantDb.guest.findFirst({
-            where: { id: existingSession.guestId },
+            where: { id: existingSession.guestId, weddingId: context.weddingId },
             include: { table: { select: { id: true, name: true, number: true } } },
           });
 
@@ -132,9 +134,12 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: 'Vérification de sécurité échouée. Veuillez relancer votre recherche.' }, { status: 403 });
       }
 
-      // findFirst is auto-scoped by tenant extension — cross-tenant guestId lookups return null
+      // DEFENSE-IN-DEPTH (Mission 1.0 Phase G): explicit weddingId ensures the
+      // guestId from the lookupToken MUST belong to the current wedding. Without
+      // this, a cross-tenant lookupToken (obtained via lookup leak) could authenticate
+      // as a guest from a different wedding — cross-tenant account takeover.
       const guest = await tenantDb.guest.findFirst({
-        where: { id: guestId },
+        where: { id: guestId, weddingId: context.weddingId },
         include: { table: { select: { id: true, name: true, number: true } } },
       });
 

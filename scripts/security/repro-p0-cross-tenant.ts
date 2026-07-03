@@ -39,11 +39,12 @@ async function getWeddingSlugs(): Promise<{ a: string; b: string; pierreName: st
   const health = await (await fetch(`${BASE}/api/health`)).json()
   if (!health || health.status !== 'ok') throw new Error('dev server not healthy')
 
-  // We know from DB inspection:
-  //   josue-hornella — has 12 guests including Pierre Kabongo (wedding A)
-  //   amina-david    — 0 guests (wedding B)
-  //   sarah-michael  — 0 guests (wedding B alternative)
-  return { a: 'josue-hornella', b: 'amina-david', pierreName: 'Pierre' }
+  // CORRECTED (Mission 1.0 Phase G): real fixture data from db/dev-rebuild.db
+  //   josue-hornella — 243 guests (wedding A, isDefault, PUBLISHED, PREMIUM)
+  //   awa-david      — 0 guests (wedding B, PUBLISHED, PREMIUM)
+  //   test-dup-...   — 0 guests (wedding C, DRAFT, TRIAL)
+  // Search term 'DAVID' matches guest DAVID MANYA in josue-hornella.
+  return { a: 'josue-hornella', b: 'awa-david', pierreName: 'DAVID' }
 }
 
 async function main() {
@@ -63,7 +64,7 @@ async function main() {
     test: `A → A : lookup "${pierreName}" in ${a}`,
     expected: 'PASS (≥1 result — Pierre belongs to A)',
     actual: `${aaCount} result(s)${aaCount > 0 ? ` — first: ${aa.results![0].name}` : ''}`,
-    pass: aaCount >= 1 && aa.results!.some(r => r.firstName === 'Pierre'),
+    pass: aaCount >= 1 && aa.results!.some(r => r.firstName.toUpperCase() === 'DAVID'),
   })
 
   // A → B : lookup Pierre in Wedding B context — should return 0

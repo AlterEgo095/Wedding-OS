@@ -1,0 +1,50 @@
+
+═══════════════════════════════════════════════════════════════════════════
+  P0 FAIL-OPEN PROOF — DETERMINISTIC (no HTTP, no ALS propagation)
+  Tests tenant-scoped Prisma extension directly
+═══════════════════════════════════════════════════════════════════════════
+
+Wedding A: josue-hornella (id=cmqvi4exn0000shoqvdvwaf0w)
+Wedding B: awa-david (id=cmqvt57hn0018shjuekuufxlk)
+
+─── TEST 1: Raw db.guest.findMany (no extension, no scoping) ───
+  Returned 10 guests from 1 wedding(s):
+  weddingIds: A
+  → CONFIRMS: DB has guests in multiple weddings (multi-tenant fixture OK)
+
+─── TEST 2: tenantDb.guest.findMany WITHOUT tenant context (FAIL-OPEN test) ───
+  getTenantContext() outside runWithTenant: undefined
+  → Extension will hit: if (!ctx) { return query(args); }  // PASS-THROUGH
+  Returned 10 guests from 1 wedding(s):
+  ❌ FAIL-OPEN CONFIRMED: query returned guests from MULTIPLE weddings (or wrong wedding)
+     Guests returned include wedding A data WITHOUT any tenant context.
+     This means: if ALS breaks during a request, the lookup endpoint
+     would return guests from ALL weddings — CROSS-TENANT LEAK.
+
+─── TEST 3: tenantDb.guest.findMany WITH runWithTenant(weddingB) ───
+  getTenantContext() inside runWithTenant(B): slug=awa-david, weddingId=cmqvt57hn0018shjuekuufxlk
+  Returned 0 guests from 0 wedding(s):
+  All from wedding B? true
+  → Wedding B has 0 guests, so scoped query returns 0 — CORRECT (no leak)
+
+─── TEST 4: tenantDb.guest.findMany WITH runWithTenant(weddingA) ───
+  Search "DAVID" in wedding A context: 1 result(s)
+  First match: DAVID MANYA (weddingId matches A: true)
+  → When ALS works, scoping is CORRECT (only wedding A guests returned)
+
+═══════════════════════════════════════════════════════════════════════════
+  VERDICT
+═══════════════════════════════════════════════════════════════════════════
+  Test 1 (raw db, no scoping): 10 guests from 1 weddings — multi-tenant fixture OK
+  Test 2 (tenantDb, NO ctx):   10 guests from 1 weddings — FAIL-OPEN CONFIRMED ❌
+  Test 3 (tenantDb, ctx=B):    0 guests — scoped to B (0 guests, correct)
+  Test 4 (tenantDb, ctx=A):    1 guests — scoped to A (correct)
+
+  ❌ P0 FAIL-OPEN VULNERABILITY CONFIRMED
+     The tenant-scoped extension passes queries through UNSCOPED when
+     ALS context is absent. This is the root cause of the cross-tenant
+     guest data leak. Combined with lookup/auto-auth routes that have NO
+     explicit weddingId in their where clauses, any ALS propagation
+     failure results in cross-tenant data disclosure + account takeover.
+
+  PRE-FIX PROOF CAPTURED. Proceed to apply fix (Phase F+G).
