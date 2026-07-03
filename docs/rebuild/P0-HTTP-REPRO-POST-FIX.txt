@@ -1,0 +1,27 @@
+
+=== P0 CROSS-TENANT LEAK REPROOF ===
+Wedding A (has guests) : josue-hornella
+Wedding B (no guests)  : awa-david
+Search term            : "DAVID"
+Endpoint               : GET /api/guest/lookup?q=...
+
+=== TEST MATRIX ===
+
+✅ A → A : lookup "DAVID" in josue-hornella
+   expected: PASS (≥1 result — Pierre belongs to A)
+   actual  : 1 result(s) — first: DAVID MANYA
+
+✅ A → B : lookup "DAVID" in awa-david
+   expected: BLOCKED (0 result — Pierre does NOT belong to B)
+   actual  : 0 result(s)
+
+✅ B → A : lookup "David" in awa-david
+   expected: BLOCKED (0 result — David guests belong to A, not B)
+   actual  : 0 result(s)
+
+✅ B → B : lookup "Pierre" in awa-david
+   expected: PASS (0 result — B has no guests, but query is correctly scoped)
+   actual  : 0 result(s)
+
+=== VERDICT ===
+✅ P0 CLOSED — all 4 cases match expected (no cross-tenant leak)

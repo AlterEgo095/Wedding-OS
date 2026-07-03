@@ -101,16 +101,29 @@ export const tenantScopedExtension = Prisma.defineExtension({
           // accessed within a tenant context. For operations that auto-inject
           // weddingId (WHERE_OPERATIONS + DATA_OPERATIONS), an absent context
           // means the query runs UNSCOPED — a cross-tenant data leak (P0).
-          // Reject the query instead of passing through.
-          // For findUnique/update/delete/upsert (no auto-injection), the caller
-          // is responsible for explicit weddingId — allow pass-through.
+          //
+          // DEFENSE-IN-DEPTH: if the caller has already provided an explicit
+          // weddingId in the where clause (Phase G pattern), the query is safe
+          // even without ALS context — allow it through. This is critical
+          // because ALS propagation can break across Next.js async boundaries
+          // (documented in preview-invitation:43-50). The explicit weddingId
+          // acts as the backup scoping mechanism.
+          //
+          // If NO explicit weddingId AND no tenant context → REJECT (fail-closed).
+          // For findUnique/update/delete/upsert (no auto-injection), allow
+          // pass-through (caller is responsible for explicit weddingId).
           if (!ctx) {
             if (WHERE_OPERATIONS.has(operation) || DATA_OPERATIONS.has(operation)) {
-              throw new Error(
-                `Tenant context required for ${modelName}.${operation} but none is active. ` +
-                'Wrap the calling code in runWithTenant(), or use the raw db client ' +
-                'for platform-level (cross-tenant) queries.'
-              );
+              const hasExplicitWeddingId = args.where?.weddingId != null;
+              if (!hasExplicitWeddingId) {
+                throw new Error(
+                  `Tenant context required for ${modelName}.${operation} but none is active, ` +
+                  'and no explicit weddingId provided. Wrap the calling code in runWithTenant(), ' +
+                  'add weddingId to the where clause, or use the raw db client for ' +
+                  'platform-level (cross-tenant) queries.'
+                );
+              }
+              // Explicit weddingId present — query is safe, proceed
             }
             return query(args);
           }

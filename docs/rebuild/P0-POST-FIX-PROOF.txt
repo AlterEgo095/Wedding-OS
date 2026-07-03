@@ -15,7 +15,7 @@ Wedding B: awa-david (id=cmqvt57hn0018shjuekuufxlk)
 ─── TEST 2: tenantDb.guest.findMany WITHOUT tenant context (FAIL-OPEN / FAIL-CLOSED test) ───
   getTenantContext() outside runWithTenant: undefined
   ✅ FAIL-CLOSED: query was REJECTED with error:
-     Tenant context required for Guest.findMany but none is active. Wrap the calling code in runWithTenant(), or use the raw db client for platform-level (cross-tenant) queries.
+     Tenant context required for Guest.findMany but none is active, and no explicit weddingId provided. Wrap the calling code in runWithTenant(), add weddingId to the where clause, or use the raw db client for platform-level (cross-tenant) queries.
 
 ─── TEST 3: tenantDb.guest.findMany WITH runWithTenant(weddingB) ───
   getTenantContext() inside runWithTenant(B): slug=awa-david, weddingId=cmqvt57hn0018shjuekuufxlk
