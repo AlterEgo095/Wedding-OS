@@ -1,0 +1,27 @@
+
+═══════════════════════════════════════════════════════════════════════════
+  CROSS-TENANT ISOLATION TEST (Phase K)
+═══════════════════════════════════════════════════════════════════════════
+
+Wedding A: josue-hornella (id=cmqvi4exn0000shoqvdvwaf0w)
+Guest A: FAIDA IZAGOLO (id=cmq0imgpb00aunaxb4lzo9718)
+
+═══════════════════════════════════════════════════════════════════════════
+  RESULTS
+═══════════════════════════════════════════════════════════════════════════
+  ✅ Test 1: Wedding B cannot read Wedding A's guests
+     Wedding B (fake) query returned 0 guests (expected 0)
+  ✅ Test 2: Cross-tenant guestId lookup returns null
+     Lookup of Wedding A guest in Wedding B context: null (blocked) ✅
+  ✅ Test 3: Unknown wedding slug resolves to null
+     Unknown slug resolved: null (correct) ✅
+  ✅ Test 4: Missing tenant context + no explicit weddingId → rejected
+     Query rejected (fail-closed) ✅
+  ✅ Test 5: Explicit weddingId works without ALS (defense-in-depth)
+     Query succeeded, returned 100 guests ✅
+  ✅ Test 6: Same-tenant query returns only own guests
+     100 guests returned, all belong to A: true ✅
+
+═══════════════════════════════════════════════════════════════════════════
+  ✅ ALL CROSS-TENANT ISOLATION TESTS PASS
+     Multi-tenant isolation is verified and fail-closed.
