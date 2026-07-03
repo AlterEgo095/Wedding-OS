@@ -30,16 +30,18 @@ const ALLOWED_MIME_TYPES = [
 ];
 
 // GET /api/media — public, returns media for the resolved wedding
+// Explicit weddingId (Phase F defense-in-depth) — ALS propagation can
+// break across Next.js async boundaries; the explicit where guarantees
+// scoping even if the extension's getTenantContext() returns undefined.
 export const GET = withPublicTenant(async (request, _ctx) => {
   try {
     const { searchParams } = new URL(request.url);
     const type = searchParams.get('type');
     const category = searchParams.get('category');
 
-    const where: Record<string, unknown> = {};
+    const where: Record<string, unknown> = { weddingId: _ctx.weddingId };
     if (type) where.type = type;
     if (category) where.category = category;
-    // weddingId is auto-injected by the extension
 
     const media = await tenantDb.media.findMany({
       where,
@@ -195,7 +197,8 @@ export async function DELETE(request: NextRequest) {
       const id = searchParams.get('id');
       if (!id) return NextResponse.json({ error: 'Media ID is required' }, { status: 400 });
 
-      const existing = await tenantDb.media.findFirst({ where: { id } });
+      // Explicit weddingId (Phase F defense-in-depth)
+      const existing = await tenantDb.media.findFirst({ where: { id, weddingId: ctx.weddingId } });
       if (!existing) return NextResponse.json({ error: 'Media not found' }, { status: 404 });
 
       // Try to delete the file from disk

@@ -21,11 +21,14 @@ export async function GET(request: NextRequest) {
     }
 
     return withAdminTenantHandler(request, user, async (_req, _ctx) => {
+      // Explicit weddingId (Phase F defense-in-depth) — ALS propagation can
+      // break across Next.js async boundaries; the explicit where guarantees
+      // scoping even if the extension's getTenantContext() returns undefined.
       const tables = await tenantDb.table.findMany({
+        where: { weddingId: _ctx.weddingId },
         include: { _count: { select: { guests: true } } },
         orderBy: { number: 'asc' },
         take: 200, // P2-PERF-4: bound admin list (no wedding should exceed 200 tables)
-        // weddingId auto-injected
       });
 
       const tablesWithCounts = tables.map((t) => ({
@@ -65,7 +68,8 @@ export async function POST(request: NextRequest) {
       const num = parseInt(String(number), 10);
 
       // Composite unique lookup [weddingId, number] — auto-injected by extension
-      const existing = await tenantDb.table.findFirst({ where: { number: num } });
+      // Explicit weddingId (Phase F defense-in-depth)
+      const existing = await tenantDb.table.findFirst({ where: { number: num, weddingId: ctx.weddingId } });
       if (existing) {
         return NextResponse.json({ error: 'A table with this number already exists' }, { status: 409 });
       }
@@ -118,13 +122,14 @@ export async function PUT(request: NextRequest) {
       const { id, name, number, capacity, location } = body;
       if (!id) return NextResponse.json({ error: 'Table ID is required' }, { status: 400 });
 
-      const existing = await tenantDb.table.findFirst({ where: { id } });
+      const existing = await tenantDb.table.findFirst({ where: { id, weddingId: ctx.weddingId } });
       if (!existing) return NextResponse.json({ error: 'Table not found' }, { status: 404 });
 
       if (number !== undefined) {
         const num = parseInt(String(number), 10);
+        // Explicit weddingId (Phase F defense-in-depth)
         const duplicate = await tenantDb.table.findFirst({
-          where: { number: num, NOT: { id } },
+          where: { weddingId: ctx.weddingId, number: num, NOT: { id } },
         });
         if (duplicate) {
           return NextResponse.json({ error: 'A table with this number already exists' }, { status: 409 });
@@ -178,7 +183,7 @@ export async function DELETE(request: NextRequest) {
       if (!id) return NextResponse.json({ error: 'Table ID is required' }, { status: 400 });
 
       const existing = await tenantDb.table.findFirst({
-        where: { id },
+        where: { id, weddingId: ctx.weddingId },
         include: { _count: { select: { guests: true } } },
       });
       if (!existing) return NextResponse.json({ error: 'Table not found' }, { status: 404 });

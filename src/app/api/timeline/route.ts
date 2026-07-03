@@ -12,12 +12,15 @@ import { internalError, badRequest } from '@/lib/api-errors';
 import { writeAuditLog } from '@/lib/audit';
 
 // GET /api/timeline — public, returns all timeline events for the resolved wedding
+// Explicit weddingId (Phase F defense-in-depth) — ALS propagation can
+// break across Next.js async boundaries; the explicit where guarantees
+// scoping even if the extension's getTenantContext() returns undefined.
 export const GET = withPublicTenant(async (_req, _ctx) => {
   try {
     const events = await tenantDb.eventTimeline.findMany({
+      where: { weddingId: _ctx.weddingId },
       orderBy: { order: 'asc' },
       take: 200, // P2-PERF-4: bound public list (no wedding should exceed 200 events)
-      // weddingId auto-injected
     });
     return NextResponse.json({ events });
   } catch (error) {
@@ -103,7 +106,8 @@ export async function PUT(request: NextRequest) {
       if (!id) return NextResponse.json({ error: 'Event ID is required' }, { status: 400 });
 
       // Use findFirst to leverage auto-injection of weddingId (prevents cross-tenant access)
-      const existing = await tenantDb.eventTimeline.findFirst({ where: { id } });
+      // Explicit weddingId (Phase F defense-in-depth)
+      const existing = await tenantDb.eventTimeline.findFirst({ where: { id, weddingId: ctx.weddingId } });
       if (!existing) return NextResponse.json({ error: 'Event not found' }, { status: 404 });
 
       // P3: Concrete field shape (no index signature) for Prisma Exact<> compat.
@@ -164,7 +168,8 @@ export async function DELETE(request: NextRequest) {
       const id = searchParams.get('id');
       if (!id) return NextResponse.json({ error: 'Event ID is required' }, { status: 400 });
 
-      const existing = await tenantDb.eventTimeline.findFirst({ where: { id } });
+      // Explicit weddingId (Phase F defense-in-depth)
+      const existing = await tenantDb.eventTimeline.findFirst({ where: { id, weddingId: ctx.weddingId } });
       if (!existing) return NextResponse.json({ error: 'Event not found' }, { status: 404 });
 
       await tenantDb.eventTimeline.delete({ where: { id } });

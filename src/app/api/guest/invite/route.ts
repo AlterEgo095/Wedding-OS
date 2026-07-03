@@ -34,6 +34,9 @@ export async function GET(request: NextRequest) {
 
   return runWithTenant(context, async () => {
     try {
+      // Explicit weddingId (Phase F defense-in-depth) — ALS propagation can
+      // break across Next.js async boundaries; the explicit where guarantees
+      // scoping even if the extension's getTenantContext() returns undefined.
       const { searchParams } = new URL(request.url);
 
       // ── P2-SEC-5: accept token from cookie OR URL query ───────────────────
@@ -74,7 +77,7 @@ export async function GET(request: NextRequest) {
 
       // findFirst auto-scoped by tenant extension
       const guest = await tenantDb.guest.findFirst({
-        where: { invitationCode },
+        where: { weddingId: context.weddingId, invitationCode },
         include: { table: { select: { id: true, name: true, number: true } } },
       });
 
@@ -95,7 +98,7 @@ export async function GET(request: NextRequest) {
 
       // Check if guest already has an active session
       const existingSession = await tenantDb.guestSession.findFirst({
-        where: { guestId: guest.id, isActive: true },
+        where: { weddingId: context.weddingId, guestId: guest.id, isActive: true },
       });
 
       if (existingSession && new Date() < existingSession.expiresAt) {
@@ -188,6 +191,9 @@ export async function POST(request: NextRequest) {
     }
 
     return runWithTenant(context, async () => {
+      // Explicit weddingId (Phase F defense-in-depth) — ALS propagation can
+      // break across Next.js async boundaries; the explicit where guarantees
+      // scoping even if the extension's getTenantContext() returns undefined.
       const body = await request.json().catch(() => null); // P2-CQ-6
       if (!body) return badRequest('Corps de requête invalide');
       const { invitationCode, guestId } = body;
@@ -195,7 +201,7 @@ export async function POST(request: NextRequest) {
       let code = invitationCode;
       if (!code && guestId) {
         const guest = await tenantDb.guest.findFirst({
-          where: { id: guestId },
+          where: { id: guestId, weddingId: context.weddingId },
           select: { invitationCode: true },
         });
         if (!guest) return NextResponse.json({ error: 'Invité non trouvé' }, { status: 404 });
@@ -207,7 +213,7 @@ export async function POST(request: NextRequest) {
       }
 
       const guest = await tenantDb.guest.findFirst({
-        where: { invitationCode: code },
+        where: { weddingId: context.weddingId, invitationCode: code },
         select: { id: true, firstName: true, lastName: true, invitationCode: true },
       });
 

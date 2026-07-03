@@ -34,7 +34,11 @@ export async function GET(request: NextRequest) {
     }
 
     return runWithTenant(context, async () => {
+      // Explicit weddingId (Phase F defense-in-depth) — ALS propagation can
+      // break across Next.js async boundaries; the explicit where guarantees
+      // scoping even if the extension's getTenantContext() returns undefined.
       const guests = await tenantDb.guest.findMany({
+        where: { weddingId: context.weddingId },
         include: { table: { select: { name: true, number: true } } },
         orderBy: { createdAt: 'desc' },
         take: EXPORT_MAX_ROWS, // P2-PERF-3: bound export size

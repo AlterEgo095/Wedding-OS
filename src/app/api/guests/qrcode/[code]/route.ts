@@ -42,9 +42,12 @@ export async function GET(
     }
 
     return runWithTenant(context, async () => {
+      // Explicit weddingId (Phase F defense-in-depth) — ALS propagation can
+      // break across Next.js async boundaries; the explicit where guarantees
+      // scoping even if the extension's getTenantContext() returns undefined.
       // findFirst auto-scoped by tenant extension
       const guest = await tenantDb.guest.findFirst({
-        where: { invitationCode: code },
+        where: { weddingId: context.weddingId, invitationCode: code },
         include: { table: { select: { id: true, name: true, number: true } } },
       });
 

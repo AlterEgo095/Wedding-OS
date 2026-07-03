@@ -32,7 +32,8 @@ function generateInvitationCode(): string {
  * so the main loop can look up the pre-generated code in O(1) per guest.
  */
 async function preGenerateInvitationCodes(
-  guests: Array<{ firstName: string; lastName: string; tableNumber: number }>
+  guests: Array<{ firstName: string; lastName: string; tableNumber: number }>,
+  weddingId: string,
 ): Promise<Map<string, string>> {
   const codeMap = new Map<string, string>();
   if (guests.length === 0) return codeMap;
@@ -49,10 +50,11 @@ async function preGenerateInvitationCodes(
   for (let iter = 0; iter < 5; iter++) {
     const codes = Array.from(codeMap.values());
     // Single findMany to check ALL candidate codes at once.
-    // tenantDb extension auto-injects weddingId so the @@unique index covers
-    // (weddingId, invitationCode) — the lookup is O(log n), not a full scan.
+    // Explicit weddingId (Phase F defense-in-depth) — ALS propagation can
+    // break across Next.js async boundaries; the explicit where guarantees
+    // scoping even if the extension's getTenantContext() returns undefined.
     const conflicts = await tenantDb.guest.findMany({
-      where: { invitationCode: { in: codes } },
+      where: { weddingId, invitationCode: { in: codes } },
       select: { invitationCode: true },
     });
     if (conflicts.length === 0) break; // all codes are unique
@@ -268,6 +270,9 @@ async function docxImportHandler(request: NextRequest) {
     }
 
     return runWithTenant(context, async () => {
+      // Explicit weddingId (Phase F defense-in-depth) — ALS propagation can
+      // break across Next.js async boundaries; the explicit where guarantees
+      // scoping even if the extension's getTenantContext() returns undefined.
       const formData = await request.formData();
       const file = formData.get('file') as File | null;
       const mergeMode = (formData.get('mergeMode') as string) || 'merge'; // 'merge' or 'replace'
@@ -339,8 +344,8 @@ async function docxImportHandler(request: NextRequest) {
     // If replace mode, delete all existing guests and tables (scoped to current tenant)
     if (mergeMode === 'replace') {
       try {
-        await tenantDb.guest.deleteMany({}); // extension injects weddingId
-        await tenantDb.table.deleteMany({});
+        await tenantDb.guest.deleteMany({ where: { weddingId: context.weddingId } }); // extension injects weddingId
+        await tenantDb.table.deleteMany({ where: { weddingId: context.weddingId } });
       } catch (err) {
         // P2-SEC-1: structured logger; no stack leak.
         logger.error('Replace mode cleanup error', {
@@ -360,13 +365,13 @@ async function docxImportHandler(request: NextRequest) {
         tableNumber: t.number,
       }))
     );
-    const codeMap = await preGenerateInvitationCodes(allParsedGuests);
+    const codeMap = await preGenerateInvitationCodes(allParsedGuests, context.weddingId);
 
     // P2-PERF-1: pre-resolve tables in a single batch to avoid 1 findFirst
     // per parsedTable. tenantDb auto-injects weddingId.
     const allTableNumbers = parsedTables.map((t) => t.number);
     const existingTables = await tenantDb.table.findMany({
-      where: { number: { in: allTableNumbers } },
+      where: { weddingId: context.weddingId, number: { in: allTableNumbers } },
     });
     const tableByNumber = new Map(existingTables.map((t) => [t.number, t]));
 
@@ -416,6 +421,7 @@ async function docxImportHandler(request: NextRequest) {
         const existingGuestsInTable = namePairs.length
           ? await tenantDb.guest.findMany({
               where: {
+                weddingId: context.weddingId,
                 tableId: table.id,
                 OR: namePairs.map((p) => ({
                   firstName: p.firstName,

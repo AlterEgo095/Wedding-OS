@@ -21,14 +21,17 @@ import { Prisma } from '@prisma/client';
  * Strategy: generate one candidate per row, batch-check via single findMany,
  * regenerate collisions, repeat (bounded by 5 iterations).
  */
-async function preGenerateCodes(rowCount: number): Promise<string[]> {
+async function preGenerateCodes(rowCount: number, weddingId: string): Promise<string[]> {
   if (rowCount === 0) return [];
   const codes: string[] = Array.from({ length: rowCount }, () =>
     uuidv4().substring(0, 8).toUpperCase(),
   );
   for (let iter = 0; iter < 5; iter++) {
+    // Explicit weddingId (Phase F defense-in-depth) — ALS propagation can
+    // break across Next.js async boundaries; the explicit where guarantees
+    // scoping even if the extension's getTenantContext() returns undefined.
     const conflicts = await tenantDb.guest.findMany({
-      where: { invitationCode: { in: codes } },
+      where: { weddingId, invitationCode: { in: codes } },
       select: { invitationCode: true },
     });
     if (conflicts.length === 0) break;
@@ -56,6 +59,9 @@ async function importGuestsHandler(request: NextRequest) {
     }
 
     return runWithTenant(context, async () => {
+      // Explicit weddingId (Phase F defense-in-depth) — ALS propagation can
+      // break across Next.js async boundaries; the explicit where guarantees
+      // scoping even if the extension's getTenantContext() returns undefined.
       const formData = await request.formData();
       const file = formData.get('file') as File | null;
 
@@ -74,7 +80,7 @@ async function importGuestsHandler(request: NextRequest) {
       // P2-PERF-2: pre-generate invitation codes for ALL rows in one batch
       // (1 findMany instead of relying on per-row try/catch on the unique
       // constraint, which was silently swallowing collisions).
-      const invitationCodes = await preGenerateCodes(rows.length);
+      const invitationCodes = await preGenerateCodes(rows.length, context.weddingId);
 
       // Parse + validate each row into a guest record (in-memory).
       // P2-PERF-2: typed as Prisma GuestCreateManyInput fields so we can pass

@@ -11,12 +11,15 @@ import { internalError, badRequest } from '@/lib/api-errors';
 // P2-SEC-14 + P2-CQ-7: writeAuditLog populates ipAddress + userAgent from request.
 import { writeAuditLog } from '@/lib/audit';
 
+// Explicit weddingId (Phase F defense-in-depth) — ALS propagation can
+// break across Next.js async boundaries; the explicit where guarantees
+// scoping even if the extension's getTenantContext() returns undefined.
 export const GET = withPublicTenant(async (_req, _ctx) => {
   try {
     const stories = await tenantDb.coupleStory.findMany({
+      where: { weddingId: _ctx.weddingId },
       orderBy: { order: 'asc' },
       take: 50, // P2-PERF-4: bound public list to avoid unbounded scans
-      // weddingId auto-injected
     });
     return NextResponse.json({ stories });
   } catch (error) {
@@ -94,7 +97,7 @@ export async function PUT(request: NextRequest) {
       const { id, title, description, date, imageUrl, order } = body;
       if (!id) return NextResponse.json({ error: 'Story ID is required' }, { status: 400 });
 
-      const existing = await tenantDb.coupleStory.findFirst({ where: { id } });
+      const existing = await tenantDb.coupleStory.findFirst({ where: { id, weddingId: ctx.weddingId } });
       if (!existing) return NextResponse.json({ error: 'Story not found' }, { status: 404 });
 
       // P3: Declare a concrete field shape (no index signature) so Prisma's
@@ -153,7 +156,7 @@ export async function DELETE(request: NextRequest) {
       const id = searchParams.get('id');
       if (!id) return NextResponse.json({ error: 'Story ID is required' }, { status: 400 });
 
-      const existing = await tenantDb.coupleStory.findFirst({ where: { id } });
+      const existing = await tenantDb.coupleStory.findFirst({ where: { id, weddingId: ctx.weddingId } });
       if (!existing) return NextResponse.json({ error: 'Story not found' }, { status: 404 });
 
       await tenantDb.coupleStory.delete({ where: { id } });

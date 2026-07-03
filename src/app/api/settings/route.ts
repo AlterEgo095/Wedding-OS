@@ -12,11 +12,14 @@ import { internalError, badRequest } from '@/lib/api-errors';
 import { writeAuditLog } from '@/lib/audit';
 
 // GET /api/settings — public, returns all settings for the resolved wedding
+// Explicit weddingId (Phase F defense-in-depth) — ALS propagation can
+// break across Next.js async boundaries; the explicit where guarantees
+// scoping even if the extension's getTenantContext() returns undefined.
 export const GET = withPublicTenant(async (_req, ctx) => {
   try {
     const settings = await tenantDb.settings.findMany({
+      where: { weddingId: ctx.weddingId },
       orderBy: { key: 'asc' },
-      // weddingId is auto-injected by the tenant-scoped extension
     });
 
     const settingsMap: Record<string, string> = {};
@@ -77,7 +80,7 @@ export async function PUT(request: NextRequest) {
       revalidatePath('/w/[slug]/invite/[code]', 'page');
       revalidatePath('/');
 
-      const updatedSettings = await tenantDb.settings.findMany({ orderBy: { key: 'asc' } });
+      const updatedSettings = await tenantDb.settings.findMany({ where: { weddingId: ctx.weddingId }, orderBy: { key: 'asc' } });
       const settingsMap: Record<string, string> = {};
       for (const s of updatedSettings) settingsMap[s.key] = s.value;
 

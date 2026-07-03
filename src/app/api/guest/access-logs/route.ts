@@ -25,9 +25,12 @@ export async function GET(request: NextRequest) {
       const offset = parseInt(searchParams.get('offset') || '0');
 
       const where: Record<string, unknown> = {};
+      // Explicit weddingId (Phase F defense-in-depth) — ALS propagation can
+      // break across Next.js async boundaries; the explicit where guarantees
+      // scoping even if the extension's getTenantContext() returns undefined.
+      where.weddingId = context.weddingId;
       if (action) where.action = action;
       if (guestId) where.guestId = guestId;
-      // weddingId auto-injected by extension
 
       const [logs, total] = await Promise.all([
         tenantDb.guestAccessLog.findMany({
@@ -52,32 +55,33 @@ export async function GET(request: NextRequest) {
         totalSearches, totalSearchBlocked, viewedInvitations,
         totalGuests, confirmedGuests, checkedInGuests, activeSessions,
       ] = await Promise.all([
-        tenantDb.guestAccessLog.count({ where: { action: 'LOGIN' } }),
-        tenantDb.guestAccessLog.count({ where: { action: 'ACCESS_DENIED' } }),
-        tenantDb.guestAccessLog.count({ where: { action: 'AUTH_FAILED' } }),
-        tenantDb.guestAccessLog.count({ where: { action: { in: ['BRUTE_FORCE_BLOCKED', 'AUTH_RATE_LIMITED'] } } }),
-        tenantDb.guestAccessLog.count({ where: { action: 'FINGERPRINT_MISMATCH' } }),
-        tenantDb.guestAccessLog.count({ where: { action: 'LINK_VISIT' } }),
-        tenantDb.guestAccessLog.count({ where: { action: 'QR_SCAN' } }),
-        tenantDb.guestAccessLog.count({ where: { action: 'SEARCH' } }),
-        tenantDb.guestAccessLog.count({ where: { action: 'SEARCH_BLOCKED' } }),
-        tenantDb.guest.count({ where: { invitationViewed: true } }),
-        tenantDb.guest.count(),
-        tenantDb.guest.count({ where: { status: 'CONFIRMED' } }),
-        tenantDb.guest.count({ where: { checkedIn: true } }),
-        tenantDb.guestSession.count({ where: { isActive: true } }),
+        tenantDb.guestAccessLog.count({ where: { weddingId: context.weddingId, action: 'LOGIN' } }),
+        tenantDb.guestAccessLog.count({ where: { weddingId: context.weddingId, action: 'ACCESS_DENIED' } }),
+        tenantDb.guestAccessLog.count({ where: { weddingId: context.weddingId, action: 'AUTH_FAILED' } }),
+        tenantDb.guestAccessLog.count({ where: { weddingId: context.weddingId, action: { in: ['BRUTE_FORCE_BLOCKED', 'AUTH_RATE_LIMITED'] } } }),
+        tenantDb.guestAccessLog.count({ where: { weddingId: context.weddingId, action: 'FINGERPRINT_MISMATCH' } }),
+        tenantDb.guestAccessLog.count({ where: { weddingId: context.weddingId, action: 'LINK_VISIT' } }),
+        tenantDb.guestAccessLog.count({ where: { weddingId: context.weddingId, action: 'QR_SCAN' } }),
+        tenantDb.guestAccessLog.count({ where: { weddingId: context.weddingId, action: 'SEARCH' } }),
+        tenantDb.guestAccessLog.count({ where: { weddingId: context.weddingId, action: 'SEARCH_BLOCKED' } }),
+        tenantDb.guest.count({ where: { weddingId: context.weddingId, invitationViewed: true } }),
+        tenantDb.guest.count({ where: { weddingId: context.weddingId } }),
+        tenantDb.guest.count({ where: { weddingId: context.weddingId, status: 'CONFIRMED' } }),
+        tenantDb.guest.count({ where: { weddingId: context.weddingId, checkedIn: true } }),
+        tenantDb.guestSession.count({ where: { weddingId: context.weddingId, isActive: true } }),
       ]);
 
       const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
       const recentAccessDenied = await tenantDb.guestAccessLog.count({
         where: {
+          weddingId: context.weddingId,
           action: { in: ['ACCESS_DENIED', 'AUTH_FAILED', 'BRUTE_FORCE_BLOCKED'] },
           createdAt: { gte: twentyFourHoursAgo },
         },
       });
 
       const failedAttempts = await tenantDb.guestAccessLog.findMany({
-        where: { action: { in: ['AUTH_FAILED', 'ACCESS_DENIED', 'BRUTE_FORCE_BLOCKED'] } },
+        where: { weddingId: context.weddingId, action: { in: ['AUTH_FAILED', 'ACCESS_DENIED', 'BRUTE_FORCE_BLOCKED'] } },
         select: { ipAddress: true },
       });
 
@@ -96,6 +100,7 @@ export async function GET(request: NextRequest) {
       // P3: cast groupBy to the base Prisma callable (extension makes it a union).
       const categoryBreakdown = await (tenantDb.guest.groupBy as typeof db.guest.groupBy)({
         by: ['category'],
+        where: { weddingId: context.weddingId },
         _count: { id: true },
       });
 

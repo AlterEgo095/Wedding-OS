@@ -27,8 +27,11 @@ export async function GET(
         return NextResponse.json({ error: tenantError?.message }, { status: tenantError?.status ?? 500 });
       }
       return runWithTenant(context, async () => {
+        // Explicit weddingId (Phase F defense-in-depth) — ALS propagation can
+        // break across Next.js async boundaries; the explicit where guarantees
+        // scoping even if the extension's getTenantContext() returns undefined.
         const guest = await tenantDb.guest.findFirst({
-          where: { id },
+          where: { id, weddingId: context.weddingId },
           include: { table: { select: { id: true, name: true, number: true, capacity: true } } },
         });
         if (!guest) return NextResponse.json({ error: 'Guest not found' }, { status: 404 });
@@ -46,6 +49,7 @@ export async function GET(
       }
 
       return runWithTenant(context, async () => {
+        // Explicit weddingId (Phase F defense-in-depth)
         const session = await validateGuestSession(guestToken, clientInfo.userAgent, clientInfo.ipAddress);
         if (session.valid && session.guestId) {
           if (session.guestId !== id) {
@@ -61,7 +65,7 @@ export async function GET(
           }
 
           const guest = await tenantDb.guest.findFirst({
-            where: { id },
+            where: { id, weddingId: context.weddingId },
             include: { table: { select: { id: true, name: true, number: true, capacity: true } } },
           });
           if (!guest) return NextResponse.json({ error: 'Guest not found' }, { status: 404 });
@@ -104,7 +108,10 @@ export async function PUT(
       if (!body) return badRequest('Corps de requête invalide');
       const { firstName, lastName, displayName, invitationType, phone, email, tableId, seats, category, status, personalMessage, checkedIn } = body;
 
-      const existing = await tenantDb.guest.findFirst({ where: { id } });
+      // Explicit weddingId (Phase F defense-in-depth) — ALS propagation can
+      // break across Next.js async boundaries; the explicit where guarantees
+      // scoping even if the extension's getTenantContext() returns undefined.
+      const existing = await tenantDb.guest.findFirst({ where: { id, weddingId: context.weddingId } });
       if (!existing) return NextResponse.json({ error: 'Guest not found' }, { status: 404 });
 
       const updateData: Record<string, unknown> = {};
@@ -180,7 +187,8 @@ export async function DELETE(
 
     return runWithTenant(context, async () => {
       const { id } = await params;
-      const existing = await tenantDb.guest.findFirst({ where: { id } });
+      // Explicit weddingId (Phase F defense-in-depth)
+      const existing = await tenantDb.guest.findFirst({ where: { id, weddingId: context.weddingId } });
       if (!existing) return NextResponse.json({ error: 'Guest not found' }, { status: 404 });
 
       await tenantDb.guest.delete({ where: { id } });

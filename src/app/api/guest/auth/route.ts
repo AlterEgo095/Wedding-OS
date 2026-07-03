@@ -31,6 +31,9 @@ export async function POST(request: NextRequest) {
 
   return runWithTenant(context, async () => {
     try {
+      // Explicit weddingId (Phase F defense-in-depth) — ALS propagation can
+      // break across Next.js async boundaries; the explicit where guarantees
+      // scoping even if the extension's getTenantContext() returns undefined.
       const clientInfo = getClientInfo(request);
       const rateLimitKey = getRateLimitKey(request);
 
@@ -47,7 +50,7 @@ export async function POST(request: NextRequest) {
           });
 
           const existingGuest = await tenantDb.guest.findFirst({
-            where: { id: existingSession.guestId },
+            where: { id: existingSession.guestId, weddingId: context.weddingId },
             include: { table: { select: { id: true, name: true, number: true } } },
           });
 
@@ -113,7 +116,7 @@ export async function POST(request: NextRequest) {
       }
 
       // findFirst is auto-scoped by tenant extension
-      const whereClause: Record<string, unknown> = { invitationCode };
+      const whereClause: Record<string, unknown> = { weddingId: context.weddingId, invitationCode };
       if (firstName) whereClause.firstName = { contains: firstName.trim() };
       if (lastName) whereClause.lastName = { contains: lastName.trim() };
 

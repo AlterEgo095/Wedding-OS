@@ -25,6 +25,9 @@ export async function POST(request: NextRequest) {
 
   return runWithTenant(context, async () => {
     try {
+      // Explicit weddingId (Phase F defense-in-depth) — ALS propagation can
+      // break across Next.js async boundaries; the explicit where guarantees
+      // scoping even if the extension's getTenantContext() returns undefined.
       const clientInfo = getClientInfo(request);
       const guestToken = request.cookies.get('guest_session')?.value;
 
@@ -49,7 +52,7 @@ export async function POST(request: NextRequest) {
       }
 
       // findFirst then update — auto-scoped by extension
-      const existing = await tenantDb.guest.findFirst({ where: { id: session.guestId } });
+      const existing = await tenantDb.guest.findFirst({ where: { id: session.guestId, weddingId: context.weddingId } });
       if (!existing) {
         return NextResponse.json({ error: 'Invité non trouvé' }, { status: 404 });
       }
@@ -118,21 +121,24 @@ export async function GET(request: NextRequest) {
       const stats = searchParams.get('stats');
 
       if (stats === 'true') {
+        // Explicit weddingId (Phase F defense-in-depth) — ALS propagation can
+        // break across Next.js async boundaries; the explicit where guarantees
+        // scoping even if the extension's getTenantContext() returns undefined.
         const [confirmed, pending, declined, total] = await Promise.all([
-          tenantDb.guest.count({ where: { status: 'CONFIRMED' } }),
-          tenantDb.guest.count({ where: { status: 'PENDING' } }),
-          tenantDb.guest.count({ where: { status: 'DECLINED' } }),
-          tenantDb.guest.count(),
+          tenantDb.guest.count({ where: { weddingId: context.weddingId, status: 'CONFIRMED' } }),
+          tenantDb.guest.count({ where: { weddingId: context.weddingId, status: 'PENDING' } }),
+          tenantDb.guest.count({ where: { weddingId: context.weddingId, status: 'DECLINED' } }),
+          tenantDb.guest.count({ where: { weddingId: context.weddingId } }),
         ]);
 
-        const totalSeats = await tenantDb.guest.aggregate({ _sum: { seats: true } });
+        const totalSeats = await tenantDb.guest.aggregate({ _sum: { seats: true }, where: { weddingId: context.weddingId } });
         const confirmedSeats = await tenantDb.guest.aggregate({
-          _sum: { seats: true }, where: { status: 'CONFIRMED' },
+          _sum: { seats: true }, where: { weddingId: context.weddingId, status: 'CONFIRMED' },
         });
 
         // P3: cast groupBy to the base Prisma callable (extension makes it a union).
         const byCategory = await (tenantDb.guest.groupBy as typeof db.guest.groupBy)({
-          by: ['category'], _count: { id: true },
+          by: ['category'], where: { weddingId: context.weddingId }, _count: { id: true },
         });
 
         return NextResponse.json({
@@ -172,8 +178,11 @@ export async function PUT(request: NextRequest) {
     }
 
     return runWithTenant(context, async () => {
+      // Explicit weddingId (Phase F defense-in-depth) — ALS propagation can
+      // break across Next.js async boundaries; the explicit where guarantees
+      // scoping even if the extension's getTenantContext() returns undefined.
       const result = await tenantDb.guest.updateMany({
-        where: {}, // extension injects weddingId
+        where: { weddingId: context.weddingId }, // extension injects weddingId
         data: { status: 'PENDING', rsvpAt: null, rsvpMessage: null, rsvpPlusOne: false },
       });
 

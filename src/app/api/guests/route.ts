@@ -35,6 +35,9 @@ export async function GET(request: NextRequest) {
       // The `limit` is clamped to [1, 100] in all modes to prevent abuse.
       // Filters (status, category, tableId, search) are preserved across both
       // modes and combined with the cursor predicate via Prisma's implicit AND.
+      // Explicit weddingId (Phase F defense-in-depth) — ALS propagation can
+      // break across Next.js async boundaries; the explicit where guarantees
+      // scoping even if the extension's getTenantContext() returns undefined.
       const cursor = searchParams.get('cursor');
       const limit = Math.min(
         Math.max(parseInt(searchParams.get('limit') || '20', 10) || 20, 1),
@@ -46,7 +49,7 @@ export async function GET(request: NextRequest) {
       const search = searchParams.get('search');
 
       // Shared where clause (used by both cursor + offset modes).
-      const where: Record<string, unknown> = {};
+      const where: Record<string, unknown> = { weddingId: context.weddingId };
       if (status) where.status = status;
       if (category) where.category = category;
       if (tableId) where.tableId = tableId;
@@ -58,7 +61,6 @@ export async function GET(request: NextRequest) {
           { invitationCode: { contains: search } },
         ];
       }
-      // weddingId auto-injected by extension
 
       const include = { table: { select: { id: true, name: true, number: true } } };
 
@@ -252,7 +254,8 @@ export async function PUT(request: NextRequest) {
       if (!id) return NextResponse.json({ error: 'Guest ID is required' }, { status: 400 });
 
       // findFirst — auto-scoped by extension
-      const existing = await tenantDb.guest.findFirst({ where: { id } });
+      // Explicit weddingId (Phase F defense-in-depth)
+      const existing = await tenantDb.guest.findFirst({ where: { id, weddingId: context.weddingId } });
       if (!existing) return NextResponse.json({ error: 'Guest not found' }, { status: 404 });
 
       const updateData: Record<string, unknown> = {};
@@ -327,7 +330,8 @@ export async function DELETE(request: NextRequest) {
       const id = searchParams.get('id');
       if (!id) return NextResponse.json({ error: 'Guest ID is required' }, { status: 400 });
 
-      const existing = await tenantDb.guest.findFirst({ where: { id } });
+      // Explicit weddingId (Phase F defense-in-depth)
+      const existing = await tenantDb.guest.findFirst({ where: { id, weddingId: context.weddingId } });
       if (!existing) return NextResponse.json({ error: 'Guest not found' }, { status: 404 });
 
       await tenantDb.guest.delete({ where: { id } });
