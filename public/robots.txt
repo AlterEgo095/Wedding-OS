@@ -1,0 +1,39 @@
+# Wedding OS robots.txt
+# Public wedding pages are crawlable. Admin/platform areas are disallowed.
+
+User-agent: Googlebot
+Allow: /
+Disallow: /platform/
+Disallow: /admin/
+Disallow: /api/
+Disallow: /w/*/admin/
+
+User-agent: Bingbot
+Allow: /
+Disallow: /platform/
+Disallow: /admin/
+Disallow: /api/
+Disallow: /w/*/admin/
+
+User-agent: Twitterbot
+Allow: /
+Disallow: /platform/
+Disallow: /admin/
+Disallow: /api/
+Disallow: /w/*/admin/
+
+User-agent: facebookexternalhit
+Allow: /
+Disallow: /platform/
+Disallow: /admin/
+Disallow: /api/
+Disallow: /w/*/admin/
+
+User-agent: *
+Allow: /
+Disallow: /platform/
+Disallow: /admin/
+Disallow: /api/
+Disallow: /w/*/admin/
+
+Sitemap: /sitemap.xml

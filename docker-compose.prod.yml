@@ -1,0 +1,56 @@
+# ══════════════════════════════════════════════════════════════════════════════
+# docker-compose.prod.yml — Josué & Hornella Wedding Platform
+# Production deployment for heureuxmariage.aenews.net
+# Port: 3080 (localhost only) — Nginx reverse proxy handles SSL/public access
+# ══════════════════════════════════════════════════════════════════════════════
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: wedding-app
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "127.0.0.1:3080:3000"
+    volumes:
+      - wedding-db:/app/db
+      - wedding-uploads:/app/public/uploads
+      - wedding-logs:/app/logs
+    networks:
+      - wedding-network
+    healthcheck:
+      test: ["CMD", "node", "-e", "const http=require('http');const r=http.get({host:'127.0.0.1',port:3000,path:'/api/health',timeout:5000},res=>{process.exit(res.statusCode<500?0:1)});r.on('timeout',()=>process.exit(1));r.on('error',()=>process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '1.0'
+        reservations:
+          memory: 256M
+          cpus: '0.25'
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  wedding-db:
+    driver: local
+  wedding-uploads:
+    driver: local
+  wedding-logs:
+    driver: local
+
+networks:
+  wedding-network:
+    driver: bridge

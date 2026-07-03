@@ -1,0 +1,98 @@
+# ══════════════════════════════════════════════════════════════════════════════
+# Caddyfile — Josué & Hornella Wedding Platform
+# ══════════════════════════════════════════════════════════════════════════════
+#
+# P1-PROD-8 — hardened Caddyfile:
+#   • Security headers (HSTS, X-Frame-Options, X-Content-Type-Options,
+#     Referrer-Policy, Permissions-Policy) on EVERY response, including
+#     Caddy's own 502/503 error pages (which bypass Next.js).
+#   • `encode gzip zstd` for response compression.
+#   • `request_body { max_size 50MB }` to cap uploads (matches the media
+#     upload limit enforced at /api/media).
+#   • Preserves the existing `:81` site block + `XTransformPort` query
+#     handler so dynamic port proxying still works for dev tooling.
+#
+# ─── TLS / domain note ─────────────────────────────────────────────────────────
+# This site block listens on `:81` (HTTP-only, no TLS) for parity with the
+# existing dev setup. Caddy only auto-provisions TLS certificates when the
+# site label is a domain name or `:443`. Production traffic for
+# `heureuxmariage.aenews.net` is currently terminated by the system nginx
+# (see docker-compose.prod.yml → `127.0.0.1:3080:3000`).
+# Recommendation (documented in worklog P1P2-INFRA): when Caddy is promoted
+# to be the production edge, replace `:81` with `heureuxmariage.aenews.net`
+# so Caddy auto-provisions Let's Encrypt certs, then add a second site block
+# on `:80` that 301-redirects to `:443`.
+#
+# ─── rate_limit note ───────────────────────────────────────────────────────────
+# Standard Caddy v2 does NOT ship a built-in `rate_limit` directive — it
+# requires the `caddy-ratelimit` plugin (github.com/mholt/caddy-ratelimit).
+# To avoid forcing a custom Caddy build, we omit `rate_limit` here and rely
+# on the application-layer rate limiter in src/lib/rate-limit.ts (login
+# endpoints: 5/15min per IP). If a future Caddy build ships with the
+# ratelimit plugin, add inside the site block:
+#     rate_limit {
+#       zone login {
+#         key {remote_host}
+#         events 10
+#         window 1m
+#       }
+#     }
+# ══════════════════════════════════════════════════════════════════════════════
+
+:81 {
+	# ── Compression ──────────────────────────────────────────────────────────
+	encode gzip zstd
+
+	# ── Upload size cap (matches media upload limit) ─────────────────────────
+	request_body {
+		max_size 50MB
+	}
+
+	# ── Security headers (applied to every response, including 502/503) ─────
+	header {
+		# HSTS — 2 years, include subdomains, eligible for preload list.
+		# Safe to emit on :81 because production terminates TLS upstream
+		# (nginx) and passes requests through; HSTS is honored once the
+		# browser sees it over HTTPS at the edge.
+		Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
+
+		# Clickjacking protection — only same-origin framing allowed.
+		X-Frame-Options "SAMEORIGIN"
+
+		# MIME-type sniffing protection.
+		X-Content-Type-Options "nosniff"
+
+		# Referrer policy — strip path/query on cross-origin navigations.
+		Referrer-Policy "strict-origin-when-cross-origin"
+
+		# Lock down browser feature APIs we don't use.
+		Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=(), magnetometer=(), gyroscope=(), accelerometer=()"
+
+		# Don't leak the Caddy version.
+		-Server
+	}
+
+	# ── Dynamic port proxying (dev tooling — keeps existing behavior) ────────
+	@transform_port_query {
+		query XTransformPort=*
+	}
+
+	handle @transform_port_query {
+		reverse_proxy localhost:{query.XTransformPort} {
+			header_up Host {host}
+			header_up X-Forwarded-For {remote_host}
+			header_up X-Forwarded-Proto {scheme}
+			header_up X-Real-IP {remote_host}
+		}
+	}
+
+	# ── Default reverse proxy to the Next.js app ─────────────────────────────
+	handle {
+		reverse_proxy localhost:3000 {
+			header_up Host {host}
+			header_up X-Forwarded-For {remote_host}
+			header_up X-Forwarded-Proto {scheme}
+			header_up X-Real-IP {remote_host}
+		}
+	}
+}

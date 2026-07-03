@@ -1,0 +1,109 @@
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# dependencies
+node_modules
+/.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# testing
+/coverage
+
+# next.js
+/.next/
+/out/
+
+# production
+/build
+
+# misc
+.DS_Store
+*.pem
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# env files (can opt-in for committing if needed)
+.env*
+
+# vercel
+.vercel
+
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+local-*
+.claude
+.z-ai-config
+*.log
+dev.log
+dev.out.log
+test
+prompt
+
+server.log
+
+# Tool result artifacts (agent working files, must never be tracked)
+/tool-results/
+
+# Local dev server runtime files
+/.zscripts/dev.pid
+/.zscripts/dev.out.log
+
+# Worklog is a local agent scratchpad, keep out of repo
+/worklog.md
+
+# Skills directory
+/skills/
+# Database files (never track SQLite DBs)
+/db/*.db
+/db/*.db-journal
+/prisma/*.db
+
+# Local VPS deploy tool (contains no secrets, reads from env)
+/.zscripts/vps-ssh.py
+.env
+
+# ── Rebuild canonical exclusions (Mission 1.0) ────────────────────────────────
+# Root-level audit/debug screenshots and binary artifacts are NOT source.
+# They are durably preserved in the Recovery Pack at /home/z/wedding-os-recovery-0.7/.
+# Only root-level binaries excluded (leading /); public/** assets are tracked.
+/*.png
+/*.jpeg
+/*.jpg
+/*.gif
+/*.webp
+/*.deb
+/*.bundle
+/*.tar.gz
+/*.tar
+/*.zip
+/*.dump
+/*.bin
+
+# Agent working artifacts (never tracked)
+/agent-ctx/
+/.zscripts/dev.pid
+/.zscripts/dev.out.log
+/3000
+
+# Migration scratch (tracked migrations live in prisma/migrations/)
+/prisma/*.db-journal
+
+# Audit screenshot directories (durable in Recovery Pack, not source)
+/p3-screenshots/
+/p3-screenshots-v2/
+/p4-screenshots/
+/screenshots/
+/tool-results/
+
+# Sandbox session metadata (not source)
+/.initial_snapshot.json

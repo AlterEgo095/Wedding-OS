@@ -1,0 +1,657 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// TENANT — A Wedding is the top-level tenant entity.
+// Each wedding owns its guests, tables, settings, media, timeline, etc.
+// ══════════════════════════════════════════════════════════════════════════════
+
+model Wedding {
+  id              String        @id @default(cuid())
+  slug            String        @unique // e.g. "josue-hornella" — used in /w/{slug} routing
+  brideName       String        @default("")
+  groomName       String        @default("")
+  coupleLabel     String        @default("") // computed display: "Josué & Hornella"
+  weddingDate     DateTime?
+  timezone        String        @default("Africa/Kinshasa")
+  venueName       String?
+  venueAddress    String?
+  venueCity       String?
+  venueLat        String?
+  venueLng        String?
+  venueReference  String?
+  status          String        @default("DRAFT") // DRAFT, PUBLISHED, COMPLETED, ARCHIVED, SUSPENDED
+  plan            String        @default("TRIAL") // TRIAL, ESSENTIEL, PREMIUM, ELITE
+  customDomain    String?       @unique // e.g. "mariage-sophie.fr" (Premium/Élite only)
+  isDefault       Boolean       @default(false) // marks the legacy wedding served at "/"
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  publishedAt     DateTime?
+
+  // ─── Collection Engine (Phase 1 — additive, nullable for zero regression) ───
+  // When a couple picks a Collection Product, the Wedding is linked to it so the
+  // ThemeInjector + LuxuryVisualEngine hydrate from the Collection's seeds.
+  // Nullable: existing weddings have collectionId = null → behavior unchanged.
+  collectionId    String?
+  collection      Collection?   @relation(fields: [collectionId], references: [id])
+  variantId       String?
+  // P1+P2 — denormalized version snapshot (mirrors WeddingCollectionBinding.collectionVersion
+  // for fast reads at render time without a join).
+  collectionVersion String?
+
+  // P1 — full binding history (1:N, one ACTIVE per wedding enforced by unique constraint).
+  collectionBindings WeddingCollectionBinding[]
+
+  // Relations — every tenant-scoped entity points back to its Wedding
+  admins          AdminUser[]
+  guests          Guest[]
+  tables          Table[]
+  media           Media[]
+  timeline        EventTimeline[]
+  stories         CoupleStory[]
+  settings        Settings[]
+  theme           Theme?
+  music           MusicTrack?
+  auditLogs       AuditLog[]
+  guestSessions   GuestSession[]
+  guestAccessLogs GuestAccessLog[]
+  subscription    Subscription?
+  usageCounters   UsageCounter[]
+  invitations     Invitation[]
+  invoices        Invoice[]
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// AUTH — AdminUser (kept name for backward compat; Phase 3 will alias to User)
+// Roles: SUPER_ADMIN (platform owner, weddingId=null), ORGANIZER (per-wedding owner),
+//        CONTROLLER / RECEPTION (per-wedding staff)
+// ══════════════════════════════════════════════════════════════════════════════
+
+model AdminUser {
+  id           String     @id @default(cuid())
+  email        String     @unique
+  password     String
+  name         String
+  // Roles: SUPER_ADMIN, PLATFORM_ADMIN, ORGANIZER, RECEPTION, CONTROLLER,
+  //        DESIGNER (Phase 4 — Designer Portal access),
+  //        ART_DIRECTOR (Phase 4 — validates submissions)
+  role         String     @default("CONTROLLER")
+  weddingId    String?    // null for SUPER_ADMIN (platform-wide); set for ORGANIZER/STAFF
+  lastLoginAt  DateTime?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  wedding      Wedding?   @relation(fields: [weddingId], references: [id], onDelete: Cascade)
+  auditLogs    AuditLog[]
+  // Phase 4 — Collections authored by this designer (inverse of Collection.authorId).
+  authoredCollections Collection[] @relation("CollectionAuthor")
+  // P1 — WeddingCollectionBinding deployments authored by this user.
+  collectionBindings  WeddingCollectionBinding[]
+
+  // ── P1-SEC-8: TOTP-based 2FA for platform admins ─────────────────────────
+  // twoFactorSecret: TOTP secret (encrypted-at-rest via encryptId/decryptId
+  //   in lib/two-factor.ts). null when 2FA has never been set up.
+  // twoFactorEnabled: flipped to true only after the user verifies a TOTP
+  //   code during setup. Until then, the secret is "pending confirmation".
+  // twoFactorBackupCodes: JSON array of SHA-256-hashed one-time backup codes.
+  //   Cleared on disable. null when 2FA is off.
+  twoFactorSecret       String?
+  twoFactorEnabled      Boolean    @default(false)
+  twoFactorBackupCodes  String?
+
+  @@index([weddingId])
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// BILLING — Manual WhatsApp-driven billing (Phase 6, revised)
+//
+// Originally designed for Stripe (Phase 6 spec). Re-purposed for a manual
+// sales workflow: the platform admin negotiates a price with the couple
+// (based on the services included in the chosen plan), sends a prefilled
+// WhatsApp message with the offer + payment instructions, and manually
+// confirms the invoice as PAID once payment is received outside the
+// platform (mobile money, bank transfer, cash).
+//
+// Stripe columns are kept (nullable) for a future opt-in migration; they
+// are not used by the current billing flow.
+// ══════════════════════════════════════════════════════════════════════════════
+
+model Subscription {
+  id                     String    @id @default(cuid())
+  weddingId              String    @unique
+  wedding                Wedding   @relation(fields: [weddingId], references: [id], onDelete: Cascade)
+
+  // ── Plan & pricing ──
+  plan                   String    @default("TRIAL") // TRIAL, ESSENTIEL, PREMIUM, ELITE
+  status                 String    @default("TRIALING") // TRIALING, PENDING_PAYMENT, ACTIVE, PAST_DUE, SUSPENDED, CANCELED, EXPIRED
+  amountAgreed           Int?      // negotiated price in minor units (cents). null = use plan default.
+  currency               String    @default("usd") // usd, eur, fcfa
+  billingCycle           String    @default("MONTHLY") // MONTHLY, ANNUAL, ONE_TIME
+
+  // ── Period ──
+  currentPeriodStart     DateTime?
+  currentPeriodEnd       DateTime?
+  cancelAt               DateTime?
+  trialEndsAt            DateTime?
+  activatedAt            DateTime? // first time marked ACTIVE (i.e. first payment received)
+  paidAt                 DateTime? // last payment received timestamp
+
+  // ── Manual billing metadata ──
+  paymentMethod          String?   // MOBILE_MONEY, BANK_TRANSFER, CASH, OTHER
+  whatsappPhone          String?   // client's WhatsApp number (E.164 or local format)
+  notes                  String?   // admin freeform notes about the negotiation
+
+  // ── Stripe (reserved for future opt-in, currently unused) ──
+  stripeCustomerId       String?   @unique
+  stripeSubscriptionId   String?   @unique
+
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+  invoices               Invoice[]
+}
+
+model Invoice {
+  id               String       @id @default(cuid())
+  subscriptionId   String
+  subscription     Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  weddingId        String       // denormalized for direct platform-wide queries
+  wedding          Wedding      @relation(fields: [weddingId], references: [id], onDelete: Cascade)
+
+  // ── Amounts ──
+  amountDue        Int          // in minor units (cents)
+  amountPaid       Int          @default(0)
+  currency         String       @default("usd")
+  billingCycle     String       @default("MONTHLY") // echoed from subscription at creation time
+
+  // ── Status ──
+  status           String       @default("OPEN") // DRAFT, OPEN, PAID, VOID
+  paymentMethod    String?      // MOBILE_MONEY, BANK_TRANSFER, CASH, OTHER
+
+  // ── Manual billing workflow ──
+  whatsappSentAt   DateTime?   // last time a WhatsApp message was sent for this invoice
+  whatsappPhone    String?     // phone the WhatsApp message was sent to
+  confirmedBy      String?     // AdminUser.id who marked the invoice PAID
+  notes            String?     // admin freeform notes
+
+  // ── Stripe (reserved for future opt-in, currently unused) ──
+  stripeInvoiceId  String?   @unique
+  pdfUrl           String?
+  hostedInvoiceUrl String?
+
+  paidAt           DateTime?
+  createdAt        DateTime     @default(now())
+
+  @@index([weddingId, status])
+  @@index([subscriptionId])
+}
+
+model UsageCounter {
+  id          String   @id @default(cuid())
+  weddingId   String
+  wedding     Wedding  @relation(fields: [weddingId], references: [id], onDelete: Cascade)
+  metric      String   // GUESTS, MEDIA_BYTES, ADMINS, QR_SCANS
+  value       Int      @default(0)
+  period      String   // "2026-06" for monthly metered
+  updatedAt   DateTime @updatedAt
+
+  @@unique([weddingId, metric, period])
+  @@index([weddingId, metric])
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// TENANT-SCOPED CONTENT
+// ══════════════════════════════════════════════════════════════════════════════
+
+model Guest {
+  id                  String         @id @default(cuid())
+  weddingId           String         // NOT NULL since Phase 2 — every guest belongs to exactly one wedding
+  wedding             Wedding        @relation(fields: [weddingId], references: [id], onDelete: Cascade)
+  firstName           String
+  lastName            String
+  displayName         String?        // Exact display name as shown on invitation (no transformation)
+  invitationType      String         @default("individuel") // couple, individuel
+  phone               String?
+  email               String?
+  tableId             String?
+  seats               Int            @default(1)
+  category            String         @default("AMIS") // VIP, FAMILLE, AMIS, SPONSORS, COLLEGUES
+  status              String         @default("PENDING") // CONFIRMED, PENDING, DECLINED
+  invitationCode      String         // uniqueness now scoped by wedding (see @@unique below)
+  personalMessage     String?
+  checkedIn           Boolean        @default(false)
+  checkedInAt         DateTime?
+  invitationViewed    Boolean        @default(false)
+  invitationViewedAt  DateTime?
+  invitationViewCount Int            @default(0)
+  lastAccessAt        DateTime?
+  // ─── RSVP Fields ───
+  rsvpAt              DateTime?
+  rsvpMessage         String?
+  rsvpPlusOne         Boolean        @default(false)
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+  table               Table?         @relation(fields: [tableId], references: [id])
+  sessions            GuestSession[]
+  accessLogs          GuestAccessLog[]
+
+  @@unique([weddingId, invitationCode]) // uniqueness within wedding only
+  @@index([weddingId, status])
+  @@index([weddingId, category])
+  @@index([weddingId, tableId])
+}
+
+model Table {
+  id        String   @id @default(cuid())
+  weddingId String   // NOT NULL since Phase 2
+  wedding   Wedding  @relation(fields: [weddingId], references: [id], onDelete: Cascade)
+  name      String
+  number    Int      // not globally unique anymore — scoped by wedding
+  capacity  Int      @default(8)
+  location  String?  // JSON string for position: {"x": 0, "y": 0}
+  guests    Guest[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([weddingId, number])
+  @@index([weddingId])
+}
+
+model Media {
+  id              String   @id @default(cuid())
+  weddingId       String   // NOT NULL since Phase 2
+  wedding         Wedding  @relation(fields: [weddingId], references: [id], onDelete: Cascade)
+  type            String   // PHOTO, VIDEO, LOGO, DOCUMENT
+  storageProvider String   @default("LOCAL") // LOCAL, R2 (Phase 9)
+  storageKey      String?  // path or R2 key
+  url             String
+  title           String?
+  description     String?
+  category        String?  // GALLERY, COUPLE_STORY, DOCUMENT, OTHER
+  sizeBytes       Int      @default(0)
+  mime            String?
+  order           Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([weddingId, category])
+  @@index([weddingId, type])
+}
+
+model EventTimeline {
+  id          String   @id @default(cuid())
+  weddingId   String   // NOT NULL since Phase 2
+  wedding     Wedding  @relation(fields: [weddingId], references: [id], onDelete: Cascade)
+  time        String
+  activity    String
+  location    String?
+  description String?
+  icon        String?  // Emoji or icon identifier
+  order       Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([weddingId])
+}
+
+model CoupleStory {
+  id          String   @id @default(cuid())
+  weddingId   String   // NOT NULL since Phase 2
+  wedding     Wedding  @relation(fields: [weddingId], references: [id], onDelete: Cascade)
+  title       String
+  description String
+  date        String?
+  imageUrl    String?
+  order       Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([weddingId])
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// PER-WEDDING CONFIG
+// ══════════════════════════════════════════════════════════════════════════════
+
+model Settings {
+  id        String   @id @default(cuid())
+  weddingId String   // NOT NULL since Phase 2
+  wedding   Wedding  @relation(fields: [weddingId], references: [id], onDelete: Cascade)
+  key       String   // not globally unique anymore — scoped by wedding
+  value     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([weddingId, key])
+  @@index([weddingId])
+}
+
+model Theme {
+  id              String   @id @default(cuid())
+  weddingId       String   @unique
+  wedding         Wedding  @relation(fields: [weddingId], references: [id], onDelete: Cascade)
+  primaryColor    String   @default("#D4A853")
+  accentColor     String   @default("#C8785A")
+  fontDisplay     String   @default("Cormorant Garamond")
+  fontBody        String   @default("Inter")
+  layout          String   @default("classic") // classic, modern, minimalist, royal
+  customizations  String?  // JSON: { heroStyle, animationIntensity, ... }
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model MusicTrack {
+  id              String   @id @default(cuid())
+  weddingId       String   @unique
+  wedding         Wedding  @relation(fields: [weddingId], references: [id], onDelete: Cascade)
+  storageProvider String   @default("LOCAL")
+  storageKey      String?
+  url             String
+  title           String?
+  volume          Float    @default(0.25)
+  enabled         Boolean  @default(false)
+  autoplay        Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// GUEST SESSIONS & LOGGING (tenant-scoped)
+// ══════════════════════════════════════════════════════════════════════════════
+
+model GuestSession {
+  id             String   @id @default(cuid())
+  weddingId      String   // NOT NULL since Phase 2
+  wedding        Wedding  @relation(fields: [weddingId], references: [id], onDelete: Cascade)
+  guestId        String
+  guest          Guest    @relation(fields: [guestId], references: [id], onDelete: Cascade)
+  token          String   @unique
+  userAgent      String?
+  ipAddress      String?
+  fingerprint    String?  // Device fingerprint hash
+  deviceInfo     String?  // JSON: { browser, os, device, isMobile }
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  expiresAt      DateTime
+  lastAccessedAt DateTime @default(now())
+
+  @@index([weddingId, guestId])
+}
+
+model GuestAccessLog {
+  id          String   @id @default(cuid())
+  weddingId   String   // NOT NULL since Phase 2
+  wedding     Wedding  @relation(fields: [weddingId], references: [id], onDelete: Cascade)
+  guestId     String?
+  guest       Guest?   @relation(fields: [guestId], references: [id], onDelete: SetNull)
+  action      String   // LOGIN, VIEW_INVITATION, ACCESS_DENIED, LOGOUT, QR_SCAN, LINK_VISIT, SEARCH_BLOCKED
+  details     String?
+  userAgent   String?
+  ipAddress   String?
+  referrer    String?
+  fingerprint String?
+  deviceInfo  String?
+  createdAt   DateTime @default(now())
+
+  @@index([weddingId, createdAt])
+  @@index([weddingId, guestId])
+}
+
+model AuditLog {
+  id        String    @id @default(cuid())
+  weddingId String?   // null = platform-level event
+  wedding   Wedding?  @relation(fields: [weddingId], references: [id], onDelete: Cascade)
+  userId    String?
+  user      AdminUser? @relation(fields: [userId], references: [id], onDelete: SetNull)
+  action    String
+  details   String?
+  // P1-SEC-12: forensic fields — IP + UserAgent for security audits.
+  // Both nullable for backward compat (existing rows have neither).
+  ipAddress String?
+  userAgent  String?
+  createdAt DateTime  @default(now())
+
+  @@index([weddingId, createdAt])
+  @@index([userId])
+  @@index([ipAddress])
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ONBOARDING — Invitations sent via SMS/EMAIL/WHATSAPP (Phase 7)
+// ══════════════════════════════════════════════════════════════════════════════
+
+model Invitation {
+  id          String   @id @default(cuid())
+  weddingId   String
+  wedding     Wedding  @relation(fields: [weddingId], references: [id], onDelete: Cascade)
+  channel     String   // SMS, EMAIL, WHATSAPP, QR
+  recipient   String   // phone or email
+  guestId     String?
+  status      String   @default("PENDING") // PENDING, SENT, DELIVERED, FAILED, OPENED
+  sentAt      DateTime?
+  createdAt   DateTime @default(now())
+
+  @@index([weddingId, status])
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ONBOARDING — Public lead capture (Phase 7)
+// A Lead is submitted by a prospective couple via the public /onboarding form.
+// The platform admin reviews leads in the admin dashboard and converts them
+// into a published Wedding via the onboarding wizard (transactional create).
+// ══════════════════════════════════════════════════════════════════════════════
+
+model Lead {
+  id                 String    @id @default(cuid())
+  brideName          String
+  groomName          String
+  coupleLabel        String    // computed via buildCoupleLabel at insert time
+  weddingDate        DateTime?
+  venueCity          String?
+  email              String
+  phone              String?
+  plan               String    @default("TRIAL") // desired plan: TRIAL, ESSENTIEL, PREMIUM, ELITE
+  message            String?   // freeform note from the couple
+  status             String    @default("NEW") // NEW, CONTACTED, CONVERTED, REJECTED
+  notes              String?   // admin private notes
+  convertedWeddingId String?   // linked Wedding.id once converted (denormalized, no FK to avoid cascade complexity)
+  convertedAt        DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  @@index([status])
+  @@index([createdAt])
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// COLLECTION ENGINE — Phase 1 (AENEWS Wedding OS Enterprise)
+// ══════════════════════════════════════════════════════════════════════════════
+// A Collection Product is a commercial product that encapsulates a complete
+// wedding design (theme seed + luxury preset + Penpot file reference) ready to
+// be deployed automatically on a new wedding.
+//
+// Design principles (per validated spec):
+//   - Wedding OS does NOT design — Penpot is the Studio. The Collection only
+//     references Penpot files + stores the seed data.
+//   - Additive only: every field is nullable or has a default. Existing
+//     weddings have collectionId = null → behavior unchanged (DEFAULT_THEME).
+//   - The Collection Engine ORCHESTRATES existing motors (Theme Engine,
+//     ThemeInjector, LuxuryVisualEngine, PenpotStudio) — it does NOT replace
+//     them.
+//
+// Phase 1 scope (minimal, immediately useful):
+//   - Collection exists and can be selected/associated with a wedding
+//   - Apply flow upserts Theme row + hydrates luxury preset
+//   - Royal Gold is the first seeded Collection
+//   - Modules (34 slots), Designer Portal, lifecycle 6-state, marketplace UI
+//     are deferred to later phases (per user's phased recommendation).
+// ══════════════════════════════════════════════════════════════════════════════
+
+model Collection {
+  id              String   @id @default(cuid())
+  slug            String   @unique // e.g. "royal-gold" — used in catalog URLs
+  name            String   // display name, e.g. "Royal Gold"
+  description     String?
+  thumbnailUrl    String?
+  isActive        Boolean  @default(true) // visible in catalog when true
+  isPublished     Boolean  @default(true) // published/commercialized gate (Phase 1: always true for seed)
+  sortOrder       Int      @default(0)
+  category        String   @default("LUXURY") // LUXURY, CLASSIC, AFRICAN, MINIMAL, DESTINATION, ...
+  tier            String   @default("FREE") // marketplace tier: FREE, PREMIUM, EXCLUSIVE, ENTERPRISE, ...
+
+  // Penpot master file reference (the design source of truth lives in Penpot)
+  penpotFileUrl   String?
+  penpotFileId    String?
+
+  // Theme seed — applied to the Wedding's Theme row on deployment.
+  // JSON shape: { primaryColor, accentColor, fontDisplay, fontBody, layout }
+  themeSeed       String   // JSON string (SQLite has no native Json type — stored as text)
+
+  // Luxury preset — hydrates LuxuryVisualEngine via ThemeInjector.
+  // JSON shape: { theme: 'gold'|'rose'|'champagne'|'midnight', effects: {...}, intensity, density, speed, haloCount }
+  // Nullable: when null, the LuxuryVisualEngine falls back to its localStorage behavior (unchanged).
+  luxuryPreset    String?
+
+  // ─── Phase 4 — Lifecycle 6 états (spec §3) ──────────────────────────────
+  // status: BROUILLON | EN_COURS | VALIDATION | PUBLIE | COMMERCIALISE | ARCHIVE
+  // Default COMMERCIALISE for backward compat with Phase 1/2/3 seed Collections
+  // (they are already deployable, so they start in the terminal "commercialized" state).
+  status          String   @default("COMMERCIALISE")
+  // semver snapshot tag (e.g. "1.0.0"). Bumped on each VALIDATION transition.
+  version         String   @default("0.1.0")
+  // Designer who authored this Collection (nullable for legacy seed Collections).
+  authorId        String?
+  author          AdminUser? @relation("CollectionAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+  // Lifecycle timestamps (set when entering the corresponding state).
+  submittedAt     DateTime? // EN_COURS → VALIDATION
+  publishedAt     DateTime? // VALIDATION → PUBLIE
+  commercializedAt DateTime? // PUBLIE → COMMERCIALISE
+  archivedAt      DateTime? // * → ARCHIVE
+
+  // ─── Phase 5 — Penpot Collection Builder (auto-detection cache) ──────────
+  // Designer-scoped Penpot API token (encrypted at rest in a future hardening
+  // pass; for now stored as plaintext like other config). When null, the
+  // global PENPOT_API_TOKEN env var is used.
+  penpotTokenId   String?
+  // Last time auto-detection ran successfully (cache for 304 short-circuit +
+  // UI freshness indicator). Null = never synced.
+  lastFrameSyncAt DateTime?
+  // Cached quality score (0-100). Computed by computeQualityScore() and
+  // refreshed on each auto-detect / module update / transition. Null = never
+  // computed (legacy Collections from Phase 1-4 have null until first compute).
+  qualityScore    Int?
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  variants        CollectionVariant[]
+  modules         CollectionModule[]
+  weddings        Wedding[]
+}
+
+model CollectionVariant {
+  id              String   @id @default(cuid())
+  collectionId    String
+  collection      Collection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  code            String   // "A" | "B" | "C" | "D"
+  name            String   // display name, e.g. "Version A — Soirée"
+  // JSON shape: { primaryColor?, accentColor?, fontDisplay?, fontBody? } — overrides Collection.themeSeed
+  paletteOverride String?
+  penpotPageId    String?  // Penpot page ID specific to this variant
+  isDefault       Boolean  @default(false)
+  createdAt       DateTime @default(now())
+
+  @@unique([collectionId, code])
+  @@index([collectionId])
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Collection Engine — Phase 2: Module Slots (5 packs × 34 slots)
+// ══════════════════════════════════════════════════════════════════════════════
+// Each Collection Product must declare 34 module slots across 5 packs:
+//   Pack 1 — WEBSITE      (10 slots: hero, countdown, story, gallery, programme, rsvp, footer, loader, splash, systemPages)
+//   Pack 2 — INVITATIONS  (8 slots: standard, vip, famille, couple, presse, sponsor, numerique, impression)
+//   Pack 3 — PRINT        (8 slots: badge, qr, parking, floorPlan, tableNumber, placeCard, remerciement, livreOr)
+//   Pack 4 — COMMUNICATION(8 slots: whatsapp, facebook, instagram, story, email, banner, affiche, rollup)
+//   Pack 5 — LUXURY       (1 composite, stored in Collection.luxuryPreset — no row needed here)
+//
+// Each slot maps to a Penpot frame ID. When frameId is null, the slot is
+// "unmapped" and the renderer falls back to the existing component (zero regression).
+// Completeness validation (§4.8): a Collection can be PUBLIÉ only when all 34 slots are mapped.
+model CollectionModule {
+  id              String   @id @default(cuid())
+  collectionId    String
+  collection      Collection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  pack            String   // "WEBSITE" | "INVITATIONS" | "PRINT" | "COMMUNICATION"
+  slot            String   // e.g. "hero", "vip", "badge", "whatsapp"
+  label           String   // human-readable label, e.g. "Section héros"
+  // Penpot frame reference — null means "unmapped" (renderer falls back to existing component)
+  frameId         String?
+  penpotPageId    String?
+  // Phase 5 — original frame name as authored in Penpot (for diagnostics +
+  // drift detection: if the designer renames the frame, autoMapped=false rows
+  // surface the mismatch on next sync).
+  frameName       String?
+  // Phase 5 — true when the mapping was set by auto-detection, false when the
+  // designer manually overrode it. Manual overrides are preserved on re-sync.
+  autoMapped      Boolean  @default(false)
+  // For INVITATIONS pack only: which guest tier this slot serves (STANDARD/VIP/FAMILLE/COUPLE/PRESSE/SPONSOR)
+  // null for all other packs.
+  guestTier       String?
+  sortOrder       Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([collectionId, pack, slot])
+  @@index([collectionId])
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// PHASE C — COLLECTION BINDING (P1 — Collection as central entity)
+// ══════════════════════════════════════════════════════════════════════════════
+// A WeddingCollectionBinding records the deployment of a Premium Collection
+// to a Wedding. There is at most one ACTIVE binding per wedding (enforced by
+// `@@unique([weddingId])`), but the table keeps a small history: when a new
+// Collection is deployed, the existing row is updated in place (status flips
+// to DEPLOYED, previous manifest is archived in the `manifest` JSON column).
+// ══════════════════════════════════════════════════════════════════════════════
+
+model WeddingCollectionBinding {
+  id                String   @id @default(cuid())
+  weddingId         String   @unique // one active binding per wedding
+  wedding           Wedding  @relation(fields: [weddingId], references: [id], onDelete: Cascade)
+  collectionId      String   // references Collection.id (kept as plain string for history snapshot)
+  collectionVersion String   // e.g. "1.0.0"
+  manifest          String   // JSON: full deployment manifest (variant selections, design system, etc.)
+  status            String   @default("DEPLOYED") // DEPLOYED, ARCHIVED, ROLLED_BACK
+  deployedAt        DateTime @default(now())
+  deployedByUserId  String?  // AdminUser.id of the deployer (null for system/migration)
+  deployedBy        AdminUser? @relation(fields: [deployedByUserId], references: [id], onDelete: SetNull)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([collectionId])
+  @@index([status])
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// P1-SEC-9 — PASSWORD RESET TOKENS
+// ══════════════════════════════════════════════════════════════════════════════
+// Time-limited, single-use tokens for the platform password-reset flow.
+// The raw token is sent to the user via email; only its SHA-256 hash is stored.
+// ══════════════════════════════════════════════════════════════════════════════
+
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  email     String    // the AdminUser.email the reset is for (denormalized for lookup)
+  token     String    @unique // SHA-256 hash of the raw token (never the raw token)
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([email])
+}
