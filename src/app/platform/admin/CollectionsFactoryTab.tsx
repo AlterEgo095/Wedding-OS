@@ -16,6 +16,8 @@ import {
 } from '@/components/ui/dialog'
 import { DesignRenderer } from '@/components/collections/designs/DesignRenderer'
 import type { PremiumCollection, PackId, CollectionPack } from '@/lib/collections/types'
+import { countModules, countVariants, computeQualityScore } from '@/lib/collections/types'
+import { COLLECTIONS } from '@/lib/collections/catalog'
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 interface PublicCollection {
@@ -50,17 +52,42 @@ const PACK_ICONS: Record<PackId, React.ComponentType<{ className?: string }>> = 
 // ══════════════════════════════════════════════════════════════════════════════
 
 export function CollectionsFactoryTab() {
-  const [collections, setCollections] = useState<PublicCollection[]>([])
-  const [loading, setLoading] = useState(true)
+  // The Factory view reads from the static in-code catalog (COLLECTIONS),
+  // NOT from /api/collections. The API returns flat DB metadata (CollectionPublic
+  // — slug, name, category, tier, themeSeed…), but the Factory needs the FULL
+  // PremiumCollection shape with packs[].modules[].variants[] + renderers to
+  // preview each design. The catalog is the single source of truth for the
+  // design system; the DB Collection rows only track deployment metadata.
   const [selected, setSelected] = useState<PublicCollection | null>(null)
 
-  useEffect(() => {
-    fetch('/api/collections')
-      .then((r) => r.json())
-      .then((d) => setCollections(d.collections || []))
-      .catch(() => {})
-      .finally(() => setLoading(false))
-  }, [])
+  const collections = useMemo<PublicCollection[]>(
+    () =>
+      COLLECTIONS.map((c) => ({
+        id: c.id,
+        name: c.name,
+        family: c.family,
+        category: c.category,
+        tier: c.tier,
+        tagline: c.tagline,
+        description: c.description,
+        coverImage: c.coverImage,
+        completionPct: c.completionPct,
+        version: c.version,
+        designer: c.designer,
+        publishedAt: c.publishedAt,
+        priceFcfa: c.priceFcfa,
+        priceUsd: c.priceUsd,
+        designSystem: c.designSystem,
+        stats: {
+          packs: c.packs.length,
+          modules: countModules(c),
+          variants: countVariants(c),
+          qualityScore: computeQualityScore(c),
+        },
+      })),
+    [],
+  )
+  const loading = false
 
   const totals = useMemo(() => ({
     collections: collections.length,
@@ -223,14 +250,13 @@ function FactoryCard({ c, onOpen }: { c: PublicCollection; onOpen: () => void })
 // ─── Factory Detail ────────────────────────────────────────────────────────────
 function FactoryDetail({ collection, onClose }: { collection: PublicCollection; onClose: () => void }) {
   const [activePack, setActivePack] = useState<PackId>('website')
-  const [fullCollection, setFullCollection] = useState<PremiumCollection | null>(null)
-
-  useEffect(() => {
-    fetch(`/api/collections/${collection.id}`)
-      .then((r) => r.json())
-      .then((d) => setFullCollection(d.collection))
-      .catch(() => {})
-  }, [collection.id])
+  // Look up the full PremiumCollection (with packs/modules/variants) directly
+  // from the in-code catalog — no API call needed. The catalog is client-safe
+  // (imports only types) and is the source of truth for the design system.
+  const fullCollection = useMemo<PremiumCollection | null>(
+    () => COLLECTIONS.find((c) => c.id === collection.id) ?? null,
+    [collection.id],
+  )
 
   const ds = collection.designSystem
   const pack = fullCollection?.packs.find((p) => p.id === activePack)
