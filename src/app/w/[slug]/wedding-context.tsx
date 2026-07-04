@@ -1,13 +1,17 @@
 // ══════════════════════════════════════════════════════════════════════════════
 // /w/[slug]/wedding-context.tsx — React Context for the resolved wedding
 // ══════════════════════════════════════════════════════════════════════════════
-// Provides the wedding identity to all pages under /w/[slug]/*.
+// Provides the wedding identity AND its published manifest to all pages under
+// /w/[slug]/*. The manifest is resolved server-side in layout.tsx and passed
+// down so SectionRenderer can render sections dynamically.
+//
 // Also exposes a helper `fetchTenant(path, init)` that auto-adds the
 // X-Wedding-Slug header so client-side API calls scope to this wedding.
 
 'use client';
 
 import { createContext, useContext, useCallback, ReactNode } from 'react';
+import type { WeddingManifest } from '@/lib/wedding/manifest';
 
 export interface WeddingContextValue {
   id: string;
@@ -21,6 +25,7 @@ export interface WeddingContextValue {
   status: string;
   plan: string;
   isDefault: boolean;
+  manifest: WeddingManifest;
 }
 
 const WeddingCtx = createContext<WeddingContextValue | null>(null);

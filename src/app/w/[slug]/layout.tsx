@@ -1,23 +1,22 @@
 // ══════════════════════════════════════════════════════════════════════════════
-// /w/[slug]/layout.tsx — Phase 2 Multi-Tenant Public Layout
+// /w/[slug]/layout.tsx — Multi-Tenant Public Layout (Slice 1: manifest-driven)
 // ══════════════════════════════════════════════════════════════════════════════
-// Server component that resolves the wedding by slug. Returns 404 if not found
-// or if the wedding is in DRAFT/SUSPENDED state. Provides the wedding data to
-// all child pages via a React Context so they can make tenant-scoped API calls
-// (using X-Wedding-Slug header).
+// Server component that:
+//   1. Resolves the wedding by slug
+//   2. Resolves the published manifest (WeddingCollectionBinding.manifest)
+//   3. Passes BOTH identity + manifest to the client via WeddingContextProvider
+//
+// The manifest is the single source of truth for section rendering.
+// page.tsx reads it from context and renders via SectionRenderer.
 
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { resolveWeddingBySlug } from '@/lib/tenant-context';
+import { resolveWeddingManifest } from '@/lib/wedding/manifest';
 import { WeddingContextProvider } from './wedding-context';
 
 export const dynamic = 'force-dynamic';
 
-// ─── Per-wedding SEO metadata ────────────────────────────────────────────────
-// Generates a wedding-specific <title>, description, openGraph and twitter card
-// so each tenant's share preview reflects their own couple (Phase 3 ÉTAPE 3b
-// multi-tenant SEO fix). The root layout.tsx keeps a generic platform-level
-// default for non-wedding routes (/, /platform/admin, 404, etc.).
 export async function generateMetadata({
   params,
 }: {
@@ -85,7 +84,6 @@ export default async function WeddingLayout({
     notFound();
   }
 
-  // Gate by status — DRAFT weddings are not publicly visible (except default)
   if (wedding.status === 'DRAFT' && !wedding.isDefault) {
     notFound();
   }
@@ -105,10 +103,6 @@ export default async function WeddingLayout({
     );
   }
 
-  // P1-14: Archived weddings show a branded "souvenirs archivés" page instead
-  // of the live site. The wedding has already taken place — the public pages
-  // (RSVP, programme, etc.) are no longer relevant, but we don't 404 because
-  // the couple may want to share the archived memories link with guests.
   if (wedding.status === 'ARCHIVED') {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-warm p-6">
@@ -122,6 +116,11 @@ export default async function WeddingLayout({
       </div>
     );
   }
+
+  // ── Resolve the published manifest (Slice 1) ───────────────────────────────
+  // This is the CANONICAL render-time read of the Collection Engine.
+  // If no binding exists, resolveWeddingManifest returns a default (backward compat).
+  const manifest = await resolveWeddingManifest(wedding.id);
 
   return (
     <WeddingContextProvider
@@ -137,6 +136,7 @@ export default async function WeddingLayout({
         status: wedding.status,
         plan: wedding.plan,
         isDefault: wedding.isDefault,
+        manifest,
       }}
     >
       {children}

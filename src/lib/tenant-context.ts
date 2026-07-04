@@ -53,8 +53,17 @@ export interface TenantContext {
 }
 
 // ─── AsyncLocalStorage — per-request isolation ────────────────────────────────
+// Globally cached to survive Next.js dev mode HMR (which can re-instantiate
+// modules, creating a new ALS that the Prisma extension's closure doesn't see).
+// Without this, runWithTenant sets context on ALS instance A while the Prisma
+// extension reads from ALS instance B → TENANT_FAIL_CLOSED on every request.
 
-const tenantAls = new AsyncLocalStorage<TenantContext>();
+const globalForALS = globalThis as unknown as { __tenantAls?: AsyncLocalStorage<TenantContext> };
+const tenantAls: AsyncLocalStorage<TenantContext> =
+  globalForALS.__tenantAls ?? new AsyncLocalStorage<TenantContext>();
+if (process.env.NODE_ENV !== 'production') {
+  globalForALS.__tenantAls = tenantAls;
+}
 
 /**
  * Run a function within a tenant context. All Prisma queries against
