@@ -119,12 +119,13 @@ export function findSection(id: SectionId): { label: string; icon: LucideIcon } 
 // Statuses, Plans, Roles
 // ════════════════════════════════════════════════════════════════════════════
 
-export const WEDDING_STATUSES: WeddingStatus[] = ['DRAFT', 'PUBLISHED', 'ARCHIVED', 'SUSPENDED']
+export const WEDDING_STATUSES: WeddingStatus[] = ['DRAFT', 'PUBLISHED', 'COMPLETED', 'ARCHIVED', 'SUSPENDED']
 export const PLANS: Plan[] = ['TRIAL', 'ESSENTIEL', 'PREMIUM', 'ELITE']
 
 export const STATUS_LABELS: Record<WeddingStatus, string> = {
   DRAFT: 'Brouillon',
   PUBLISHED: 'Publié',
+  COMPLETED: 'Terminé',
   ARCHIVED: 'Archivé',
   SUSPENDED: 'Suspendu',
 }
@@ -132,6 +133,7 @@ export const STATUS_LABELS: Record<WeddingStatus, string> = {
 export const STATUS_BADGE_CLASS: Record<WeddingStatus, string> = {
   PUBLISHED: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30',
   DRAFT: 'bg-amber-500/15 text-amber-400 border-amber-500/30',
+  COMPLETED: 'bg-sky-500/15 text-sky-400 border-sky-500/30',
   ARCHIVED: 'bg-zinc-500/15 text-zinc-400 border-zinc-500/30',
   SUSPENDED: 'bg-red-500/15 text-red-400 border-red-500/30',
 }

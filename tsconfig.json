@@ -44,6 +44,7 @@
     "backup-frontend",
     "tool-results",
     "skills",
+    "archive",
     "seed.ts",
     "sync-official-data.ts"
   ]

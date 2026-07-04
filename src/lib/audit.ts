@@ -41,6 +41,33 @@ import { db, tenantDb } from './db';
 import { getClientInfo } from './guest-auth';
 import { logger } from './logger';
 
+/**
+ * AuditLog action codes that represent security-relevant events (auth
+ * failures, brute-force blocks, session invalidation, fingerprint mismatches,
+ * access denials, rate limits). Used by the Platform Ops dashboard
+ * (GET /api/platform/ops) to scope the "security events" counters + recent
+ * security log feed independently of the general audit trail.
+ *
+ * Keep this list in sync with the `action:` strings emitted by the auth +
+ * guest-access + rate-limit code paths (grep for `action: '...'` across
+ * src/app/api/**).
+ */
+export const SECURITY_AUDIT_ACTIONS: readonly string[] = [
+  'AUTH_FAILED',
+  'AUTH_RATE_LIMITED',
+  'BRUTE_FORCE_BLOCKED',
+  'FINGERPRINT_MISMATCH',
+  'INVALID_SESSION',
+  'ACCESS_DENIED',
+  'LOOKUP_RATE_LIMITED',
+  'LOGIN',
+  'LOGOUT',
+  'PASSWORD_RESET_REQUESTED',
+  'PASSWORD_RESET_USED',
+  'TWO_FACTOR_ENABLED',
+  'TWO_FACTOR_DISABLED',
+] as const;
+
 export interface WriteAuditLogParams {
   /** Wedding the audit event belongs to. null/undefined → platform-level audit (db, not tenantDb). */
   weddingId?: string | null;
