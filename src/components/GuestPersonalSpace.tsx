@@ -92,6 +92,7 @@ export default function GuestPersonalSpace({ guest, settings, onLogout }: GuestP
   const [rsvpStatus, setRsvpStatus] = useState<string>(guest.status)
   const [rsvpLoading, setRsvpLoading] = useState(false)
   const [rsvpMessage, setRsvpMessage] = useState('')
+  const [rsvpPlusOne, setRsvpPlusOne] = useState<boolean>(guest.rsvpPlusOne || false)
   const [rsvpDone, setRsvpDone] = useState(false)
   const invitationRef = useRef<HTMLDivElement>(null)
   const downloadRef = useRef<HTMLDivElement>(null)
@@ -259,7 +260,7 @@ export default function GuestPersonalSpace({ guest, settings, onLogout }: GuestP
       const res = await fetch('/api/guest/rsvp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status, message: rsvpMessage }),
+        body: JSON.stringify({ status, message: rsvpMessage, plusOne: status === 'CONFIRMED' ? rsvpPlusOne : false }),
       })
       const data = await res.json()
       if (res.ok && data.success) {
@@ -268,7 +269,7 @@ export default function GuestPersonalSpace({ guest, settings, onLogout }: GuestP
       }
     } catch { /* error */ }
     finally { setRsvpLoading(false) }
-  }, [rsvpMessage])
+  }, [rsvpMessage, rsvpPlusOne])
 
   // Download handler — uses html2canvas-pro for reliable CSS rendering
   const handleDownload = useCallback(async (format: 'png' | 'jpg' | 'pdf') => {
@@ -735,6 +736,16 @@ export default function GuestPersonalSpace({ guest, settings, onLogout }: GuestP
                 <div className="max-w-sm mx-auto">
                   <Textarea placeholder="Un petit mot pour les mari&#233;s (optionnel)..." value={rsvpMessage} onChange={(e) => setRsvpMessage(e.target.value)} className="h-16 text-[11px] font-display resize-none bg-[#FDFAF3] border-[rgba(196,162,101,0.15)] text-[#5C4A1E] placeholder:text-[#A67C3D]/30 focus:border-[#C4A265]/40" />
                 </div>
+                {/* Slice 4: Plus-one toggle — schema + API already supported it, UI was missing */}
+                <label className="flex items-center justify-center gap-2 cursor-pointer text-[11px] font-display text-[#5C4A1E]">
+                  <input
+                    type="checkbox"
+                    checked={rsvpPlusOne}
+                    onChange={e => setRsvpPlusOne(e.target.checked)}
+                    className="w-4 h-4 rounded border-[rgba(196,162,101,0.3)] accent-[#C4A265]"
+                  />
+                  Je viendrai accompagn&#233;(e) d&apos;un invit&#233;
+                </label>
                 <div className="flex items-center justify-center gap-3">
                   <Button onClick={() => handleRSVP('CONFIRMED')} disabled={rsvpLoading} className="gap-2 px-5 py-2.5 font-display text-[10px] tracking-[0.1em] uppercase font-bold shadow-lg transition-all duration-300 rounded-sm h-10" style={{ background: 'linear-gradient(135deg, #059669, #10B981, #34D399)', color: '#FDFAF3', boxShadow: '0 4px 15px rgba(16,185,129,0.25)' }}>
                     {rsvpLoading ? <Loader2 className="size-4 animate-spin" /> : <CheckCircle2 className="size-4" />}Je serai pr&#233;sent
