@@ -82,8 +82,24 @@ function WeddingPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const inviteParam = searchParams.get('invite');
+  const isPreviewDraft = searchParams.get('preview') === 'draft';
 
   const { guest, authenticated, loading: authLoading, loginByLookupToken, loginWithLinkToken } = useGuestAuth();
+
+  // Slice 2: Draft preview manifest (admin-only). When ?preview=draft is set,
+  // fetch the draft manifest from the design API and use it instead of the
+  // published manifest from context. This lets the admin see their changes
+  // before publishing.
+  const [previewManifest, setPreviewManifest] = useState<typeof wedding.manifest | null>(null);
+  useEffect(() => {
+    if (!isPreviewDraft) { setPreviewManifest(null); return; }
+    fetch(`/api/weddings/${wedding.id}/design`)
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (d?.draftManifest) setPreviewManifest(d.draftManifest); })
+      .catch(() => {});
+  }, [isPreviewDraft, wedding.id]);
+
+  const activeManifest = previewManifest || wedding.manifest;
 
   const [stories, setStories] = useState<CoupleStory[]>([]);
   const [timeline, setTimeline] = useState<TimelineEvent[]>([]);
@@ -200,6 +216,14 @@ function WeddingPageContent() {
 
       <Navigation />
 
+      {/* Slice 2: Preview banner */}
+      {isPreviewDraft && (
+        <div className="bg-amber-500 text-white text-center py-2 px-4 text-sm font-medium sticky top-0 z-50">
+          Mode aperçu — modifications non publiées.{' '}
+          <a href={`?`} className="underline">Quitter l'aperçu</a>
+        </div>
+      )}
+
       <main className="flex-1">
         {/* ─── Manifest-driven rendering (Slice 1) ─────────────────────────── */}
         {/* The section tree comes from the published manifest, NOT hardcoded JSX */}
@@ -211,7 +235,7 @@ function WeddingPageContent() {
           /* ─── AUTHENTICATED: Hero (from manifest) + personal space ─── */
           <>
             <SectionRenderer
-              manifest={wedding.manifest}
+              manifest={activeManifest}
               data={sectionData}
               extras={sectionExtras}
             />
@@ -227,7 +251,7 @@ function WeddingPageContent() {
         ) : (
           /* ─── NOT AUTHENTICATED: full manifest-driven experience ─── */
           <SectionRenderer
-            manifest={wedding.manifest}
+            manifest={activeManifest}
             data={sectionData}
             extras={sectionExtras}
           />

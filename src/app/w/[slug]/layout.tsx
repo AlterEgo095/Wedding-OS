@@ -120,6 +120,9 @@ export default async function WeddingLayout({
   // ── Resolve the published manifest (Slice 1) ───────────────────────────────
   // This is the CANONICAL render-time read of the Collection Engine.
   // If no binding exists, resolveWeddingManifest returns a default (backward compat).
+  //
+  // Slice 2 preview: handled in page.tsx via useSearchParams + /api/weddings/[id]/design
+  // (layouts in Next.js 16 don't receive searchParams, so preview is client-side).
   const manifest = await resolveWeddingManifest(wedding.id);
 
   return (

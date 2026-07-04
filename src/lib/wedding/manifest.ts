@@ -236,3 +236,25 @@ export async function resolveWeddingManifest(weddingId: string): Promise<Wedding
 
   return createDefaultManifest();
 }
+
+// ─── Resolve DRAFT Manifest (for admin preview only) ──────────────────────────
+// Returns the draft manifest if it exists, otherwise the published manifest.
+// Used by the preview route (?preview=draft) which is admin-only.
+export async function resolveWeddingDraftManifest(weddingId: string): Promise<WeddingManifest> {
+  const binding = await db.weddingCollectionBinding.findUnique({
+    where: { weddingId },
+    select: { manifest: true, draftManifest: true },
+  });
+
+  // Prefer draft if it exists and is valid
+  if (binding?.draftManifest) {
+    const draft = parseManifest(binding.draftManifest);
+    if (draft) return draft;
+  }
+
+  // Fall back to published
+  const published = parseManifest(binding?.manifest);
+  if (published) return published;
+
+  return createDefaultManifest();
+}
