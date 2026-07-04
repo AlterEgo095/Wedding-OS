@@ -71,3 +71,25 @@ server.log
 # Local VPS deploy tool (contains no secrets, reads from env)
 /.zscripts/vps-ssh.py
 .env
+
+# Audit/report screenshots and artifact dumps (not source)
+*.png
+audit-*.md
+AUDIT_STRATEGIQUE_GLOBAL.md
+p3-screenshots/
+p3-screenshots-v2/
+p4-screenshots/
+screenshots/
+backup-frontend/
+phase4-*.bundle
+phase4-*.sh
+deploy-*.mjs
+deploy-collection-engine.mjs
+deploy-phase2-modules.mjs
+deploy-phase4.mjs
+public/PENPOT_COLLECTION_SPEC.md
+docs/PHASE0_REPORT.md
+docs/PHASE1_REPORT.md
+agent-ctx/
+.zscripts/vps_ssh.example.py
+scripts/backup-db.cron.example
