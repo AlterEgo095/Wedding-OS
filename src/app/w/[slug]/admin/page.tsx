@@ -30,7 +30,7 @@ import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import {
   LayoutDashboard, Users, Grid3X3, Image as ImageIcon, Clock, Shield, Settings, LogOut,
-  X, Menu, FileSearch, Music, Sparkles, Crown, Loader2, Palette, PenTool,
+  X, Menu, FileSearch, Music, Sparkles, Crown, Loader2, Palette, PenTool, LayoutTemplate,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { isPlatformAdmin } from '@/lib/types';
@@ -47,6 +47,7 @@ import AccessLogManager from '@/components/admin/AccessLogManager';
 import MusicManager from '@/components/admin/MusicManager';
 import AppearanceManager from '@/components/admin/AppearanceManager';
 import { ThemeCustomizer } from '@/components/admin/ThemeCustomizer';
+import { DesignerTab } from '@/components/admin/DesignerTab';
 import { PenpotStudio } from '@/components/penpot/PenpotStudio';
 
 interface AuthUser {
@@ -57,7 +58,7 @@ interface AuthUser {
   weddingId?: string | null
 }
 
-type TabId = 'dashboard' | 'guests' | 'tables' | 'media' | 'music' | 'timeline' | 'users' | 'settings' | 'access-logs' | 'appearance' | 'theme' | 'studio'
+type TabId = 'dashboard' | 'designer' | 'guests' | 'tables' | 'media' | 'music' | 'timeline' | 'users' | 'settings' | 'access-logs' | 'appearance' | 'theme' | 'studio'
 
 interface NavItem {
   id: TabId
@@ -68,6 +69,7 @@ interface NavItem {
 
 const NAV_ITEMS: NavItem[] = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { id: 'designer', label: 'Designer', icon: LayoutTemplate },
   { id: 'guests', label: 'Invités', icon: Users },
   { id: 'tables', label: 'Tables', icon: Grid3X3 },
   { id: 'access-logs', label: 'Accès', icon: FileSearch },
@@ -289,6 +291,9 @@ export default function PerWeddingAdminPage() {
         // bypasses the platform-admin wedding picker and scopes all /api/theme
         // calls to this wedding via the fetch interceptor installed above.
         return <ThemeCustomizer slug={slug} />
+      case 'designer':
+        // Slice 2: Real Experience Builder — controls sections, theme, collection
+        return <DesignerTab weddingId={wedding.id} weddingSlug={slug} />
       case 'studio':
         // Penpot native integration: the official design Studio of Wedding OS.
         // Embeds Penpot via iframe, syncs design tokens with the Theme Engine,
