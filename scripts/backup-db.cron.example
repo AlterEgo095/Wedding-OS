@@ -1,0 +1,3 @@
+# Run daily SQLite backup at 02:00 — adjust path to your repo
+# Install: crontab -e → paste this line (adjust paths)
+0 2 * * * cd /opt/wedding-platform && /opt/wedding-platform/scripts/backup-db.sh >> /var/log/wedding-backup.log 2>&1
