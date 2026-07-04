@@ -1,51 +1,35 @@
 // ══════════════════════════════════════════════════════════════════════════════
-// /w/[slug]/page.tsx — Phase 4 Full Per-Wedding Public UX
+// /w/[slug]/page.tsx — MANIFEST-DRIVEN PUBLIC WEDDING PAGE (Slice 1)
 // ══════════════════════════════════════════════════════════════════════════════
-// Renders the COMPLETE luxury invitation experience for any wedding by slug.
-// Reuses ALL the rich components from the root "/" page (HeroSection, OurStory,
-// PremiumGallery, EventTimeline, MapSection, GuestPersonalSpace, AmbientMusicPlayer,
-// LuxuryVisualEngine, etc.) WITHOUT modifying them.
+// Renders the wedding experience from the published manifest.
+// The section tree is NO LONGER hardcoded — it comes from the manifest which
+// is resolved server-side in layout.tsx and passed via WeddingContext.
 //
-// How it works:
-//   1. A GLOBAL window.fetch interceptor is installed on mount. It wraps the native
-//      fetch and auto-adds the `X-Wedding-Slug` header to every /api/* request.
-//   2. All existing components (HeroSection, GuestAuthProvider, PremiumGallery, etc.)
-//      call fetch('/api/...') as usual — the interceptor transparently scopes them
-//      to the current wedding.
-//   3. The APIs are already tenant-aware (Phase 2): they read X-Wedding-Slug, resolve
-//      the tenant, and auto-scope all Prisma queries via the tenant extension.
+// The manifest controls:
+//   - which sections are enabled
+//   - their order
+//   - the theme (colors, fonts)
 //
-// This is the same proven pattern used by /w/[slug]/admin/page.tsx (Task 3-D).
-// Zero changes to any child component → zero regression risk on the root "/" page.
-//
-// Differences from root "/":
-//   - No AdminPanel / hidden admin trigger (admin lives at /w/[slug]/admin)
-//   - No AENEWSBanner (marketing banner is platform-specific)
-//   - coupleLabel / wedding identity comes from useWedding() (server-resolved)
-//   - Guest auto-auth redirect stays within /w/[slug} (not root "/")
+// The fetch interceptor auto-adds X-Wedding-Slug to all /api/* calls AND
+// uses cache: 'no-store' to prevent cross-wedding data leaks (§11 fix).
 
 'use client';
 
-import { useState, useEffect, useLayoutEffect, useCallback, Suspense, useRef, useSyncExternalStore } from 'react';
+import { useState, useEffect, useLayoutEffect, useCallback, Suspense, useSyncExternalStore } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import Navigation from '@/components/Navigation';
-import HeroSection from '@/components/HeroSection';
-import PremiumGallery from '@/components/PremiumGallery';
-import OurStory from '@/components/OurStory';
-import EventTimeline, { EventTimelineSkeleton } from '@/components/EventTimeline';
-import MapSection, { MapSectionSkeleton } from '@/components/MapSection';
 import Footer from '@/components/Footer';
 import PWAInstall from '@/components/PWAInstall';
 import { GuestAuthProvider, useGuestAuth } from '@/components/GuestAuthProvider';
-import GuestAuthForm from '@/components/GuestAuthForm';
 import GuestPersonalSpace from '@/components/GuestPersonalSpace';
 import AmbientMusicPlayer from '@/components/AmbientMusicPlayer';
 import VisualEffectsLayer from '@/components/effects/VisualEffectsLayer';
 import LuxuryVisualEngine from '@/components/luxury/LuxuryVisualEngine';
 import { ThemeInjector } from '@/components/wedding/ThemeInjector';
+import { SectionRenderer } from '@/components/wedding/SectionRenderer';
 import { useWedding } from './wedding-context';
 
-// ─── Types (mirrored from root page.tsx) ──────────────────────────────────────
+// ─── Types ────────────────────────────────────────────────────────────────────
 
 interface CoupleStory {
   id: string;
@@ -84,9 +68,6 @@ interface VenueSettings {
 }
 
 // ─── Hydration-safe mounted flag ──────────────────────────────────────────────
-// useSyncExternalStore returns false on SSR + during hydration, true after.
-// This avoids the react-hooks/set-state-in-effect lint error WITHOUT disabling
-// the rule, and lets us render a stable loading screen during hydration.
 
 const emptySubscribe = () => () => {};
 const getTrue = () => true;
@@ -112,29 +93,16 @@ function WeddingPageContent() {
   });
   const [loading, setLoading] = useState(true);
 
-  // ─── GLOBAL FETCH INTERCEPTOR ──────────────────────────────────────────────
-  // Wraps window.fetch so every /api/* call automatically gets the X-Wedding-Slug
-  // header. This lets ALL existing luxury components (HeroSection, OurStory,
-  // PremiumGallery, GuestAuthProvider, GuestPersonalSpace, etc.) work UNCHANGED
-  // — they call fetch('/api/...') and the interceptor transparently scopes them
-  // to the current wedding.
-  //
-  // IMPORTANT: useLayoutEffect (not useEffect) so the interceptor is installed
-  // SYNCHRONOUSLY before any child component's useEffect runs. React runs
-  // useLayoutEffect in mount order (children before parents) but ALL
-  // useLayoutEffects run before ANY useEffect. This guarantees that when
-  // HeroSection's useEffect fires fetch('/api/settings'), the X-Wedding-Slug
-  // header is already in place — otherwise the first fetch would silently fall
-  // back to the default wedding (josue-hornella) and show wrong couple names.
-  //
-  // Same pattern as /w/[slug]/admin/page.tsx (Task 3-D), proven to work for all
-  // 10 admin components. Cleanup restores window.fetch on unmount.
+  // ─── GLOBAL FETCH INTERCEPTOR (§11 cross-wedding leak fix) ────────────────
+  // Wraps window.fetch so every /api/* call gets the X-Wedding-Slug header
+  // for tenant scoping. The API routes use dynamic = 'force-dynamic' to
+  // prevent server-side ISR caching (the root cause of the cross-wedding
+  // data leak). No client-side cache manipulation needed.
   useLayoutEffect(() => {
     const originalFetch = window.fetch;
     const slug = wedding.slug;
 
     window.fetch = (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
-      // Only intercept relative /api/ calls — leave absolute URLs (CDN, uploads) alone
       const url = typeof input === 'string' ? input : (input instanceof URL ? input.toString() : input.url);
       if (url.startsWith('/api/') || url.startsWith('api/')) {
         const headers = new Headers(init?.headers || (input instanceof Request ? input.headers : undefined));
@@ -151,8 +119,7 @@ function WeddingPageContent() {
     };
   }, [wedding.slug]);
 
-  // ─── Fetch this wedding's data (stories, timeline, settings, music) ────────
-  // The fetch interceptor will auto-add X-Wedding-Slug, so plain fetch() works.
+  // ─── Fetch this wedding's data ─────────────────────────────────────────────
   useEffect(() => {
     async function fetchData() {
       try {
@@ -218,90 +185,57 @@ function WeddingPageContent() {
     }
   }, [inviteParam, authenticated, authLoading, loginWithLinkToken]);
 
-  // ─── Regular landing content (shown when guest is not authenticated) ───────
-  const regularContent = (
-    <>
-      {/* P1-UX-6: show a friendly empty state instead of OurStory's
-          DEFAULT_STORIES fallback when this wedding has no stories. The
-          fallback leaks the default wedding's couple identity into other
-          tenants; the inline empty state avoids that. */}
-      {!loading && stories.length === 0 ? (
-        <section
-          id="notre-histoire"
-          className="py-20 md:py-28 text-center"
-          aria-label="Notre histoire — aucune histoire à raconter"
-        >
-          <div className="max-w-xl mx-auto px-4">
-            <span
-              className="block mb-4 text-2xl text-muted-foreground/60"
-              aria-hidden="true"
-            >
-              ✦
-            </span>
-            <p className="font-serif text-xl text-muted-foreground mb-1">
-              Aucune histoire à raconter pour le moment
-            </p>
-            <p className="font-display text-sm text-muted-foreground/70">
-              Le couple n&apos;a pas encore partagé les chapitres de son histoire.
-            </p>
-          </div>
-        </section>
-      ) : (
-        <OurStory stories={stories} />
-      )}
-      <PremiumGallery />
-      {/* EventTimeline handles its own empty state internally. */}
-      {loading ? <EventTimelineSkeleton /> : <EventTimeline events={timeline} />}
-      {loading ? <MapSectionSkeleton /> : <MapSection settings={settings} />}
-      <GuestAuthForm
-        onLoginByLookupToken={loginByLookupToken}
-        onLoginWithLinkToken={loginWithLinkToken}
-        initialInviteToken={inviteParam || undefined}
-      />
-    </>
-  );
+  const sectionData = { stories, timeline, settings, loading };
+  const sectionExtras = {
+    onLoginByLookupToken: loginByLookupToken,
+    onLoginWithLinkToken: loginWithLinkToken,
+    initialInviteToken: inviteParam || undefined,
+  };
 
   return (
     <div className="min-h-screen flex flex-col">
-      {/* Global visual effects layer — sparkles, particles, bokeh */}
       <VisualEffectsLayer />
-
-      {/* Luxury cinematic ambiance engine — independent layer */}
       <LuxuryVisualEngine />
-
-      {/* Phase 8: Theme injector — applies wedding colors + fonts */}
       <ThemeInjector />
 
       <Navigation />
 
       <main className="flex-1">
-        {/* ─── Hero: Always visible ─── */}
-        <HeroSection />
-
+        {/* ─── Manifest-driven rendering (Slice 1) ─────────────────────────── */}
+        {/* The section tree comes from the published manifest, NOT hardcoded JSX */}
         {authLoading ? (
           <div className="flex items-center justify-center py-32">
             <div className="shimmer w-full max-w-2xl h-64 rounded-2xl mx-4" />
           </div>
         ) : authenticated && guest ? (
-          /* ─── AUTHENTICATED: Show personal space with envelope reveal ─── */
-          <GuestPersonalSpace
-            guest={guest}
-            settings={settings || {}}
-            onLogout={async () => {
-              await fetch('/api/guest/logout', { method: 'POST' });
-              // Stay on the same wedding page after logout
-              router.refresh();
-            }}
-          />
+          /* ─── AUTHENTICATED: Hero (from manifest) + personal space ─── */
+          <>
+            <SectionRenderer
+              manifest={wedding.manifest}
+              data={sectionData}
+              extras={sectionExtras}
+            />
+            <GuestPersonalSpace
+              guest={guest}
+              settings={settings || {}}
+              onLogout={async () => {
+                await fetch('/api/guest/logout', { method: 'POST' });
+                router.refresh();
+              }}
+            />
+          </>
         ) : (
-          /* ─── NOT AUTHENTICATED: Full premium experience ─── */
-          regularContent
+          /* ─── NOT AUTHENTICATED: full manifest-driven experience ─── */
+          <SectionRenderer
+            manifest={wedding.manifest}
+            data={sectionData}
+            extras={sectionExtras}
+          />
         )}
       </main>
 
       <Footer />
 
-      {/* Ambient Music Player — per-wedding music settings */}
       <AmbientMusicPlayer
         musicFile={musicSettings.url || musicSettings.file}
         defaultVolume={musicSettings.volume}
