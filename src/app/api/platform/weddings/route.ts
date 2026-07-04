@@ -11,6 +11,8 @@ import { logger } from '@/lib/logger';
 import { internalError } from '@/lib/api-errors';
 // P2-SEC-14: writeAuditLog populates ipAddress + userAgent from request.
 import { writeAuditLog } from '@/lib/audit';
+// Cascade provisioning — auto-creates theme, settings, couple story for new weddings
+import { provisionWedding } from '@/lib/services/wedding-provisioning';
 
 /**
  * Platform-level wedding CRUD.
@@ -221,16 +223,47 @@ export async function POST(request: NextRequest) {
       select: WEDDING_LIST_SELECT,
     });
 
+    // ─── Cascade provisioning: auto-create theme, settings, couple story ────
+    // This makes the wedding immediately functional — the public page renders
+    // with a working theme + the couple's own identity (not hardcoded defaults).
+    // Provisioning is idempotent + non-fatal: if it fails, the wedding still
+    // exists and the admin can manually configure via the Designer tab.
+    let provisioning: { settingsCreated: number; themeCreated: boolean; coupleStoryCreated: boolean } | null = null;
+    try {
+      provisioning = await provisionWedding({
+        id: wedding.id,
+        slug: wedding.slug,
+        brideName: wedding.brideName,
+        groomName: wedding.groomName,
+        coupleLabel: wedding.coupleLabel,
+        weddingDate: wedding.weddingDate,
+        timezone: wedding.timezone,
+        venueName: wedding.venueName,
+        venueAddress: null,
+        venueCity: wedding.venueCity,
+        venueReference: null,
+      });
+    } catch (provError) {
+      // Non-fatal: wedding is created, provisioning can be retried via repair script
+      logger.error('Wedding provisioning failed (non-fatal)', {
+        weddingId: wedding.id,
+        errMessage: provError instanceof Error ? provError.message : String(provError),
+      });
+    }
+
     // ─── Audit log (P2-SEC-14: writeAuditLog populates ipAddress + userAgent) ─
     await writeAuditLog({
       weddingId: null, // platform-level event (action targets a wedding, not in it)
       userId: user!.id,
       action: 'CREATE_WEDDING',
-      details: `Created wedding ${normalizedSlug}`,
+      details: `Created wedding ${normalizedSlug}` +
+        (provisioning
+          ? ` (provisioned: ${provisioning.settingsCreated} settings, theme=${provisioning.themeCreated}, story=${provisioning.coupleStoryCreated})`
+          : ' (provisioning failed — manual setup required)'),
       request,
     });
 
-    return NextResponse.json({ wedding }, { status: 201 });
+    return NextResponse.json({ wedding, provisioning }, { status: 201 });
   } catch (error) {
     // P2-SEC-1: never log error.stack.
     logger.error('Create platform wedding error', {

@@ -66,7 +66,7 @@ export async function GET(request: NextRequest) {
 
       return NextResponse.json({
         authenticated: true,
-        guest: { ...guest, encryptedLink },
+        guest: { ...guest, encryptedLink, weddingSlug: context.slug },
         security: { fingerprintVerified: !session.fingerprintMismatch, sessionActive: true },
       });
     } catch (error) {

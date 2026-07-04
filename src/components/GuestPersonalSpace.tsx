@@ -36,6 +36,7 @@ interface GuestData {
   rsvpAt?: string | null
   rsvpMessage?: string | null
   rsvpPlusOne?: boolean
+  weddingSlug?: string // needed to build tenant-correct share URLs
 }
 
 interface Settings {
@@ -157,8 +158,16 @@ export default function GuestPersonalSpace({ guest, settings, onLogout }: GuestP
   const couplePhoto1Path = settings.couple_photo_1 || ''
   const couplePhoto2Path = settings.couple_photo_2 || ''
 
+  // Build the share URL with the wedding's slug prefix (/w/{slug}) so the
+  // invitation link works for ANY wedding — not just the default one.
+  // Previously this was `?invite=...` (root path), which only worked for the
+  // default wedding. Non-default weddings need /w/{slug}/invite/{token} so
+  // the tenant context resolves correctly.
+  const weddingSlug = guest.weddingSlug || ''
   const encryptedLinkUrl = guest.encryptedLink
-    ? `${typeof window !== 'undefined' ? window.location.origin : ''}?invite=${guest.encryptedLink}`
+    ? `${typeof window !== 'undefined' ? window.location.origin : ''}${
+        weddingSlug && weddingSlug !== 'josue-hornella' ? `/w/${weddingSlug}` : ''
+      }/?invite=${guest.encryptedLink}`
     : ''
 
   // Fetch QR code
