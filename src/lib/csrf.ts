@@ -165,5 +165,16 @@ export const CSRF_EXEMPT_PATHS: readonly string[] = [
   '/api/guest/auto-auth', // guest one-time-use lookup-token auto-login
   '/api/guest/invite',    // invitation link auto-login (token in URL/cookie)
   '/api/guest/lookup',    // public guest lookup (rate-limited, no auth)
+  // Guest mutating endpoints — authenticated by the httpOnly guest_session
+  // cookie (validated inside each route via validateGuestSession, which
+  // checks the token + userAgent/IP fingerprint). The guest auth flow does
+  // NOT issue a csrf_token cookie (guests arrive via one-time invitation
+  // links, not a login form), so the double-submit CSRF pattern cannot
+  // apply. The session fingerprint is the real anti-CSRF control here: an
+  // attacker cannot forge the httpOnly cookie, and the fingerprint check
+  // rejects requests from a different browser/IP.
+  '/api/guest/rsvp',      // guest confirms/declines invitation
+  '/api/guest/logout',    // guest ends their session
+  '/api/guest/access-logs', // guest access log write (beacon-style)
   '/api/health',          // public health check (no state change anyway)
 ] as const;
