@@ -21,7 +21,7 @@
 
 'use client';
 
-import { useState, useCallback, useRef, useEffect, useLayoutEffect, useSyncExternalStore } from 'react';
+import { useState, useCallback, useRef, useEffect, useLayoutEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import Link from 'next/link';
 import { AnimatePresence, motion } from 'framer-motion';
@@ -88,13 +88,6 @@ const NAV_ITEMS: NavItem[] = [
 // leak the default wedding's couple identity into another tenant's admin.
 const COUPLE_PHOTO_FALLBACK = '/couple-hero.jpeg'
 
-// useSyncExternalStore subscribe placeholder — we only need the getServerSnapshot
-// vs getSnapshot split to detect "are we hydrated yet?" without triggering the
-// react-hooks/set-state-in-effect lint rule.
-const emptySubscribe = (): (() => void) => () => {}
-const getTrue = (): boolean => true
-const getFalse = (): boolean => false
-
 export default function PerWeddingAdminPage() {
   const params = useParams<{ slug: string }>()
   const slug = params.slug
@@ -102,10 +95,12 @@ export default function PerWeddingAdminPage() {
   const wedding = useWedding()
 
   // mounted: false on SSR and during the very first client render (hydration),
-  // then true once React swaps to the client snapshot. This lets us render a
-  // stable loading screen during hydration and avoid mismatches when the
-  // server-rendered HTML has no token but the client does (via localStorage).
-  const mounted = useSyncExternalStore(emptySubscribe, getTrue, getFalse)
+  // then true once the mount effect runs. This lets us render a stable loading
+  // screen during hydration and avoid mismatches.
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => {
+    setMounted(true)
+  }, [])
 
   // ─── Auth state ────────────────────────────────────────────────────────────
   // P1-SEC-3: token is no longer read from localStorage. We keep the `token`
@@ -267,7 +262,7 @@ export default function PerWeddingAdminPage() {
   )
 
   const renderContent = () => {
-    if (!token) return null
+    if (!user) return null
 
     switch (activeTab) {
       case 'dashboard':
@@ -310,8 +305,14 @@ export default function PerWeddingAdminPage() {
   const activeNavItem = visibleNavItems.find((item) => item.id === activeTab)
   const coupleLabel = wedding.coupleLabel || slug
 
-  // ─── Loading screen during SSR / hydration / missing-token window ──────────
-  if (!mounted || !authChecked || !token || !user) {
+  // ─── Loading screen during SSR / hydration / pre-auth-check window ──────────
+  // NOTE: `token` is intentionally NOT part of this gate. Under cookie-based
+  // auth (P1-SEC-3) `token` is always the empty string — the server reads the
+  // httpOnly auth_token cookie. Gating on `!token` would permanently trap the
+  // page on this loading screen. The real auth gate is `!user` (populated from
+  // /api/me) — once authChecked is true, user is either set (show admin) or
+  // null (the redirect effect sends the visitor to the login page).
+  if (!mounted || !authChecked || !user) {
     return (
       <div
         className="h-screen flex flex-col items-center justify-center gap-4"
