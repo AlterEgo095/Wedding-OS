@@ -93,3 +93,7 @@ docs/PHASE1_REPORT.md
 agent-ctx/
 .zscripts/vps_ssh.example.py
 scripts/backup-db.cron.example
+
+# VPS SSH credentials — NEVER commit
+.zscripts/.vps-creds
+.zscripts/vps_ssh.py
