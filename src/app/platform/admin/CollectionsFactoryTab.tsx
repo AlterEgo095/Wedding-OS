@@ -1,341 +1,386 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
-import Image from 'next/image'
-import { motion, AnimatePresence } from 'framer-motion'
-import {
-  Crown, Gem, Heart, Sparkles, Globe, Mail, Printer, Megaphone,
-  Check, ChevronRight, X, Rocket, Star, Layers, Factory, TrendingUp,
-} from 'lucide-react'
+import { useState, useEffect, useCallback } from 'react'
+import { Plus, Edit, Trash2, Rocket, Eye, Star, Layers } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Separator } from '@/components/ui/separator'
+import { Card } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle,
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog'
-import { DesignRenderer } from '@/components/collections/designs/DesignRenderer'
-import type { PremiumCollection, PackId, CollectionPack } from '@/lib/collections/types'
-import { countModules, countVariants, computeQualityScore } from '@/lib/collections/types'
-import { COLLECTIONS } from '@/lib/collections/catalog'
+import { toast } from 'sonner'
 
-// ─── Types ─────────────────────────────────────────────────────────────────────
-interface PublicCollection {
+// ══════════════════════════════════════════════════════════════════════════════
+// COLLECTIONS FACTORY TAB — Real CRUD (Slice 3)
+// ══════════════════════════════════════════════════════════════════════════════
+// Reads from /api/collections (DB source of truth). Supports:
+//   - Create new Collection (name, slug, category, theme colors/fonts/layout)
+//   - Edit Collection metadata + theme
+//   - Publish/Unpublish
+//   - Delete (soft — archive)
+//
+// After creation, a collection can be assigned to a wedding via the Designer tab
+// (which calls /api/collections/deploy).
+// ══════════════════════════════════════════════════════════════════════════════
+
+interface DBCollection {
   id: string
+  slug: string
   name: string
-  family: string
+  description: string | null
   category: string
   tier: string
-  tagline: string
-  description: string
-  coverImage: string
-  completionPct: number
+  status: string
   version: string
-  designer: string
-  publishedAt: string
-  priceFcfa: number
-  priceUsd: number
-  designSystem: PremiumCollection['designSystem']
-  stats: { packs: number; modules: number; variants: number; qualityScore: number }
+  isActive: boolean
+  isPublished: boolean
+  sortOrder: number
+  themeSeed: string
+  luxuryPreset: string | null
+  thumbnailUrl: string | null
+  createdAt: string
 }
 
-const PACK_ICONS: Record<PackId, React.ComponentType<{ className?: string }>> = {
-  website: Globe,
-  invitations: Mail,
-  print: Printer,
-  communication: Megaphone,
-  luxury: Sparkles,
+interface ThemeSeed {
+  primaryColor: string
+  accentColor: string
+  fontDisplay: string
+  fontBody: string
+  layout: string
 }
 
-// ══════════════════════════════════════════════════════════════════════════════
-// COLLECTIONS FACTORY TAB — platform admin view
-// ══════════════════════════════════════════════════════════════════════════════
+const LAYOUTS = [
+  { value: 'royal', label: 'Royal — 6 sections, luxe cérémoniel' },
+  { value: 'classic', label: 'Classique — 6 sections, élégant' },
+  { value: 'minimal', label: 'Minimal — 4 sections, éditorial' },
+  { value: 'destination', label: 'Destination — 6 sections, galerie en premier' },
+  { value: 'modern', label: 'Moderne — 5 sections, programme en premier' },
+]
+
+const CATEGORIES = ['LUXURY', 'CLASSIC', 'AFRICAN', 'MINIMAL', 'DESTINATION', 'CUSTOM']
 
 export function CollectionsFactoryTab() {
-  // The Factory view reads from the static in-code catalog (COLLECTIONS),
-  // NOT from /api/collections. The API returns flat DB metadata (CollectionPublic
-  // — slug, name, category, tier, themeSeed…), but the Factory needs the FULL
-  // PremiumCollection shape with packs[].modules[].variants[] + renderers to
-  // preview each design. The catalog is the single source of truth for the
-  // design system; the DB Collection rows only track deployment metadata.
-  const [selected, setSelected] = useState<PublicCollection | null>(null)
+  const [collections, setCollections] = useState<DBCollection[]>([])
+  const [loading, setLoading] = useState(true)
+  const [showCreate, setShowCreate] = useState(false)
+  const [editing, setEditing] = useState<DBCollection | null>(null)
 
-  const collections = useMemo<PublicCollection[]>(
-    () =>
-      COLLECTIONS.map((c) => ({
-        id: c.id,
-        name: c.name,
-        family: c.family,
-        category: c.category,
-        tier: c.tier,
-        tagline: c.tagline,
-        description: c.description,
-        coverImage: c.coverImage,
-        completionPct: c.completionPct,
-        version: c.version,
-        designer: c.designer,
-        publishedAt: c.publishedAt,
-        priceFcfa: c.priceFcfa,
-        priceUsd: c.priceUsd,
-        designSystem: c.designSystem,
-        stats: {
-          packs: c.packs.length,
-          modules: countModules(c),
-          variants: countVariants(c),
-          qualityScore: computeQualityScore(c),
-        },
-      })),
-    [],
-  )
-  const loading = false
+  // Form state
+  const [form, setForm] = useState({
+    name: '',
+    slug: '',
+    description: '',
+    category: 'CUSTOM',
+    primaryColor: '#D4AF37',
+    accentColor: '#1a1a2e',
+    fontDisplay: 'Cormorant Garamond',
+    fontBody: 'Inter',
+    layout: 'classic',
+  })
 
-  const totals = useMemo(() => ({
-    collections: collections.length,
-    variants: collections.reduce((s, c) => s + c.stats.variants, 0),
-    modules: collections.reduce((s, c) => s + c.stats.modules, 0),
-    avgQuality: collections.length
-      ? Math.round(collections.reduce((s, c) => s + c.stats.qualityScore, 0) / collections.length)
-      : 0,
-    revenue: collections.reduce((s, c) => s + c.priceFcfa, 0),
-  }), [collections])
+  const fetchCollections = useCallback(async () => {
+    try {
+      // Fetch ALL collections (including unpublished) — platform admin view
+      const res = await fetch('/api/platform/collections?includeDrafts=true')
+      if (!res.ok) throw new Error('Failed to fetch')
+      const data = await res.json()
+      setCollections(Array.isArray(data) ? data : data.collections || [])
+    } catch {
+      toast.error('Erreur lors du chargement des collections')
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => { fetchCollections() }, [fetchCollections])
+
+  const resetForm = () => {
+    setForm({
+      name: '', slug: '', description: '', category: 'CUSTOM',
+      primaryColor: '#D4AF37', accentColor: '#1a1a2e',
+      fontDisplay: 'Cormorant Garamond', fontBody: 'Inter', layout: 'classic',
+    })
+    setEditing(null)
+  }
+
+  const openCreate = () => {
+    resetForm()
+    setShowCreate(true)
+  }
+
+  const openEdit = (c: DBCollection) => {
+    const ts: ThemeSeed = JSON.parse(c.themeSeed || '{}')
+    setForm({
+      name: c.name,
+      slug: c.slug,
+      description: c.description || '',
+      category: c.category,
+      primaryColor: ts.primaryColor || '#D4AF37',
+      accentColor: ts.accentColor || '#1a1a2e',
+      fontDisplay: ts.fontDisplay || 'Cormorant Garamond',
+      fontBody: ts.fontBody || 'Inter',
+      layout: ts.layout || 'classic',
+    })
+    setEditing(c)
+    setShowCreate(true)
+  }
+
+  const saveCollection = async () => {
+    if (!form.name || !form.slug) {
+      toast.error('Nom et slug sont requis')
+      return
+    }
+
+    const themeSeed: ThemeSeed = {
+      primaryColor: form.primaryColor,
+      accentColor: form.accentColor,
+      fontDisplay: form.fontDisplay,
+      fontBody: form.fontBody,
+      layout: form.layout,
+    }
+
+    const body = {
+      name: form.name,
+      slug: form.slug,
+      description: form.description,
+      category: form.category,
+      themeSeed,
+    }
+
+    try {
+      if (editing) {
+        // Update existing
+        const res = await fetch(`/api/collections/${editing.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        })
+        if (!res.ok) {
+          const d = await res.json()
+          throw new Error(d.error || 'Failed')
+        }
+        toast.success('Collection mise à jour')
+      } else {
+        // Create new
+        const res = await fetch('/api/collections', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        })
+        if (!res.ok) {
+          const d = await res.json()
+          throw new Error(d.error || 'Failed')
+        }
+        toast.success('Collection créée')
+      }
+      setShowCreate(false)
+      resetForm()
+      fetchCollections()
+    } catch (e) {
+      toast.error('Erreur: ' + (e instanceof Error ? e.message : 'inconnue'))
+    }
+  }
+
+  const publishCollection = async (c: DBCollection) => {
+    try {
+      const res = await fetch(`/api/collections/${c.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isPublished: true, status: 'PUBLIE' }),
+      })
+      if (!res.ok) throw new Error('Failed')
+      toast.success(`${c.name} publiée`)
+      fetchCollections()
+    } catch {
+      toast.error('Erreur lors de la publication')
+    }
+  }
+
+  const deleteCollection = async (c: DBCollection) => {
+    if (!confirm(`Archiver la collection "${c.name}" ?`)) return
+    try {
+      const res = await fetch(`/api/collections/${c.id}`, { method: 'DELETE' })
+      if (!res.ok) {
+        const d = await res.json()
+        throw new Error(d.error || 'Failed')
+      }
+      toast.success(`${c.name} archivée`)
+      fetchCollections()
+    } catch (e) {
+      toast.error('Erreur: ' + (e instanceof Error ? e.message : 'inconnue'))
+    }
+  }
+
+  if (loading) return <div className="p-8 text-center text-muted-foreground">Chargement…</div>
 
   return (
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-bold font-display tracking-wide flex items-center gap-2 gold-gradient">
-            <Factory className="size-6" />
-            Premium Collection Factory
+          <h2 className="text-2xl font-serif flex items-center gap-2">
+            <Layers className="w-6 h-6" /> Collection Factory
           </h2>
           <p className="text-sm text-muted-foreground mt-1">
-            Catalogue des Collections Premium prêtes à déployer. Phase 6 — production de contenu.
+            Créez et gérez des Collections depuis l'interface — aucune modification de code
           </p>
         </div>
-        <Badge variant="outline" className="border-gold/40 text-gold bg-gold/10">
-          Phase 6
-        </Badge>
-      </div>
-
-      {/* Factory metrics */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-        <Card className="border-gold/20">
-          <CardContent className="p-4">
-            <div className="flex items-center gap-2 text-[10px] uppercase tracking-wider text-muted-foreground mb-1">
-              <Layers size={11} /> Collections
-            </div>
-            <p className="text-2xl font-bold gold-gradient">{totals.collections}</p>
-          </CardContent>
-        </Card>
-        <Card className="border-gold/20">
-          <CardContent className="p-4">
-            <div className="flex items-center gap-2 text-[10px] uppercase tracking-wider text-muted-foreground mb-1">
-              <Globe size={11} /> Modules
-            </div>
-            <p className="text-2xl font-bold gold-gradient">{totals.modules}</p>
-          </CardContent>
-        </Card>
-        <Card className="border-gold/20">
-          <CardContent className="p-4">
-            <div className="flex items-center gap-2 text-[10px] uppercase tracking-wider text-muted-foreground mb-1">
-              <Sparkles size={11} /> Variantes
-            </div>
-            <p className="text-2xl font-bold gold-gradient">{totals.variants}</p>
-          </CardContent>
-        </Card>
-        <Card className="border-gold/20">
-          <CardContent className="p-4">
-            <div className="flex items-center gap-2 text-[10px] uppercase tracking-wider text-muted-foreground mb-1">
-              <TrendingUp size={11} /> Qualité moyenne
-            </div>
-            <p className="text-2xl font-bold gold-gradient">{totals.avgQuality}%</p>
-          </CardContent>
-        </Card>
-        <Card className="border-gold/20">
-          <CardContent className="p-4">
-            <div className="flex items-center gap-2 text-[10px] uppercase tracking-wider text-muted-foreground mb-1">
-              <Crown size={11} /> Valeur catalogue
-            </div>
-            <p className="text-2xl font-bold gold-gradient">{(totals.revenue / 1000).toFixed(0)}k</p>
-            <p className="text-[9px] text-muted-foreground">FCFA cumulé</p>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Reference banner — Royal Gold */}
-      {!loading && collections[0] && (
-        <Card className="border-gold/40 bg-gradient-to-br from-gold/5 to-transparent overflow-hidden">
-          <CardContent className="p-5 flex items-center gap-4">
-            <div className="w-14 h-14 rounded-xl bg-gold/15 flex items-center justify-center flex-shrink-0">
-              <Crown className="size-7 text-gold" />
-            </div>
-            <div className="flex-1">
-              <p className="text-[10px] uppercase tracking-widest text-gold-light mb-0.5">Collection de référence</p>
-              <p className="font-serif text-lg font-bold text-foreground">{collections[0].name} — 100% complet</p>
-              <p className="text-xs text-muted-foreground">Toutes les variantes sont produites et opérationnelles. Sert de modèle pour les autres Collections.</p>
-            </div>
-            <Button size="sm" onClick={() => setSelected(collections[0])} className="bg-gold text-white hover:bg-gold-dark gap-1">
-              Voir <ChevronRight size={14} />
-            </Button>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Catalog grid */}
-      {loading ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {[1, 2, 3, 4, 5, 6].map((i) => (
-            <Card key={i} className="border-gold/10">
-              <div className="aspect-video shimmer rounded-t-lg" />
-              <CardContent className="p-4 space-y-2">
-                <div className="h-3 w-1/3 rounded shimmer" />
-                <div className="h-4 w-2/3 rounded shimmer" />
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {collections.map((c) => (
-            <FactoryCard key={c.id} c={c} onOpen={() => setSelected(c)} />
-          ))}
-        </div>
-      )}
-
-      {/* Detail modal */}
-      <Dialog open={!!selected} onOpenChange={(o) => !o && setSelected(null)}>
-        {selected && <FactoryDetail collection={selected} onClose={() => setSelected(null)} />}
-      </Dialog>
-    </div>
-  )
-}
-
-// ─── Factory Card ──────────────────────────────────────────────────────────────
-function FactoryCard({ c, onOpen }: { c: PublicCollection; onOpen: () => void }) {
-  const ds = c.designSystem
-  return (
-    <Card className="border-gold/20 hover:border-gold/50 transition-colors overflow-hidden cursor-pointer group" onClick={onOpen}>
-      <div className="relative aspect-video overflow-hidden" style={{ background: ds.background }}>
-        {c.coverImage ? (
-          <Image src={c.coverImage} alt={c.name} fill className="object-cover group-hover:scale-105 transition-transform duration-500" unoptimized />
-        ) : (
-          <div className="absolute inset-0 flex items-center justify-center">
-            <Crown size={40} style={{ color: ds.primary }} className="opacity-40" />
-          </div>
-        )}
-        <div className="absolute inset-0 bg-gradient-to-t from-black/70 to-transparent" />
-        <div className="absolute bottom-0 p-3">
-          <p className="text-[9px] tracking-[0.3em] uppercase text-white/70">{c.family}</p>
-          <p className="font-serif text-lg font-bold text-white" style={{ fontFamily: ds.fontDisplay }}>{c.name}</p>
-        </div>
-        <div className="absolute top-2 right-2">
-          <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-black/60 backdrop-blur text-white flex items-center gap-1">
-            <Star size={8} className="text-gold" /> {c.completionPct}%
-          </span>
-        </div>
-      </div>
-      <CardContent className="p-3 space-y-2">
-        <div className="flex items-center justify-between text-[10px] text-muted-foreground">
-          <span>{c.stats.modules} modules · {c.stats.variants} variantes</span>
-          <span className="font-bold text-gold">{c.priceFcfa.toLocaleString('fr-FR')} F</span>
-        </div>
-        <div className="h-1 rounded-full bg-muted overflow-hidden">
-          <div className="h-full bg-gradient-to-r from-gold to-gold-dark" style={{ width: `${c.completionPct}%` }} />
-        </div>
-      </CardContent>
-    </Card>
-  )
-}
-
-// ─── Factory Detail ────────────────────────────────────────────────────────────
-function FactoryDetail({ collection, onClose }: { collection: PublicCollection; onClose: () => void }) {
-  const [activePack, setActivePack] = useState<PackId>('website')
-  // Look up the full PremiumCollection (with packs/modules/variants) directly
-  // from the in-code catalog — no API call needed. The catalog is client-safe
-  // (imports only types) and is the source of truth for the design system.
-  const fullCollection = useMemo<PremiumCollection | null>(
-    () => COLLECTIONS.find((c) => c.id === collection.id) ?? null,
-    [collection.id],
-  )
-
-  const ds = collection.designSystem
-  const pack = fullCollection?.packs.find((p) => p.id === activePack)
-
-  return (
-    <DialogContent className="max-w-5xl max-h-[92vh] overflow-hidden flex flex-col p-0 gap-0" style={{ background: ds.background, border: `1px solid ${ds.primary}40` }}>
-      {/* Header */}
-      <div className="p-5 pb-3 relative" style={{ background: `linear-gradient(135deg, ${ds.surface}, ${ds.background})`, borderBottom: `1px solid ${ds.primary}30` }}>
-        <button onClick={onClose} className="absolute top-4 right-4 w-8 h-8 rounded-full flex items-center justify-center" style={{ background: `${ds.primary}20`, color: ds.text }}>
-          <X size={16} />
-        </button>
-        <div className="flex items-start gap-4 pr-10">
-          <div className="w-16 h-16 rounded-lg overflow-hidden flex-shrink-0 relative" style={{ border: `1px solid ${ds.primary}40` }}>
-            {collection.coverImage && <Image src={collection.coverImage} alt={collection.name} fill className="object-cover" unoptimized />}
-          </div>
-          <div className="flex-1">
-            <h2 className="font-serif text-2xl font-bold" style={{ color: ds.text, fontFamily: ds.fontDisplay }}>{collection.name}</h2>
-            <p className="text-xs" style={{ color: ds.textMuted }}>{collection.description}</p>
-            <div className="flex flex-wrap gap-3 mt-2 text-[10px]" style={{ color: ds.textMuted }}>
-              <span>{collection.stats.packs} packs</span>
-              <span>{collection.stats.modules} modules</span>
-              <span>{collection.stats.variants} variantes</span>
-              <span style={{ color: ds.primary }}>Qualité {collection.stats.qualityScore}%</span>
-              <span>v{collection.version}</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Pack tabs */}
-      <div className="px-5 py-2 flex gap-1.5 overflow-x-auto" style={{ borderBottom: `1px solid ${ds.primary}20`, background: ds.background }}>
-        {fullCollection?.packs.map((p) => {
-          const Icon = PACK_ICONS[p.id]
-          const active = activePack === p.id
-          return (
-            <button key={p.id} onClick={() => setActivePack(p.id)} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded text-[11px] font-semibold whitespace-nowrap" style={{
-              background: active ? ds.primary : 'transparent',
-              color: active ? ds.background : ds.textMuted,
-              border: `1px solid ${active ? ds.primary : `${ds.primary}30`}`,
-            }}>
-              <Icon className="size-3" /> {p.name} <span className="opacity-60">({p.modules.length})</span>
-            </button>
-          )
-        })}
-      </div>
-
-      {/* Modules */}
-      <div className="flex-1 overflow-y-auto p-5 space-y-3" style={{ background: ds.background }}>
-        {pack?.modules.map((m) => {
-          const v = m.variants[0]
-          return (
-            <div key={m.id} className="rounded-lg overflow-hidden" style={{ background: ds.surface, border: `1px solid ${ds.primary}25` }}>
-              <div className="p-2.5 flex items-center gap-3">
-                <div className="w-7 h-7 rounded flex items-center justify-center flex-shrink-0" style={{ background: `${ds.primary}20` }}>
-                  <Sparkles size={12} style={{ color: ds.primary }} />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <p className="text-xs font-semibold" style={{ color: ds.text }}>{m.name}</p>
-                    {m.required && <span className="text-[8px] px-1 py-0.5 rounded font-bold uppercase" style={{ background: `${ds.primary}25`, color: ds.primary }}>Requis</span>}
-                  </div>
-                  <p className="text-[10px]" style={{ color: ds.textMuted }}>{v?.name} · {m.variants.length} variante(s)</p>
-                </div>
-              </div>
-              <div className="px-2.5 pb-2.5">
-                <DesignRenderer renderer={v?.renderer || ''} ds={ds} />
-              </div>
-            </div>
-          )
-        })}
-      </div>
-
-      {/* Footer */}
-      <div className="p-3 flex items-center justify-between" style={{ background: ds.surface, borderTop: `1px solid ${ds.primary}30` }}>
-        <p className="text-xs font-bold" style={{ color: ds.primary }}>{collection.priceFcfa.toLocaleString('fr-FR')} FCFA</p>
-        <Button size="sm" className="gap-1.5" style={{ background: ds.primary, color: ds.background }}>
-          <Rocket size={13} /> Déployer sur un mariage
+        <Button onClick={openCreate}>
+          <Plus className="w-4 h-4 mr-1" /> Nouvelle Collection
         </Button>
       </div>
-    </DialogContent>
+
+      {/* Collections grid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {collections.map(c => {
+          const ts: ThemeSeed = JSON.parse(c.themeSeed || '{}')
+          return (
+            <Card key={c.id} className="p-4 space-y-3">
+              {/* Preview swatch */}
+              <div
+                className="w-full h-24 rounded-lg flex items-center justify-center"
+                style={{
+                  background: `linear-gradient(135deg, ${ts.primaryColor || '#ccc'}, ${ts.accentColor || '#333'})`,
+                }}
+              >
+                <span className="text-white font-serif text-lg drop-shadow-lg" style={{ fontFamily: ts.fontDisplay }}>
+                  {c.name}
+                </span>
+              </div>
+
+              {/* Info */}
+              <div className="space-y-1">
+                <div className="flex items-center justify-between">
+                  <h3 className="font-medium text-sm">{c.name}</h3>
+                  <Badge variant="outline" className="text-xs">{c.category}</Badge>
+                </div>
+                <p className="text-xs text-muted-foreground">/{c.slug} · v{c.version}</p>
+                <p className="text-xs text-muted-foreground">
+                  Layout: {ts.layout || 'classic'} · {ts.primaryColor}
+                </p>
+              </div>
+
+              {/* Status badges */}
+              <div className="flex gap-1 flex-wrap">
+                {c.isPublished ? (
+                  <Badge className="bg-green-100 text-green-800 text-xs">Publiée</Badge>
+                ) : (
+                  <Badge className="bg-amber-100 text-amber-800 text-xs">Brouillon</Badge>
+                )}
+                <Badge variant="outline" className="text-xs">{c.status}</Badge>
+              </div>
+
+              {/* Actions */}
+              <div className="flex gap-1 pt-1">
+                <Button variant="outline" size="sm" className="flex-1" onClick={() => openEdit(c)}>
+                  <Edit className="w-3 h-3 mr-1" /> Éditer
+                </Button>
+                {!c.isPublished && (
+                  <Button variant="outline" size="sm" onClick={() => publishCollection(c)}>
+                    <Rocket className="w-3 h-3" />
+                  </Button>
+                )}
+                <Button variant="outline" size="sm" onClick={() => deleteCollection(c)}>
+                  <Trash2 className="w-3 h-3" />
+                </Button>
+              </div>
+            </Card>
+          )
+        })}
+      </div>
+
+      {collections.length === 0 && (
+        <div className="text-center py-12 text-muted-foreground">
+          <Star className="w-12 h-12 mx-auto mb-3 opacity-30" />
+          <p>Aucune collection. Créez la première !</p>
+        </div>
+      )}
+
+      {/* Create/Edit Dialog */}
+      <Dialog open={showCreate} onOpenChange={setShowCreate}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{editing ? 'Éditer la Collection' : 'Nouvelle Collection'}</DialogTitle>
+          </DialogHeader>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label>Nom</Label>
+              <Input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="Royal Sapphire" />
+            </div>
+            <div>
+              <Label>Slug</Label>
+              <Input value={form.slug} onChange={e => setForm({ ...form, slug: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '-') })} placeholder="royal-sapphire" />
+            </div>
+            <div className="col-span-2">
+              <Label>Description</Label>
+              <Textarea value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} rows={2} />
+            </div>
+            <div>
+              <Label>Catégorie</Label>
+              <Select value={form.category} onValueChange={v => setForm({ ...form, category: v })}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {CATEGORIES.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Layout (structure de page)</Label>
+              <Select value={form.layout} onValueChange={v => setForm({ ...form, layout: v })}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {LAYOUTS.map(l => <SelectItem key={l.value} value={l.value}>{l.label}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Couleur primaire</Label>
+              <div className="flex gap-2">
+                <Input type="color" value={form.primaryColor} onChange={e => setForm({ ...form, primaryColor: e.target.value })} className="w-12 h-10 p-1" />
+                <Input value={form.primaryColor} onChange={e => setForm({ ...form, primaryColor: e.target.value })} />
+              </div>
+            </div>
+            <div>
+              <Label>Couleur d'accent</Label>
+              <div className="flex gap-2">
+                <Input type="color" value={form.accentColor} onChange={e => setForm({ ...form, accentColor: e.target.value })} className="w-12 h-10 p-1" />
+                <Input value={form.accentColor} onChange={e => setForm({ ...form, accentColor: e.target.value })} />
+              </div>
+            </div>
+            <div>
+              <Label>Police d'affichage</Label>
+              <Input value={form.fontDisplay} onChange={e => setForm({ ...form, fontDisplay: e.target.value })} />
+            </div>
+            <div>
+              <Label>Police de corps</Label>
+              <Input value={form.fontBody} onChange={e => setForm({ ...form, fontBody: e.target.value })} />
+            </div>
+          </div>
+
+          {/* Preview */}
+          <div className="rounded-lg p-4 text-center" style={{
+            background: `linear-gradient(135deg, ${form.primaryColor}, ${form.accentColor})`,
+          }}>
+            <span className="text-white text-xl" style={{ fontFamily: form.fontDisplay }}>
+              {form.name || 'Aperçu'}
+            </span>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setShowCreate(false); resetForm() }}>
+              Annuler
+            </Button>
+            <Button onClick={saveCollection}>
+              {editing ? 'Mettre à jour' : 'Créer'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
   )
 }
