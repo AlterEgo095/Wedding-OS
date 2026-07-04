@@ -97,9 +97,26 @@ export const tenantScopedExtension = Prisma.defineExtension({
         }) {
           const ctx = getTenantContext();
 
-          // No tenant context — pass through unchanged (legacy compat).
+          // ─── FAIL-CLOSED (P0 multi-tenant security) ─────────────────────────
+          // If no tenant context is active, REJECT queries against tenant-scoped
+          // models. This is the core multi-tenant isolation guarantee: a route
+          // that forgets runWithTenant() must NOT silently query across all
+          // tenants.
+          //
+          // Platform-level operations (wedding CRUD, dashboard stats) that need
+          // cross-tenant access must use the explicit `unsafePlatformDb` client
+          // (see src/lib/db.ts), which is the raw Prisma client WITHOUT this
+          // extension. The `unsafePlatformDb` name makes cross-tenant access
+          // visible in code review.
           if (!ctx) {
-            return query(args);
+            throw new Error(
+              `TENANT_FAIL_CLOSED: Query against tenant-scoped model "${modelName}" ` +
+              `(${operation}) called without a tenant context. ` +
+              `Either wrap the calling code in runWithTenant(), or use ` +
+              `unsafePlatformDb (from @/lib/db) for legitimate cross-tenant ` +
+              `platform operations. ` +
+              `This is a security guard — see src/lib/prisma-extensions/tenant-scoped.ts.`
+            );
           }
 
           // Inject weddingId into WHERE clause for filter operations.
