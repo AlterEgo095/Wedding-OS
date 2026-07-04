@@ -102,7 +102,6 @@ export function DashboardSection({ onNavigate }: DashboardSectionProps) {
     // setData, setHealth) which triggers the react-hooks/set-state-in-effect
     // rule, but this is the canonical fetch-on-mount + fetch-on-deps-change
     // shape used throughout this codebase (see legacy UsersTab, AuditTab, etc).
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     load()
   }, [load])
 

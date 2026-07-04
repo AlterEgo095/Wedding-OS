@@ -20,6 +20,20 @@ export interface AuthUser {
   weddingId?: string | null
 }
 
+/**
+ * Command Center section identifiers — re-exported from the constants module
+ * (the canonical source, kept in sync with the NAV_GROUPS items array).
+ */
+export type { SectionId } from './constants'
+
+/**
+ * Authenticated fetch helper signature — wraps `fetch` with credentials and
+ * anti-CSRF headers. Implemented in the page shell and passed down to every
+ * section so they never call raw `fetch` against platform endpoints. Returns
+ * `null` on auth-expiry so the caller can short-circuit without throwing.
+ */
+export type FetchWithAuth = (url: string, options?: RequestInit) => Promise<Response | null>
+
 export interface Wedding {
   id: string
   slug: string

@@ -46,6 +46,13 @@ interface GuestPersonalSpaceProps {
   guest: GuestData
   settings: Settings
   onLogout: () => void
+  /** When true, the space renders inside the admin invitation previewer and
+   *  download/share actions that require a real guest session are suppressed. */
+  previewMode?: boolean
+  /** Resolved theme — used by the admin previewer to render the space exactly
+   *  as the guest will see it. Optional: absent in the live guest flow (the
+   *  space reads its own theme via the wedding context). */
+  theme?: unknown
 }
 
 function CategoryBadge({ catDisplay }: { catDisplay: CategoryDisplay }) {
