@@ -107,6 +107,22 @@ export async function PUT(
       const existing = await tenantDb.guest.findFirst({ where: { id } });
       if (!existing) return NextResponse.json({ error: 'Guest not found' }, { status: 404 });
 
+      // Slice 4: Table capacity enforcement — prevent over-capacity moves
+      if (tableId !== undefined && tableId && tableId !== existing.tableId) {
+        const targetTable = await tenantDb.table.findFirst({ where: { id: tableId } });
+        if (!targetTable) {
+          return NextResponse.json({ error: 'Table de destination introuvable' }, { status: 400 });
+        }
+        const currentGuestCount = await tenantDb.guest.count({ where: { tableId } });
+        const seatsRequested = (seats !== undefined ? seats : existing.seats) || 1;
+        if (currentGuestCount + seatsRequested > targetTable.capacity) {
+          return NextResponse.json(
+            { error: `Capacité dépassée: la table "${targetTable.name}" a ${targetTable.capacity} places, ${currentGuestCount} déjà occupées. Impossible d'ajouter ${seatsRequested} invité(s).` },
+            { status: 400 }
+          );
+        }
+      }
+
       const updateData: Record<string, unknown> = {};
       if (firstName !== undefined) updateData.firstName = firstName;
       if (lastName !== undefined) updateData.lastName = lastName;
