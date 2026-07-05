@@ -35,12 +35,13 @@ export async function GET(request: NextRequest) {
     const denied = requirePlatformAdmin(user);
     if (denied) return denied;
 
+    // Slice 3: Factory needs to see ALL collections (including drafts/unpublished)
+    const includeDrafts = request.nextUrl.searchParams.get('includeDrafts') === 'true';
+
     const rows = await db.collection.findMany({
-      where: {
-        isActive: true,
-        isPublished: true,
-        status: 'COMMERCIALISE',
-      },
+      where: includeDrafts
+        ? { isActive: true } // Factory: all active collections (published or not)
+        : { isActive: true, isPublished: true, status: 'COMMERCIALISE' }, // Onboarding: only commercialized
       include: {
         variants: { orderBy: { code: 'asc' } },
       },
@@ -56,6 +57,10 @@ export async function GET(request: NextRequest) {
       category: c.category,
       tier: c.tier,
       sortOrder: c.sortOrder,
+      status: c.status,
+      version: c.version,
+      isActive: c.isActive,
+      isPublished: c.isPublished,
       themeSeed: JSON.parse(c.themeSeed),
       luxuryPreset: c.luxuryPreset ? JSON.parse(c.luxuryPreset) : null,
       variants: c.variants.map((v) => ({
