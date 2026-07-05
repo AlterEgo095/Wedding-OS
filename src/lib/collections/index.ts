@@ -19,6 +19,11 @@
 import { db } from '@/lib/db'
 import { themeToPenpotTokens, parsePenpotUrl } from '@/lib/penpot/config'
 import type { Plan } from '@/lib/types'
+// Slice 1 (manifest-driven renderer): applyCollection must create a
+// WeddingCollectionBinding so resolveWeddingManifest() reads a real manifest
+// instead of falling back to createDefaultManifest(). Without this import +
+// the binding upsert below, all weddings render with the same default sections.
+import { generateManifest } from '@/lib/wedding/manifest'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -1030,18 +1035,48 @@ export async function applyCollection(params: {
     },
   })
 
-  // Link the wedding to the Collection + Variant
+  // Link the wedding to the Collection + Variant + Version
   await db.wedding.update({
     where: { id: weddingId },
-    data: { collectionId: collection.id, variantId: variant.id },
+    data: { collectionId: collection.id, variantId: variant.id, collectionVersion: collection.version },
   })
+
+  // ── Slice 1: generate + persist the manifest as a WeddingCollectionBinding ──
+  // This is the CRITICAL link in the existential chain:
+  //   Collection → generateManifest() → WeddingCollectionBinding.manifest
+  //   → resolveWeddingManifest() → SectionRenderer → public experience
+  // Without this binding, resolveWeddingManifest() falls back to
+  // createDefaultManifest() and ALL weddings render with the same default
+  // section tree — defeating the entire Collection system.
+  const manifest = await generateManifest(collection.id, variant.id)
+  if (manifest) {
+    const manifestJson = JSON.stringify(manifest)
+    await db.weddingCollectionBinding.upsert({
+      where: { weddingId },
+      update: {
+        collectionId: collection.id,
+        collectionVersion: collection.version,
+        manifest: manifestJson,
+        draftManifest: null, // clear any pending draft on re-apply
+        status: 'DEPLOYED',
+        deployedAt: new Date(),
+      },
+      create: {
+        weddingId,
+        collectionId: collection.id,
+        collectionVersion: collection.version,
+        manifest: manifestJson,
+        status: 'DEPLOYED',
+      },
+    })
+  }
 
   // Audit log (existing AuditLog model — unchanged)
   await db.auditLog.create({
     data: {
       weddingId,
       action: 'APPLY_COLLECTION',
-      details: `Collection "${collection.slug}" variant "${variant.code}" applied`,
+      details: `Collection "${collection.slug}" variant "${variant.code}" applied + manifest deployed`,
     },
   })
 
