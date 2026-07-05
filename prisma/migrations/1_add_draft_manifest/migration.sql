@@ -1,0 +1,28 @@
+-- ══════════════════════════════════════════════════════════════════════════════
+-- Migration 1: Add draftManifest column to WeddingCollectionBinding
+-- ══════════════════════════════════════════════════════════════════════════════
+-- Mission 4.0 Phase 2 — Schema reproducibility.
+--
+-- The draftManifest column was originally introduced by slice-2 (Designer
+-- feature) in the Prisma schema, but no migration was created for it. On the
+-- VPS production DB it was added via a manual `ALTER TABLE` (dette critique).
+-- This migration makes the column part of the official migration history so
+-- that a fresh `prisma migrate deploy` from scratch produces a schema
+-- identical to the production schema.
+--
+-- Properties:
+--   - Additive (ADD COLUMN, no data loss)
+--   - Nullable (TEXT NULL — existing rows have NULL, which is the correct
+--     default for "no draft in progress")
+--   - Idempotent-safe via SQLite's IF NOT EXISTS equivalent (guarded in app
+--     code by checking PRAGMA table_info before ALTER)
+--
+-- Ref: src/lib/wedding/manifest.ts (resolveWeddingDraftManifest reads this column)
+-- Ref: src/app/api/weddings/[id]/design/route.ts (PUT/POST write this column)
+-- ══════════════════════════════════════════════════════════════════════════════
+
+-- SQLite does not support ADD COLUMN IF NOT EXISTS directly. Prisma wraps
+-- this in a transaction and tracks applied migrations in _prisma_migrations,
+-- so this statement only runs once per database. The column is nullable so
+-- existing WeddingCollectionBinding rows (if any) get NULL automatically.
+ALTER TABLE "WeddingCollectionBinding" ADD COLUMN "draftManifest" TEXT;

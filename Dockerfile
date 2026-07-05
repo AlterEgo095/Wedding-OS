@@ -54,19 +54,34 @@ RUN npm run build
 # ─── Stage 3: Production Runner ───────────────────────────────────────────────
 FROM node:20-alpine AS runner
 
+# Mission 4.0 Phase 1 — Runtime provenance.
+# DEPLOY_SHA is the git commit this image was built from. It is passed as a
+# build arg by docker-compose.prod.yml (which reads it via `git rev-parse HEAD`
+# at build time) and baked into the image as an ENV var so /api/health can
+# return it. This closes the provenance chain:
+#   GitHub main SHA == VPS HEAD == container deploySha
+# Default "unknown" when the arg is not provided (e.g. local docker build).
+ARG DEPLOY_SHA=unknown
+ARG BUILD_TIME=unknown
+
 # ── Metadata Labels ──
-LABEL maintainer="Josué & Hornella Wedding Team"
-LABEL description="Josué & Hornella Wedding Platform — Next.js 16 Production Image"
-LABEL version="1.0.0"
+LABEL maintainer="AENEWS Wedding OS Team"
+LABEL description="AENEWS Wedding OS — Next.js 16 Production Image"
+LABEL version="2.0.0-rc"
 LABEL org.opencontainers.image.title="wedding-platform"
-LABEL org.opencontainers.image.description="Wedding guest management & invitation platform"
-LABEL org.opencontainers.image.vendor="Josué & Hornella"
+LABEL org.opencontainers.image.description="Multi-tenant wedding/event management platform"
+LABEL org.opencontainers.image.vendor="AENEWS"
+LABEL org.opencontainers.image.revision="${DEPLOY_SHA}"
+LABEL org.opencontainers.image.created="${BUILD_TIME}"
 
 # ── Production Environment ──
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
+# Bake the provenance vars into the runtime environment.
+ENV DEPLOY_SHA=${DEPLOY_SHA}
+ENV BUILD_TIME=${BUILD_TIME}
 
 WORKDIR /app
 
