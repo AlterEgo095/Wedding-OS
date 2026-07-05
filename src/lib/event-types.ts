@@ -94,7 +94,7 @@ export const EVENT_TERMINOLOGY: Record<EventType, EventTerminology> = {
   },
   CORPORATE: {
     type: 'CORPORATE',
-    eventLabel: 'Événement d'entreprise',
+    eventLabel: "Événement d'entreprise",
     hostLabels: ['Entreprise', 'Responsable'],
     guestTerm: 'Collaborateur',
     guestTermPlural: 'Collaborateurs',
