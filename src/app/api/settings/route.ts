@@ -1,4 +1,4 @@
-export const revalidate = 60; // P2-PERF-10: ISR — public settings cached 60s, invalidated on mutation
+export const dynamic = 'force-dynamic'; // §11: ISR caused cross-tenant data leaks — must re-render per request
 import { NextRequest, NextResponse } from 'next/server';
 import { revalidatePath } from 'next/cache';
 import { db, tenantDb } from '@/lib/db';

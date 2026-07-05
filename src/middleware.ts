@@ -1,45 +1,76 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { verifyCsrf, CSRF_EXEMPT_PATHS } from '@/lib/csrf'
+import { isCustomDomainRequest } from '@/lib/custom-domains'
 
 // Middleware handles:
-//   1. HTTPS redirect in production (defense-in-depth; reverse proxy may
-//      already enforce this, but we want to be safe if misconfigured).
-//   2. Security headers (CSP, X-Frame-Options, etc.) as defense-in-depth
-//      alongside the ones set in next.config.ts.
-//   3. CSRF verification (P1-SEC-7) on state-changing requests (POST/PUT/
-//      DELETE/PATCH) to /api/** — except the unauthenticated entry points
-//      listed in CSRF_EXEMPT_PATHS (login, csrf-token issue, guest auth,
-//      password reset request/confirm, etc.).
+//   1. HTTPS redirect in production (defense-in-depth)
+//   2. Security headers (CSP, X-Frame-Options, etc.)
+//   3. CSRF verification on state-changing requests
+//   4. Custom domain routing (Slice 5): host → /w/[slug] rewrite
 //
-// Admin API routes handle their own authentication via getAuthUser() from
-// @/lib/auth. The previous implementation used jsonwebtoken in Edge Runtime
-// which is not supported, causing all admin API calls to fail with 401.
-// Authentication is now handled directly in each API route for reliability.
+// Custom domain routing:
+//   When a request arrives on a non-platform domain (e.g. mariage-sophie.fr),
+//   the middleware resolves it to a wedding slug via /api/resolve-domain and
+//   rewrites the URL to /w/[slug]. The result is cached for 5 minutes to
+//   avoid repeated API calls.
 
 const CSRF_PROTECTED_METHODS = new Set(['POST', 'PUT', 'DELETE', 'PATCH']);
 
-/**
- * Returns true if `pathname` is exempt from CSRF verification.
- *
- * Exact-match against CSRF_EXEMPT_PATHS (no glob support — explicit list
- * keeps the security surface auditable). Adding a new exempt path requires
- * a code change, which is intentional friction.
- */
+// ─── Custom domain cache (Slice 5) ────────────────────────────────────────────
+const domainCache = new Map<string, { slug: string | null; expires: number }>();
+const DOMAIN_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+async function resolveCustomDomain(host: string): Promise<string | null> {
+  const normalized = host.toLowerCase().trim().split(':')[0];
+  if (!isCustomDomainRequest(normalized)) return null;
+
+  // Check cache
+  const cached = domainCache.get(normalized);
+  if (cached && cached.expires > Date.now()) return cached.slug;
+
+  // Fetch from resolve-domain API
+  try {
+    const res = await fetch(`${process.env.NEXTAUTH_URL || 'http://localhost:3000'}/api/resolve-domain?host=${encodeURIComponent(normalized)}`);
+    const data = await res.json();
+    const slug = data.slug ?? null;
+    domainCache.set(normalized, { slug, expires: Date.now() + DOMAIN_CACHE_TTL });
+    return slug;
+  } catch {
+    return null;
+  }
+}
+
 function isCsrfExempt(pathname: string): boolean {
-  // Strip trailing slash for normalisation (e.g. /api/csrf-token/ → /api/csrf-token).
   const normalized = pathname.endsWith('/') && pathname.length > 1
     ? pathname.slice(0, -1)
     : pathname;
   return CSRF_EXEMPT_PATHS.includes(normalized);
 }
 
-export function middleware(request: NextRequest) {
+export async function middleware(request: NextRequest) {
   const url = request.nextUrl;
 
+  // ─── Slice 5: Custom domain routing ──────────────────────────────────────
+  // Only for non-API, non-static routes on custom domains
+  const host = request.headers.get('host') || '';
+  if (
+    isCustomDomainRequest(host) &&
+    !url.pathname.startsWith('/api/') &&
+    !url.pathname.startsWith('/_next/') &&
+    !url.pathname.startsWith('/w/') && // don't double-rewrite
+    !url.pathname.startsWith('/platform')
+  ) {
+    const slug = await resolveCustomDomain(host);
+    if (slug) {
+      // Rewrite to /w/[slug] + preserve the path
+      const rewriteUrl = new URL(`/w/${slug}${url.pathname === '/' ? '' : url.pathname}`, url);
+      rewriteUrl.search = url.search;
+      return NextResponse.rewrite(rewriteUrl);
+    }
+  }
+
   // ─── P1-SEC-10: HTTPS redirect in production ──────────────────────────────
-  // Only redirect if the request is plain HTTP AND we're in production AND
-  // the reverse proxy hasn't already set X-Forwarded-Proto: https.
   if (
     process.env.NODE_ENV === 'production' &&
     url.protocol === 'http:' &&
@@ -51,11 +82,6 @@ export function middleware(request: NextRequest) {
   }
 
   // ─── P1-SEC-7: CSRF verification on state-changing API requests ──────────
-  // Double-submit cookie pattern: the client must send BOTH a `csrf_token`
-  // cookie AND a matching `X-CSRF-Token` header. The cookie is set by
-  // /api/csrf-token (or by the login response). Cross-site attackers can't
-  // read the cookie value (sameSite=strict + cross-origin) so they can't
-  // forge the matching header.
   if (
     url.pathname.startsWith('/api/') &&
     CSRF_PROTECTED_METHODS.has(request.method.toUpperCase()) &&
@@ -72,9 +98,6 @@ export function middleware(request: NextRequest) {
   const response = NextResponse.next();
 
   // ─── Defense-in-depth security headers ───────────────────────────────────
-  // These complement the headers set in next.config.ts (which apply to all
-  // routes). Repeating them here ensures they're present even if the
-  // next.config.ts headers config is accidentally removed.
   response.headers.set('X-Content-Type-Options', 'nosniff');
   response.headers.set('X-Frame-Options', 'SAMEORIGIN');
   response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');

@@ -626,7 +626,8 @@ model WeddingCollectionBinding {
   wedding           Wedding  @relation(fields: [weddingId], references: [id], onDelete: Cascade)
   collectionId      String   // references Collection.id (kept as plain string for history snapshot)
   collectionVersion String   // e.g. "1.0.0"
-  manifest          String   // JSON: full deployment manifest (variant selections, design system, etc.)
+  manifest          String   // JSON: PUBLISHED manifest (read by public renderer /w/[slug])
+  draftManifest     String?  // JSON: DRAFT manifest (edited by Designer, not visible publicly until published)
   status            String   @default("DEPLOYED") // DEPLOYED, ARCHIVED, ROLLED_BACK
   deployedAt        DateTime @default(now())
   deployedByUserId  String?  // AdminUser.id of the deployer (null for system/migration)
