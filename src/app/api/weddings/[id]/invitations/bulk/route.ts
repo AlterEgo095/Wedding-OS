@@ -116,6 +116,7 @@ export async function POST(
           } else {
             invitation = await tenantDb.invitation.create({
               data: {
+                weddingId: ctx.weddingId,
                 guestId: guest.id,
                 channel: 'QR',
                 recipient: guest.email || guest.phone || `${weddingSlug}/${guest.invitationCode}`,
