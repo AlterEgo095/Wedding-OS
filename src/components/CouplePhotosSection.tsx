@@ -8,7 +8,7 @@ import { Heart, Camera, Sparkles, X, ChevronLeft, ChevronRight } from 'lucide-re
 const PHOTOS = [
   {
     src: '/photos/couple-portrait.jpeg',
-    alt: 'Josué & Hornella — Portrait de mariage',
+    alt: 'Portrait de mariage',
     caption: 'Ensemble pour la vie',
     sub: 'Un amour qui brille comme l\'or',
     span: 'col-span-1 row-span-2',
@@ -16,7 +16,7 @@ const PHOTOS = [
   },
   {
     src: '/photos/couple-bridge.jpeg',
-    alt: 'Josué & Hornella — Sur le pont',
+    alt: 'Sur le pont',
     caption: 'Un moment de grâce',
     sub: 'Enlacés sous le ciel',
     span: 'col-span-1 row-span-1',
@@ -24,7 +24,7 @@ const PHOTOS = [
   },
   {
     src: '/photos/couple-bouquet.jpeg',
-    alt: 'Josué & Hornella — Avec le bouquet',
+    alt: 'Avec le bouquet',
     caption: 'La promesse d\'un toujours',
     sub: 'Chaque fleur raconte notre histoire',
     span: 'col-span-1 row-span-1',
@@ -32,7 +32,7 @@ const PHOTOS = [
   },
   {
     src: '/photos/couple-signing.jpeg',
-    alt: 'Josué & Hornella — Signature du mariage',
+    alt: 'Signature du mariage',
     caption: 'Le oui qui change tout',
     sub: 'L\'engagement scellé',
     span: 'col-span-1 row-span-1',
@@ -40,7 +40,7 @@ const PHOTOS = [
   },
   {
     src: '/photos/couple-venue.jpeg',
-    alt: 'Josué & Hornella — Au venue',
+    alt: 'Au venue',
     caption: 'Notre plus beau jour',
     sub: 'Là où tout a commencé',
     span: 'col-span-1 row-span-2',
@@ -48,7 +48,7 @@ const PHOTOS = [
   },
   {
     src: '/photos/couple-seated.jpeg',
-    alt: 'Josué & Hornella — Assis ensemble',
+    alt: 'Assis ensemble',
     caption: 'Complicité infinie',
     sub: 'Chaque instant est un trésor',
     span: 'col-span-1 row-span-1',
@@ -56,7 +56,7 @@ const PHOTOS = [
   },
   {
     src: '/photos/couple-storefront.jpeg',
-    alt: 'Josué & Hornella — Devant la vitrine',
+    alt: 'Devant la vitrine',
     caption: 'Bonheur partagé',
     sub: 'Le monde sourit avec nous',
     span: 'col-span-1 row-span-1',
@@ -116,7 +116,7 @@ export default function CouplePhotosSection() {
             </span>
           </motion.div>
           <h2 className="font-serif text-4xl md:text-6xl font-bold mb-4">
-            <span className="gold-gradient">Josué & Hornella</span>
+            <span className="gold-gradient">Notre Galerie</span>
           </h2>
           <p className="font-display text-lg md:text-xl text-muted-foreground max-w-xl mx-auto">
             L&apos;amour en images, chaque moment capturé avec tendresse
@@ -185,7 +185,7 @@ export default function CouplePhotosSection() {
         >
           <div className="h-px w-20 sm:w-32 bg-gradient-to-r from-transparent to-gold/40" />
           <div className="w-2 h-2 rounded-full bg-gold/40 animate-pulse-gold" />
-          <span className="font-display text-xs tracking-[0.3em] uppercase text-gold/50 font-bold">J & H</span>
+          <span className="font-display text-xs tracking-[0.3em] uppercase text-gold/50 font-bold">&#10084;</span>
           <div className="w-2 h-2 rounded-full bg-rose-gold/40 animate-pulse-gold" />
           <div className="h-px w-20 sm:w-32 bg-gradient-to-l from-transparent to-gold/40" />
         </motion.div>

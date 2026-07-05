@@ -191,7 +191,7 @@ export default function GuestSearch({ initialCode }: { initialCode?: string }) {
             >
               <img
                 src="/uploads/couple-photo-1.jpeg"
-                alt="Josué"
+                alt="Marié"
                 className="w-full h-full object-cover"
               />
             </motion.div>
@@ -213,7 +213,7 @@ export default function GuestSearch({ initialCode }: { initialCode?: string }) {
             >
               <img
                 src="/uploads/couple-photo-2.jpeg"
-                alt="Hornella"
+                alt="Mariée"
                 className="w-full h-full object-cover"
               />
             </motion.div>
@@ -223,7 +223,7 @@ export default function GuestSearch({ initialCode }: { initialCode?: string }) {
             <span className="gold-gradient">Retrouvez Votre Place</span>
           </h2>
           <p className="font-display text-lg text-muted-foreground max-w-xl mx-auto">
-            Josué &amp; Hornella vous invitent — Recherchez votre invitation par nom, prénom ou code
+            Vous êtes invités — Recherchez votre invitation par nom, prénom ou code
           </p>
           <div className="section-divider max-w-xs mx-auto mt-6">
             <span className="flourish text-sm">✦</span>
@@ -434,7 +434,7 @@ export default function GuestSearch({ initialCode }: { initialCode?: string }) {
                 <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-full overflow-hidden gold-border shadow-lg shadow-gold/10">
                   <img
                     src="/uploads/couple-photo-1.jpeg"
-                    alt="Josué"
+                    alt="Marié"
                     className="w-full h-full object-cover"
                   />
                 </div>
@@ -447,7 +447,7 @@ export default function GuestSearch({ initialCode }: { initialCode?: string }) {
                 <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-full overflow-hidden gold-border shadow-lg shadow-gold/10">
                   <img
                     src="/uploads/couple-photo-2.jpeg"
-                    alt="Hornella"
+                    alt="Mariée"
                     className="w-full h-full object-cover"
                   />
                 </div>
@@ -461,7 +461,7 @@ export default function GuestSearch({ initialCode }: { initialCode?: string }) {
                 Recherchez votre nom pour retrouver votre invitation.
               </p>
               <p className="font-display text-sm text-muted-foreground/70 mb-6">
-                Josué &amp; Hornella sont impatients de célébrer ce moment avec vous
+                Les mariés sont impatients de célébrer ce moment avec vous
               </p>
 
               {/* Decorative elements */}

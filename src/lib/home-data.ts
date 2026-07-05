@@ -129,15 +129,24 @@ export async function getHomeData(): Promise<HomeInitialData> {
     const settingsMap: Record<string, string> = {}
     for (const s of settingsRows) settingsMap[s.key] = s.value
 
-    // Build featured stats
+    // Build featured stats — MULTI-TENANT: never hardcode a couple's name.
+    // Resolution chain: settings → wedding row → generic platform label.
+    // The previous code fell back to 'Josué & Hornella' / a fixed date / a
+    // fixed hashtag, which violated the multi-tenant principle (the showcase
+    // homepage would display a specific couple's identity when the default
+    // wedding had no settings). Now it degrades to a neutral platform label.
+    const rawCoupleLabel =
+      `${settingsMap[SETTING_KEYS.GROOM_NAME] || ''} & ${settingsMap[SETTING_KEYS.BRIDE_NAME] || ''}`.trim()
     const coupleLabel =
-      `${settingsMap[SETTING_KEYS.GROOM_NAME] || ''} & ${settingsMap[SETTING_KEYS.BRIDE_NAME] || ''}`.trim() ||
-      defaultWedding.coupleLabel ||
-      'Josué & Hornella'
+      rawCoupleLabel || defaultWedding.coupleLabel || 'Mariage Premium'
     const weddingDate =
-      settingsMap[SETTING_KEYS.SITE_SUBTITLE] || 'Vendredi 26 Juin 2026'
-    const hashtag =
-      settingsMap[SETTING_KEYS.HASHTAG] || '#JosueEtHornella2026'
+      settingsMap[SETTING_KEYS.SITE_SUBTITLE] ||
+      (defaultWedding.weddingDate
+        ? new Date(defaultWedding.weddingDate).toLocaleDateString('fr-FR', {
+            weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
+          })
+        : 'Date à confirmer')
+    const hashtag = settingsMap[SETTING_KEYS.HASHTAG] || ''
     const venueName =
       settingsMap[SETTING_KEYS.VENUE_NAME] || defaultWedding.venueName || ''
 

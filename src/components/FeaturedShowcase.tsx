@@ -6,11 +6,12 @@ import Link from 'next/link'
 import { ArrowRight, Heart, Sparkles, Check } from 'lucide-react'
 
 /**
- * FeaturedShowcase — "Le mariage de Josué & Hornella"
+ * FeaturedShowcase — Platform proof-of-concept section.
  *
- * This is the advertisement / proof-of-concept section. It presents the
- * default wedding (Josué & Hornella) as a LIVE demonstration of everything
- * the platform can do. The user is literally looking at the proof.
+ * Presents the default/featured wedding as a LIVE demonstration of everything
+ * the platform can do. The couple's identity comes from server-resolved
+ * `stats` props (never hardcoded) — this section is tenant-agnostic and works
+ * for whichever wedding is currently flagged `isDefault`.
  *
  * Design:
  *   - Split layout: cinematic couple photo on one side, narrative + stats on the other
@@ -37,15 +38,21 @@ interface Props {
   stats: FeaturedStats | null
 }
 
+// Neutral fallback used only when the server passes NO stats at all
+// (e.g. during initial SSR with no default wedding). These values are
+// intentionally generic — they NEVER reference a specific couple, date, or
+// venue, in accordance with the multi-tenant principle (Vision §préambule:
+// "Aucun nom de couple, aucune date, aucun lieu... ne doit être structurellement
+// codé en dur pour ce mariage").
 const DEFAULT_STATS: FeaturedStats = {
-  guestCount: 150,
-  photoCount: 24,
-  timelineEventCount: 12,
-  collectionCount: 5,
-  coupleLabel: 'Josué & Hornella',
-  weddingDate: 'Vendredi 26 Juin 2026',
-  hashtag: '#JosueEtHornella2026',
-  venueName: 'Salle Polyvalente – Grand Palais Kinshasa',
+  guestCount: 0,
+  photoCount: 0,
+  timelineEventCount: 0,
+  collectionCount: 0,
+  coupleLabel: 'Mariage Premium',
+  weddingDate: 'Date à confirmer',
+  hashtag: '',
+  venueName: '',
 }
 
 function StatCard({
@@ -81,7 +88,7 @@ export default function FeaturedShowcase({ stats }: Props) {
   return (
     <section
       id="demonstration"
-      aria-label="Démonstration — le mariage de Josué et Hornella"
+      aria-label="Démonstration — un mariage propulsé par la plateforme"
       className="relative py-20 md:py-32 px-4 sm:px-6 lg:px-8 overflow-hidden"
     >
       {/* ═══ Backdrop ═══ */}
@@ -201,8 +208,8 @@ export default function FeaturedShowcase({ stats }: Props) {
                 Chaque élément que vous voyez sur cette page — l'invitation
                 digitale, la galerie luxueuse, le programme interactif, la
                 musique d'ambiance, la recherche d'invité par nom — est propulsé
-                par notre plateforme. <strong className="text-foreground">Josué &amp; Hornella</strong> ont
-                confié leur mariage à notre technologie. À vous de choisir
+                par notre plateforme. <strong className="text-foreground">{s.coupleLabel}</strong>{' '}
+                confie son mariage à notre technologie. À vous de choisir
                 la vôtre parmi nos collections signature.
               </p>
 
