@@ -217,7 +217,7 @@ export default function HeroSection() {
           transition={{ duration: 1.4, delay: 0.7, ease: "easeOut" }}
           className="relative flex items-center justify-center mb-10 sm:mb-14"
         >
-          {/* Josué Photo - Elegant Rounded Frame */}
+          {/* Groom Photo - Elegant Rounded Frame */}
           <motion.div
             initial={{ opacity: 0, x: -30 }}
             animate={{ opacity: 1, x: 0 }}
@@ -272,7 +272,7 @@ export default function HeroSection() {
             <Sparkles className="absolute -bottom-1 -left-2 size-3 text-rose-gold/50 animate-pulse" style={{ animationDelay: '0.5s' }} />
           </motion.div>
 
-          {/* Hornella Photo - Elegant Rounded Frame */}
+          {/* Bride Photo - Elegant Rounded Frame */}
           <motion.div
             initial={{ opacity: 0, x: 30 }}
             animate={{ opacity: 1, x: 0 }}

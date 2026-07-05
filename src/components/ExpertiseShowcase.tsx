@@ -197,8 +197,7 @@ export default function ExpertiseShowcase() {
         <div className="mt-14 md:mt-20 text-center">
           <div className="inline-flex flex-col sm:flex-row items-center gap-4 px-8 py-6 rounded-2xl glass-card gold-border">
             <p className="font-serif text-lg md:text-xl text-foreground">
-              Ces capacités sont déjà déployées sur le mariage de
-              <span className="gold-gradient font-bold"> Josué &amp; Hornella</span>.
+              Ces capacités sont déjà déployées sur nos mariages premium.
             </p>
             <Link
               href="#accueil"

@@ -160,13 +160,17 @@ export default function GuestPersonalSpace({ guest, settings, onLogout }: GuestP
 
   // Build the share URL with the wedding's slug prefix (/w/{slug}) so the
   // invitation link works for ANY wedding — not just the default one.
-  // Previously this was `?invite=...` (root path), which only worked for the
-  // default wedding. Non-default weddings need /w/{slug}/invite/{token} so
-  // the tenant context resolves correctly.
+  // MULTI-TENANT FIX: previously this special-cased 'josue-hornella' (the
+  // legacy default) and skipped the /w/{slug} prefix for it. That was a
+  // leak of the default wedding's identity into the generic share-URL
+  // builder. Now EVERY wedding — including the default — uses its own
+  // /w/{slug} prefix, which is the correct tenant-scoped URL. The default
+  // wedding is still reachable at "/" via the root page; this only affects
+  // the share-link format, which is now uniform across all tenants.
   const weddingSlug = guest.weddingSlug || ''
   const encryptedLinkUrl = guest.encryptedLink
     ? `${typeof window !== 'undefined' ? window.location.origin : ''}${
-        weddingSlug && weddingSlug !== 'josue-hornella' ? `/w/${weddingSlug}` : ''
+        weddingSlug ? `/w/${weddingSlug}` : ''
       }/?invite=${guest.encryptedLink}`
     : ''
 
