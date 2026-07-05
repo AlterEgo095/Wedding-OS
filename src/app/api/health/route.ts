@@ -70,7 +70,17 @@ export async function GET() {
       status: allOk ? "ok" : "degraded",
       timestamp: new Date().toISOString(),
       uptimeSec: Math.round(process.uptime()),
+      // Mission 4.0 Phase 1 — Runtime provenance.
+      // DEPLOY_SHA + BUILD_TIME are injected at Docker build time (see
+      // Dockerfile ARG + ENV). This lets /api/health prove which git commit
+      // the running container was built from, enabling:
+      //   GitHub main SHA == VPS HEAD == container deploySha
+      // When DEPLOY_SHA is absent (local dev), we fall back to "dev-local"
+      // so the field is always present + meaningful.
       version: process.env.npm_package_version || "unknown",
+      deploySha: process.env.DEPLOY_SHA || "dev-local",
+      buildTime: process.env.BUILD_TIME || null,
+      environment: process.env.NODE_ENV || "development",
       env: process.env.NODE_ENV || "development",
       checks,
       totalLatencyMs: Date.now() - startedAt,

@@ -1,14 +1,22 @@
 # ══════════════════════════════════════════════════════════════════════════════
-# docker-compose.prod.yml — Josué & Hornella Wedding Platform
+# docker-compose.prod.yml — AENEWS Wedding OS
 # Production deployment for heureuxmariage.aenews.net
 # Port: 3080 (localhost only) — Nginx reverse proxy handles SSL/public access
 # ══════════════════════════════════════════════════════════════════════════════
 
+# Mission 4.0 Phase 1 — Runtime provenance.
+# These host env vars are injected by the deploy script (scripts/deploy-production.sh)
+# via: export DEPLOY_SHA=$(git rev-parse HEAD); export BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+# docker-compose reads them from the host environment and passes them as build args.
+# If absent, the Dockerfile defaults to "unknown" (graceful degradation).
 services:
   app:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        DEPLOY_SHA: ${DEPLOY_SHA:-unknown}
+        BUILD_TIME: ${BUILD_TIME:-unknown}
     container_name: wedding-app
     restart: unless-stopped
     env_file:

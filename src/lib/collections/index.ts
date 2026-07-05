@@ -983,7 +983,13 @@ export async function applyCollection(params: {
   }
 
   // Idempotency check: if the wedding already has this exact Collection + Variant
-  // + no couple override, and the theme already matches, it's a no-op.
+  // + no couple override, and the theme already matches, AND a binding exists,
+  // it's a no-op.
+  // Mission 4.0 Phase 3 — the binding existence check is CRITICAL. Without it,
+  // re-applying the same Collection to a wedding that was created BEFORE the
+  // manifest engine (or whose binding was lost) would short-circuit and NEVER
+  // create the missing binding — leaving the public renderer disconnected from
+  // the Collection system. Now: if the binding is absent, we always proceed.
   const wedding = await db.wedding.findUnique({
     where: { id: weddingId },
     select: { collectionId: true, variantId: true },
@@ -991,6 +997,10 @@ export async function applyCollection(params: {
   const currentTheme = await db.theme.findUnique({
     where: { weddingId },
     select: { primaryColor: true, accentColor: true, fontDisplay: true, fontBody: true, layout: true },
+  })
+  const existingBinding = await db.weddingCollectionBinding.findUnique({
+    where: { weddingId },
+    select: { id: true, manifest: true },
   })
   const sameTarget =
     wedding?.collectionId === collection.id &&
@@ -1003,7 +1013,7 @@ export async function applyCollection(params: {
     currentTheme.fontDisplay === finalTheme.fontDisplay &&
     currentTheme.fontBody === finalTheme.fontBody &&
     currentTheme.layout === finalTheme.layout
-  if (sameTarget && sameTheme) {
+  if (sameTarget && sameTheme && existingBinding) {
     return {
       success: true,
       theme: finalTheme,
