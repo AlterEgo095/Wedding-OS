@@ -21,6 +21,12 @@ services:
     restart: unless-stopped
     env_file:
       - .env
+    # Mission 4.0 Phase 1 — runtime provenance (redundant with build args for
+    # reliability: if Docker caches the build-arg layer, the runtime env var
+    # still ensures the container reports the correct deploySha).
+    environment:
+      DEPLOY_SHA: ${DEPLOY_SHA:-unknown}
+      BUILD_TIME: ${BUILD_TIME:-unknown}
     ports:
       - "127.0.0.1:3080:3000"
     volumes:
