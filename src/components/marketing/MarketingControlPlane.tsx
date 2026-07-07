@@ -285,6 +285,15 @@ function WeddingRow({ wedding, saving, onUpdate }: {
   saving: boolean
   onUpdate: (updates: Record<string, unknown>) => void
 }) {
+  const [orderInput, setOrderInput] = useState<string>(wedding.portfolioOrder?.toString() ?? '')
+  const [orderDirty, setOrderDirty] = useState(false)
+
+  // Sync local input when the prop changes (e.g. after fetch)
+  useEffect(() => {
+    setOrderInput(wedding.portfolioOrder?.toString() ?? '')
+    setOrderDirty(false)
+  }, [wedding.portfolioOrder])
+
   const typeIcon = wedding.portfolioType === 'CLIENT' ? Building2 :
     wedding.portfolioType === 'DEMO' ? FlaskConical : Lock
 
@@ -366,18 +375,34 @@ function WeddingRow({ wedding, saving, onUpdate }: {
           <Star className={`size-3 mr-1 ${wedding.featured ? 'fill-amber-500' : ''}`} />
         </Button>
 
-        {/* Order */}
-        <Input
-          type="number"
-          value={wedding.portfolioOrder ?? ''}
-          onChange={(e) => {
-            const val = e.target.value ? parseInt(e.target.value) : null
-            onUpdate({ portfolioOrder: val })
-          }}
-          className="w-16 h-8 text-center text-xs"
-          placeholder="—"
-          title="Ordre d'affichage"
-        />
+        {/* Order — explicit Save button (Mission 4.9 UX hardening) */}
+        <div className="flex items-center gap-1">
+          <Input
+            type="number"
+            value={orderInput}
+            onChange={(e) => {
+              setOrderInput(e.target.value)
+              setOrderDirty(true)
+            }}
+            className="w-16 h-8 text-center text-xs"
+            placeholder="—"
+            title="Ordre d'affichage (cliquer Enregistrer)"
+          />
+          {orderDirty && (
+            <Button
+              size="sm"
+              onClick={() => {
+                const val = orderInput.trim() ? parseInt(orderInput) : null
+                onUpdate({ portfolioOrder: val })
+                setOrderDirty(false)
+              }}
+              disabled={saving}
+              className="h-8 px-2 text-[10px] bg-gold text-white"
+            >
+              {saving ? <Loader2 className="size-3 animate-spin" /> : 'OK'}
+            </Button>
+          )}
+        </div>
 
         {/* Preview link */}
         <a
@@ -401,6 +426,14 @@ function CollectionRow({ collection, saving, onUpdate }: {
   saving: boolean
   onUpdate: (updates: Record<string, unknown>) => void
 }) {
+  const [orderInput, setOrderInput] = useState<string>(collection.sortOrder?.toString() ?? '0')
+  const [orderDirty, setOrderDirty] = useState(false)
+
+  useEffect(() => {
+    setOrderInput(collection.sortOrder?.toString() ?? '0')
+    setOrderDirty(false)
+  }, [collection.sortOrder])
+
   // Parse themeSeed for color display
   let primaryColor = '#D4AF37'
   let layout = 'classic'
@@ -475,14 +508,32 @@ function CollectionRow({ collection, saving, onUpdate }: {
           <option value="ARCHIVE">Archivé</option>
         </select>
 
-        {/* Order */}
-        <Input
-          type="number"
-          value={collection.sortOrder}
-          onChange={(e) => onUpdate({ sortOrder: parseInt(e.target.value) || 0 })}
-          className="w-16 h-8 text-center text-xs"
-          title="Ordre d'affichage"
-        />
+        {/* Order — explicit Save button (Mission 4.9 UX hardening) */}
+        <div className="flex items-center gap-1">
+          <Input
+            type="number"
+            value={orderInput}
+            onChange={(e) => {
+              setOrderInput(e.target.value)
+              setOrderDirty(true)
+            }}
+            className="w-16 h-8 text-center text-xs"
+            title="Ordre d'affichage (cliquer Enregistrer)"
+          />
+          {orderDirty && (
+            <Button
+              size="sm"
+              onClick={() => {
+                onUpdate({ sortOrder: parseInt(orderInput) || 0 })
+                setOrderDirty(false)
+              }}
+              disabled={saving}
+              className="h-8 px-2 text-[10px] bg-gold text-white"
+            >
+              {saving ? <Loader2 className="size-3 animate-spin" /> : 'OK'}
+            </Button>
+          )}
+        </div>
       </div>
     </div>
   )
