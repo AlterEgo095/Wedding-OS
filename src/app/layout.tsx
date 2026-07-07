@@ -45,44 +45,45 @@ export const viewport: Viewport = {
 // (e.g. for the homepage, 404, platform/admin routes) and must NEVER leak a
 // specific couple's identity into another wedding's social shares.
 export const metadata: Metadata = {
-  metadataBase: new URL(process.env.NEXT_PUBLIC_BASE_URL || "https://x16kp4ft4d40-d.space-z.ai"),
-  title: "Heureux Mariage — Votre invitation digitale",
+  metadataBase: new URL(process.env.NEXT_PUBLIC_BASE_URL || "https://heureuxmariage.aenews.net"),
+  title: "AENEWS Event Experience Platform — Créez vos expériences événementielles",
   description:
-    "Découvrez les détails du mariage, trouvez votre table et partagez ce moment unique.",
+    "Plateforme numérique de création, personnalisation et déploiement d'expériences événementielles premium. Mariages, anniversaires, conférences — sans coder.",
   keywords: [
-    "mariage",
-    "invitation",
-    "wedding",
-    "table",
-    "RSVP",
-    "heureux mariage",
+    "plateforme événementielle",
+    "mariage numérique",
+    "invitation digitale",
+    "collections premium",
+    "designer événement",
+    "multi-tenant",
+    "AENEWS",
   ],
-  authors: [{ name: "Heureux Mariage" }],
+  authors: [{ name: "AENEWS" }],
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
-    title: "Heureux Mariage",
+    title: "AENEWS Platform",
   },
   openGraph: {
-    title: "Heureux Mariage",
-    description: "Votre invitation digitale de mariage.",
+    title: "AENEWS Event Experience Platform",
+    description: "Créez, personnalisez et déployez des expériences événementielles numériques premium.",
     type: "website",
     locale: "fr_FR",
-    siteName: "Heureux Mariage",
+    siteName: "AENEWS Event Experience Platform",
     images: [
       {
         url: "/icons/icon-512x512.png",
         width: 512,
         height: 512,
-        alt: "Heureux Mariage",
+        alt: "AENEWS Event Experience Platform",
       },
     ],
   },
   twitter: {
     card: "summary_large_image",
-    title: "Heureux Mariage",
-    description: "Votre invitation digitale de mariage.",
+    title: "AENEWS Event Experience Platform",
+    description: "Créez, personnalisez et déployez des expériences événementielles numériques premium.",
     images: ["/icons/icon-512x512.png"],
   },
 };
