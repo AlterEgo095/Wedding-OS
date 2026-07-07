@@ -84,7 +84,7 @@ export async function PATCH(
       const current = await db.collection.findUnique({ where: { id: collectionId }, select: { sortOrder: true } });
       if (featured) {
         updateData.sortOrder = -1;
-      } else if (current?.sortOrder < 0) {
+      } else if (current && current.sortOrder < 0) {
         updateData.sortOrder = 0;
       }
     }
