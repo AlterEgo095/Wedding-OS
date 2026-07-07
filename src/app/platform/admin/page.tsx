@@ -74,6 +74,7 @@ import {
   Play,
   Archive,
   Copy,
+  Megaphone,
 } from 'lucide-react'
 
 import {
@@ -113,6 +114,7 @@ const OnboardingTab = dynamic(() => import('./OnboardingTab').then((m) => m.Onbo
 const CollectionsFactoryTab = dynamic(() => import('./CollectionsFactoryTab').then((m) => m.CollectionsFactoryTab))
 const ThemeCustomizer = dynamic(() => import('@/components/admin/ThemeCustomizer').then((m) => m.ThemeCustomizer), { ssr: false })
 const PenpotStudio = dynamic(() => import('@/components/penpot/PenpotStudio').then((m) => m.PenpotStudio), { ssr: false })
+const MarketingControlPlane = dynamic(() => import('@/components/marketing/MarketingControlPlane'), { ssr: false })
 
 // useSyncExternalStore subscribe placeholder — we only need the getServerSnapshot
 // vs getSnapshot split to detect "are we hydrated yet?" without triggering the
@@ -225,7 +227,7 @@ interface PaginatedUsers {
   limit: number
 }
 
-type TabId = 'dashboard' | 'weddings' | 'users' | 'audit' | 'billing' | 'onboarding' | 'appearance' | 'studio' | 'collections'
+type TabId = 'dashboard' | 'weddings' | 'users' | 'audit' | 'billing' | 'onboarding' | 'appearance' | 'studio' | 'collections' | 'marketing'
 
 interface NavItem {
   id: TabId
@@ -243,6 +245,7 @@ const NAV_ITEMS: NavItem[] = [
   { id: 'appearance', label: 'Apparence', icon: Palette },
   { id: 'studio', label: 'Studio Penpot', icon: PenTool },
   { id: 'collections', label: 'Collections Premium', icon: Crown },
+  { id: 'marketing', label: 'Marketing OS', icon: Megaphone },
 ]
 
 const WEDDING_STATUSES = WEDDING_STATUS_LIST
@@ -366,6 +369,20 @@ function maybeCsrfHeader(method: string): Record<string, string> {
   if (!match) return {}
   const token = match.split('=').slice(1).join('=')
   return token ? { 'X-CSRF-Token': token } : {}
+}
+
+/**
+ * Get the raw CSRF token string (for passing to child components that need
+ * to make their own fetch calls with CSRF protection). Reads from the
+ * csrf_token cookie (httpOnly=false).
+ */
+function getCsrfToken(): string {
+  if (typeof document === 'undefined') return ''
+  const match = document.cookie
+    .split('; ')
+    .find((row) => row.startsWith('csrf_token='))
+  if (!match) return ''
+  return match.split('=').slice(1).join('=')
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -2221,6 +2238,8 @@ export default function PlatformAdminPage() {
         return <PenpotStudio />
       case 'collections':
         return <CollectionsFactoryTab />
+      case 'marketing':
+        return <MarketingControlPlane csrfToken={getCsrfToken()} />
       default:
         return <DashboardTab fetchWithAuth={fetchWithAuth} />
     }

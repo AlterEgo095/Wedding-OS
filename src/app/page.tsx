@@ -50,16 +50,14 @@ export const revalidate = 60 // ISR — refresh marketing data every 60s
 // applies, giving near-instant responses with fresh data every minute.
 export const dynamic = 'force-dynamic'
 
-// ─── Portfolio governance (Mission 4.7 Phase 4) ──────────────────────────────
-// Classification is now DB-backed (portfolioVisible, portfolioType,
-// caseStudyEnabled, portfolioOrder, featured) — NO MORE slug-based deduction.
-// The admin controls visibility/type/order via /api/platform/weddings/[id]/portfolio.
+// ─── Portfolio governance (Mission 4.8 Phase 2 — slug fallbacks REMOVED) ───────
+// Classification is now 100% DB-backed (portfolioType, portfolioVisible,
+// caseStudyEnabled, portfolioOrder, featured). NO MORE slug-based deduction.
+// The admin controls visibility/type/order via the Marketing Control Plane
+// at /platform/admin → Marketing tab → PATCH /api/platform/weddings/[id]/portfolio.
 //
-// Transitional fallback: if portfolioType is null (not yet set by admin),
-// we deduce from slug ONLY for the Three Worlds (known demos). Everything
-// else defaults to CLIENT. This fallback is removed once the admin sets
-// explicit governance on all events.
-const KNOWN_DEMO_SLUGS = new Set(['world-a-royal', 'world-b-minimal', 'world-c-immersive'])
+// If portfolioType is null (not yet set by admin), the event is treated as
+// INTERNAL (hidden from public) — fail-closed, no guessing.
 
 interface PortfolioEvent {
   slug: string
@@ -124,8 +122,10 @@ async function getPortfolioEvents(): Promise<PortfolioEvent[]> {
           layout = seed.layout || null
         } catch { /* ignore parse error */ }
       }
-      // Determine portfolioType: explicit DB value, or transitional fallback
-      const portfolioType = w.portfolioType || (KNOWN_DEMO_SLUGS.has(w.slug) ? 'DEMO' : 'CLIENT')
+      // Determine portfolioType: MUST be explicit in DB. If null, treat as
+      // INTERNAL (hidden from public) — fail-closed, no slug-based guessing.
+      const portfolioType = w.portfolioType
+      if (!portfolioType) return null // unclassified events are hidden
       // Determine visibility: explicit DB value, or default (visible if not INTERNAL)
       const visible = w.portfolioVisible !== null ? w.portfolioVisible : (portfolioType !== 'INTERNAL')
       // Skip case study (shown separately) and non-visible events
@@ -148,9 +148,10 @@ async function getPortfolioEvents(): Promise<PortfolioEvent[]> {
 }
 
 async function getCaseStudy() {
-  // Mission 4.7: case study is now governed by caseStudyEnabled flag.
-  // Fall back to josue-hornella if no wedding has the flag set (transitional).
-  let wedding = await db.wedding.findFirst({
+  // Mission 4.8: case study is governed SOLELY by caseStudyEnabled flag.
+  // NO fallback to josue-hornella. If no wedding has the flag, no case study
+  // is shown (the section is simply absent from the homepage).
+  const wedding = await db.wedding.findFirst({
     where: { caseStudyEnabled: true },
     select: {
       id: true,
@@ -167,26 +168,6 @@ async function getCaseStudy() {
       },
     },
   })
-  if (!wedding) {
-    // Transitional fallback: use josue-hornella if no case study is configured
-    wedding = await db.wedding.findUnique({
-      where: { slug: 'josue-hornella' },
-      select: {
-        id: true,
-        slug: true,
-        coupleLabel: true,
-        brideName: true,
-        groomName: true,
-        weddingDate: true,
-        venueName: true,
-        venueCity: true,
-        plan: true,
-        _count: {
-          select: { guests: true, tables: true, stories: true, timeline: true, media: true, settings: true },
-        },
-      },
-    })
-  }
   if (!wedding) return null
   // Get a few settings for the case study display
   const settings = await db.settings.findMany({
