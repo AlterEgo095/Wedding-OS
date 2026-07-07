@@ -83,6 +83,7 @@ export async function POST(request: NextRequest) {
           {
             status: 'REJECTED',
             reason: "Code d'invitation invalide ou introuvable pour ce mariage.",
+            message: "Code d'invitation invalide ou introuvable pour ce mariage.",
             code: normalizedCode,
           },
           { status: 404 }
