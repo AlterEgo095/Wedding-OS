@@ -44,6 +44,11 @@ import CommercialCTA from '@/components/marketing/CommercialCTA'
 import MarketingFooter from '@/components/marketing/MarketingFooter'
 
 export const revalidate = 60 // ISR — refresh marketing data every 60s
+// Mission 4.6: force dynamic rendering — the homepage fetches from DB at
+// request time (Collections, portfolio events, case study). Static prerender
+// would fail without DATABASE_URL at build time. ISR (revalidate=60) still
+// applies, giving near-instant responses with fresh data every minute.
+export const dynamic = 'force-dynamic'
 
 // ─── Portfolio classification ────────────────────────────────────────────────
 // Distinguish REAL_CLIENT events from DEMO events. Demo events are the
