@@ -34,6 +34,20 @@ model Wedding {
   updatedAt       DateTime      @updatedAt
   publishedAt     DateTime?
 
+  // ─── Mission 4.7 Phase 4 — Portfolio Governance ────────────────────────────
+  // Explicit DB-backed marketing governance. Replaces the implicit slug-based
+  // classification (DEMO_SLUGS set in page.tsx) with admin-controlled fields.
+  //   portfolioVisible: null = default (PUBLISHED non-default weddings visible)
+  //   portfolioType: CLIENT | DEMO | INTERNAL — null = transitional slug-based
+  //   portfolioOrder: explicit display order (null = sort by createdAt desc)
+  //   caseStudyEnabled: true = THE case study (typically josue-hornella)
+  //   featured: highlighted/sticky in portfolio
+  portfolioVisible   Boolean?
+  portfolioType      String? // CLIENT | DEMO | INTERNAL
+  portfolioOrder     Int?
+  caseStudyEnabled   Boolean   @default(false)
+  featured           Boolean   @default(false)
+
   // ─── Collection Engine (Phase 1 — additive, nullable for zero regression) ───
   // When a couple picks a Collection Product, the Wedding is linked to it so the
   // ThemeInjector + LuxuryVisualEngine hydrate from the Collection's seeds.

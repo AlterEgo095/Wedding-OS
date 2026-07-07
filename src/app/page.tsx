@@ -50,11 +50,16 @@ export const revalidate = 60 // ISR — refresh marketing data every 60s
 // applies, giving near-instant responses with fresh data every minute.
 export const dynamic = 'force-dynamic'
 
-// ─── Portfolio classification ────────────────────────────────────────────────
-// Distinguish REAL_CLIENT events from DEMO events. Demo events are the
-// Three Worlds proof-of-concept weddings (world-a-royal, world-b-minimal,
-// world-c-immersive). Real clients are everything else that is PUBLISHED.
-const DEMO_SLUGS = new Set(['world-a-royal', 'world-b-minimal', 'world-c-immersive'])
+// ─── Portfolio governance (Mission 4.7 Phase 4) ──────────────────────────────
+// Classification is now DB-backed (portfolioVisible, portfolioType,
+// caseStudyEnabled, portfolioOrder, featured) — NO MORE slug-based deduction.
+// The admin controls visibility/type/order via /api/platform/weddings/[id]/portfolio.
+//
+// Transitional fallback: if portfolioType is null (not yet set by admin),
+// we deduce from slug ONLY for the Three Worlds (known demos). Everything
+// else defaults to CLIENT. This fallback is removed once the admin sets
+// explicit governance on all events.
+const KNOWN_DEMO_SLUGS = new Set(['world-a-royal', 'world-b-minimal', 'world-c-immersive'])
 
 interface PortfolioEvent {
   slug: string
@@ -65,15 +70,21 @@ interface PortfolioEvent {
   layout: string | null
   weddingDate: Date | null
   venueCity: string | null
-  isRealClient: boolean
+  portfolioType: string // CLIENT | DEMO | INTERNAL
+  isRealClient: boolean // true when portfolioType === CLIENT (for backward compat)
   guestCount: number
 }
 
 async function getPortfolioEvents(): Promise<PortfolioEvent[]> {
+  // Fetch weddings that are explicitly visible OR have no governance set yet
+  // (transitional — default visible for PUBLISHED non-default weddings).
+  // INTERNAL events are hidden from the public portfolio.
   const weddings = await db.wedding.findMany({
     where: {
       status: 'PUBLISHED',
-      slug: { not: 'josue-hornella' }, // case study shown separately
+      isDefault: false,
+      // Visible if portfolioVisible is true OR (null AND not INTERNAL)
+      // We filter INTERNAL out in code to handle the null case.
     },
     select: {
       slug: true,
@@ -81,9 +92,14 @@ async function getPortfolioEvents(): Promise<PortfolioEvent[]> {
       collectionId: true,
       weddingDate: true,
       venueCity: true,
+      portfolioVisible: true,
+      portfolioType: true,
+      portfolioOrder: true,
+      caseStudyEnabled: true,
+      featured: true,
       _count: { select: { guests: true } },
     },
-    orderBy: { createdAt: 'desc' },
+    orderBy: [{ featured: 'desc' }, { portfolioOrder: 'asc' }, { createdAt: 'desc' }],
   })
 
   // Resolve collection info for each
@@ -96,36 +112,48 @@ async function getPortfolioEvents(): Promise<PortfolioEvent[]> {
     : []
   const collMap = new Map(collections.map((c) => [c.id, c]))
 
-  return weddings.map((w) => {
-    const coll = w.collectionId ? collMap.get(w.collectionId) : null
-    let primaryColor: string | null = null
-    let layout: string | null = null
-    if (coll?.themeSeed) {
-      try {
-        const seed = JSON.parse(coll.themeSeed)
-        primaryColor = seed.primaryColor || null
-        layout = seed.layout || null
-      } catch { /* ignore parse error */ }
-    }
-    return {
-      slug: w.slug,
-      coupleLabel: w.coupleLabel,
-      collectionSlug: coll?.slug || null,
-      collectionName: coll?.name || null,
-      collectionPrimaryColor: primaryColor,
-      layout,
-      weddingDate: w.weddingDate,
-      venueCity: w.venueCity,
-      isRealClient: !DEMO_SLUGS.has(w.slug),
-      guestCount: w._count.guests,
-    }
-  })
+  return weddings
+    .map((w) => {
+      const coll = w.collectionId ? collMap.get(w.collectionId) : null
+      let primaryColor: string | null = null
+      let layout: string | null = null
+      if (coll?.themeSeed) {
+        try {
+          const seed = JSON.parse(coll.themeSeed)
+          primaryColor = seed.primaryColor || null
+          layout = seed.layout || null
+        } catch { /* ignore parse error */ }
+      }
+      // Determine portfolioType: explicit DB value, or transitional fallback
+      const portfolioType = w.portfolioType || (KNOWN_DEMO_SLUGS.has(w.slug) ? 'DEMO' : 'CLIENT')
+      // Determine visibility: explicit DB value, or default (visible if not INTERNAL)
+      const visible = w.portfolioVisible !== null ? w.portfolioVisible : (portfolioType !== 'INTERNAL')
+      // Skip case study (shown separately) and non-visible events
+      if (w.caseStudyEnabled || !visible) return null
+      return {
+        slug: w.slug,
+        coupleLabel: w.coupleLabel,
+        collectionSlug: coll?.slug || null,
+        collectionName: coll?.name || null,
+        collectionPrimaryColor: primaryColor,
+        layout,
+        weddingDate: w.weddingDate,
+        venueCity: w.venueCity,
+        portfolioType,
+        isRealClient: portfolioType === 'CLIENT',
+        guestCount: w._count.guests,
+      }
+    })
+    .filter((e): e is PortfolioEvent => e !== null)
 }
 
 async function getCaseStudy() {
-  const wedding = await db.wedding.findUnique({
-    where: { slug: 'josue-hornella' },
+  // Mission 4.7: case study is now governed by caseStudyEnabled flag.
+  // Fall back to josue-hornella if no wedding has the flag set (transitional).
+  let wedding = await db.wedding.findFirst({
+    where: { caseStudyEnabled: true },
     select: {
+      id: true,
       slug: true,
       coupleLabel: true,
       brideName: true,
@@ -139,10 +167,30 @@ async function getCaseStudy() {
       },
     },
   })
+  if (!wedding) {
+    // Transitional fallback: use josue-hornella if no case study is configured
+    wedding = await db.wedding.findUnique({
+      where: { slug: 'josue-hornella' },
+      select: {
+        id: true,
+        slug: true,
+        coupleLabel: true,
+        brideName: true,
+        groomName: true,
+        weddingDate: true,
+        venueName: true,
+        venueCity: true,
+        plan: true,
+        _count: {
+          select: { guests: true, tables: true, stories: true, timeline: true, media: true, settings: true },
+        },
+      },
+    })
+  }
   if (!wedding) return null
   // Get a few settings for the case study display
   const settings = await db.settings.findMany({
-    where: { weddingId: (await db.wedding.findUnique({ where: { slug: 'josue-hornella' }, select: { id: true } }))!.id },
+    where: { weddingId: wedding.id },
     select: { key: true, value: true },
   })
   const settingsMap: Record<string, string> = {}
@@ -151,8 +199,18 @@ async function getCaseStudy() {
 }
 
 async function getCollections() {
+  // Mission 4.7 Phase 5 — Collection Publishing Governance.
+  // Only show Collections that are:
+  //   - isActive=true (catalog visibility flag)
+  //   - isPublished=true (deployability gate)
+  //   - status NOT IN (BROUILLON, EN_COURS, VALIDATION, ARCHIVE)
+  //     (DRAFT/pending Collections are never shown publicly; ARCHIVED is hidden)
   return db.collection.findMany({
-    where: { isActive: true, isPublished: true },
+    where: {
+      isActive: true,
+      isPublished: true,
+      status: { notIn: ['BROUILLON', 'EN_COURS', 'VALIDATION', 'ARCHIVE'] },
+    },
     select: {
       id: true,
       slug: true,
@@ -162,6 +220,7 @@ async function getCollections() {
       category: true,
       tier: true,
       themeSeed: true,
+      sortOrder: true,
     },
     orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
     take: 12,
