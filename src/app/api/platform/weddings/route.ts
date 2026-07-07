@@ -55,6 +55,13 @@ const WEDDING_LIST_SELECT = {
   createdAt: true,
   updatedAt: true,
   publishedAt: true,
+  // Mission 4.8 — portfolio governance fields (needed by Marketing Control Plane UI)
+  portfolioVisible: true,
+  portfolioType: true,
+  portfolioOrder: true,
+  caseStudyEnabled: true,
+  featured: true,
+  collectionId: true,
   _count: {
     select: {
       guests: true,
