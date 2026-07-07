@@ -31,8 +31,10 @@ import { Separator } from '@/components/ui/separator';
 import {
   LayoutDashboard, Users, Grid3X3, Image as ImageIcon, Clock, Shield, Settings, LogOut,
   X, Menu, FileSearch, Music, Sparkles, Crown, Loader2, Palette, PenTool, LayoutTemplate, BookOpen,
+  Mail, QrCode,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import dynamic from 'next/dynamic';
 import { isPlatformAdmin } from '@/lib/types';
 import { useWedding } from '../wedding-context';
 
@@ -50,6 +52,9 @@ import { ThemeCustomizer } from '@/components/admin/ThemeCustomizer';
 import { DesignerTab } from '@/components/admin/DesignerTab';
 import { CoupleStoryManager } from '@/components/admin/CoupleStoryManager';
 import { PenpotStudio } from '@/components/penpot/PenpotStudio';
+// Mission 4.9 — wire InvitationManager + CheckInManager into the wedding admin
+const InvitationManager = dynamic(() => import('@/components/admin/InvitationManager'), { ssr: false })
+const CheckInManager = dynamic(() => import('@/components/admin/CheckInManager'), { ssr: false })
 
 interface AuthUser {
   id: string
@@ -59,7 +64,7 @@ interface AuthUser {
   weddingId?: string | null
 }
 
-type TabId = 'dashboard' | 'designer' | 'guests' | 'tables' | 'media' | 'music' | 'timeline' | 'story' | 'users' | 'settings' | 'access-logs' | 'appearance' | 'theme' | 'studio'
+type TabId = 'dashboard' | 'designer' | 'guests' | 'invitations' | 'check-in' | 'tables' | 'media' | 'music' | 'timeline' | 'story' | 'users' | 'settings' | 'access-logs' | 'appearance' | 'theme' | 'studio'
 
 interface NavItem {
   id: TabId
@@ -72,6 +77,8 @@ const NAV_ITEMS: NavItem[] = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { id: 'designer', label: 'Designer', icon: LayoutTemplate },
   { id: 'guests', label: 'Invités', icon: Users },
+  { id: 'invitations', label: 'Invitations', icon: Mail },
+  { id: 'check-in', label: 'Réception', icon: QrCode },
   { id: 'tables', label: 'Tables', icon: Grid3X3 },
   { id: 'access-logs', label: 'Accès', icon: FileSearch },
   { id: 'media', label: 'Médias', icon: ImageIcon },
@@ -91,6 +98,13 @@ const NAV_ITEMS: NavItem[] = [
 // derived from the wedding context (`wedding.coupleLabel`), so we never
 // leak the default wedding's couple identity into another tenant's admin.
 const COUPLE_PHOTO_FALLBACK = '/couple-hero.jpeg'
+
+/** Read CSRF token from cookie (for child components that make their own fetch calls) */
+function getCsrfTokenFromCookie(): string {
+  if (typeof document === 'undefined') return ''
+  const match = document.cookie.split('; ').find((row) => row.startsWith('csrf_token='))
+  return match ? match.split('=').slice(1).join('=') : ''
+}
 
 export default function PerWeddingAdminPage() {
   const params = useParams<{ slug: string }>()
@@ -285,6 +299,10 @@ export default function PerWeddingAdminPage() {
         return <UserManager token={token} userRole={user?.role || ''} onSessionExpired={handleSessionExpired} />
       case 'access-logs':
         return <AccessLogManager token={token} onSessionExpired={handleSessionExpired} />
+      case 'invitations':
+        return <InvitationManager weddingId={wedding.id} weddingSlug={slug} csrfToken={getCsrfTokenFromCookie()} />
+      case 'check-in':
+        return <CheckInManager weddingSlug={slug} csrfToken={getCsrfTokenFromCookie()} />
       case 'settings':
         return <SettingsManager token={token} userRole={user?.role || ''} onSessionExpired={handleSessionExpired} />
       case 'theme':
