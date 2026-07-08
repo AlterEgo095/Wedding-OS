@@ -34,6 +34,11 @@ model Wedding {
   updatedAt       DateTime      @updatedAt
   publishedAt     DateTime?
 
+  // ─── Mission 5.0 — Commercial OS ────────────────────────────────────────────
+  customerId        String?          // link to Customer (nullable, additive)
+  customer          Customer?        @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  commercialStatus  String?          // LEAD/PENDING_PAYMENT/PAID/IN_PRODUCTION/READY/LIVE/COMPLETED/ARCHIVED/CANCELLED
+
   // ─── Mission 4.7 Phase 4 — Portfolio Governance ────────────────────────────
   // Explicit DB-backed marketing governance. Replaces the implicit slug-based
   // classification (DEMO_SLUGS set in page.tsx) with admin-controlled fields.
@@ -79,6 +84,13 @@ model Wedding {
   usageCounters   UsageCounter[]
   invitations     Invitation[]
   invoices        Invoice[]
+  // Mission 5.0 — Commercial OS relations
+  customer        Customer?  @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  deals           Deal[]
+  orders          CommercialOrder[]
+  payments        Payment[]
+  entitlements    Entitlement[]
+  deliveryJobs    DeliveryJob[]
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -106,6 +118,8 @@ model AdminUser {
   authoredCollections Collection[] @relation("CollectionAuthor")
   // P1 — WeddingCollectionBinding deployments authored by this user.
   collectionBindings  WeddingCollectionBinding[]
+  // Mission 5.0 — payments verified by this admin
+  verifiedPayments    Payment[]
 
   // ── P1-SEC-8: TOTP-based 2FA for platform admins ─────────────────────────
   // twoFactorSecret: TOTP secret (encrypted-at-rest via encryptId/decryptId
@@ -252,6 +266,7 @@ model Guest {
   table               Table?         @relation(fields: [tableId], references: [id])
   sessions            GuestSession[]
   accessLogs          GuestAccessLog[]
+  deliveryJobs        DeliveryJob[]
 
   @@unique([weddingId, invitationCode]) // uniqueness within wedding only
   @@index([weddingId, status])
@@ -449,6 +464,8 @@ model Invitation {
   sentAt      DateTime?
   createdAt   DateTime @default(now())
 
+  deliveryJobs DeliveryJob[]
+
   @@index([weddingId, status])
 }
 
@@ -476,6 +493,8 @@ model Lead {
   convertedAt        DateTime?
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
+
+  deals              Deal[]   // Mission 5.0: inverse relation for Deal.leadId
 
   @@index([status])
   @@index([createdAt])
@@ -669,4 +688,176 @@ model PasswordResetToken {
   createdAt DateTime  @default(now())
 
   @@index([email])
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Mission 5.0 — COMMERCIAL OS MODELS
+// ══════════════════════════════════════════════════════════════════════════════
+
+model Customer {
+  id          String   @id @default(cuid())
+  type        String   @default("INDIVIDUAL") // INDIVIDUAL, COUPLE, BUSINESS, AGENCY, ORGANIZATION
+  displayName String
+  legalName   String?
+  email       String?  @unique
+  phone       String?
+  whatsapp    String?
+  country     String   @default("CD")
+  currency    String   @default("usd")
+  status      String   @default("PROSPECT") // PROSPECT, ACTIVE, INACTIVE, BLOCKED, ARCHIVED
+  notes       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  weddings    Wedding[]
+  deals       Deal[]
+  orders      CommercialOrder[]
+
+  @@index([status])
+}
+
+model Deal {
+  id               String    @id @default(cuid())
+  customerId       String
+  customer         Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  leadId           String?
+  lead             Lead?     @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  weddingId        String?
+  wedding          Wedding?  @relation(fields: [weddingId], references: [id], onDelete: SetNull)
+  title            String
+  estimatedValue   Int?      // minor units (cents) — NO floats
+  currency         String    @default("usd")
+  stage            String    @default("NEW") // NEW, CONTACTED, QUALIFIED, PROPOSAL, NEGOTIATION, WON, LOST
+  probability      Int       @default(0) // 0-100 (manual, not AI)
+  expectedCloseDate DateTime?
+  lostReason       String?
+  wonAt            DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  order            CommercialOrder?
+
+  @@index([customerId])
+  @@index([stage])
+}
+
+model CommercialOrder {
+  id          String    @id @default(cuid())
+  customerId  String
+  customer    Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  dealId      String?
+  deal        Deal?     @relation(fields: [dealId], references: [id], onDelete: SetNull)
+  weddingId   String?
+  wedding     Wedding?  @relation(fields: [weddingId], references: [id], onDelete: SetNull)
+  status      String    @default("DRAFT") // DRAFT, PENDING_CONFIRMATION, CONFIRMED, CANCELLED, COMPLETED
+  currency    String    @default("usd")
+  subtotal    Int       @default(0) // minor units
+  discount    Int       @default(0) // minor units
+  total       Int       @default(0) // minor units
+  notes       String?
+  confirmedAt DateTime?
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  items       OrderItem[]
+  payments    Payment[]
+  entitlements Entitlement[]
+
+  @@index([customerId])
+  @@index([status])
+}
+
+model OrderItem {
+  id          String   @id @default(cuid())
+  orderId     String
+  order       CommercialOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  description String
+  planId      String?
+  quantity    Int      @default(1)
+  unitPrice   Int      @default(0) // minor units
+  total       Int      @default(0) // minor units
+  createdAt   DateTime @default(now())
+
+  @@index([orderId])
+}
+
+model Payment {
+  id              String    @id @default(cuid())
+  orderId         String
+  order           CommercialOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  weddingId       String?
+  wedding         Wedding?  @relation(fields: [weddingId], references: [id], onDelete: SetNull)
+  amount          Int       // minor units
+  currency        String    @default("usd")
+  method          String    @default("MANUAL") // MANUAL, MOBILE_MONEY, BANK_TRANSFER, CASH, EXTERNAL_PROVIDER
+  status          String    @default("PENDING") // PENDING, AWAITING_VERIFICATION, VERIFIED, REJECTED, FAILED, REFUNDED, PARTIALLY_REFUNDED
+  reference       String?
+  senderName      String?
+  senderPhone     String?
+  proofUrl        String?
+  submittedAt     DateTime?
+  verifiedAt      DateTime?
+  verifiedById    String?
+  verifiedBy      AdminUser? @relation(fields: [verifiedById], references: [id], onDelete: SetNull)
+  rejectionReason String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([orderId])
+  @@index([status])
+}
+
+model Entitlement {
+  id            String   @id @default(cuid())
+  weddingId     String
+  wedding       Wedding  @relation(fields: [weddingId], references: [id], onDelete: Cascade)
+  type          String   // BULK_INVITATIONS, CHECK_IN, CUSTOM_DOMAIN, MAX_GUESTS, MAX_INVITATIONS, PREMIUM_COLLECTIONS
+  origin        String   @default("PLAN") // PLAN, ADD_ON, MANUAL_OVERRIDE, PROMOTION, LEGACY
+  value         String   @default("true") // flexible: "true", "500", "-1" for unlimited
+  sourceOrderId String?
+  sourceOrder   CommercialOrder? @relation(fields: [sourceOrderId], references: [id], onDelete: SetNull)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([weddingId, type]) // one entitlement per type per wedding
+  @@index([weddingId])
+}
+
+model DeliveryJob {
+  id            String    @id @default(cuid())
+  weddingId     String
+  wedding       Wedding   @relation(fields: [weddingId], references: [id], onDelete: Cascade)
+  invitationId  String?
+  invitation    Invitation? @relation(fields: [invitationId], references: [id], onDelete: SetNull)
+  guestId       String
+  guest         Guest     @relation(fields: [guestId], references: [id], onDelete: Cascade)
+  channel       String    // LINK, QR, EMAIL, SMS, WHATSAPP
+  provider      String?
+  destination   String?   // masked (e.g. "***@gmail.com", "+243***")
+  status        String    @default("QUEUED") // QUEUED, PROCESSING, SENT, DELIVERED, READ, FAILED, CANCELLED
+  attemptCount  Int       @default(0)
+  lastError     String?
+  createdAt     DateTime  @default(now())
+  sentAt        DateTime?
+  deliveredAt   DateTime?
+  updatedAt     DateTime  @updatedAt
+
+  attempts      DeliveryAttempt[]
+
+  @@index([weddingId])
+  @@index([status])
+}
+
+model DeliveryAttempt {
+  id            String   @id @default(cuid())
+  deliveryJobId String
+  deliveryJob   DeliveryJob @relation(fields: [deliveryJobId], references: [id], onDelete: Cascade)
+  provider      String?
+  status        String   @default("PENDING") // SUCCESS, FAILED, PENDING
+  response      String?
+  error         String?
+  attemptedAt   DateTime @default(now())
+
+  @@index([deliveryJobId])
 }

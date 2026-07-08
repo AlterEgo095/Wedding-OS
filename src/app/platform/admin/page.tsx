@@ -75,6 +75,7 @@ import {
   Archive,
   Copy,
   Megaphone,
+  TrendingUp,
 } from 'lucide-react'
 
 import {
@@ -115,6 +116,7 @@ const CollectionsFactoryTab = dynamic(() => import('./CollectionsFactoryTab').th
 const ThemeCustomizer = dynamic(() => import('@/components/admin/ThemeCustomizer').then((m) => m.ThemeCustomizer), { ssr: false })
 const PenpotStudio = dynamic(() => import('@/components/penpot/PenpotStudio').then((m) => m.PenpotStudio), { ssr: false })
 const MarketingControlPlane = dynamic(() => import('@/components/marketing/MarketingControlPlane'), { ssr: false })
+const CommercialOS = dynamic(() => import('@/components/commercial/CommercialOS'), { ssr: false })
 
 // useSyncExternalStore subscribe placeholder — we only need the getServerSnapshot
 // vs getSnapshot split to detect "are we hydrated yet?" without triggering the
@@ -227,7 +229,7 @@ interface PaginatedUsers {
   limit: number
 }
 
-type TabId = 'dashboard' | 'weddings' | 'users' | 'audit' | 'billing' | 'onboarding' | 'appearance' | 'studio' | 'collections' | 'marketing'
+type TabId = 'dashboard' | 'weddings' | 'users' | 'audit' | 'billing' | 'onboarding' | 'appearance' | 'studio' | 'collections' | 'marketing' | 'commercial'
 
 interface NavItem {
   id: TabId
@@ -246,6 +248,7 @@ const NAV_ITEMS: NavItem[] = [
   { id: 'studio', label: 'Studio Penpot', icon: PenTool },
   { id: 'collections', label: 'Collections Premium', icon: Crown },
   { id: 'marketing', label: 'Marketing OS', icon: Megaphone },
+  { id: 'commercial', label: 'Commercial OS', icon: TrendingUp },
 ]
 
 const WEDDING_STATUSES = WEDDING_STATUS_LIST
@@ -2240,6 +2243,8 @@ export default function PlatformAdminPage() {
         return <CollectionsFactoryTab />
       case 'marketing':
         return <MarketingControlPlane csrfToken={getCsrfToken()} />
+      case 'commercial':
+        return <CommercialOS csrfToken={getCsrfToken()} />
       default:
         return <DashboardTab fetchWithAuth={fetchWithAuth} />
     }
