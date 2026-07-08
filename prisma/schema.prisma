@@ -744,7 +744,7 @@ model CommercialOrder {
   id          String    @id @default(cuid())
   customerId  String
   customer    Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  dealId      String?
+  dealId      String?  @unique
   deal        Deal?     @relation(fields: [dealId], references: [id], onDelete: SetNull)
   weddingId   String?
   wedding     Wedding?  @relation(fields: [weddingId], references: [id], onDelete: SetNull)

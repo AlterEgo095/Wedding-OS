@@ -187,3 +187,6 @@ CREATE INDEX "Wedding_customerId_idx" ON "Wedding"("customerId");
 
 -- AddForeignKey: Wedding.customerId → Customer.id
 ALTER TABLE "Wedding" ADD CONSTRAINT "Wedding_customerId_fkey" FOREIGN KEY ("customerId") REFERENCES "Customer" ("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- Mission 5.0 fix: unique constraint on CommercialOrder.dealId (1:1 relation)
+CREATE UNIQUE INDEX "CommercialOrder_dealId_key" ON "CommercialOrder"("dealId");
