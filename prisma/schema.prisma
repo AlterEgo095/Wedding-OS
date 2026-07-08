@@ -84,8 +84,7 @@ model Wedding {
   usageCounters   UsageCounter[]
   invitations     Invitation[]
   invoices        Invoice[]
-  // Mission 5.0 — Commercial OS relations
-  customer        Customer?  @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  // Mission 5.0 — Commercial OS relations (customer field defined above with customerId)
   deals           Deal[]
   orders          CommercialOrder[]
   payments        Payment[]
