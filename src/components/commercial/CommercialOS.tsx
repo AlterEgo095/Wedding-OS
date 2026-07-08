@@ -21,7 +21,10 @@ import { toast } from 'sonner'
  * No fake metrics, no fake providers.
  */
 
-type Tab = 'dashboard' | 'customers' | 'deals' | 'orders' | 'payments' | 'delivery'
+import PlanControlPlane from './PlanControlPlane'
+
+
+type Tab = 'dashboard' | 'customers' | 'deals' | 'orders' | 'payments' | 'delivery' | 'plans'
 
 interface Props { csrfToken: string }
 
@@ -78,6 +81,7 @@ export default function CommercialOS({ csrfToken }: Props) {
     { id: 'orders', label: 'Commandes', icon: Package },
     { id: 'payments', label: 'Paiements', icon: CreditCard },
     { id: 'delivery', label: 'Delivery', icon: Send },
+    { id: 'plans', label: 'Plans', icon: Package },
   ]
 
   return (
@@ -105,6 +109,7 @@ export default function CommercialOS({ csrfToken }: Props) {
       {tab === 'orders' && <OrdersTab orders={orders} customers={customers} post={post} />}
       {tab === 'payments' && <PaymentsTab payments={payments} post={post} />}
       {tab === 'delivery' && <DeliveryTab post={post} csrfToken={csrfToken} />}
+      {tab === 'plans' && <PlanControlPlane csrfToken={csrfToken} />}
     </div>
   )
 }

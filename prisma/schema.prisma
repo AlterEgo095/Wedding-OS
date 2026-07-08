@@ -860,3 +860,32 @@ model DeliveryAttempt {
 
   @@index([deliveryJobId])
 }
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Mission 5.1 — PLAN OS (DB-backed plans, pricing, limits)
+// ══════════════════════════════════════════════════════════════════════════════
+model Plan {
+  id                      String   @id @default(cuid())
+  code                    String   @unique // TRIAL, ESSENTIEL, PREMIUM, ELITE
+  name                    String
+  description             String?
+  status                  String   @default("ACTIVE") // DRAFT, ACTIVE, INACTIVE, ARCHIVED
+  isPublic                Boolean  @default(true)
+  sortOrder               Int      @default(0)
+  priceUsdCents           Int      @default(0) // minor units
+  priceFcfa               Int      @default(0)
+  currency                String   @default("usd")
+  maxGuests               Int      @default(-1) // -1 = unlimited
+  maxMediaBytes           Int      @default(-1)
+  maxAdmins               Int      @default(1)
+  customDomainAllowed     Boolean  @default(false)
+  bulkInvitationsAllowed  Boolean  @default(true)
+  checkInAllowed          Boolean  @default(true)
+  designerAllowed         Boolean  @default(true)
+  premiumCollectionsAllowed Boolean @default(false)
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+
+  @@index([status])
+  @@index([sortOrder])
+}
