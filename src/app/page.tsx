@@ -71,6 +71,10 @@ interface PortfolioEvent {
   portfolioType: string // CLIENT | DEMO | INTERNAL
   isRealClient: boolean // true when portfolioType === CLIENT (for backward compat)
   guestCount: number
+  // Mission 4.10: internal sort fields (not displayed, used for ordering)
+  _order: number
+  _featured: boolean
+  _createdAt: Date
 }
 
 async function getPortfolioEvents(): Promise<PortfolioEvent[]> {
@@ -90,6 +94,7 @@ async function getPortfolioEvents(): Promise<PortfolioEvent[]> {
       collectionId: true,
       weddingDate: true,
       venueCity: true,
+      createdAt: true,
       portfolioVisible: true,
       portfolioType: true,
       portfolioOrder: true,
@@ -97,7 +102,7 @@ async function getPortfolioEvents(): Promise<PortfolioEvent[]> {
       featured: true,
       _count: { select: { guests: true } },
     },
-    orderBy: [{ featured: 'desc' }, { portfolioOrder: 'asc' }, { createdAt: 'desc' }],
+    orderBy: [{ createdAt: 'desc' }], // pre-sort by createdAt; final sort in code
   })
 
   // Resolve collection info for each
@@ -142,9 +147,21 @@ async function getPortfolioEvents(): Promise<PortfolioEvent[]> {
         portfolioType,
         isRealClient: portfolioType === 'CLIENT',
         guestCount: w._count.guests,
+        // Mission 4.10: use _order for sorting — null portfolioOrder sorts LAST
+        // (events with explicit order come first, unsorted events at the end by createdAt)
+        _order: w.portfolioOrder ?? Number.MAX_SAFE_INTEGER,
+        _featured: w.featured,
+        _createdAt: w.createdAt,
       }
     })
     .filter((e): e is PortfolioEvent => e !== null)
+    // Mission 4.10: sort in code to avoid SQLite NULL-first ASC behavior
+    // Featured first, then explicit portfolioOrder asc, then createdAt desc
+    .sort((a, b) => {
+      if (a._featured !== b._featured) return b._featured ? 1 : -1
+      if (a._order !== b._order) return a._order - b._order
+      return b._createdAt.getTime() - a._createdAt.getTime()
+    })
 }
 
 async function getCaseStudy() {
