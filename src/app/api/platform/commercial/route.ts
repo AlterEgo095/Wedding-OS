@@ -1,5 +1,6 @@
 export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
+import { db } from '@/lib/db'
 import { getAuthUser, requirePlatformAdmin } from '@/lib/auth'
 import { logger } from '@/lib/logger'
 import { internalError, badRequest } from '@/lib/api-errors'
@@ -178,6 +179,3 @@ export async function POST(request: NextRequest) {
     return internalError()
   }
 }
-
-// db is needed for update_deal_stage
-import { db } from '@/lib/db'

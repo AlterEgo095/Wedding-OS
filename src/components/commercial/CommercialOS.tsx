@@ -165,7 +165,7 @@ function CustomersTab({ customers, post }: { customers: any[]; post: any }) {
           <div key={c.id} className="flex items-center justify-between p-3 rounded-lg border border-gold/10">
             <div>
               <div className="font-serif text-sm font-bold">{c.displayName}</div>
-              <div className="text-xs text-muted-foreground">{c.email || 'Pas d'email'} · {c.type}</div>
+              <div className="text-xs text-muted-foreground">{c.email || "Pas d'email"} · {c.type}</div>
             </div>
             <Badge variant="outline" className="text-[9px]">{c.status}</Badge>
           </div>
