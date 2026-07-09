@@ -258,6 +258,18 @@ async function createWeddingHandler(request: NextRequest) {
     }
     const shouldPublish = publish === true;
 
+    // Mission 5.6 FIX-A: refuse direct creation in PUBLISHED state (no verified payment).
+    // Admin must use: create DRAFT -> converge -> verify payment -> publish.
+    if (shouldPublish) {
+      return NextResponse.json(
+        {
+          error: 'Creation directe en etat PUBLISHED refusee : paiement non verifie. Creez en DRAFT (publish=false), puis utilisez Commercial OS -> converge -> verify payment -> publish.',
+          code: 'CREATE_PUBLISHED_REQUIRES_PAID',
+        },
+        { status: 403 },
+      );
+    }
+
     // ─── Pre-flight uniqueness checks (outside tx for early 409s) ──────────
     const existingWedding = await db.wedding.findUnique({
       where: { slug: normalizedSlug },

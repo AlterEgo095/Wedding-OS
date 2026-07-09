@@ -55,7 +55,7 @@ export async function POST(request: NextRequest) {
 
     const wedding = await db.wedding.findUnique({
       where: { id: weddingId },
-      select: { id: true, slug: true, status: true, publishedAt: true },
+      select: { id: true, slug: true, status: true, publishedAt: true, commercialStatus: true, isDefault: true },
     });
     if (!wedding) {
       return NextResponse.json(
@@ -84,6 +84,19 @@ export async function POST(request: NextRequest) {
           allowed: getAllowedTransitions(wedding.status),
         },
         { status: 400 },
+      );
+    }
+
+    // Mission 5.6 FIX-A: enforce PUBLISHED->PAID invariant (same as platform weddings/[id] PUT).
+    // Demo weddings (isDefault=true) are exempt.
+    if (!wedding.isDefault && wedding.commercialStatus !== 'PAID') {
+      return NextResponse.json(
+        {
+          error: 'Publication refusee : le paiement doit etre verifie avant activation. Utilisez Commercial OS -> Payments -> verify.',
+          code: 'PUBLISHED_REQUIRES_PAID',
+          currentCommercialStatus: wedding.commercialStatus,
+        },
+        { status: 403 },
       );
     }
 

@@ -195,7 +195,11 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     // ─── Mission 5.5 invariant: no PUBLISHED without verified payment ─────
     // Enforces the business rule: a wedding cannot be published unless its
     // commercialStatus is 'PAID' (set by provisionFromOrder after verify_payment).
-    // Demo weddings (isDefault=true, e.g. Three Worlds) are exempt.
+    // Demo weddings (isDefault=true) are exempt. NOTE: only josue-hornella
+    // has isDefault=true in the current DB; the Three Worlds demos
+    // (world-a-royal/b-minimal/c-immersive) have isDefault=false and are
+    // already PUBLISHED, so this guard never fires on them (it only blocks
+    // the DRAFT->PUBLISHED transition, not existing PUBLISHED state).
     if (status === 'PUBLISHED' && existing.status !== 'PUBLISHED' && !existing.isDefault) {
       if (existing.commercialStatus !== 'PAID') {
         return NextResponse.json(
