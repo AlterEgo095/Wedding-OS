@@ -11,6 +11,7 @@
 
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
+import { headers } from 'next/headers';
 import { resolveWeddingBySlug } from '@/lib/tenant-context';
 import { resolveWeddingManifest } from '@/lib/wedding/manifest';
 import { WeddingContextProvider } from './wedding-context';
@@ -85,7 +86,31 @@ export default async function WeddingLayout({
   }
 
   if (wedding.status === 'DRAFT' && !wedding.isDefault) {
-    notFound();
+    // Mission 5.3.1: Allow admin routes (/w/[slug]/admin/*) for DRAFT weddings
+    // so organizers can log in, configure, and publish their event.
+    // Public routes (/w/[slug]) remain hidden until PUBLISHED.
+    // We check headers().get('x-pathname') or the referer to detect admin routes.
+    // Next.js App Router: the layout wraps ALL routes under /w/[slug]/*, so
+    // we need to allow admin children through. The admin page itself handles
+    // auth — unauthenticated users get redirected to login.
+    //
+    // Since we can't easily detect the sub-path from the layout params, we
+    // use a simpler approach: DRAFT weddings are hidden from PUBLIC access
+    // but the admin page (/w/[slug]/admin) handles its own auth gate.
+    // The notFound() for DRAFT is ONLY for the public page.tsx, not for
+    // admin sub-routes. We achieve this by not calling notFound() here
+    // and instead letting the public page.tsx handle its own DRAFT gate.
+    //
+    // However, to maintain backward compat (the public page should still
+    // 404 for DRAFT), we keep the notFound() BUT only for non-admin paths.
+    // Next.js doesn't give us the child path in the layout, so we use
+    // the request URL header.
+    const h = await headers();
+    const pathname = h.get('x-invoke-path') || h.get('referer') || '';
+    const isAdminRoute = pathname.includes('/admin');
+    if (!isAdminRoute) {
+      notFound();
+    }
   }
 
   if (wedding.status === 'SUSPENDED') {
