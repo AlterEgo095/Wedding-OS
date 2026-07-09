@@ -434,14 +434,26 @@ function CollectionRow({ collection, saving, onUpdate }: {
     setOrderDirty(false)
   }, [collection.sortOrder])
 
-  // Parse themeSeed for color display
+  // Parse themeSeed for color display.
+  // The /api/platform/collections route returns themeSeed as a PARSED OBJECT
+  // (it calls JSON.parse server-side). Handle both object and string shapes so
+  // we never silently fall back to the default when real colors are available.
   let primaryColor = '#D4AF37'
   let layout = 'classic'
-  try {
-    const seed = JSON.parse(collection.themeSeed)
-    primaryColor = seed.primaryColor || primaryColor
-    layout = seed.layout || layout
-  } catch { /* ignore */ }
+  const seed =
+    collection.themeSeed && typeof collection.themeSeed === 'object'
+      ? (collection.themeSeed as { primaryColor?: string; layout?: string })
+      : (() => {
+          try {
+            return typeof collection.themeSeed === 'string'
+              ? JSON.parse(collection.themeSeed)
+              : {}
+          } catch {
+            return {}
+          }
+        })()
+  primaryColor = seed.primaryColor || primaryColor
+  layout = seed.layout || layout
 
   const isArchived = collection.status === 'ARCHIVE'
   const isDraft = collection.status === 'BROUILLON' || collection.status === 'EN_COURS' || collection.status === 'VALIDATION'

@@ -4,6 +4,13 @@ import { getAuthUser, requirePlatformAdmin } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import { internalError } from '@/lib/api-errors';
+import { safeJsonParse } from '@/lib/safe-json';
+
+// Default shapes used when a DB row has a null/malformed JSON column.
+// Keeping these on the server side prevents a single bad row from 500ing
+// the whole list endpoint (defense in depth — the client also normalizes).
+const DEFAULT_THEME_SEED = { primaryColor: '#D4AF37', accentColor: '#1a1a2e', fontDisplay: 'Cormorant Garamond', fontBody: 'Inter', layout: 'classic' } as const;
+const DEFAULT_LUXURY_PRESET = null;
 
 /**
  * GET /api/platform/collections  (PLATFORM_ADMIN)
@@ -61,13 +68,15 @@ export async function GET(request: NextRequest) {
       version: c.version,
       isActive: c.isActive,
       isPublished: c.isPublished,
-      themeSeed: JSON.parse(c.themeSeed),
-      luxuryPreset: c.luxuryPreset ? JSON.parse(c.luxuryPreset) : null,
+      // Defense in depth: safeJsonParse never throws — a single malformed row
+      // returns the DEFAULT instead of 500ing the whole list.
+      themeSeed: safeJsonParse(c.themeSeed, DEFAULT_THEME_SEED),
+      luxuryPreset: c.luxuryPreset ? safeJsonParse(c.luxuryPreset, DEFAULT_LUXURY_PRESET) : null,
       variants: c.variants.map((v) => ({
         id: v.id,
         code: v.code,
         name: v.name,
-        paletteOverride: v.paletteOverride ? JSON.parse(v.paletteOverride) : null,
+        paletteOverride: v.paletteOverride ? safeJsonParse(v.paletteOverride, null) : null,
         isDefault: v.isDefault,
       })),
     }));

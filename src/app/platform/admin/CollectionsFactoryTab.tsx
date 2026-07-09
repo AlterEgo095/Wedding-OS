@@ -13,6 +13,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog'
 import { toast } from 'sonner'
+import { safeJsonParse } from '@/lib/safe-json'
 
 // ══════════════════════════════════════════════════════════════════════════════
 // COLLECTIONS FACTORY TAB — Real CRUD (Slice 3)
@@ -39,7 +40,10 @@ interface DBCollection {
   isActive: boolean
   isPublished: boolean
   sortOrder: number
-  themeSeed: string
+  // themeSeed arrives as a PARSED OBJECT from /api/platform/collections
+  // (the route does JSON.parse server-side). Keep the union for safety so
+  // the tab never crashes if the contract changes again.
+  themeSeed: ThemeSeed | string
   luxuryPreset: string | null
   thumbnailUrl: string | null
   createdAt: string
@@ -51,6 +55,31 @@ interface ThemeSeed {
   fontDisplay: string
   fontBody: string
   layout: string
+}
+
+// Default theme seed used when a Collection row has a null/empty/malformed
+// themeSeed. Mirrors the seed defaults in lib/collections/index.ts.
+const DEFAULT_THEME_SEED: ThemeSeed = {
+  primaryColor: '#D4AF37',
+  accentColor: '#1a1a2e',
+  fontDisplay: 'Cormorant Garamond',
+  fontBody: 'Inter',
+  layout: 'classic',
+}
+
+/**
+ * Normalize a themeSeed value that may arrive as:
+ *   - a parsed OBJECT (the /api/platform/collections route parses server-side)
+ *   - a raw JSON STRING (other endpoints may return the raw column value)
+ *   - null/undefined (defensive — should not happen but never crash the UI)
+ * Never throws — returns DEFAULT_THEME_SEED on any unexpected shape.
+ */
+function normalizeThemeSeed(raw: unknown): ThemeSeed {
+  if (raw && typeof raw === 'object') return raw as ThemeSeed
+  if (typeof raw === 'string') {
+    return safeJsonParse<ThemeSeed>(raw, DEFAULT_THEME_SEED)
+  }
+  return DEFAULT_THEME_SEED
 }
 
 const LAYOUTS = [
@@ -113,7 +142,7 @@ export function CollectionsFactoryTab() {
   }
 
   const openEdit = (c: DBCollection) => {
-    const ts: ThemeSeed = JSON.parse(c.themeSeed || '{}')
+    const ts: ThemeSeed = normalizeThemeSeed(c.themeSeed)
     setForm({
       name: c.name,
       slug: c.slug,
@@ -237,7 +266,7 @@ export function CollectionsFactoryTab() {
       {/* Collections grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {collections.map(c => {
-          const ts: ThemeSeed = JSON.parse(c.themeSeed || '{}')
+          const ts: ThemeSeed = normalizeThemeSeed(c.themeSeed)
           return (
             <Card key={c.id} className="p-4 space-y-3">
               {/* Preview swatch */}

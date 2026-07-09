@@ -392,6 +392,9 @@ export function PenpotStudio({ slug, onIntegrationChange }: PenpotStudioProps) {
               <div>
                 <CardTitle className="text-lg flex items-center gap-2">
                   Studio Penpot
+                  <Badge variant="outline" className="text-blue-400 border-blue-400/30 text-xs">
+                    Pont externe
+                  </Badge>
                   {isLinked ? (
                     <Badge variant="outline" className="text-emerald-400 border-emerald-400/30 text-xs">
                       <CheckCircle2 className="w-3 h-3 mr-1" />
@@ -404,7 +407,8 @@ export function PenpotStudio({ slug, onIntegrationChange }: PenpotStudioProps) {
                   )}
                 </CardTitle>
                 <p className="text-xs text-muted-foreground mt-1">
-                  Le Studio officiel de création — invitations, save-the-date, visuels
+                  Pont vers Penpot Cloud (design.penpot.app) — l'usine de designs intégrée
+                  de Wedding OS se trouve dans l'onglet « Collections Premium ».
                 </p>
               </div>
             </div>
@@ -597,9 +601,10 @@ export function PenpotStudio({ slug, onIntegrationChange }: PenpotStudioProps) {
             <div>
               <p className="text-sm font-medium">Aucun fichier Penpot lié</p>
               <p className="text-xs text-muted-foreground mt-1 max-w-md mx-auto">
-                Liez un fichier Penpot pour transformer Wedding OS en Studio de création.
-                Vos invitations, save-the-date et visuels seront conçus dans Penpot,
-                puis affichés sur votre site avec les données dynamiques (invités, tables, QR codes).
+                Ce pont permet de connecter un fichier Penpot Cloud (design.penpot.app) à
+                votre mariage pour synchroniser manuellement les tokens (couleurs, polices)
+                via copier-coller. Pour créer et gérer les designs de Wedding OS, utilisez
+                l'onglet « Collections Premium ».
               </p>
             </div>
             <Button asChild size="sm" variant="outline">
