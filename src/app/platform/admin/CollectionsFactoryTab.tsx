@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { Plus, Edit, Trash2, Rocket, Eye, Star, Layers } from 'lucide-react'
+import { Plus, Edit, Trash2, Rocket, Eye, Star, Layers, Crown } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card } from '@/components/ui/card'
@@ -47,6 +47,8 @@ interface DBCollection {
   luxuryPreset: string | null
   thumbnailUrl: string | null
   createdAt: string
+  // Mission 5.7 B8/B9: quality score (cached, may be null)
+  qualityScore?: number | null
 }
 
 interface ThemeSeed {
@@ -229,6 +231,27 @@ export function CollectionsFactoryTab() {
     }
   }
 
+  // Mission 5.7 B7: wire the lifecycle transition API (was DISCONNECTED).
+  // Calls POST /api/collections/[id]/transition with the target status,
+  // enforcing the role matrix + completeness gate server-side.
+  const transitionCollection = async (c: DBCollection, to: 'PUBLIE' | 'COMMERCIALISE' | 'ARCHIVE') => {
+    try {
+      const res = await fetch(`/api/collections/${c.id}/transition`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ to }),
+      })
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}))
+        throw new Error(d.error || d.message || 'Failed')
+      }
+      toast.success(`${c.name} -> ${to}`)
+      fetchCollections()
+    } catch (e) {
+      toast.error('Erreur: ' + (e instanceof Error ? e.message : 'inconnue'))
+    }
+  }
+
   const deleteCollection = async (c: DBCollection) => {
     if (!confirm(`Archiver la collection "${c.name}" ?`)) return
     try {
@@ -301,6 +324,11 @@ export function CollectionsFactoryTab() {
                   <Badge className="bg-amber-100 text-amber-800 text-xs">Brouillon</Badge>
                 )}
                 <Badge variant="outline" className="text-xs">{c.status}</Badge>
+                {c.qualityScore != null && (
+                  <Badge variant="outline" className="text-xs text-gold border-gold/30" title="Quality score (Mission 5.7 B9)">
+                    Q{c.qualityScore}
+                  </Badge>
+                )}
               </div>
 
               {/* Actions */}
@@ -311,6 +339,17 @@ export function CollectionsFactoryTab() {
                 {!c.isPublished && (
                   <Button variant="outline" size="sm" onClick={() => publishCollection(c)}>
                     <Rocket className="w-3 h-3" />
+                  </Button>
+                )}
+                {c.isPublished && c.status !== 'COMMERCIALISE' && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="text-gold border-gold/30 hover:bg-gold/10"
+                    onClick={() => transitionCollection(c, 'COMMERCIALISE')}
+                    title="Commercialiser (transition via lifecycle API)"
+                  >
+                    <Crown className="w-3 h-3" />
                   </Button>
                 )}
                 <Button variant="outline" size="sm" onClick={() => deleteCollection(c)}>

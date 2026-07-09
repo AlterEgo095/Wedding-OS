@@ -128,6 +128,42 @@ export default function LuxuryVisualEngine() {
     return () => cancelAnimationFrame(id)
   }, [])
 
+  // Mission 5.7 B10: read luxuryPreset from Theme.customizations.luxury (DB)
+  // and apply it as the default luxury theme. Previously this was a ghost
+  // field — applyCollection wrote it but LuxuryVisualEngine never read it.
+  // We only apply the DB preset if the user hasn't explicitly overridden
+  // the theme via the admin UI (tracked via a localStorage flag).
+  useEffect(() => {
+    if (!mounted) return
+    let cancelled = false
+    ;(async () => {
+      try {
+        const res = await fetch('/api/theme')
+        if (!res.ok) return
+        const data = await res.json()
+        const themeRow = data.theme || data
+        if (!themeRow.customizations) return
+        const customizations = typeof themeRow.customizations === 'string'
+          ? JSON.parse(themeRow.customizations)
+          : themeRow.customizations
+        const luxury = customizations.luxury
+        if (!luxury || typeof luxury !== 'object') return
+        // Apply the DB luxury theme if it specifies a theme key AND the user
+        // hasn't explicitly overridden via the admin UI.
+        if (luxury.theme && LUXURY_THEMES[luxury.theme]) {
+          const userOverrideKey = `wedding_luxury_engine_${(window.location.pathname.match(/^\/w\/([a-z0-9-]+)/i)?.[1]) || 'default'}_user_override`
+          const userOverride = localStorage.getItem(userOverrideKey)
+          if (!userOverride) {
+            useLuxuryEngine.getState().setValue('theme', luxury.theme)
+          }
+        }
+      } catch {
+        // Silent — luxury preset is optional, don't crash the page
+      }
+    })()
+    return () => { cancelled = true }
+  }, [mounted])
+
   // Track dimensions
   useEffect(() => {
     if (!mounted) return

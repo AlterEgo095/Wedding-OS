@@ -131,12 +131,23 @@ export async function generateManifest(
   collectionId: string,
   variantId: string | null = null,
 ): Promise<WeddingManifest | null> {
-  const collection = await db.collection.findUnique({
+  // Mission 5.7 B1: accept either the DB cuid OR the slug as collectionId.
+  // The static catalog (catalog.ts) and CollectionsShowcase pass slugs as ids;
+  // the DB uses cuids. Try cuid first, fall back to slug.
+  let collection = await db.collection.findUnique({
     where: { id: collectionId },
     include: {
       variants: { orderBy: { code: 'asc' } },
     },
   });
+  if (!collection) {
+    collection = await db.collection.findUnique({
+      where: { slug: collectionId },
+      include: {
+        variants: { orderBy: { code: 'asc' } },
+      },
+    });
+  }
 
   if (!collection) return null;
 

@@ -273,19 +273,37 @@ interface NavItem {
   icon: React.ComponentType<{ className?: string }>
 }
 
+// Mission 5.7 Phase 3: Progressive regrouping into 5 domains.
+// Tab IDs are UNCHANGED (no deep-link breakage). Only the visual order
+// + section headers are added.
 const NAV_ITEMS: NavItem[] = [
+  // ── COMMAND CENTER ──
   { id: 'dashboard', label: "Vue d'ensemble", icon: LayoutDashboard },
-  { id: 'weddings', label: 'Mariages', icon: Heart },
+  // ── COMMERCIAL ──
+  { id: 'commercial', label: 'Commercial OS', icon: TrendingUp },
   { id: 'billing', label: 'Facturation', icon: Wallet },
   { id: 'onboarding', label: 'Onboarding', icon: Rocket },
-  { id: 'users', label: 'Utilisateurs', icon: UsersIcon },
-  { id: 'audit', label: "Journal d'audit", icon: ScrollText },
+  // ── EVENT OPERATIONS ──
+  { id: 'weddings', label: 'Mariages', icon: Heart },
+  // ── DESIGN FACTORY ──
+  { id: 'collections', label: 'Collections Premium', icon: Crown },
   { id: 'appearance', label: 'Apparence', icon: Palette },
   { id: 'studio', label: 'Studio Penpot', icon: PenTool },
-  { id: 'collections', label: 'Collections Premium', icon: Crown },
   { id: 'marketing', label: 'Marketing OS', icon: Megaphone },
-  { id: 'commercial', label: 'Commercial OS', icon: TrendingUp },
+  // ── SYSTEM ──
+  { id: 'users', label: 'Utilisateurs', icon: UsersIcon },
+  { id: 'audit', label: "Journal d'audit", icon: ScrollText },
 ]
+
+// Maps each tab id to a section label. The sidebar renders a section header
+// before the first item of each group. Undefined = no header (flat).
+const NAV_SECTIONS: Record<string, string> = {
+  dashboard: 'COMMAND CENTER',
+  commercial: 'COMMERCIAL',
+  weddings: 'EVENT OPERATIONS',
+  collections: 'DESIGN FACTORY',
+  users: 'SYSTEM',
+}
 
 const WEDDING_STATUSES = WEDDING_STATUS_LIST
 const PLANS = PLAN_LIST
@@ -2415,27 +2433,36 @@ export default function PlatformAdminPage() {
   const SidebarNav = (
     <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar py-2">
       <nav className="px-2 space-y-1">
-        {NAV_ITEMS.map((item) => {
+        {NAV_ITEMS.map((item, idx) => {
           const isActive = activeTab === item.id
+          const section = NAV_SECTIONS[item.id]
+          const prevItem = idx > 0 ? NAV_ITEMS[idx - 1] : null
+          const showSectionHeader = section && (!prevItem || NAV_SECTIONS[prevItem.id] !== section)
           return (
-            <button
-              key={item.id}
-              onClick={() => handleTabChange(item.id)}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all ${
-                isActive
-                  ? 'bg-gold/15 text-gold font-medium'
-                  : 'text-muted-foreground hover:text-foreground hover:bg-white/5'
-              }`}
-            >
-              <item.icon className="w-4 h-4 shrink-0" />
-              <span>{item.label}</span>
-              {isActive && (
-                <motion.div
-                  layoutId="platform-sidebar-indicator"
-                  className="ml-auto w-1.5 h-1.5 rounded-full bg-gold"
-                />
+            <div key={item.id}>
+              {showSectionHeader && (
+                <p className="px-3 pt-4 pb-1 text-[10px] font-semibold uppercase tracking-widest text-gold/50">
+                  {section}
+                </p>
               )}
-            </button>
+              <button
+                onClick={() => handleTabChange(item.id)}
+                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all ${
+                  isActive
+                    ? 'bg-gold/15 text-gold font-medium'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-white/5'
+                }`}
+              >
+                <item.icon className="w-4 h-4 shrink-0" />
+                <span>{item.label}</span>
+                {isActive && (
+                  <motion.div
+                    layoutId="platform-sidebar-indicator"
+                    className="ml-auto w-1.5 h-1.5 rounded-full bg-gold"
+                  />
+                )}
+              </button>
+            </div>
           )
         })}
       </nav>
@@ -2599,7 +2626,7 @@ export default function PlatformAdminPage() {
 
         {/* Mobile bottom tab bar */}
         <nav className="md:hidden shrink-0 flex items-center border-t border-white/10 bg-white/[0.02] safe-area-pb">
-          {NAV_ITEMS.map((item) => {
+          {NAV_ITEMS.slice(0, 6).map((item) => {
             const isActive = activeTab === item.id
             return (
               <button
