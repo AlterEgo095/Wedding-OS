@@ -224,12 +224,30 @@ export default function PerWeddingAdminPage() {
   }, [])
 
   // Redirect to login if not authenticated (after the /api/me check completes).
+  // Mission 5.3.2: Also deny access if an ORGANIZER tries to open a foreign wedding admin.
+  // PLATFORM_ADMIN/SUPER_ADMIN can access any wedding. ORGANIZER must match their own weddingId.
   useEffect(() => {
     if (!authChecked) return
     if (!user) {
       router.replace(`/w/${slug}/admin/login`)
+      return
     }
-  }, [authChecked, user, slug, router])
+    // Tenant authorization check: non-platform-admins can only access their own wedding
+    if (!isPlatformAdmin(user.role) && user.weddingId !== wedding.id) {
+      // Foreign admin access denied — redirect to their own admin
+      toast.error("Vous n'avez pas accès à cet événement.")
+      if (user.weddingId) {
+        // Redirect to their own wedding admin
+        const ownSlug = slug // fallback — can't easily resolve their slug here
+        // Use the wedding context to find their own slug
+        // Since we can't resolve their slug from weddingId alone client-side,
+        // redirect to /platform/admin or show access denied
+        router.replace('/platform/admin')
+      } else {
+        router.replace('/')
+      }
+    }
+  }, [authChecked, user, slug, router, wedding.id])
 
   // ─── Handlers ──────────────────────────────────────────────────────────────
   const handleLogout = useCallback(
