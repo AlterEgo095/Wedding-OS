@@ -92,28 +92,10 @@ export async function GET(request: NextRequest) {
     // only) — much cheaper than fetching all PUBLISHED weddings.
     const sixMonthsAgo = sixMonthsAgoStart; // alias for the scoped fetch
 
-    const [
-      weddingsTotal,
-      weddingsByStatus,
-      weddingsByPlan,
-      usersTotal,
-      platformAdminCount,
-      usersByRole,
-      guestsTotal,
-      guestsLast7Days,
-      recentWeddings,
-      recentActivity,
-      // ── Phase 5-a: revenue / churn / growth inputs ──
+    const [weddingsTotal, weddingsByStatus, weddingsByPlan, usersTotal, platformAdminCount, usersByRole, guestsTotal, guestsLast7Days, recentWeddings, recentActivity, // ── Phase 5-a: revenue / churn / growth inputs ──
       // P2-PERF-6: groupBy replaces the full-array findMany for current MRR.
-      publishedWeddingsByPlanForMrr,
-      // P2-PERF-6: scoped 6-month findMany for the mrrSeries only.
-      publishedWeddingsLast6Mo,
-      weddingsCreatedSince6Mo,
-      suspended30d,
-      archived30d,
-      newWeddings30d,
-      newGuests30d,
-    ] = await Promise.all([
+      publishedWeddingsByPlanForMrr, // P2-PERF-6: scoped 6-month findMany for the mrrSeries only.
+      publishedWeddingsLast6Mo, weddingsCreatedSince6Mo, suspended30d, archived30d, newWeddings30d, newGuests30d, pendingLeadsCount, recentLeads, pendingPaymentsCount, recentPendingPayments, draftWeddingsCount, recentDrafts] = await Promise.all([
       db.wedding.count(),
 
       db.wedding.groupBy({
@@ -209,6 +191,42 @@ export async function GET(request: NextRequest) {
 
       db.guest.count({
         where: { createdAt: { gte: thirtyDaysAgo } },
+      }),
+
+      // Mission 5.5: pending actions for the unified Actions Requises view
+      db.lead.count({
+        where: { status: { in: ['NEW', 'CONTACTED'] } },
+      }),
+      db.lead.findMany({
+        where: { status: { in: ['NEW', 'CONTACTED'] } },
+        orderBy: { createdAt: 'desc' },
+        take: 5,
+        select: { id: true, brideName: true, groomName: true, coupleLabel: true, email: true, phone: true, plan: true, status: true, createdAt: true },
+      }),
+      db.payment.count({
+        where: { status: 'AWAITING_VERIFICATION' },
+      }),
+      db.payment.findMany({
+        where: { status: 'AWAITING_VERIFICATION' },
+        orderBy: { submittedAt: 'desc' },
+        take: 5,
+        include: {
+          order: {
+            select: {
+              wedding: { select: { id: true, slug: true, coupleLabel: true } },
+              customer: { select: { displayName: true } },
+            },
+          },
+        },
+      }),
+      db.wedding.count({
+        where: { status: 'DRAFT', isDefault: false },
+      }),
+      db.wedding.findMany({
+        where: { status: 'DRAFT', isDefault: false },
+        orderBy: { createdAt: 'desc' },
+        take: 5,
+        select: { id: true, slug: true, coupleLabel: true, plan: true, commercialStatus: true, createdAt: true },
       }),
     ]);
 
@@ -353,6 +371,16 @@ export async function GET(request: NextRequest) {
         newWeddings30d,
         newGuests30d,
         newWeddingsSeries,
+      },
+
+      // Mission 5.5: unified pending actions view
+      pendingActions: {
+        newLeadsCount: pendingLeadsCount,
+        recentLeads: recentLeads,
+        pendingPaymentsCount: pendingPaymentsCount,
+        recentPendingPayments: recentPendingPayments,
+        draftWeddingsCount: draftWeddingsCount,
+        recentDrafts: recentDrafts,
       },
     });
   } catch (error) {

@@ -334,7 +334,7 @@ const EMPTY_FORM: WizardFormState = {
   organizerEmail: '',
   organizerPassword: '',
   showPassword: false,
-  publish: true,
+  publish: false,  // Mission 5.5: default to DRAFT — publish only after payment verification
 }
 
 // ══════════════════════════════════════════════════════════════════════════════

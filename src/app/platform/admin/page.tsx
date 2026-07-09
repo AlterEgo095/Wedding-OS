@@ -213,6 +213,42 @@ interface DashboardData {
     newGuests30d: number
     newWeddingsSeries: Array<{ month: string; label: string; count: number }>
   }
+  // Mission 5.5: unified pending actions view
+  pendingActions?: {
+    newLeadsCount: number
+    recentLeads: Array<{
+      id: string
+      brideName: string
+      groomName: string
+      coupleLabel: string
+      email: string | null
+      phone: string | null
+      plan: string
+      status: string
+      createdAt: string
+    }>
+    pendingPaymentsCount: number
+    recentPendingPayments: Array<{
+      id: string
+      amount: number
+      currency: string
+      method: string
+      submittedAt: string | null
+      order: {
+        wedding: { id: string; slug: string; coupleLabel: string } | null
+        customer: { displayName: string } | null
+      } | null
+    }>
+    draftWeddingsCount: number
+    recentDrafts: Array<{
+      id: string
+      slug: string
+      coupleLabel: string
+      plan: string
+      commercialStatus: string | null
+      createdAt: string
+    }>
+  }
 }
 
 interface PaginatedWeddings {
@@ -425,7 +461,7 @@ function RoleBadge({ role }: { role: string }) {
 // Dashboard tab
 // ════════════════════════════════════════════════════════════════════════════
 
-function DashboardTab({ fetchWithAuth }: { fetchWithAuth: (url: string, init?: RequestInit) => Promise<Response | null> }) {
+function DashboardTab({ fetchWithAuth, setActiveTab }: { fetchWithAuth: (url: string, init?: RequestInit) => Promise<Response | null>; setActiveTab: (tab: TabId) => void }) {
   const [data, setData] = useState<DashboardData | null>(null)
   const [loading, setLoading] = useState(true)
 
@@ -549,6 +585,101 @@ function DashboardTab({ fetchWithAuth }: { fetchWithAuth: (url: string, init?: R
           </motion.div>
         ))}
       </div>
+
+      {/* Mission 5.5: Actions Requises — unified pending view */}
+      {data.pendingActions && (
+        <div className='grid grid-cols-1 lg:grid-cols-3 gap-4'>
+          {/* New leads */}
+          <Card className='glass-card gold-border border-0'>
+            <CardHeader className='pb-2'>
+              <CardTitle className='text-sm font-semibold flex items-center gap-2'>
+                <UserPlus className='w-4 h-4 text-gold' />
+                Nouvelles demandes
+                <span className='ml-auto text-lg font-bold text-gold'>{data.pendingActions.newLeadsCount}</span>
+              </CardTitle>
+            </CardHeader>
+            <CardContent className='space-y-2 max-h-48 overflow-y-auto'>
+              {data.pendingActions.recentLeads.length === 0 ? (
+                <p className='text-xs text-muted-foreground text-center py-4'>Aucune demande en attente</p>
+              ) : (
+                data.pendingActions.recentLeads.map((lead) => (
+                  <div key={lead.id} className='flex items-center justify-between p-2 rounded border border-gold/10 bg-white/[0.02]'>
+                    <div className='min-w-0'>
+                      <p className='text-xs font-medium truncate'>{lead.coupleLabel || lead.brideName + ' & ' + lead.groomName}</p>
+                      <p className='text-[10px] text-muted-foreground'>{lead.plan} · {lead.email || lead.phone || '—'}</p>
+                    </div>
+                    <Button size='sm' variant='outline' className='h-7 text-[10px] shrink-0' onClick={() => { setActiveTab('onboarding'); }}>
+                      Traiter
+                    </Button>
+                  </div>
+                ))
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Pending payments */}
+          <Card className='glass-card gold-border border-0'>
+            <CardHeader className='pb-2'>
+              <CardTitle className='text-sm font-semibold flex items-center gap-2'>
+                <Wallet className='w-4 h-4 text-gold' />
+                Paiements à vérifier
+                <span className='ml-auto text-lg font-bold text-gold'>{data.pendingActions.pendingPaymentsCount}</span>
+              </CardTitle>
+            </CardHeader>
+            <CardContent className='space-y-2 max-h-48 overflow-y-auto'>
+              {data.pendingActions.recentPendingPayments.length === 0 ? (
+                <p className='text-xs text-muted-foreground text-center py-4'>Aucun paiement en attente</p>
+              ) : (
+                data.pendingActions.recentPendingPayments.map((pay) => (
+                  <div key={pay.id} className='flex items-center justify-between p-2 rounded border border-gold/10 bg-white/[0.02]'>
+                    <div className='min-w-0'>
+                      <p className='text-xs font-medium truncate'>
+                        {pay.order?.customer?.displayName || pay.order?.wedding?.coupleLabel || 'Paiement orphelin'}
+                      </p>
+                      <p className='text-[10px] text-muted-foreground'>
+                        ${(pay.amount / 100).toFixed(2)} {pay.currency} · {pay.method}
+                      </p>
+                    </div>
+                    <Button size='sm' variant='outline' className='h-7 text-[10px] shrink-0 bg-emerald-600/20 text-emerald-300 border-emerald-500/30 hover:bg-emerald-600/30' onClick={() => { setActiveTab('commercial'); }}>
+                      Vérifier
+                    </Button>
+                  </div>
+                ))
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Draft weddings awaiting preparation */}
+          <Card className='glass-card gold-border border-0'>
+            <CardHeader className='pb-2'>
+              <CardTitle className='text-sm font-semibold flex items-center gap-2'>
+                <Rocket className='w-4 h-4 text-gold' />
+                À préparer / activer
+                <span className='ml-auto text-lg font-bold text-gold'>{data.pendingActions.draftWeddingsCount}</span>
+              </CardTitle>
+            </CardHeader>
+            <CardContent className='space-y-2 max-h-48 overflow-y-auto'>
+              {data.pendingActions.recentDrafts.length === 0 ? (
+                <p className='text-xs text-muted-foreground text-center py-4'>Aucun événement en préparation</p>
+              ) : (
+                data.pendingActions.recentDrafts.map((w) => (
+                  <div key={w.id} className='flex items-center justify-between p-2 rounded border border-gold/10 bg-white/[0.02]'>
+                    <div className='min-w-0'>
+                      <p className='text-xs font-medium truncate'>{w.coupleLabel}</p>
+                      <p className='text-[10px] text-muted-foreground'>
+                        {w.plan} · {w.commercialStatus === 'PAID' ? 'Payé — prêt à publier' : w.commercialStatus || 'Non payé'}
+                      </p>
+                    </div>
+                    <Button size='sm' variant='outline' className='h-7 text-[10px] shrink-0' onClick={() => { setActiveTab('weddings'); }}>
+                      Ouvrir
+                    </Button>
+                  </div>
+                ))
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       {/* Charts row — MRR evolution + plan distribution */}
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
@@ -2220,7 +2351,7 @@ export default function PlatformAdminPage() {
   const renderContent = (): ReactNode => {
     switch (activeTab) {
       case 'dashboard':
-        return <DashboardTab fetchWithAuth={fetchWithAuth} />
+        return <DashboardTab fetchWithAuth={fetchWithAuth} setActiveTab={setActiveTab} />
       case 'weddings':
         return <WeddingsTab fetchWithAuth={fetchWithAuth} />
       case 'billing':
@@ -2246,7 +2377,7 @@ export default function PlatformAdminPage() {
       case 'commercial':
         return <CommercialOS csrfToken={getCsrfToken()} />
       default:
-        return <DashboardTab fetchWithAuth={fetchWithAuth} />
+        return <DashboardTab fetchWithAuth={fetchWithAuth} setActiveTab={setActiveTab} />
     }
   }
 

@@ -25,6 +25,43 @@ import { PLAN_LIMITS, isPlatformAdmin, type Plan } from './types';
  *   - `limit === -1` means unlimited (ELITE plan)
  *   - `allowed` is `true` when `current < limit` (or when limit is -1)
  */
+/**
+ * Mission 5.5: Read a provisioned Entitlement override for a wedding.
+ *
+ * provisionFromOrder() (commercial/index.ts) writes Entitlement rows with
+ * origin='PLAN' when a payment is verified. These rows represent the ACTUAL
+ * commercial entitlement the couple purchased — which may differ from the
+ * static PLAN_LIMITS if the admin changed the wedding's plan after provisioning.
+ *
+ * This helper returns the Entitlement value (as a number) if it exists, or
+ * null if no provisioned entitlement is present (fall back to PLAN_LIMITS).
+ *
+ * Entitlement.value is a String column (e.g. "500", "-1", "true"). We parse
+ * it as int for numeric limits (guests, admins); for boolean limits
+ * (customDomain, premiumCollections) we check for 'true'/'1'.
+ */
+async function getEntitlementOverride(
+  weddingId: string,
+  type: 'MAX_GUESTS' | 'BULK_INVITATIONS' | 'CHECK_IN' | 'CUSTOM_DOMAIN' | 'PREMIUM_COLLECTIONS'
+): Promise<number | boolean | null> {
+  try {
+    const ent = await db.entitlement.findUnique({
+      where: { weddingId_type: { weddingId, type } },
+      select: { value: true },
+    });
+    if (!ent || !ent.value) return null;
+    if (type === 'MAX_GUESTS' || type === 'BULK_INVITATIONS' || type === 'CHECK_IN') {
+      const n = parseInt(ent.value, 10);
+      return Number.isFinite(n) ? n : null;
+    }
+    return ent.value === 'true' || ent.value === '1';
+  } catch {
+    // If the Entitlement table or unique constraint is missing (migration drift),
+    // silently fall back to PLAN_LIMITS. Never crash a limit check.
+    return null;
+  }
+}
+
 export async function checkGuestLimit(
   weddingId: string
 ): Promise<{ allowed: boolean; current: number; limit: number; plan: Plan }> {
@@ -34,7 +71,9 @@ export async function checkGuestLimit(
   });
   if (!wedding) throw new Error('Wedding not found');
   const plan = wedding.plan as Plan;
-  const limit = PLAN_LIMITS[plan].guests;
+  // Mission 5.5: prefer provisioned Entitlement over static PLAN_LIMITS
+  const override = await getEntitlementOverride(weddingId, 'MAX_GUESTS');
+  const limit = override !== null ? (override as number) : PLAN_LIMITS[plan].guests;
   const current = await db.guest.count({ where: { weddingId } });
   if (limit === -1) {
     return { allowed: true, current, limit: -1, plan };

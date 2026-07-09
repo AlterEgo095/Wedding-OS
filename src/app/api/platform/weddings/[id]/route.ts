@@ -123,6 +123,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
         groomName: true,
         isDefault: true,
         status: true,
+        commercialStatus: true,
         customDomain: true,
       },
     });
@@ -188,6 +189,25 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
           },
           { status: 400 }
         );
+      }
+    }
+
+    // ─── Mission 5.5 invariant: no PUBLISHED without verified payment ─────
+    // Enforces the business rule: a wedding cannot be published unless its
+    // commercialStatus is 'PAID' (set by provisionFromOrder after verify_payment).
+    // Demo weddings (isDefault=true, e.g. Three Worlds) are exempt.
+    if (status === 'PUBLISHED' && existing.status !== 'PUBLISHED' && !existing.isDefault) {
+      if (existing.commercialStatus !== 'PAID') {
+        return NextResponse.json(
+          {
+            error: 'Publication refusée : le paiement doit être vérifié avant activation. ' +
+                   'Utilisez Commercial OS → Payments → ✓ pour vérifier le paiement, ' +
+                   'ce qui déclenche le provisioning et met commercialStatus=PAID.',
+            code: 'PUBLISHED_REQUIRES_PAID',
+            currentCommercialStatus: existing.commercialStatus,
+          },
+          { status: 403 }
+        )
       }
     }
 
