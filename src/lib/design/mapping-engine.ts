@@ -33,7 +33,7 @@ export interface BindingContext {
   };
   guest?: {
     id: string;
-    displayName: string;
+    displayName: string | null;
     firstName: string;
     lastName: string;
     invitationCode: string;

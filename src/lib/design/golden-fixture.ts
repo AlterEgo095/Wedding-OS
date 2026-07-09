@@ -84,7 +84,7 @@ const NODES: DesignNode[] = [
     geometry: { x: 0, y: 0, width: 1080, height: 1920 },
     style: {
       fill: TOKENS.colors.background || '#FAF8F5',
-      borderRadius: TOKENS.radii.lg || '16px',
+      borderRadius: TOKENS.radii?.lg || '16px',
     },
   },
   {
@@ -94,7 +94,7 @@ const NODES: DesignNode[] = [
     geometry: { x: 440, y: 120, width: 200, height: 60 },
     style: {
       fill: TOKENS.colors.primary || '#D4AF37',
-      borderRadius: TOKENS.radii.sm || '4px',
+      borderRadius: TOKENS.radii?.sm || '4px',
     },
     semanticRole: 'visual.ornament',
   },
