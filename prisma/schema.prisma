@@ -84,6 +84,8 @@ model Wedding {
   usageCounters   UsageCounter[]
   invitations     Invitation[]
   invoices        Invoice[]
+  // Mission 5.7.1 — design pipeline relations
+  exportJobs      ExportJob[]
   // Mission 5.0 — Commercial OS relations (customer field defined above with customerId)
   deals           Deal[]
   orders          CommercialOrder[]
@@ -119,6 +121,8 @@ model AdminUser {
   collectionBindings  WeddingCollectionBinding[]
   // Mission 5.0 — payments verified by this admin
   verifiedPayments    Payment[]
+  // Mission 5.7.1 — design pipeline relations
+  authoredDesignVersions DesignVersion[] @relation("DesignVersionAuthor")
 
   // ── P1-SEC-8: TOTP-based 2FA for platform admins ─────────────────────────
   // twoFactorSecret: TOTP secret (encrypted-at-rest via encryptId/decryptId
@@ -303,11 +307,17 @@ model Media {
   sizeBytes       Int      @default(0)
   mime            String?
   order           Int      @default(0)
+  // Mission 5.7.1 — links design asset (FONT/SVG) to a Collection. Null for
+  // per-wedding media (the original use case). When set, this Media row is a
+  // shared design library asset owned by the Collection.
+  collectionId    String?
+  collection      Collection? @relation(fields: [collectionId], references: [id], onDelete: SetNull)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
   @@index([weddingId, category])
   @@index([weddingId, type])
+  @@index([collectionId])
 }
 
 model EventTimeline {
@@ -577,12 +587,25 @@ model Collection {
   // computed (legacy Collections from Phase 1-4 have null until first compute).
   qualityScore    Int?
 
+  // ─── Mission 5.7.1 — Design Pipeline ──────────────────────────────────
+  // Content hash for change detection (SHA-256 of the normalized design tree).
+  sourceHash         String?
+  // Cached design document JSON (pages/frames/nodes/tokens) from the latest ingestion.
+  designDocument     String?
+  // Cached full QualityReport JSON (not just the qualityScore int).
+  qualityReportJson  String?
+
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
   variants        CollectionVariant[]
   modules         CollectionModule[]
   weddings        Wedding[]
+  // Mission 5.7.1 — design pipeline relations
+  assets          Media[]
+  designVersions  DesignVersion[]
+  ingestionJobs   IngestionJob[]
+  exportJobs      ExportJob[]
 }
 
 model CollectionVariant {
@@ -634,6 +657,9 @@ model CollectionModule {
   // For INVITATIONS pack only: which guest tier this slot serves (STANDARD/VIP/FAMILLE/COUPLE/PRESSE/SPONSOR)
   // null for all other packs.
   guestTier       String?
+  // Mission 5.7.1 — semantic data bindings JSON (ProductBinding[] co-located).
+  // Shape: [{ sourceNodeId, semanticRole, dataPath, fallback?, transform?, required }]
+  dataBindings   String?
   sortOrder       Int      @default(0)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
@@ -888,4 +914,94 @@ model Plan {
 
   @@index([status])
   @@index([sortOrder])
+}
+
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Mission 5.7.1 — DESIGN PIPELINE MODELS
+// ══════════════════════════════════════════════════════════════════════════════
+// These models implement the Penpot-ready production pipeline:
+//   SourceAdapter -> CanonicalDesignPackage -> Ingestion -> Mapping
+//   -> CollectionEngine -> ProductCompiler -> Export
+//
+// All fields are additive (nullable or new models). Zero regression to
+// existing 12 Collections / 408 Modules / 12 Variants / 4 Bindings.
+// ══════════════════════════════════════════════════════════════════════════════
+
+// Immutable version snapshot of a Collection's design at a given semver tag.
+// Enables undo-across-sessions + audit trail without touching the
+// WeddingCollectionBinding.manifest upsert pattern (which is the /w/[slug]
+// read path — DO_NOT_TOUCH).
+model DesignVersion {
+  id                String   @id @default(cuid())
+  collectionId      String
+  collection        Collection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  version           String   // semver, e.g. "1.0.0"
+  // Full WeddingManifest JSON snapshot at this version.
+  manifestSnapshot  String
+  // Penpot source content hash at snapshot time (for drift detection).
+  sourceHash        String?
+  // CanonicalDesignPackage JSON snapshot (the full design document at this version).
+  designPackage     String?
+  createdByUserId   String?
+  createdBy         AdminUser? @relation("DesignVersionAuthor", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  note              String?
+  createdAt         DateTime @default(now())
+
+  @@unique([collectionId, version])
+  @@index([collectionId, createdAt])
+}
+
+// Idempotent ingestion job tracker. The @@unique([collectionId, sourceHash])
+// ensures that re-importing the same design (same content hash) does not
+// create a duplicate job — it returns the existing one.
+model IngestionJob {
+  id                String   @id @default(cuid())
+  collectionId      String
+  collection        Collection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  // The source URL or fixture identifier.
+  sourceUrl         String
+  // Content hash for idempotency — same hash = same design = same job.
+  sourceHash        String?
+  // PENDING | FETCHING | PARSING | NORMALIZING | MAPPING | COMPLETED | FAILED
+  status            String   @default("PENDING")
+  attemptCount      Int      @default(0)
+  lastError         String?
+  // Cached DetectionReport JSON from the autoDetect pipeline.
+  detectionReport   String?
+  // The CanonicalDesignPackage JSON produced by ingestion (null until COMPLETED).
+  designPackage     String?
+  startedAt         DateTime?
+  completedAt       DateTime?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@unique([collectionId, sourceHash])
+  @@index([collectionId, status])
+}
+
+// Batch export job for producing personalized PNG/PDF outputs from a master
+// design + event data. Reuses the DeliveryJob status pattern.
+model ExportJob {
+  id                String   @id @default(cuid())
+  weddingId         String
+  wedding           Wedding  @relation(fields: [weddingId], references: [id], onDelete: Cascade)
+  collectionId      String?
+  collection        Collection? @relation(fields: [collectionId], references: [id], onDelete: SetNull)
+  // PNG_PDF_INVITATIONS | PNG_PDF_PRINT | PNG_PDF_COMMUNICATION | etc.
+  batchType         String
+  // QUEUED | PROCESSING | COMPLETED | FAILED | CANCELLED
+  status            String   @default("QUEUED")
+  totalItems        Int      @default(0)
+  completedItems    Int      @default(0)
+  // JSON array of generated asset URLs.
+  outputUrls        String?
+  lastError         String?
+  startedAt         DateTime?
+  completedAt       DateTime?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([weddingId, status])
+  @@index([collectionId, status])
 }
