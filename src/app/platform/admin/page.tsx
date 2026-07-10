@@ -2392,7 +2392,7 @@ export default function PlatformAdminPage() {
         // wedding picker (same X-Wedding-Slug header pattern).
         return <PenpotStudio />
       case 'collections':
-        return <CollectionsFactoryTab />
+        return <CollectionsFactoryTab csrfToken={getCsrfToken()} />
       case 'design-factory':
         return <DesignFactoryTab csrfToken={getCsrfToken()} />
       case 'marketing':

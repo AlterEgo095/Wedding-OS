@@ -39,6 +39,12 @@ export function DesignFactoryTab({ csrfToken }: Props) {
   const [batchExporting, setBatchExporting] = useState(false)
   const [lastExport, setLastExport] = useState<{ pngUrl?: string; pdfUrl?: string; pngSize?: number; pdfSize?: number } | null>(null)
   const [batchResult, setBatchResult] = useState<{ totalGuests: number; completed: number; failed: number; outputs: Array<{ guestName?: string; pngUrl?: string; pdfUrl?: string; error?: string }> } | null>(null)
+  // P0-B: real wedding + guest selectors (replaces hardcoded IDs)
+  const [weddings, setWeddings] = useState<Array<{ id: string; slug: string; coupleLabel: string }>>([])
+  const [selectedWeddingId, setSelectedWeddingId] = useState<string | null>(null)
+  const [guests, setGuests] = useState<Array<{ id: string; displayName: string | null; firstName: string; lastName: string; invitationCode: string }>>([])
+  const [loadingGuests, setLoadingGuests] = useState(false)
+  const [selectedGuestId, setSelectedGuestId] = useState<string | null>(null)
 
   const fetchCollections = useCallback(async () => {
     try {
@@ -53,6 +59,37 @@ export function DesignFactoryTab({ csrfToken }: Props) {
   }, [csrfToken])
 
   useEffect(() => { fetchCollections() }, [fetchCollections])
+
+  // P0-B: load weddings for selector
+  useEffect(() => {
+    fetch('/api/platform/weddings?limit=100', { headers: { 'X-CSRF-Token': csrfToken } })
+      .then(r => r.json())
+      .then(d => setWeddings((d.weddings || []).map((w: Record<string, unknown>) => ({
+        id: String(w.id), slug: String(w.slug), coupleLabel: String(w.coupleLabel || w.slug)
+      }))))
+      .catch(() => {})
+  }, [csrfToken])
+
+  // P0-B: load guests when a wedding is selected (tenant-scoped)
+  useEffect(() => {
+    if (!selectedWeddingId) { setGuests([]); setSelectedGuestId(null); return }
+    setLoadingGuests(true)
+    fetch(`/api/guests?weddingId=${selectedWeddingId}&limit=100`, { headers: { 'X-CSRF-Token': csrfToken } })
+      .then(r => r.json())
+      .then(d => {
+        const list = Array.isArray(d) ? d : (d.guests || [])
+        setGuests(list.map((g: Record<string, unknown>) => ({
+          id: String(g.id),
+          displayName: (g.displayName as string | null) || null,
+          firstName: String(g.firstName || ''),
+          lastName: String(g.lastName || ''),
+          invitationCode: String(g.invitationCode || '')
+        })))
+        setSelectedGuestId(null)
+      })
+      .catch(() => { setGuests([]) })
+      .finally(() => setLoadingGuests(false))
+  }, [selectedWeddingId, csrfToken])
 
   const fetchMasterStatus = useCallback(async (collectionId: string) => {
     try {
@@ -108,14 +145,14 @@ export function DesignFactoryTab({ csrfToken }: Props) {
   }
 
   const handleExport = async () => {
-    if (!selectedId) return
+    if (!selectedId || !selectedWeddingId || !selectedGuestId) return
     setExporting(true)
     setLastExport(null)
     try {
       const r = await post('/api/design/export', {
         collectionId: selectedId,
-        weddingId: 'cmr6591pg0002pd01vrm1e47e', // sarah-michael-prod
-        guestId: 'cmr81mdhx001wpd01ccr7vo1p', // Michael Brown
+        weddingId: selectedWeddingId || '',
+        guestId: selectedGuestId || '',
         formats: ['PNG', 'PDF'],
       })
       if (r) {
@@ -127,18 +164,14 @@ export function DesignFactoryTab({ csrfToken }: Props) {
   }
 
   const handleBatchExport = async () => {
-    if (!selectedId) return
+    if (!selectedId || !selectedWeddingId || guests.length === 0) return
     setBatchExporting(true)
     setBatchResult(null)
     try {
       const r = await post('/api/design/batch-export', {
         collectionId: selectedId,
-        weddingId: 'cmr6591pg0002pd01vrm1e47e',
-        guestIds: [
-          'cmr81mdhx001wpd01ccr7vo1p',
-          'cmr81mdhx002wpd01ccr7vo1q',
-          'cmr81mdhx003wpd01ccr7vo1r',
-        ].filter(Boolean),
+        weddingId: selectedWeddingId || '',
+        guestIds: guests.slice(0, 5).map(g => g.id),
         formats: ['PNG', 'PDF'],
       })
       if (r) {
@@ -238,7 +271,27 @@ export function DesignFactoryTab({ csrfToken }: Props) {
               <CardContent className="p-4 space-y-3">
                 <div className="flex items-center gap-2"><FileImage className="w-4 h-4 text-gold" /><span className="text-sm font-medium">3. Export PNG+PDF</span></div>
                 <p className="text-xs text-muted-foreground">Produit de vrais fichiers PNG + PDF (via sharp, server-side).</p>
-                <Button size="sm" variant="outline" className="w-full" onClick={handleExport} disabled={exporting || !masterStatus.hasIngestedDesign}>
+                {/* P0-B: Real wedding + guest selectors */}
+                <div className="space-y-2">
+                  <select
+                    value={selectedWeddingId || ''}
+                    onChange={(e) => setSelectedWeddingId(e.target.value || null)}
+                    className="w-full text-xs rounded border border-white/10 bg-white/5 px-2 py-1.5"
+                  >
+                    <option value="">— Sélectionner un mariage —</option>
+                    {weddings.map(w => <option key={w.id} value={w.id}>{w.coupleLabel}</option>)}
+                  </select>
+                  <select
+                    value={selectedGuestId || ''}
+                    onChange={(e) => setSelectedGuestId(e.target.value || null)}
+                    disabled={!selectedWeddingId || loadingGuests}
+                    className="w-full text-xs rounded border border-white/10 bg-white/5 px-2 py-1.5 disabled:opacity-50"
+                  >
+                    <option value="">{loadingGuests ? 'Chargement...' : '— Sélectionner un invité —'}</option>
+                    {guests.map(g => <option key={g.id} value={g.id}>{g.displayName || `${g.firstName} ${g.lastName}`}</option>)}
+                  </select>
+                </div>
+                <Button size="sm" variant="outline" className="w-full" onClick={handleExport} disabled={exporting || !masterStatus.hasIngestedDesign || !selectedWeddingId || !selectedGuestId}>
                   {exporting ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <Download className="w-3 h-3 mr-1" />}
                   Exporter (1 invité)
                 </Button>
@@ -255,7 +308,7 @@ export function DesignFactoryTab({ csrfToken }: Props) {
               <CardContent className="p-4 space-y-3">
                 <div className="flex items-center gap-2"><FileText className="w-4 h-4 text-gold" /><span className="text-sm font-medium">4. Batch (3 invités)</span></div>
                 <p className="text-xs text-muted-foreground">Prouve qu'un master produit plusieurs invitations personnalisées.</p>
-                <Button size="sm" variant="outline" className="w-full" onClick={handleBatchExport} disabled={batchExporting || !masterStatus.hasIngestedDesign}>
+                <Button size="sm" variant="outline" className="w-full" onClick={handleBatchExport} disabled={batchExporting || !masterStatus.hasIngestedDesign || !selectedWeddingId || guests.length === 0}>
                   {batchExporting ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <Download className="w-3 h-3 mr-1" />}
                   Batch export
                 </Button>

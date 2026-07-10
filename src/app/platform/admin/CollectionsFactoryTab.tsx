@@ -94,7 +94,8 @@ const LAYOUTS = [
 
 const CATEGORIES = ['LUXURY', 'CLASSIC', 'AFRICAN', 'MINIMAL', 'DESTINATION', 'CUSTOM']
 
-export function CollectionsFactoryTab() {
+interface CollectionsFactoryTabProps { csrfToken: string }
+export function CollectionsFactoryTab({ csrfToken }: CollectionsFactoryTabProps) {
   const [collections, setCollections] = useState<DBCollection[]>([])
   const [loading, setLoading] = useState(true)
   const [showCreate, setShowCreate] = useState(false)
@@ -116,7 +117,7 @@ export function CollectionsFactoryTab() {
   const fetchCollections = useCallback(async () => {
     try {
       // Fetch ALL collections (including unpublished) — platform admin view
-      const res = await fetch('/api/platform/collections?includeDrafts=true')
+      const res = await fetch('/api/platform/collections?includeDrafts=true', { headers: { 'X-CSRF-Token': csrfToken } })
       if (!res.ok) throw new Error('Failed to fetch')
       const data = await res.json()
       setCollections(Array.isArray(data) ? data : data.collections || [])
@@ -187,7 +188,7 @@ export function CollectionsFactoryTab() {
         // Update existing
         const res = await fetch(`/api/collections/${editing.id}`, {
           method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },
           body: JSON.stringify(body),
         })
         if (!res.ok) {
@@ -199,7 +200,7 @@ export function CollectionsFactoryTab() {
         // Create new
         const res = await fetch('/api/collections', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },
           body: JSON.stringify(body),
         })
         if (!res.ok) {
@@ -220,7 +221,7 @@ export function CollectionsFactoryTab() {
     try {
       const res = await fetch(`/api/collections/${c.id}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },
         body: JSON.stringify({ isPublished: true, status: 'PUBLIE' }),
       })
       if (!res.ok) throw new Error('Failed')
@@ -234,11 +235,11 @@ export function CollectionsFactoryTab() {
   // Mission 5.7 B7: wire the lifecycle transition API (was DISCONNECTED).
   // Calls POST /api/collections/[id]/transition with the target status,
   // enforcing the role matrix + completeness gate server-side.
-  const transitionCollection = async (c: DBCollection, to: 'PUBLIE' | 'COMMERCIALISE' | 'ARCHIVE') => {
+  const transitionCollection = async (c: DBCollection, to: 'EN_COURS' | 'VALIDATION' | 'PUBLIE' | 'COMMERCIALISE' | 'ARCHIVE') => {
     try {
       const res = await fetch(`/api/collections/${c.id}/transition`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },
         body: JSON.stringify({ to }),
       })
       if (!res.ok) {
@@ -255,7 +256,7 @@ export function CollectionsFactoryTab() {
   const deleteCollection = async (c: DBCollection) => {
     if (!confirm(`Archiver la collection "${c.name}" ?`)) return
     try {
-      const res = await fetch(`/api/collections/${c.id}`, { method: 'DELETE' })
+      const res = await fetch(`/api/collections/${c.id}`, { method: 'DELETE', headers: { 'X-CSRF-Token': csrfToken } })
       if (!res.ok) {
         const d = await res.json()
         throw new Error(d.error || 'Failed')
