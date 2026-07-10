@@ -16,7 +16,7 @@ import type { CanonicalDesignPackage } from './types';
 import type { ResolvedBinding, BindingContext } from './mapping-engine';
 import { renderSvg } from './svg-renderer';
 
-const EXPORTS_DIR = path.join(process.cwd(), 'public', 'exports');
+const EXPORTS_DIR = path.join(process.cwd(), 'public', 'uploads', 'exports');
 
 // ─── Ensure exports directory exists ──────────────────────────────────────────
 
