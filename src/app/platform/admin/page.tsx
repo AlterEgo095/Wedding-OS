@@ -77,6 +77,7 @@ import {
   Megaphone,
   TrendingUp,
   Layers,
+  Factory,
 } from 'lucide-react'
 
 import {
@@ -115,6 +116,7 @@ const BillingTab = dynamic(() => import('./BillingTab').then((m) => m.BillingTab
 const OnboardingTab = dynamic(() => import('./OnboardingTab').then((m) => m.OnboardingTab))
 const CollectionsFactoryTab = dynamic(() => import('./CollectionsFactoryTab').then((m) => m.CollectionsFactoryTab))
 const DesignFactoryTab = dynamic(() => import('./DesignFactoryTab').then((m) => m.DesignFactoryTab))
+const ProductionStudioTab = dynamic(() => import('./ProductionStudioTab').then((m) => m.ProductionStudioTab))
 const ThemeCustomizer = dynamic(() => import('@/components/admin/ThemeCustomizer').then((m) => m.ThemeCustomizer), { ssr: false })
 const PenpotStudio = dynamic(() => import('@/components/penpot/PenpotStudio').then((m) => m.PenpotStudio), { ssr: false })
 const MarketingControlPlane = dynamic(() => import('@/components/marketing/MarketingControlPlane'), { ssr: false })
@@ -267,7 +269,7 @@ interface PaginatedUsers {
   limit: number
 }
 
-type TabId = 'dashboard' | 'weddings' | 'users' | 'audit' | 'billing' | 'onboarding' | 'appearance' | 'studio' | 'collections' | 'marketing' | 'commercial' | 'design-factory'
+type TabId = 'dashboard' | 'weddings' | 'users' | 'audit' | 'billing' | 'onboarding' | 'appearance' | 'studio' | 'collections' | 'marketing' | 'commercial' | 'design-factory' | 'production-studio'
 
 interface NavItem {
   id: TabId
@@ -287,7 +289,9 @@ const NAV_ITEMS: NavItem[] = [
   { id: 'onboarding', label: 'Onboarding', icon: Rocket },
   // ── EVENT OPERATIONS ──
   { id: 'weddings', label: 'Mariages', icon: Heart },
-  // ── DESIGN FACTORY ──
+  // ── PRODUCTION STUDIO (unified) ──
+  { id: 'production-studio', label: 'Production Studio', icon: Factory },
+  // ── DESIGN FACTORY (legacy tabs — compatibility aliases) ──
   { id: 'collections', label: 'Collections Premium', icon: Crown },
   { id: 'design-factory', label: 'Design Factory', icon: Layers },
   { id: 'appearance', label: 'Apparence', icon: Palette },
@@ -2393,6 +2397,8 @@ export default function PlatformAdminPage() {
         return <PenpotStudio />
       case 'collections':
         return <CollectionsFactoryTab csrfToken={getCsrfToken()} />
+      case 'production-studio':
+        return <ProductionStudioTab csrfToken={getCsrfToken()} />
       case 'design-factory':
         return <DesignFactoryTab csrfToken={getCsrfToken()} />
       case 'marketing':
