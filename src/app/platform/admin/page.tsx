@@ -76,6 +76,7 @@ import {
   Copy,
   Megaphone,
   TrendingUp,
+  Layers,
 } from 'lucide-react'
 
 import {
@@ -113,6 +114,7 @@ import dynamic from 'next/dynamic'
 const BillingTab = dynamic(() => import('./BillingTab').then((m) => m.BillingTab))
 const OnboardingTab = dynamic(() => import('./OnboardingTab').then((m) => m.OnboardingTab))
 const CollectionsFactoryTab = dynamic(() => import('./CollectionsFactoryTab').then((m) => m.CollectionsFactoryTab))
+const DesignFactoryTab = dynamic(() => import('./DesignFactoryTab').then((m) => m.DesignFactoryTab))
 const ThemeCustomizer = dynamic(() => import('@/components/admin/ThemeCustomizer').then((m) => m.ThemeCustomizer), { ssr: false })
 const PenpotStudio = dynamic(() => import('@/components/penpot/PenpotStudio').then((m) => m.PenpotStudio), { ssr: false })
 const MarketingControlPlane = dynamic(() => import('@/components/marketing/MarketingControlPlane'), { ssr: false })
@@ -265,7 +267,7 @@ interface PaginatedUsers {
   limit: number
 }
 
-type TabId = 'dashboard' | 'weddings' | 'users' | 'audit' | 'billing' | 'onboarding' | 'appearance' | 'studio' | 'collections' | 'marketing' | 'commercial'
+type TabId = 'dashboard' | 'weddings' | 'users' | 'audit' | 'billing' | 'onboarding' | 'appearance' | 'studio' | 'collections' | 'marketing' | 'commercial' | 'design-factory'
 
 interface NavItem {
   id: TabId
@@ -287,6 +289,7 @@ const NAV_ITEMS: NavItem[] = [
   { id: 'weddings', label: 'Mariages', icon: Heart },
   // ── DESIGN FACTORY ──
   { id: 'collections', label: 'Collections Premium', icon: Crown },
+  { id: 'design-factory', label: 'Design Factory', icon: Layers },
   { id: 'appearance', label: 'Apparence', icon: Palette },
   { id: 'studio', label: 'Studio Penpot', icon: PenTool },
   { id: 'marketing', label: 'Marketing OS', icon: Megaphone },
@@ -2390,6 +2393,8 @@ export default function PlatformAdminPage() {
         return <PenpotStudio />
       case 'collections':
         return <CollectionsFactoryTab />
+      case 'design-factory':
+        return <DesignFactoryTab csrfToken={getCsrfToken()} />
       case 'marketing':
         return <MarketingControlPlane csrfToken={getCsrfToken()} />
       case 'commercial':
