@@ -7,13 +7,14 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Loader2, Factory, LayoutDashboard, Palette, Boxes, Crown, GitBranch, FileImage, Activity, CheckCircle2, AlertCircle, Clock, ChevronUp, ChevronDown, Save, Eye } from 'lucide-react'
+import { Loader2, Factory, LayoutDashboard, Palette, Boxes, Crown, GitBranch, FileImage, Activity, CheckCircle2, AlertCircle, Clock, ChevronUp, ChevronDown, Save, Eye, ShieldCheck } from 'lucide-react'
 import { toast } from 'sonner'
 import dynamic from 'next/dynamic'
+import { PreviewLab, QualityCenter } from './PreviewQualityTabs'
 
 const ThemeCustomizer = dynamic(() => import('@/components/admin/ThemeCustomizer').then((m) => m.ThemeCustomizer), { ssr: false })
 
-type StudioSection = 'cockpit' | 'collections' | 'design-system' | 'product-builder'
+type StudioSection = 'cockpit' | 'collections' | 'design-system' | 'product-builder' | 'preview' | 'quality'
 
 interface Props { csrfToken: string }
 
@@ -214,6 +215,8 @@ export function ProductionStudioTab({ csrfToken }: Props) {
     { id: 'collections', label: 'Collections', icon: Crown },
     { id: 'design-system', label: 'Design System', icon: Palette },
     { id: 'product-builder', label: 'Product Builder', icon: Boxes },
+    { id: 'preview', label: 'Preview Lab', icon: Eye },
+    { id: 'quality', label: 'Quality Center', icon: ShieldCheck },
   ]
 
   return (
@@ -457,6 +460,8 @@ export function ProductionStudioTab({ csrfToken }: Props) {
       )}
 
       {/* ─── PRODUCT BUILDER ────────────────────────────────────────────── */}
+      {section === 'preview' && <PreviewLab csrfToken={csrfToken} />}
+      {section === 'quality' && <QualityCenter csrfToken={csrfToken} />}
       {section === 'product-builder' && (
         <div className="space-y-4">
           {/* Top bar: product + wedding + guest selectors */}
