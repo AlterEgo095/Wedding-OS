@@ -71,6 +71,7 @@ export async function GET(request: NextRequest) {
       // Defense in depth: safeJsonParse never throws — a single malformed row
       // returns the DEFAULT instead of 500ing the whole list.
       themeSeed: safeJsonParse(c.themeSeed, DEFAULT_THEME_SEED),
+      qualityScore: c.qualityScore,
       luxuryPreset: c.luxuryPreset ? safeJsonParse(c.luxuryPreset, DEFAULT_LUXURY_PRESET) : null,
       variants: c.variants.map((v) => ({
         id: v.id,

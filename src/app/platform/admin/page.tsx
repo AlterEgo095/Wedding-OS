@@ -289,14 +289,10 @@ const NAV_ITEMS: NavItem[] = [
   { id: 'onboarding', label: 'Onboarding', icon: Rocket },
   // ── EVENT OPERATIONS ──
   { id: 'weddings', label: 'Mariages', icon: Heart },
-  // ── PRODUCTION STUDIO (unified) ──
+  // ── PRODUCTION STUDIO (unified — single entry point) ──
   { id: 'production-studio', label: 'Production Studio', icon: Factory },
-  // ── DESIGN FACTORY (legacy tabs — compatibility aliases) ──
-  { id: 'collections', label: 'Collections Premium', icon: Crown },
-  { id: 'design-factory', label: 'Design Factory', icon: Layers },
-  { id: 'appearance', label: 'Apparence', icon: Palette },
-  { id: 'studio', label: 'Studio Penpot', icon: PenTool },
-  { id: 'marketing', label: 'Marketing OS', icon: Megaphone },
+  // Legacy tabs (collections, design-factory, appearance, studio, marketing)
+  // are NOT in primary nav but remain accessible as compatibility aliases.
   // ── SYSTEM ──
   { id: 'users', label: 'Utilisateurs', icon: UsersIcon },
   { id: 'audit', label: "Journal d'audit", icon: ScrollText },
