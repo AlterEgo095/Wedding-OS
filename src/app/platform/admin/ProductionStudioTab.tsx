@@ -12,6 +12,7 @@ import { toast } from 'sonner'
 import dynamic from 'next/dynamic'
 import { PreviewLab, QualityCenter } from './PreviewQualityTabs'
 import { GovernanceDashboard } from './GovernanceDashboard'
+import { VisualProductComposer } from './VisualProductComposer'
 
 const ThemeCustomizer = dynamic(() => import('@/components/admin/ThemeCustomizer').then((m) => m.ThemeCustomizer), { ssr: false })
 
@@ -465,101 +466,7 @@ export function ProductionStudioTab({ csrfToken }: Props) {
       {section === 'preview' && <PreviewLab csrfToken={csrfToken} />}
       {section === 'quality' && <QualityCenter csrfToken={csrfToken} />}
       {section === 'governance' && <GovernanceDashboard csrfToken={csrfToken} />}
-      {section === 'product-builder' && (
-        <div className="space-y-4">
-          {/* Top bar: product + wedding + guest selectors */}
-          <Card className="glass-card gold-border">
-            <CardContent className="p-3">
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-                <div>
-                  <Label className="text-[10px] uppercase tracking-wider">Product</Label>
-                  <Select value={selectedProduct} onValueChange={setSelectedProduct}>
-                    <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="WEBSITE">Website</SelectItem>
-                      <SelectItem value="INVITATION">Invitation</SelectItem>
-                      <SelectItem value="SAVE_THE_DATE" disabled>Save the Date (à venir)</SelectItem>
-                      <SelectItem value="PROGRAM" disabled>Program (à venir)</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <Label className="text-[10px] uppercase tracking-wider">Wedding</Label>
-                  <select value={selectedWeddingId || ''} onChange={(e) => setSelectedWeddingId(e.target.value || null)}
-                    className="w-full text-xs rounded border border-white/10 bg-white/5 px-2 py-1.5 h-8">
-                    <option value="">— Sélectionner —</option>
-                    {weddings.map(w => <option key={w.id} value={w.id}>{w.coupleLabel}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <Label className="text-[10px] uppercase tracking-wider">Guest</Label>
-                  <select value={selectedGuestId || ''} onChange={(e) => setSelectedGuestId(e.target.value || null)}
-                    disabled={!selectedWeddingId || loadingGuests}
-                    className="w-full text-xs rounded border border-white/10 bg-white/5 px-2 py-1.5 h-8 disabled:opacity-50">
-                    <option value="">{loadingGuests ? 'Chargement...' : '— Sélectionner —'}</option>
-                    {guests.map(g => <option key={g.id} value={g.id}>{g.displayName || `${g.firstName} ${g.lastName}`}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <Label className="text-[10px] uppercase tracking-wider">Collection</Label>
-                  <select value={selectedCollection?.id || ''} onChange={(e) => { const c = collections.find(c => c.id === e.target.value); setSelectedCollection(c || null) }}
-                    className="w-full text-xs rounded border border-white/10 bg-white/5 px-2 py-1.5 h-8">
-                    <option value="">— Sélectionner —</option>
-                    {collections.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                  </select>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            {/* Left: Structure Tree */}
-            <Card className="glass-card gold-border">
-              <CardHeader className="pb-2"><CardTitle className="text-sm">Structure Tree — {selectedProduct}</CardTitle></CardHeader>
-              <CardContent className="space-y-1">
-                {sectionOrder.map((s, i) => (
-                  <div key={s.type} className="flex items-center gap-2 p-2 rounded text-xs hover:bg-white/5">
-                    <span className="text-sm">{s.icon}</span>
-                    <span className={s.enabled ? '' : 'text-muted-foreground line-through'}>{s.label}</span>
-                    <Badge variant="outline" className="text-[9px] ml-auto">{s.type}</Badge>
-                    <div className="flex gap-0.5">
-                      <button onClick={() => toggleSection(i)} className="p-0.5"><CheckCircle2 className={`w-3 h-3 ${s.enabled ? 'text-emerald-400' : 'text-muted-foreground'}`} /></button>
-                      <button onClick={() => moveSection(i, 'up')} disabled={i === 0} className="p-0.5 disabled:opacity-30"><ChevronUp className="w-3 h-3" /></button>
-                      <button onClick={() => moveSection(i, 'down')} disabled={i === sectionOrder.length - 1} className="p-0.5 disabled:opacity-30"><ChevronDown className="w-3 h-3" /></button>
-                    </div>
-                  </div>
-                ))}
-              </CardContent>
-            </Card>
-
-            {/* Right: Semantic Data Bindings */}
-            <Card className="glass-card gold-border">
-              <CardHeader className="pb-2"><CardTitle className="text-sm">Semantic Data Bindings</CardTitle></CardHeader>
-              <CardContent className="space-y-1 max-h-[50vh] overflow-y-auto">
-                {SEMANTIC_BINDINGS.map(b => (
-                  <div key={b.role} className="p-2 rounded border border-white/5 text-xs space-y-1">
-                    <div className="flex items-center justify-between">
-                      <span className="font-medium">{b.label}</span>
-                      <Badge variant="outline" className={`text-[9px] ${b.required ? 'text-amber-400 border-amber-500/30' : 'text-muted-foreground'}`}>{b.required ? 'REQUIRED' : 'optional'}</Badge>
-                    </div>
-                    <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
-                      <span className="font-mono">{b.role}</span>
-                      <span>→</span>
-                      <span className="font-mono">{b.dataPath}</span>
-                    </div>
-                    {b.fallback && <div className="text-[10px] text-muted-foreground/70">Fallback: "{b.fallback}"</div>}
-                  </div>
-                ))}
-                {selectedWeddingId && selectedGuestId && (
-                  <div className="mt-2 p-2 rounded bg-emerald-500/10 border border-emerald-500/20 text-[10px] text-emerald-300">
-                    ✅ Context: {weddings.find(w => w.id === selectedWeddingId)?.coupleLabel} · Guest: {guests.find(g => g.id === selectedGuestId)?.displayName || 'N/A'}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </div>
-        </div>
-      )}
-    </div>
-  )
-}
+      {section === 'product-builder' && <VisualProductComposer csrfToken={csrfToken} />}
+</div>
+    )
+  }
