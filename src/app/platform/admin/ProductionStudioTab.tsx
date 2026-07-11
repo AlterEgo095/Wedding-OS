@@ -7,16 +7,17 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Loader2, Factory, LayoutDashboard, Palette, Boxes, Crown, GitBranch, FileImage, Activity, CheckCircle2, AlertCircle, Clock, ChevronUp, ChevronDown, Save, Eye, ShieldCheck } from 'lucide-react'
+import { Loader2, Factory, LayoutDashboard, Palette, Boxes, Crown, GitBranch, FileImage, Activity, CheckCircle2, AlertCircle, Clock, ChevronUp, ChevronDown, Save, Eye, ShieldCheck, ImageIcon } from 'lucide-react'
 import { toast } from 'sonner'
 import dynamic from 'next/dynamic'
 import { PreviewLab, QualityCenter } from './PreviewQualityTabs'
 import { GovernanceDashboard } from './GovernanceDashboard'
 import { VisualProductComposer } from './VisualProductComposer'
+import { AssetStudio } from './AssetStudio'
 
 const ThemeCustomizer = dynamic(() => import('@/components/admin/ThemeCustomizer').then((m) => m.ThemeCustomizer), { ssr: false })
 
-type StudioSection = 'cockpit' | 'collections' | 'design-system' | 'product-builder' | 'preview' | 'quality' | 'governance'
+type StudioSection = 'cockpit' | 'collections' | 'design-system' | 'product-builder' | 'preview' | 'quality' | 'governance' | 'asset-studio'
 
 interface Props { csrfToken: string }
 
@@ -220,6 +221,7 @@ export function ProductionStudioTab({ csrfToken }: Props) {
     { id: 'preview', label: 'Preview Lab', icon: Eye },
     { id: 'quality', label: 'Quality Center', icon: ShieldCheck },
     { id: 'governance', label: 'Governance', icon: ShieldCheck },
+    { id: 'asset-studio', label: 'Asset Studio', icon: ImageIcon },
   ]
 
   return (
@@ -467,6 +469,7 @@ export function ProductionStudioTab({ csrfToken }: Props) {
       {section === 'quality' && <QualityCenter csrfToken={csrfToken} />}
       {section === 'governance' && <GovernanceDashboard csrfToken={csrfToken} />}
       {section === 'product-builder' && <VisualProductComposer csrfToken={csrfToken} />}
+      {section === 'asset-studio' && <AssetStudio csrfToken={csrfToken} />}
 </div>
     )
   }
