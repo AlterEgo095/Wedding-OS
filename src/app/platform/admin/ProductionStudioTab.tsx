@@ -11,10 +11,11 @@ import { Loader2, Factory, LayoutDashboard, Palette, Boxes, Crown, GitBranch, Fi
 import { toast } from 'sonner'
 import dynamic from 'next/dynamic'
 import { PreviewLab, QualityCenter } from './PreviewQualityTabs'
+import { GovernanceDashboard } from './GovernanceDashboard'
 
 const ThemeCustomizer = dynamic(() => import('@/components/admin/ThemeCustomizer').then((m) => m.ThemeCustomizer), { ssr: false })
 
-type StudioSection = 'cockpit' | 'collections' | 'design-system' | 'product-builder' | 'preview' | 'quality'
+type StudioSection = 'cockpit' | 'collections' | 'design-system' | 'product-builder' | 'preview' | 'quality' | 'governance'
 
 interface Props { csrfToken: string }
 
@@ -217,6 +218,7 @@ export function ProductionStudioTab({ csrfToken }: Props) {
     { id: 'product-builder', label: 'Product Builder', icon: Boxes },
     { id: 'preview', label: 'Preview Lab', icon: Eye },
     { id: 'quality', label: 'Quality Center', icon: ShieldCheck },
+    { id: 'governance', label: 'Governance', icon: ShieldCheck },
   ]
 
   return (
@@ -462,6 +464,7 @@ export function ProductionStudioTab({ csrfToken }: Props) {
       {/* ─── PRODUCT BUILDER ────────────────────────────────────────────── */}
       {section === 'preview' && <PreviewLab csrfToken={csrfToken} />}
       {section === 'quality' && <QualityCenter csrfToken={csrfToken} />}
+      {section === 'governance' && <GovernanceDashboard csrfToken={csrfToken} />}
       {section === 'product-builder' && (
         <div className="space-y-4">
           {/* Top bar: product + wedding + guest selectors */}
