@@ -14,10 +14,11 @@ import { PreviewLab, QualityCenter } from './PreviewQualityTabs'
 import { GovernanceDashboard } from './GovernanceDashboard'
 import { VisualProductComposer } from './VisualProductComposer'
 import { AssetStudio } from './AssetStudio'
+import { ThemeComposer } from './ThemeComposer'
 
 const ThemeCustomizer = dynamic(() => import('@/components/admin/ThemeCustomizer').then((m) => m.ThemeCustomizer), { ssr: false })
 
-type StudioSection = 'cockpit' | 'collections' | 'design-system' | 'product-builder' | 'preview' | 'quality' | 'governance' | 'asset-studio'
+type StudioSection = 'cockpit' | 'collections' | 'design-system' | 'product-builder' | 'preview' | 'quality' | 'governance' | 'asset-studio' | 'theme-composer'
 
 interface Props { csrfToken: string }
 
@@ -222,6 +223,7 @@ export function ProductionStudioTab({ csrfToken }: Props) {
     { id: 'quality', label: 'Quality Center', icon: ShieldCheck },
     { id: 'governance', label: 'Governance', icon: ShieldCheck },
     { id: 'asset-studio', label: 'Asset Studio', icon: ImageIcon },
+    { id: 'theme-composer', label: 'Theme Composer', icon: Palette },
   ]
 
   return (
@@ -470,6 +472,7 @@ export function ProductionStudioTab({ csrfToken }: Props) {
       {section === 'governance' && <GovernanceDashboard csrfToken={csrfToken} />}
       {section === 'product-builder' && <VisualProductComposer csrfToken={csrfToken} />}
       {section === 'asset-studio' && <AssetStudio csrfToken={csrfToken} />}
+      {section === 'theme-composer' && <ThemeComposer csrfToken={csrfToken} />}
 </div>
     )
   }
