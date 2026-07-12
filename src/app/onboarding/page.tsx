@@ -174,9 +174,9 @@ const PLAN_LABELS: Record<LeadFormValues['plan'], string> = {
   ELITE: 'Élite',
 }
 
-function formatFcfa(n: number): string {
-  if (n === 0) return 'Gratuit'
-  return `${n.toLocaleString('fr-FR')} FCFA`
+function formatPrice(usd: number, fcfa: number): string {
+  if (usd === 0) return 'Gratuit'
+  return `$${usd}`
 }
 
 function formatUsd(n: number): string {
@@ -434,7 +434,7 @@ export default function OnboardingLeadPage() {
                   <CardContent className="flex flex-col flex-1">
                     <div className="text-center mb-4">
                       <div className="font-serif text-3xl font-bold gold-gradient">
-                        {formatFcfa(plan.priceFcfa)}
+                        {formatPrice(plan.priceUsd, plan.priceFcfa)}
                       </div>
                       {plan.priceUsd > 0 && (
                         <div className="text-xs text-muted-foreground font-display mt-1">
@@ -789,7 +789,7 @@ export default function OnboardingLeadPage() {
                             <SelectItem key={p.key} value={p.key}>
                               {p.label}
                               {p.priceFcfa > 0
-                                ? ` — ${formatFcfa(p.priceFcfa)}`
+                                ? ` — ${formatUsd(p.priceUsd)}`
                                 : ' — Gratuit'}
                             </SelectItem>
                           ))}
