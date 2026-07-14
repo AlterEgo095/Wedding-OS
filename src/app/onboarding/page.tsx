@@ -7,6 +7,7 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { toast } from 'sonner'
+import { authedFetch } from '@/lib/csrf-client'
 import {
   Sparkles,
   QrCode,
@@ -239,7 +240,7 @@ export default function OnboardingLeadPage() {
         body.message = values.message.trim()
       }
 
-      const res = await fetch('/api/onboarding/leads', {
+      const res = await authedFetch('/api/onboarding/leads', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
