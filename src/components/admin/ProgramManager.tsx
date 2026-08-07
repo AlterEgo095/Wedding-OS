@@ -35,18 +35,26 @@ import {
   ArrowUp,
   ArrowDown,
   Calendar,
+  ArrowRightLeft,
 } from 'lucide-react'
 import { toast } from 'sonner'
 
 /**
- * ProgramManager — CONS-5-CLIENT-BACKEND
+ * ProgramManager — CONS-5-CLIENT-BACKEND (Mission 6.0 P4.3 — canonical)
  *
  * Manage the wedding-day program (timeline of the day: ceremony, cocktail,
- * dinner, dance, etc.). Different from EventTimeline which is the love-story
- * timeline.
+ * dinner, dance, etc.). ProgramItem is the CANONICAL model post-P4.3 —
+ * EventTimeline is deprecated (kept for audit + backward-compat reads only).
  *
  * Each entry: scheduledAt, title, description, location, iconName, sortOrder.
  * CRUD via /api/weddings/[id]/program (and /program/[itemId]).
+ *
+ * P4.3 adds a "Migrer EventTimeline" button (top-right) that calls
+ * /api/weddings/[id]/program/migrate to one-shot migrate all legacy
+ * EventTimeline rows for this wedding into ProgramItem. The button is
+ * gated to PLATFORM_ADMIN by the backend (ORGANIZERs get 403) — it is
+ * always visible in the UI but will surface a clear error toast if the
+ * current user lacks permission. The migration is idempotent.
  */
 
 interface ProgramItem {
@@ -98,6 +106,7 @@ export default function ProgramManager({ weddingId }: Props) {
   const [items, setItems] = useState<ProgramItem[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [migrating, setMigrating] = useState(false)
   const [showAddDialog, setShowAddDialog] = useState(false)
   const [showEditDialog, setShowEditDialog] = useState(false)
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
@@ -277,6 +286,41 @@ export default function ProgramManager({ weddingId }: Props) {
     }
   }
 
+  /**
+   * P4.3 — Migrate all unmigrated EventTimeline rows for this wedding into
+   * ProgramItem. Calls POST /api/weddings/[id]/program/migrate (platform-
+   * admin only). The endpoint is idempotent — safe to click multiple times.
+   * On success, shows a toast with the migrated count + refetches the list.
+   */
+  const handleMigrate = async () => {
+    setMigrating(true)
+    try {
+      const res = await fetch(`/api/weddings/${weddingId}/program/migrate`, {
+        method: 'POST',
+      })
+      const json = await res.json().catch(() => ({}))
+      if (res.ok) {
+        const migrated = (json && typeof json.migrated === 'number') ? json.migrated : 0
+        const errors: string[] = Array.isArray(json?.errors) ? json.errors : []
+        if (migrated === 0 && errors.length === 0) {
+          toast.info('Aucune entrée EventTimeline à migrer.')
+        } else {
+          toast.success(`${migrated} entrée(s) migrée(s) vers le programme.`)
+          if (errors.length > 0) {
+            toast.warning(`${errors.length} erreur(s) non bloquante(s) — voir les logs.`)
+          }
+        }
+        fetchItems()
+      } else {
+        toast.error(json?.error || 'Erreur lors de la migration')
+      }
+    } catch {
+      toast.error('Erreur de connexion')
+    } finally {
+      setMigrating(false)
+    }
+  }
+
   const openEdit = (p: ProgramItem) => {
     setSelected(p)
     setForm({
@@ -312,16 +356,32 @@ export default function ProgramManager({ weddingId }: Props) {
             Définissez le déroulé de la journée (cérémonie, cocktail, dîner, danse…).
           </p>
         </div>
-        <Button
-          onClick={() => {
-            resetForm()
-            setShowAddDialog(true)
-          }}
-          className="bg-gradient-gold text-white"
-        >
-          <Plus className="w-4 h-4 mr-2" />
-          Nouvel élément
-        </Button>
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* P4.3 — One-shot migration of legacy EventTimeline rows. */}
+          <Button
+            variant="outline"
+            onClick={handleMigrate}
+            disabled={migrating}
+            title="Importer les entrées EventTimeline (legacy) dans le programme canonique. Réservé aux administrateurs de la plateforme."
+          >
+            {migrating ? (
+              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+            ) : (
+              <ArrowRightLeft className="w-4 h-4 mr-2" />
+            )}
+            Migrer EventTimeline
+          </Button>
+          <Button
+            onClick={() => {
+              resetForm()
+              setShowAddDialog(true)
+            }}
+            className="bg-gradient-gold text-white"
+          >
+            <Plus className="w-4 h-4 mr-2" />
+            Nouvel élément
+          </Button>
+        </div>
       </div>
 
       {/* List */}

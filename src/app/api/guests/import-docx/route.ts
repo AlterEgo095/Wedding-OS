@@ -1,6 +1,7 @@
 export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from 'next/server';
-import { tenantDb } from '@/lib/db';
+import { tenantDb, db } from '@/lib/db';
+import type { Table } from '@prisma/client';
 import { getAuthUser, hasPermission } from '@/lib/auth';
 import { resolveAdminTenant, runWithTenant } from '@/lib/tenant-context';
 import { v4 as uuidv4 } from 'uuid';
@@ -32,7 +33,8 @@ function generateInvitationCode(): string {
  * so the main loop can look up the pre-generated code in O(1) per guest.
  */
 async function preGenerateInvitationCodes(
-  guests: Array<{ firstName: string; lastName: string; tableNumber: number }>
+  guests: Array<{ firstName: string; lastName: string; tableNumber: number }>,
+  weddingId: string
 ): Promise<Map<string, string>> {
   const codeMap = new Map<string, string>();
   if (guests.length === 0) return codeMap;
@@ -51,8 +53,8 @@ async function preGenerateInvitationCodes(
     // Single findMany to check ALL candidate codes at once.
     // tenantDb extension auto-injects weddingId so the @@unique index covers
     // (weddingId, invitationCode) — the lookup is O(log n), not a full scan.
-    const conflicts = await tenantDb.guest.findMany({
-      where: { invitationCode: { in: codes } },
+    const conflicts = await db.guest.findMany({
+      where: { weddingId, invitationCode: { in: codes } },
       select: { invitationCode: true },
     });
     if (conflicts.length === 0) break; // all codes are unique
@@ -339,8 +341,8 @@ async function docxImportHandler(request: NextRequest) {
     // If replace mode, delete all existing guests and tables (scoped to current tenant)
     if (mergeMode === 'replace') {
       try {
-        await tenantDb.guest.deleteMany({}); // extension injects weddingId
-        await tenantDb.table.deleteMany({});
+        await db.guest.deleteMany({ where: { weddingId: context.weddingId } }); // explicit weddingId (P4: avoid tenantDb type-inference regression)
+        await db.table.deleteMany({ where: { weddingId: context.weddingId } });
       } catch (err) {
         // P2-SEC-1: structured logger; no stack leak.
         logger.error('Replace mode cleanup error', {
@@ -360,25 +362,28 @@ async function docxImportHandler(request: NextRequest) {
         tableNumber: t.number,
       }))
     );
-    const codeMap = await preGenerateInvitationCodes(allParsedGuests);
+    const codeMap = await preGenerateInvitationCodes(allParsedGuests, context.weddingId);
 
     // P2-PERF-1: pre-resolve tables in a single batch to avoid 1 findFirst
     // per parsedTable. tenantDb auto-injects weddingId.
     const allTableNumbers = parsedTables.map((t) => t.number);
-    const existingTables = await tenantDb.table.findMany({
-      where: { number: { in: allTableNumbers } },
+    // P4: use db (not tenantDb) to avoid extension type-inference regression.
+    // tenantDb auto-injects weddingId at runtime, but the static type comes back as {}
+    // which breaks the build. Explicit weddingId filter is defence-in-depth equivalent.
+    const existingTables: Table[] = await db.table.findMany({
+      where: { weddingId: context.weddingId, number: { in: allTableNumbers } },
     });
-    const tableByNumber = new Map(existingTables.map((t) => [t.number, t]));
+    const tableByNumber = new Map(existingTables.map((t) => [t.number, t] as const));
 
     // Process each table — tenantDb auto-injects weddingId
     for (const parsedTable of parsedTables) {
       try {
         // Find or create the table (use pre-fetched map; tenant-scoped).
-        let table = tableByNumber.get(parsedTable.number);
+        let table: Table | undefined = tableByNumber.get(parsedTable.number);
 
         if (table) {
           if (table.name !== parsedTable.name) {
-            table = await tenantDb.table.update({
+            table = await db.table.update({
               where: { id: table.id },
               data: {
                 name: parsedTable.name,
@@ -390,7 +395,7 @@ async function docxImportHandler(request: NextRequest) {
         } else {
           // P3: pass weddingId explicitly — extension auto-injects at runtime
           // but the static create-input type requires it.
-          table = await tenantDb.table.create({
+          table = await db.table.create({
             data: {
               weddingId: context.weddingId,
               number: parsedTable.number,
@@ -414,8 +419,9 @@ async function docxImportHandler(request: NextRequest) {
           lastName: g.lastName,
         }));
         const existingGuestsInTable = namePairs.length
-          ? await tenantDb.guest.findMany({
+          ? await db.guest.findMany({
               where: {
+                weddingId: context.weddingId,
                 tableId: table.id,
                 OR: namePairs.map((p) => ({
                   firstName: p.firstName,
@@ -461,7 +467,7 @@ async function docxImportHandler(request: NextRequest) {
 
             // tenantDb.guest.create auto-injects weddingId from context.
             // P3: pass weddingId explicitly to satisfy Prisma's static types.
-            await tenantDb.guest.create({
+            await db.guest.create({
               data: {
                 weddingId: context.weddingId,
                 firstName: parsedGuest.firstName,

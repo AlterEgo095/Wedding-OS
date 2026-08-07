@@ -1,5 +1,14 @@
 'use client'
 
+// DEPRECATED — use ProgramTimeline instead (Mission 6.0 P4.3).
+// This component renders the legacy EventTimeline model (love-story timeline).
+// The wedding-day program now lives in ProgramItem and is rendered by
+// src/components/wedding/ProgramTimeline.tsx. EventTimeline is kept for
+// backward compat with existing sections that consume love-story data — DO
+// NOT use this component for new wedding-day-program features. To migrate
+// an existing wedding's EventTimeline rows into ProgramItem, see:
+//   POST /api/weddings/[id]/program/migrate   (platform-admin only)
+
 import { useRef, useMemo, useState, useEffect } from 'react'
 import { motion, useInView } from 'framer-motion'
 import {

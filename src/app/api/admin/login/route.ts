@@ -12,6 +12,11 @@ import { writeAuditLog } from '@/lib/audit';
 // P1-SEC-7: CSRF double-submit token — issued alongside the auth cookie so the
 // client has it immediately after login (no extra round-trip to /api/csrf-token).
 import { generateCsrfToken, setCsrfCookie } from '@/lib/csrf';
+// P4.7: 2FA challenge — if the user has 2FA enabled, return a short-lived
+// challenge token instead of setting the auth cookie. The client then POSTs
+// { challengeToken, token } to /api/auth/2fa/login (generic 2FA endpoint
+// that works for ALL admin/staff roles, not just PLATFORM_ADMIN).
+import { generateChallengeToken } from '@/lib/two-factor';
 
 export async function POST(request: NextRequest) {
   try {
@@ -60,6 +65,47 @@ export async function POST(request: NextRequest) {
     }
 
     resetLoginRateLimit(email.toLowerCase());
+
+    // ─── P4.7: 2FA check (any admin/staff role) ───────────────────────────
+    // If the user has 2FA enabled, do NOT issue the auth cookie yet. Return a
+    // short-lived challenge token that allows ONLY /api/auth/2fa/login.
+    // The client UI must prompt for a 6-digit TOTP code (or backup code) and
+    // POST it with the challenge token to /api/auth/2fa/login, which verifies
+    // the code and only then sets the auth cookie.
+    //
+    // This check is role-agnostic — works for ORGANIZER, RECEPTION,
+    // CONTROLLER, ORG_ADMIN, ORG_MEMBER, ORG_VIEWER, DESIGNER, ART_DIRECTOR,
+    // SUPER_ADMIN and PLATFORM_ADMIN alike. (PLATFORM_ADMIN users typically
+    // login via /api/platform/login which has its own 2FA detection; both
+    // paths converge on /api/auth/2fa/login for the second factor.)
+    if (user.twoFactorEnabled) {
+      await writeAuditLog({
+        weddingId: user.weddingId,
+        userId: user.id,
+        action: 'TWO_FACTOR_LOGIN_CHALLENGE',
+        details: `2FA challenge issued for ${user.email} (role=${user.role})`,
+        request,
+      });
+
+      const challengeToken = generateChallengeToken(user.id, user.email);
+      const twoFactorResponse = NextResponse.json({
+        requiresTwoFactor: true,
+        challengeToken,
+        // Echo the user's email + name so the UI can personalize the 2FA
+        // prompt ("Entrez le code pour {email}"). Never echo the secret.
+        email: user.email,
+        name: user.name,
+        role: user.role,
+      });
+      // P1-SEC-7: set a fresh CSRF cookie so the subsequent
+      // /api/auth/2fa/login POST has a valid double-submit pair (the route
+      // is in CSRF_EXEMPT_PATHS as defense-in-depth, but the client should
+      // still send the X-CSRF-Token header to benefit from the protection
+      // on the rare environments where exemption is disabled).
+      const csrfToken = generateCsrfToken();
+      setCsrfCookie(twoFactorResponse, csrfToken);
+      return withSecurityHeaders(twoFactorResponse);
+    }
 
     // Token now includes weddingId claim (set in auth.ts generateToken)
     const token = generateToken({

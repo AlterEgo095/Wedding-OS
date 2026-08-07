@@ -1,18 +1,41 @@
 export const dynamic = 'force-dynamic';
+
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { db } from '@/lib/db';
 import { getAuthUser, hasPermission, assertWeddingAccess, type AuthUser } from '@/lib/auth';
 import { withRateLimit } from '@/lib/rate-limit';
-import { badRequest, forbidden, internalError, notFound, unauthorized } from '@/lib/api-errors';
+import { apiSuccess, apiError, internalError, badRequest, unauthorized, forbidden } from '@/lib/api-errors';
+import { writeAuditLog } from '@/lib/audit';
 import { logger } from '@/lib/logger';
 import { getClientInfo } from '@/lib/guest-auth';
 
 // ══════════════════════════════════════════════════════════════════════════════
-// /api/weddings/[id]/program/[itemId] — Single program-item mutations
+// Mission 6.0 — P4.3 — /api/weddings/[id]/program/[itemId]  (Item CRUD)
 // ══════════════════════════════════════════════════════════════════════════════
-// PUT    /api/weddings/[id]/program/[itemId] { title?, description?, scheduledAt?, location?, iconName?, sortOrder? }
-// DELETE /api/weddings/[id]/program/[itemId]
+//
+// PATCH   /api/weddings/[id]/program/[itemId]
+//         { title?, description?, scheduledAt?, location?, iconName?, sortOrder? }
+//         → 200 { programItem }
+//         • Audit: program.update
+//
+// DELETE  /api/weddings/[id]/program/[itemId]
+//         → 200 { message }
+//         • Audit: program.delete
+//
+// PUT is also exposed (alias of PATCH) for backward compat with the existing
+// ProgramManager.tsx admin UI which uses PUT. New clients should use PATCH.
+//
+// Auth: PLATFORM_ADMIN or ORGANIZER with wedding access. Public users cannot
+// mutate the program.
+//
+// ─── On the use of `db` vs `tenantDb` ─────────────────────────────────────────
+// Same rationale as /api/weddings/[id]/program/route.ts — the current Prisma
+// client regen introduced an extension-composition regression that makes
+// `tenantDb.<model>.<method>()` calls fail tsc. We use the raw `db` client
+// with EXPLICIT `weddingId` filters on every query (defence-in-depth).
+// findFirst (not findUnique) is used so the explicit weddingId filter is
+// applied at the SQL level, preventing cross-tenant access by-id.
 // ══════════════════════════════════════════════════════════════════════════════
 
 const PROGRAM_SELECT = {
@@ -28,6 +51,9 @@ const PROGRAM_SELECT = {
   updatedAt: true,
 } as const;
 
+const weddingIdSchema = z.string().min(1).max(64).regex(/^[a-zA-Z0-9_-]+$/);
+const itemIdSchema = z.string().min(1).max(64).regex(/^[a-zA-Z0-9_-]+$/);
+
 const updateProgramItemSchema = z.object({
   title: z.string().min(1).max(200).optional(),
   description: z.string().max(2000).optional().nullable(),
@@ -37,7 +63,10 @@ const updateProgramItemSchema = z.object({
   sortOrder: z.number().int().min(0).optional(),
 });
 
-async function checkAuth(request: NextRequest, weddingId: string): Promise<NextResponse | AuthUser> {
+async function requireOrganizer(
+  request: NextRequest,
+  weddingId: string,
+): Promise<AuthUser | NextResponse> {
   const user = await getAuthUser(request);
   if (!user) return unauthorized();
   if (!hasPermission(user.role, ['PLATFORM_ADMIN', 'ORGANIZER'])) {
@@ -49,12 +78,20 @@ async function checkAuth(request: NextRequest, weddingId: string): Promise<NextR
   return user;
 }
 
-export async function PUT(
+// ─── PATCH / PUT: update program item ────────────────────────────────────────
+
+async function updateProgramHandler(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string; itemId: string }> }
+  { params }: { params: Promise<{ id: string; itemId: string }> },
 ): Promise<NextResponse> {
   const { id: weddingId, itemId } = await params;
-  const auth = await checkAuth(request, weddingId);
+  const idParsed = weddingIdSchema.safeParse(weddingId);
+  const itemParsed = itemIdSchema.safeParse(itemId);
+  if (!idParsed.success || !itemParsed.success) {
+    return apiError('Identifiants invalides', 400);
+  }
+
+  const auth = await requireOrganizer(request, idParsed.data);
   if (auth instanceof NextResponse) return auth;
   const user = auth;
 
@@ -67,13 +104,22 @@ export async function PUT(
     }
     const data = parsed.data;
 
+    // findFirst with explicit weddingId filter — defence-in-depth against
+    // cross-tenant access by-id (see file header).
     const existing = await db.programItem.findFirst({
-      where: { id: itemId, weddingId },
+      where: { id: itemParsed.data, weddingId: idParsed.data },
       select: { id: true, title: true },
     });
-    if (!existing) return notFound('Élément de programme introuvable');
+    if (!existing) return apiError('Élément de programme introuvable', 404);
 
-    const updateData: Record<string, unknown> = {};
+    const updateData: {
+      title?: string;
+      description?: string | null;
+      scheduledAt?: Date | null;
+      location?: string | null;
+      iconName?: string | null;
+      sortOrder?: number;
+    } = {};
     if (data.title !== undefined) updateData.title = data.title;
     if (data.description !== undefined) updateData.description = data.description ?? null;
     if (data.scheduledAt !== undefined) {
@@ -86,74 +132,82 @@ export async function PUT(
     const client = getClientInfo(request);
     const updated = await db.$transaction(async (tx) => {
       const item = await tx.programItem.update({
-        where: { id: itemId },
+        where: { id: existing.id },
         data: updateData,
         select: PROGRAM_SELECT,
       });
-      await tx.auditLog.create({
-        data: {
-          weddingId,
-          userId: user.id,
-          action: 'UPDATE_PROGRAM_ITEM',
-          details: `Updated program item ${existing.title}`,
-          ipAddress: client.ipAddress ?? null,
-          userAgent: client.userAgent ?? null,
-        },
+      await writeAuditLog({
+        weddingId: idParsed.data,
+        userId: user.id,
+        action: 'program.update',
+        details: `Mise à jour élément de programme: ${existing.title}`,
+        ipAddress: client.ipAddress ?? null,
+        userAgent: client.userAgent ?? null,
       });
       return item;
     });
 
-    return NextResponse.json({ programItem: updated });
+    return apiSuccess({ programItem: updated });
   } catch (error) {
-    logger.error('Update program item error', {
+    logger.error('program.update error', {
+      weddingId: idParsed.data,
+      itemId: itemParsed.data,
       errMessage: error instanceof Error ? error.message : String(error),
-      weddingId,
-      itemId,
     });
     return internalError();
   }
 }
 
-async function deleteHandler(
+// ─── DELETE: delete program item ─────────────────────────────────────────────
+
+async function deleteProgramHandler(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string; itemId: string }> }
+  { params }: { params: Promise<{ id: string; itemId: string }> },
 ): Promise<NextResponse> {
   const { id: weddingId, itemId } = await params;
-  const auth = await checkAuth(request, weddingId);
+  const idParsed = weddingIdSchema.safeParse(weddingId);
+  const itemParsed = itemIdSchema.safeParse(itemId);
+  if (!idParsed.success || !itemParsed.success) {
+    return apiError('Identifiants invalides', 400);
+  }
+
+  const auth = await requireOrganizer(request, idParsed.data);
   if (auth instanceof NextResponse) return auth;
   const user = auth;
 
   try {
     const existing = await db.programItem.findFirst({
-      where: { id: itemId, weddingId },
+      where: { id: itemParsed.data, weddingId: idParsed.data },
       select: { id: true, title: true },
     });
-    if (!existing) return notFound('Élément de programme introuvable');
+    if (!existing) return apiError('Élément de programme introuvable', 404);
 
     const client = getClientInfo(request);
     await db.$transaction(async (tx) => {
-      await tx.programItem.delete({ where: { id: itemId } });
-      await tx.auditLog.create({
-        data: {
-          weddingId,
-          userId: user.id,
-          action: 'DELETE_PROGRAM_ITEM',
-          details: `Deleted program item ${existing.title}`,
-          ipAddress: client.ipAddress ?? null,
-          userAgent: client.userAgent ?? null,
-        },
+      await tx.programItem.delete({ where: { id: existing.id } });
+      await writeAuditLog({
+        weddingId: idParsed.data,
+        userId: user.id,
+        action: 'program.delete',
+        details: `Suppression élément de programme: ${existing.title}`,
+        ipAddress: client.ipAddress ?? null,
+        userAgent: client.userAgent ?? null,
       });
     });
 
-    return NextResponse.json({ message: 'Élément supprimé' });
+    return apiSuccess({ message: 'Élément supprimé' });
   } catch (error) {
-    logger.error('Delete program item error', {
+    logger.error('program.delete error', {
+      weddingId: idParsed.data,
+      itemId: itemParsed.data,
       errMessage: error instanceof Error ? error.message : String(error),
-      weddingId,
-      itemId,
     });
     return internalError();
   }
 }
 
-export const DELETE = withRateLimit(30, 60_000)(deleteHandler);
+export const PATCH = withRateLimit(30, 60_000)(updateProgramHandler);
+// PUT alias — the existing ProgramManager.tsx admin UI uses PUT. New clients
+// should prefer PATCH (the canonical HTTP method for partial updates).
+export const PUT = withRateLimit(30, 60_000)(updateProgramHandler);
+export const DELETE = withRateLimit(30, 60_000)(deleteProgramHandler);

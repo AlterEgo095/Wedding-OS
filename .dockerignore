@@ -12,3 +12,4 @@ server.log
 *.jpeg
 agent-ctx/
 3000
+prisma/node_modules

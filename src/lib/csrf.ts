@@ -158,6 +158,7 @@ export const CSRF_EXEMPT_PATHS: readonly string[] = [
   '/api/csrf-token',      // obviously — this issues the token
   '/api/admin/login',     // login creates the auth cookie + CSRF cookie
   '/api/platform/login',  // same for platform admins
+  '/api/auth/2fa/login', // P4.7 — generic 2FA login (any admin/staff role) — second step of /api/admin/login + /api/platform/login 2FA flow
   '/api/platform/2fa/login', // 2FA login — second step of platform login
   '/api/platform/password-reset/request', // request reset link (no auth)
   '/api/platform/password-reset/confirm', // confirm reset (token in body)

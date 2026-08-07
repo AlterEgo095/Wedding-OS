@@ -21,6 +21,8 @@ services:
     environment:
       DEPLOY_SHA: ${DEPLOY_SHA:-unknown}
       BUILD_TIME: ${BUILD_TIME:-unknown}
+      REALTIME_PUSH_TOKEN: wedding-realtime-push-token-2026
+      REALTIME_SERVICE_URL: http://127.0.0.1:3006
     ports:
       - "127.0.0.1:3080:3000"
     volumes:

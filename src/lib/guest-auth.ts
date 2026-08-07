@@ -107,7 +107,7 @@ export interface GuestTokenPayload {
 
 // ─── Encryption Utilities ───
 // Used to encrypt guest IDs in URLs so they can't be enumerated
-function getEncryptionKey(): Buffer {
+export function getEncryptionKey(): Buffer {
   // Derive a 32-byte key from the encryption key string
   return crypto.createHash('sha256').update(getEncryptionKeySource()).digest();
 }

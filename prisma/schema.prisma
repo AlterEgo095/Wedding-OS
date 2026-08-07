@@ -173,6 +173,8 @@ model Wedding {
   // Relations — every tenant-scoped entity points back to its Wedding
   admins          AdminUser[]
   guests          Guest[]
+  // P4.1 — Guestbook (livre d'or) entries for this wedding.
+  guestbookEntries GuestbookEntry[]
   tables          Table[]
   media           Media[]
   timeline        EventTimeline[]
@@ -275,6 +277,8 @@ model AdminUser {
   collectionBindings  WeddingCollectionBinding[]
   // Mission 5.0 — payments verified by this admin
   verifiedPayments    Payment[]
+  // P4.1 — Guestbook entries approved/rejected by this admin.
+  approvedGuestbookEntries GuestbookEntry[]
   // Mission 5.7.1 — design pipeline relations
   authoredDesignVersions DesignVersion[] @relation("DesignVersionAuthor")
 
@@ -409,6 +413,9 @@ model Guest {
   status              String         @default("PENDING") // CONFIRMED, PENDING, DECLINED
   invitationCode      String         // uniqueness now scoped by wedding (see @@unique below)
   personalMessage     String?
+  // ─── Mission 6.0 P4.2 — Dietary preferences ─────────────────────────────
+  // Free-form text input from guest during RSVP (allergies, restrictions, etc).
+  dietary             String?
   checkedIn           Boolean        @default(false)
   checkedInAt         DateTime?
   invitationViewed    Boolean        @default(false)
@@ -424,6 +431,8 @@ model Guest {
   table               Table?         @relation(fields: [tableId], references: [id])
   sessions            GuestSession[]
   accessLogs          GuestAccessLog[]
+  // P4.1 — Guestbook entries authored by this guest (anonymous entries have guestId=null).
+  guestbookEntries    GuestbookEntry[]
   deliveryJobs        DeliveryJob[]
   // CONS-5-CLIENT-BACKEND — optional family + group relations.
   // Nullable for backward compat (existing guests have null).
@@ -437,7 +446,7 @@ model Guest {
   @@index([weddingId, category])
   @@index([weddingId, tableId])
   // Mission 6.0 P0.3 — performance indexes for QR lookup + RSVP stats
-  @@index([weddingId, invitationCode])
+  // (removed redundant @@index([weddingId, invitationCode]) — covered by @@unique above)
   @@index([weddingId, rsvpAt])
   @@index([weddingId, checkedIn])
 }
@@ -494,6 +503,11 @@ model EventTimeline {
   location    String?
   description String?
   icon        String?  // Emoji or icon identifier
+  // ─── Mission 6.0 P4.3 — ProgramItem/EventTimeline merge ──────────────────
+  // When set, this timeline entry has been migrated to a ProgramItem (the
+  // canonical model going forward). The migration script sets this + keeps
+  // the original EventTimeline row for audit. UI reads from ProgramItem only.
+  migratedToProgramItemId String?
   order       Int      @default(0)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -1351,6 +1365,34 @@ model Gift {
 // Wedding day program item (ceremony, cocktail, dinner, dance, etc.).
 // Different from EventTimeline (love-story events) — ProgramItem is the
 // schedule of the wedding DAY.
+// ─── Mission 6.0 P4.1 — Guestbook (Livre d'or) ──────────────────────────────
+// Guests + anonymous visitors leave messages on the public wedding page.
+// Messages are moderated (approved=false by default) to prevent spam/abuse.
+// approvedBy = AdminUser who approved/rejected; null = pending.
+model GuestbookEntry {
+  id          String    @id @default(cuid())
+  weddingId   String
+  wedding     Wedding   @relation(fields: [weddingId], references: [id], onDelete: Cascade)
+  guestId     String?   // null = anonymous (visitor not logged in as guest)
+  guest       Guest?    @relation(fields: [guestId], references: [id], onDelete: SetNull)
+  authorName  String    // display name (from guest profile or visitor input)
+  message     String
+  rating      Int?      // optional 1-5 stars
+  approved    Boolean   @default(false) // moderation: false = pending, true = visible
+  approvedById String?
+  approvedBy  AdminUser? @relation(fields: [approvedById], references: [id], onDelete: SetNull)
+  approvedAt  DateTime?
+  rejectedAt  DateTime? // if set, message was rejected by moderator
+  ipAddress   String?   // for abuse tracking
+  userAgent   String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([weddingId, approved, createdAt])
+  @@index([weddingId, createdAt])
+  @@index([guestId])
+}
+
 model ProgramItem {
   id          String    @id @default(cuid())
   weddingId   String

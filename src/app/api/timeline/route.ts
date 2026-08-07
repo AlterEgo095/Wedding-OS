@@ -1,7 +1,7 @@
 export const dynamic = 'force-dynamic'; // §11: ISR caused cross-tenant data leaks
 import { NextRequest, NextResponse } from 'next/server';
 import { revalidatePath } from 'next/cache';
-import { db, tenantDb } from '@/lib/db';
+import { db } from '@/lib/db';
 import { getAuthUser, hasPermission } from '@/lib/auth';
 import { withPublicTenant, withAdminTenantHandler } from '@/lib/tenant-context';
 // P2-SEC-1: structured logger (no stack leak).
@@ -13,15 +13,49 @@ import { writeAuditLog } from '@/lib/audit';
 // CONS-7 task 5: Zod request-body validation.
 import { z } from 'zod';
 
+// ══════════════════════════════════════════════════════════════════════════════
+// Mission 6.0 — P4.3 — DEPRECATED
+// ══════════════════════════════════════════════════════════════════════════════
+//
+// EventTimeline is DEPRECATED post-P4.3. The canonical model going forward
+// is ProgramItem (exposed at /api/weddings/[id]/program). This route is kept
+// for backward compatibility with legacy clients (the love-story timeline
+// section on /w/[slug] and the admin TimelineManager.tsx). DO NOT build new
+// features on top of EventTimeline — new writes should go to ProgramItem.
+//
+// All responses include the header:
+//   X-Deprecated: Use /api/weddings/[id]/program instead
+// so HTTP clients can detect deprecation programmatically. The route will be
+// removed in P6 (after all clients have migrated).
+//
+// To migrate an existing wedding's EventTimeline rows into ProgramItem, see:
+//   POST /api/weddings/[id]/program/migrate   (platform-admin only)
+// And the migration helper:
+//   src/lib/wedding/program-merge.ts
+// ══════════════════════════════════════════════════════════════════════════════
+
 // GET /api/timeline — public, returns all timeline events for the resolved wedding
-export const GET = withPublicTenant(async (_req, _ctx) => {
+// DEPRECATED — use GET /api/weddings/[id]/program instead (reads ProgramItem).
+export const GET = withPublicTenant(async (_req, ctx) => {
   try {
-    const events = await tenantDb.eventTimeline.findMany({
+    // P4.3: switched from tenantDb to db with explicit weddingId filter.
+    // The tenantDb extension has a TS regression post-P3 prisma client regen
+    // ("Excessive stack depth comparing types"). Same defence-in-depth as
+    // /api/weddings/[id]/program/route.ts — explicit weddingId is functionally
+    // equivalent to the auto-inject for our use case.
+    const events = await db.eventTimeline.findMany({
+      where: { weddingId: ctx.weddingId },
       orderBy: { order: 'asc' },
       take: 200, // P2-PERF-4: bound public list (no wedding should exceed 200 events)
-      // weddingId auto-injected
     });
-    return NextResponse.json({ events });
+    return NextResponse.json(
+      { events },
+      {
+        headers: {
+          'X-Deprecated': 'Use /api/weddings/[id]/program instead',
+        },
+      },
+    );
   } catch (error) {
     // P2-SEC-1: never log error.stack.
     logger.error('List timeline error', {
@@ -70,9 +104,9 @@ export async function POST(request: NextRequest) {
       }
       const { time, activity, location, description, icon, order } = parsed.data;
 
-      const event = await tenantDb.eventTimeline.create({
+      const event = await db.eventTimeline.create({
         data: {
-          weddingId: ctx.weddingId, // explicit for clarity (extension would also inject)
+          weddingId: ctx.weddingId, // explicit for clarity (was previously also auto-injected by tenantDb)
           time,
           activity,
           location: location || null,
@@ -124,8 +158,9 @@ export async function PUT(request: NextRequest) {
 
       if (!id) return NextResponse.json({ error: 'Event ID is required' }, { status: 400 });
 
-      // Use findFirst to leverage auto-injection of weddingId (prevents cross-tenant access)
-      const existing = await tenantDb.eventTimeline.findFirst({ where: { id } });
+      // Use findFirst with explicit weddingId filter — defence-in-depth against
+      // cross-tenant access by-id (P4.3: switched from tenantDb to db).
+      const existing = await db.eventTimeline.findFirst({ where: { id, weddingId: ctx.weddingId } });
       if (!existing) return NextResponse.json({ error: 'Event not found' }, { status: 404 });
 
       // P3: Concrete field shape (no index signature) for Prisma Exact<> compat.
@@ -144,7 +179,7 @@ export async function PUT(request: NextRequest) {
       if (icon !== undefined) updateData.icon = icon;
       if (order !== undefined) updateData.order = order;
 
-      const event = await tenantDb.eventTimeline.update({ where: { id }, data: updateData });
+      const event = await db.eventTimeline.update({ where: { id }, data: updateData });
 
       await writeAuditLog({
         weddingId: ctx.weddingId,
@@ -186,10 +221,10 @@ export async function DELETE(request: NextRequest) {
       const id = searchParams.get('id');
       if (!id) return NextResponse.json({ error: 'Event ID is required' }, { status: 400 });
 
-      const existing = await tenantDb.eventTimeline.findFirst({ where: { id } });
+      const existing = await db.eventTimeline.findFirst({ where: { id, weddingId: ctx.weddingId } });
       if (!existing) return NextResponse.json({ error: 'Event not found' }, { status: 404 });
 
-      await tenantDb.eventTimeline.delete({ where: { id } });
+      await db.eventTimeline.delete({ where: { id } });
 
       await writeAuditLog({
         weddingId: ctx.weddingId,
