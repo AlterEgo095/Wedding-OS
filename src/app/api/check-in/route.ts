@@ -6,6 +6,8 @@ import { resolveAdminTenant, runWithTenant } from '@/lib/tenant-context';
 import { writeAuditLog } from '@/lib/audit';
 import { logger } from '@/lib/logger';
 import { internalError, badRequest } from '@/lib/api-errors';
+// CONS-7 task 5: Zod request-body validation.
+import { z } from 'zod';
 
 /**
  * POST /api/check-in
@@ -33,6 +35,12 @@ import { internalError, badRequest } from '@/lib/api-errors';
  *
  * Auth: CONTROLLER+ (reception staff can check in guests).
  */
+
+// CONS-7 task 5 — Zod schema for check-in.
+const checkInSchema = z.object({
+  invitationCode: z.string().min(1).max(50),
+});
+
 export async function POST(request: NextRequest) {
   try {
     const user = await getAuthUser(request);
@@ -52,11 +60,21 @@ export async function POST(request: NextRequest) {
     return runWithTenant(context, async () => {
       const body = await request.json().catch(() => null);
       if (!body) return badRequest('Corps de requête invalide');
-
-      const { invitationCode } = body as { invitationCode?: string };
-      if (!invitationCode || typeof invitationCode !== 'string') {
-        return badRequest('invitationCode est requis');
+      // CONS-7 task 5: Zod validation replaces ad-hoc field checks.
+      const parsed = checkInSchema.safeParse(body);
+      if (!parsed.success) {
+        return NextResponse.json(
+          {
+            error: 'Données invalides',
+            details: parsed.error.issues.map((i) => ({
+              path: i.path.join('.'),
+              message: i.message,
+            })),
+          },
+          { status: 400 },
+        );
       }
+      const { invitationCode } = parsed.data;
 
       const normalizedCode = invitationCode.trim().toUpperCase();
 

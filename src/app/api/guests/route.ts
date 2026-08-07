@@ -11,6 +11,8 @@ import { writeAuditLog } from '@/lib/audit';
 import { logger } from '@/lib/logger';
 // P2-CQ-5: standardised API errors.
 import { internalError } from '@/lib/api-errors';
+// CONS-7 task 5: Zod request-body validation.
+import { z } from 'zod';
 
 export async function GET(request: NextRequest) {
   try {
@@ -147,6 +149,21 @@ export async function GET(request: NextRequest) {
   }
 }
 
+// CONS-7 task 5 — Zod schema for guest creation.
+const createGuestSchema = z.object({
+  firstName: z.string().min(1).max(120),
+  lastName: z.string().min(1).max(120),
+  displayName: z.string().max(200).optional(),
+  invitationType: z.enum(['individuel', 'couple', 'famille']).optional(),
+  phone: z.string().max(40).optional().nullable(),
+  email: z.string().email().max(200).optional().nullable(),
+  tableId: z.string().optional().nullable(),
+  seats: z.number().int().min(1).max(20).optional(),
+  category: z.string().max(60).optional(),
+  status: z.string().max(40).optional(),
+  personalMessage: z.string().max(2000).optional().nullable(),
+});
+
 export async function POST(request: NextRequest) {
   try {
     const user = await getAuthUser(request);
@@ -161,12 +178,23 @@ export async function POST(request: NextRequest) {
     }
 
     return runWithTenant(context, async () => {
-      const body = await request.json();
-      const { firstName, lastName, displayName: explicitDisplayName, invitationType, phone, email, tableId, seats, category, status, personalMessage } = body;
-
-      if (!firstName || !lastName) {
-        return NextResponse.json({ error: 'First name and last name are required' }, { status: 400 });
+      const body = await request.json().catch(() => null);
+      if (!body) return NextResponse.json({ error: 'Corps de requête invalide' }, { status: 400 });
+      // CONS-7 task 5: Zod validation replaces ad-hoc field checks.
+      const parsed = createGuestSchema.safeParse(body);
+      if (!parsed.success) {
+        return NextResponse.json(
+          {
+            error: 'Données invalides',
+            details: parsed.error.issues.map((i) => ({
+              path: i.path.join('.'),
+              message: i.message,
+            })),
+          },
+          { status: 400 },
+        );
       }
+      const { firstName, lastName, displayName: explicitDisplayName, invitationType, phone, email, tableId, seats, category, status, personalMessage } = parsed.data;
 
       // ─── Plan limit enforcement (Phase 3 ÉTAPE 5) ─────────────────────────
       // Block NEW guest creation when the wedding has reached its plan quota.

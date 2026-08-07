@@ -10,6 +10,8 @@ import { logger } from '@/lib/logger';
 import { internalError, badRequest } from '@/lib/api-errors';
 // P2-SEC-14 + P2-CQ-7: writeAuditLog populates ipAddress + userAgent from request.
 import { writeAuditLog } from '@/lib/audit';
+// CONS-7 task 5: Zod request-body validation.
+import { z } from 'zod';
 
 // GET /api/settings — public, returns all settings for the resolved wedding
 export const GET = withPublicTenant(async (_req, ctx) => {
@@ -33,6 +35,14 @@ export const GET = withPublicTenant(async (_req, ctx) => {
   }
 });
 
+// CONS-7 task 5 — Zod schema for settings update.
+const updateSettingsSchema = z.object({
+  settings: z.record(z.string(), z.string()).refine(
+    (s) => Object.keys(s).length > 0,
+    { message: 'L\'objet settings ne doit pas être vide' },
+  ),
+});
+
 // PUT /api/settings — admin only, updates settings for the resolved wedding
 export async function PUT(request: NextRequest) {
   try {
@@ -45,11 +55,21 @@ export async function PUT(request: NextRequest) {
     return withAdminTenantHandler(request, user, async (_req, ctx) => {
       const body = await request.json().catch(() => null); // P2-CQ-6
       if (!body) return badRequest('Corps de requête invalide');
-      const { settings } = body as { settings: Record<string, string> };
-
-      if (!settings || typeof settings !== 'object') {
-        return NextResponse.json({ error: 'Settings object is required' }, { status: 400 });
+      // CONS-7 task 5: Zod validation replaces ad-hoc field checks.
+      const parsed = updateSettingsSchema.safeParse(body);
+      if (!parsed.success) {
+        return NextResponse.json(
+          {
+            error: 'Données invalides',
+            details: parsed.error.issues.map((i) => ({
+              path: i.path.join('.'),
+              message: i.message,
+            })),
+          },
+          { status: 400 },
+        );
       }
+      const { settings } = parsed.data;
 
       // Upsert each setting using the composite unique key [weddingId, key]
       const upsertPromises = Object.entries(settings).map(([key, value]) =>

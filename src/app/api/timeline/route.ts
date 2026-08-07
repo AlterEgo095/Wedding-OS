@@ -10,6 +10,8 @@ import { logger } from '@/lib/logger';
 import { internalError, badRequest } from '@/lib/api-errors';
 // P2-SEC-14 + P2-CQ-7: writeAuditLog populates ipAddress + userAgent from request.
 import { writeAuditLog } from '@/lib/audit';
+// CONS-7 task 5: Zod request-body validation.
+import { z } from 'zod';
 
 // GET /api/timeline — public, returns all timeline events for the resolved wedding
 export const GET = withPublicTenant(async (_req, _ctx) => {
@@ -30,6 +32,16 @@ export const GET = withPublicTenant(async (_req, _ctx) => {
   }
 });
 
+// CONS-7 task 5 — Zod schema for timeline event creation.
+const createTimelineSchema = z.object({
+  time: z.string().min(1).max(40),
+  activity: z.string().min(1).max(200),
+  location: z.string().max(200).optional().nullable(),
+  description: z.string().max(2000).optional().nullable(),
+  icon: z.string().max(60).optional().nullable(),
+  order: z.number().int().min(0).optional(),
+});
+
 // POST /api/timeline — admin only, creates a new event in the resolved wedding
 export async function POST(request: NextRequest) {
   try {
@@ -42,11 +54,21 @@ export async function POST(request: NextRequest) {
     return withAdminTenantHandler(request, user, async (_req, ctx) => {
       const body = await request.json().catch(() => null); // P2-CQ-6
       if (!body) return badRequest('Corps de requête invalide');
-      const { time, activity, location, description, icon, order } = body;
-
-      if (!time || !activity) {
-        return NextResponse.json({ error: 'Time and activity are required' }, { status: 400 });
+      // CONS-7 task 5: Zod validation replaces ad-hoc field checks.
+      const parsed = createTimelineSchema.safeParse(body);
+      if (!parsed.success) {
+        return NextResponse.json(
+          {
+            error: 'Données invalides',
+            details: parsed.error.issues.map((i) => ({
+              path: i.path.join('.'),
+              message: i.message,
+            })),
+          },
+          { status: 400 },
+        );
       }
+      const { time, activity, location, description, icon, order } = parsed.data;
 
       const event = await tenantDb.eventTimeline.create({
         data: {

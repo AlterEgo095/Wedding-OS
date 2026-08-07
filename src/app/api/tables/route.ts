@@ -10,6 +10,16 @@ import { logger } from '@/lib/logger';
 import { internalError, badRequest } from '@/lib/api-errors';
 // P2-SEC-14 + P2-CQ-7: writeAuditLog populates ipAddress + userAgent from request.
 import { writeAuditLog } from '@/lib/audit';
+// CONS-7 task 5: Zod request-body validation.
+import { z } from 'zod';
+
+// CONS-7 task 5 — Zod schema for table creation.
+const createTableSchema = z.object({
+  name: z.string().min(1).max(120),
+  number: z.union([z.string(), z.number()]).transform((v) => parseInt(String(v), 10)),
+  capacity: z.number().int().min(1).max(50).optional(),
+  location: z.string().max(200).optional().nullable(),
+});
 
 // All table operations require auth (tables are admin-only — guests don't see them)
 export async function GET(request: NextRequest) {
@@ -57,12 +67,22 @@ export async function POST(request: NextRequest) {
     return withAdminTenantHandler(request, user, async (_req, ctx) => {
       const body = await request.json().catch(() => null); // P2-CQ-6
       if (!body) return badRequest('Corps de requête invalide');
-      const { name, number, capacity, location } = body;
-      if (!name || number === undefined) {
-        return NextResponse.json({ error: 'Name and number are required' }, { status: 400 });
+      // CONS-7 task 5: Zod validation replaces ad-hoc field checks.
+      const parsed = createTableSchema.safeParse(body);
+      if (!parsed.success) {
+        return NextResponse.json(
+          {
+            error: 'Données invalides',
+            details: parsed.error.issues.map((i) => ({
+              path: i.path.join('.'),
+              message: i.message,
+            })),
+          },
+          { status: 400 },
+        );
       }
-
-      const num = parseInt(String(number), 10);
+      const { name, capacity, location } = parsed.data;
+      const num = parsed.data.number;
 
       // Composite unique lookup [weddingId, number] — auto-injected by extension
       const existing = await tenantDb.table.findFirst({ where: { number: num } });
@@ -82,7 +102,7 @@ export async function POST(request: NextRequest) {
       await writeAuditLog({
         weddingId: ctx.weddingId, userId: user.id,
         action: 'CREATE_TABLE',
-        details: `Created table ${name} (#${number})`,
+        details: `Created table ${name} (#${num})`,
         request,
       });
 
