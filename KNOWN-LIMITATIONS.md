@@ -189,6 +189,6 @@ Ordered by priority:
 
 - Migrate SQLite → PostgreSQL (§3.10).
 - Wire Stripe billing (§3.11).
-- Migrate `Wedding` → `Event` model (§9 of `ARCHITECTURE-CANONICAL.md`).
+- Migrate `Wedding` → `Event` model (§9 of `docs/ARCHITECTURE-CANONICAL.md`).
 - Implement AI automation engines (§3.8).
 - Custom domain DNS automation (§3.9).
