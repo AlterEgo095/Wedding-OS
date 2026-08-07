@@ -99,7 +99,10 @@ function WeddingPageContent() {
       .catch(() => {});
   }, [isPreviewDraft, wedding.id]);
 
-  const activeManifest = previewManifest || wedding.manifest;
+  // CONS-6-PIPELINE: prefer the published config's manifest (deployment
+  // snapshot) over the binding-based manifest. Preview draft still wins.
+  const activeManifest =
+    previewManifest || wedding.publishedConfig?.manifest || wedding.manifest;
 
   const [stories, setStories] = useState<CoupleStory[]>([]);
   const [timeline, setTimeline] = useState<TimelineEvent[]>([]);
@@ -212,7 +215,7 @@ function WeddingPageContent() {
     <div className="min-h-screen flex flex-col">
       <VisualEffectsLayer />
       <LuxuryVisualEngine />
-      <ThemeInjector />
+      <ThemeInjector theme={wedding.publishedConfig?.theme ?? null} />
 
       <Navigation />
 

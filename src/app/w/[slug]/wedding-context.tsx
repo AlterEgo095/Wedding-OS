@@ -5,6 +5,11 @@
 // /w/[slug]/*. The manifest is resolved server-side in layout.tsx and passed
 // down so SectionRenderer can render sections dynamically.
 //
+// CONS-6-PIPELINE: also exposes an optional `publishedConfig` snapshot —
+// the parsed PublishedConfig from the last successful deployment pipeline run.
+// When non-null, page.tsx uses its `theme` for ThemeInjector and its `manifest`
+// for SectionRenderer (overriding the binding-based manifest).
+//
 // Also exposes a helper `fetchTenant(path, init)` that auto-adds the
 // X-Wedding-Slug header so client-side API calls scope to this wedding.
 
@@ -12,6 +17,27 @@
 
 import { createContext, useContext, useCallback, ReactNode } from 'react';
 import type { WeddingManifest } from '@/lib/wedding/manifest';
+
+// ─── CONS-6-PIPELINE — published config snapshot ─────────────────────────────
+// Mirrors the `theme` + `manifest` fields of PublishedConfig from
+// src/lib/pipeline/deployment-pipeline.ts. Kept as a structural type (not
+// imported) to avoid pulling server-only DB code into the client bundle.
+export interface PublishedThemeSnapshot {
+  primaryColor: string;
+  accentColor: string;
+  fontDisplay: string;
+  fontBody: string;
+  layout: string;
+}
+
+export interface PublishedConfigSnapshot {
+  manifest: WeddingManifest;
+  theme: PublishedThemeSnapshot;
+  templateName: string;
+  themeName: string;
+  version: string;
+  compiledAt: string;
+}
 
 export interface WeddingContextValue {
   id: string;
@@ -26,6 +52,8 @@ export interface WeddingContextValue {
   plan: string;
   isDefault: boolean;
   manifest: WeddingManifest;
+  /** CONS-6-PIPELINE — null when no deployment has been published yet. */
+  publishedConfig: PublishedConfigSnapshot | null;
 }
 
 const WeddingCtx = createContext<WeddingContextValue | null>(null);
