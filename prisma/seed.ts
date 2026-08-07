@@ -1,11 +1,131 @@
+// ══════════════════════════════════════════════════════════════════════════════
+// prisma/seed.ts — multi-tenant-safe seed script (CONS-2-SECURITY Fix 3 / C8)
+// ══════════════════════════════════════════════════════════════════════════════
+//
+// This is the CANONICAL seed script (the dangerous root-level seed.ts that
+// ran global deleteMany() was removed in Phase 1). It is multi-tenant-safe:
+//
+//   1. Platform admin credentials come from env vars — NEVER hardcoded:
+//        - PLATFORM_ADMIN_EMAIL (default: admin@josue-hornella.wedding)
+//        - PLATFORM_ADMIN_PASSWORD (REQUIRED in production — throws if unset)
+//      In dev, a clearly-marked dev-only password is used as a fallback.
+//
+//   2. The default wedding + sample guests/tables/timeline/stories are demo
+//      data, gated behind SEED_DEMO_DATA env var. They are skipped by
+//      default in production so a fresh prod DB starts empty.
+//
+//   3. All writes are idempotent (findFirst-then-create-or-update) — re-running
+//      the seed is safe and never destroys existing data.
+//
+//   4. bcrypt rounds = 12 (matches src/lib/auth.ts — was 10 before, which is
+//      below the OWASP minimum recommendation).
+//
+// Run with: `bun run prisma/seed.ts` or `prisma db seed` (the prisma block
+// in package.json points here).
+
 import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 import { DEFAULT_WEDDING_SLUG, buildCoupleLabel } from '../src/lib/types';
 
 const prisma = new PrismaClient();
 
+// ─── Platform admin bootstrap credentials (env-driven) ───────────────────────
+// In production: PLATFORM_ADMIN_PASSWORD MUST be set — the seed throws
+// otherwise (fail-fast beats silently creating a forgeable admin).
+// In dev: a clearly-marked dev-only password is used as a fallback so the
+// first-run experience still works out-of-the-box.
+const PLATFORM_ADMIN_EMAIL =
+  process.env.PLATFORM_ADMIN_EMAIL || 'admin@josue-hornella.wedding';
+
+function resolvePlatformAdminPassword(): string {
+  const env = process.env.PLATFORM_ADMIN_PASSWORD;
+  if (env && env.length >= 12) return env;
+
+  const isProd = process.env.NODE_ENV === 'production';
+  if (isProd) {
+    throw new Error(
+      'FATAL: PLATFORM_ADMIN_PASSWORD is missing or too short (<12 chars) in production. ' +
+        'Set it in your .env file before running `prisma db seed`. ' +
+        'Generate a strong password with: openssl rand -base64 24'
+    );
+  }
+  // Dev-only fallback — NEVER active in production. Marked clearly so it
+  // can be grepped out of any environment that accidentally leaves
+  // NODE_ENV unset.
+  console.warn(
+    'WARNING: PLATFORM_ADMIN_PASSWORD not set — using insecure dev-only fallback (admin2026). ' +
+      'Set PLATFORM_ADMIN_PASSWORD in your .env file with: openssl rand -base64 24'
+  );
+  return 'admin2026';
+}
+
+// ─── Demo data gate ──────────────────────────────────────────────────────────
+// The default wedding + sample guests/tables/timeline/stories are demo data
+// for first-run development. In production, SEED_DEMO_DATA must be explicitly
+// set to "1" or "true" to seed them — otherwise the prod DB starts empty
+// (only the platform admin is created).
+function shouldSeedDemoData(): boolean {
+  const flag = process.env.SEED_DEMO_DATA;
+  if (flag === undefined || flag === '') {
+    // Default: seed in dev, skip in prod.
+    return process.env.NODE_ENV !== 'production';
+  }
+  return flag === '1' || flag.toLowerCase() === 'true';
+}
+
 async function main() {
   console.log('🌱 Seeding database...');
+  console.log(
+    '   env=%s, demoData=%s, adminEmail=%s',
+    process.env.NODE_ENV || 'development',
+    shouldSeedDemoData(),
+    PLATFORM_ADMIN_EMAIL
+  );
+
+  // ─── Create Platform Admin user (platform-wide, no weddingId) ──────────
+  // Always created regardless of SEED_DEMO_DATA — every deployment needs at
+  // least one admin to log in.
+  const adminPassword = resolvePlatformAdminPassword();
+  const existingAdmin = await prisma.adminUser.findUnique({
+    where: { email: PLATFORM_ADMIN_EMAIL },
+  });
+
+  if (!existingAdmin) {
+    const hashedPassword = await bcrypt.hash(adminPassword, 12); // OWASP minimum
+    await prisma.adminUser.create({
+      data: {
+        email: PLATFORM_ADMIN_EMAIL,
+        password: hashedPassword,
+        name: 'Platform Admin',
+        role: 'PLATFORM_ADMIN', // canonical Phase 3 name (SUPER_ADMIN is a legacy alias)
+        weddingId: null, // platform-wide
+      },
+    });
+    console.log(
+      '✅ Created Platform Admin user (email=%s) — password from PLATFORM_ADMIN_PASSWORD env var',
+      PLATFORM_ADMIN_EMAIL
+    );
+  } else {
+    // Normalize any legacy SUPER_ADMIN → PLATFORM_ADMIN on seed re-run.
+    // We do NOT re-hash the password here — if the admin already exists,
+    // the operator can rotate the password via the /platform/password-reset
+    // flow. Re-hashing on every seed run would force the operator to
+    // re-set the password every time the seed runs.
+    if (existingAdmin.role === 'SUPER_ADMIN') {
+      await prisma.adminUser.update({
+        where: { id: existingAdmin.id },
+        data: { role: 'PLATFORM_ADMIN', name: 'Platform Admin' },
+      });
+      console.log('✅ Normalized existing admin: SUPER_ADMIN → PLATFORM_ADMIN');
+    } else {
+      console.log('⏭️  Platform Admin user already exists (email=%s)', PLATFORM_ADMIN_EMAIL);
+    }
+  }
+
+  if (!shouldSeedDemoData()) {
+    console.log('⏭️  Skipping demo data (SEED_DEMO_DATA not set in production)');
+    return;
+  }
 
   // ─── Create or update the default wedding (Phase 1 multi-tenant) ────────
   const coupleLabel = buildCoupleLabel('Hornella', 'Josué');
@@ -36,36 +156,6 @@ async function main() {
     console.log('⏭️  Default wedding already exists (id=%s)', wedding.id);
   }
   const weddingId = wedding.id;
-
-  // ─── Create Super Admin user (platform-wide, no weddingId) ──────────────
-  const existingAdmin = await prisma.adminUser.findUnique({
-    where: { email: 'admin@josue-hornella.wedding' },
-  });
-
-  if (!existingAdmin) {
-    const hashedPassword = await bcrypt.hash('admin2026', 10);
-    await prisma.adminUser.create({
-      data: {
-        email: 'admin@josue-hornella.wedding',
-        password: hashedPassword,
-        name: 'Platform Admin',
-        role: 'PLATFORM_ADMIN', // canonical Phase 3 name (SUPER_ADMIN is a legacy alias)
-        weddingId: null, // platform-wide
-      },
-    });
-    console.log('✅ Created Platform Admin user (admin@josue-hornella.wedding / admin2026)');
-  } else {
-    // Normalize any legacy SUPER_ADMIN → PLATFORM_ADMIN on seed re-run
-    if (existingAdmin.role === 'SUPER_ADMIN') {
-      await prisma.adminUser.update({
-        where: { id: existingAdmin.id },
-        data: { role: 'PLATFORM_ADMIN', name: 'Platform Admin' },
-      });
-      console.log('✅ Normalized existing admin: SUPER_ADMIN → PLATFORM_ADMIN');
-    } else {
-      console.log('⏭️  Platform Admin user already exists');
-    }
-  }
 
   // Create default settings (scoped to default wedding)
   const defaultSettings = [
