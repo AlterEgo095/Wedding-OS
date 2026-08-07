@@ -109,3 +109,41 @@ export function rateLimited(msg?: string): NextResponse {
 export function conflict(msg: string): NextResponse {
   return NextResponse.json({ error: msg }, { status: 409 });
 }
+
+// ─── CONS-6-PIPELINE — apiSuccess / apiError helpers ──────────────────────────
+//
+// Thin wrappers around NextResponse.json for SUCCESS and structured ERROR
+// responses. Used by the new /api/platform/deployments/* + published-config
+// routes. The existing helpers above (badRequest, internalError, ...) cover
+// specific status codes; these two provide a generic shape for routes that
+// need to return arbitrary success payloads or non-standard error codes.
+
+/**
+ * 2xx success. Default status 200. Body shape: `{ data, ...extra }`.
+ *
+ * @example
+ *   return apiSuccess({ deployment })
+ *   return apiSuccess({ deployments, total }, 200, { 'Cache-Control': 'no-store' })
+ */
+export function apiSuccess(
+  data: Record<string, unknown>,
+  status: 200 | 201 = 200,
+  headers?: Record<string, string>
+): NextResponse {
+  return NextResponse.json(data, { status, headers });
+}
+
+/**
+ * Structured error response. Default status 400. Body shape: `{ error }`.
+ *
+ * @example
+ *   return apiError('Deployment not found', 404)
+ *   return apiError('Rate limit exceeded', 429, { 'Retry-After': '60' })
+ */
+export function apiError(
+  message: string,
+  status: number = 400,
+  headers?: Record<string, string>
+): NextResponse {
+  return NextResponse.json({ error: message }, { status, headers });
+}
