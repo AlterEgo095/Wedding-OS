@@ -2,7 +2,7 @@ export const dynamic = 'force-dynamic';
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { db } from '@/lib/db';
-import { getAuthUser, hasPermission, assertWeddingAccess } from '@/lib/auth';
+import { getAuthUser, hasPermission, assertWeddingAccess, type AuthUser } from '@/lib/auth';
 import { withRateLimit } from '@/lib/rate-limit';
 import { badRequest, forbidden, internalError, unauthorized } from '@/lib/api-errors';
 import { logger } from '@/lib/logger';
@@ -34,16 +34,16 @@ const createGroupSchema = z.object({
   color: z.string().max(20).optional().nullable().default(null),
 });
 
-async function checkAuth(request: NextRequest, weddingId: string) {
+async function checkAuth(request: NextRequest, weddingId: string): Promise<NextResponse | AuthUser> {
   const user = await getAuthUser(request);
-  if (!user) return { error: unauthorized() };
+  if (!user) return unauthorized();
   if (!hasPermission(user.role, ['PLATFORM_ADMIN', 'ORGANIZER'])) {
-    return { error: forbidden('Réservé aux organisateurs') };
+    return forbidden('Réservé aux organisateurs');
   }
   if (!assertWeddingAccess(user, weddingId)) {
-    return { error: forbidden('Accès refusé à ce mariage') };
+    return forbidden('Accès refusé à ce mariage');
   }
-  return { user };
+  return user;
 }
 
 async function listGroups(
@@ -80,11 +80,11 @@ async function listGroups(
 async function createGroupHandler(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
-) {
+): Promise<NextResponse> {
   const { id: weddingId } = await params;
   const auth = await checkAuth(request, weddingId);
-  if ('error' in auth) return auth.error;
-  const user = auth.user!;
+  if (auth instanceof NextResponse) return auth;
+  const user = auth;
 
   try {
     const body = await request.json().catch(() => null);
