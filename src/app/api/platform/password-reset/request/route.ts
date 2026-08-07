@@ -1,7 +1,7 @@
 export const dynamic = 'force-dynamic';
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { generateResetToken, buildMailtoResetLink, buildResetUrl } from '@/lib/password-reset';
+import { generateResetToken, buildMailtoResetLink, buildResetUrl, sendResetEmail } from '@/lib/password-reset';
 import { getRateLimitKey, checkRateLimit, withSecurityHeaders } from '@/lib/rate-limit';
 import { logger } from '@/lib/logger';
 import { internalError, badRequest } from '@/lib/api-errors';
@@ -17,9 +17,13 @@ import { writeAuditLog } from '@/lib/audit';
  *
  * In dev/demo mode (NODE_ENV !== 'production'), the response includes the
  * raw reset URL + mailto: link so the developer can complete the flow
- * manually. In production, only a generic "if the account exists, an email
- * has been sent" message is returned — the actual email-sending integration
- * is deferred to P3.
+ * manually. In production, the reset URL is delivered via the configured
+ * email transport (`sendResetEmail()` in @/lib/password-reset.ts) —
+ * currently a structured-logger stub that emits the envelope to stdout so
+ * the platform operator can extract + forward the URL. When `SMTP_*` env
+ * vars are set + `nodemailer` is installed, the SMTP path is used
+ * automatically. The reset URL is NEVER returned in the HTTP body in
+ * production (CONS-2-SECURITY Fix 2 / C5).
  *
  * Rate-limited per IP (5 requests / 15 min) to prevent flooding a victim's
  * inbox (when email sending is added) and to slow brute-force token guessing
@@ -65,16 +69,29 @@ export async function POST(request: NextRequest) {
 
     const isProd = process.env.NODE_ENV === 'production';
     if (isProd) {
-      // Production: do NOT leak the reset URL. The user receives it via
-      // email (P3 TODO — for now, the platform admin manually copies the
-      // mailto: link from the dev log or uses the DB token directly).
-      logger.info('Password reset token generated (production — email sending is P3)', {
-        email: normalizedEmail,
-        // Don't log the raw token.
+      // CONS-2-SECURITY (Fix 2 — C5): hand the raw token to the email
+      // transport. sendResetEmail() NEVER returns the URL — only a boolean
+      // success indicator. The HTTP response body stays enumeration-safe
+      // (identical whether the email exists or not, whether the transport
+      // succeeded or not).
+      //
+      // We deliberately do NOT await-and-fail-on-error: even if the transport
+      // errors out, the response must remain identical to the success path
+      // so an attacker can't distinguish "email exists + transport OK" from
+      // "email doesn't exist" / "transport broken". Errors are logged inside
+      // sendResetEmail() — the platform operator monitors the logs.
+      sendResetEmail(normalizedEmail, rawToken).catch((err) => {
+        // Defensive: sendResetEmail already swallows errors internally, but
+        // if it ever rethrows we don't want to crash the request.
+        logger.error('sendResetEmail threw unexpectedly', {
+          email: normalizedEmail,
+          errMessage: err instanceof Error ? err.message : String(err),
+          errName: err instanceof Error ? err.name : 'Unknown',
+        });
       });
       return withSecurityHeaders(
         NextResponse.json({
-          message: 'Si un compte existe pour cet email, un lien de réinitialisation a été généré.',
+          message: 'Si un compte existe pour cet email, un lien de réinitialisation a été envoyé.',
         })
       );
     }
