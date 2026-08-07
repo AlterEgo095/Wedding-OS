@@ -99,6 +99,13 @@ model Wedding {
   guestGroups    GuestGroup[]
   gifts          Gift[]
   programItems   ProgramItem[]
+
+  // ─── CONS-6-PIPELINE — published frontend snapshot ────────────────────────
+  // Snapshot of the last successful deployment pipeline run. Consumed by
+  // /w/[slug]/layout.tsx (server) and rendered via ThemeInjector + SectionRenderer.
+  // publishedVersion mirrors Deployment.version for fast equality checks.
+  publishedConfigJson String?
+  publishedVersion   String?
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
