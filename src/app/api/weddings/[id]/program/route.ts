@@ -55,10 +55,10 @@ async function checkAuth(request: NextRequest, weddingId: string): Promise<NextR
 async function listProgram(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
-) {
+): Promise<NextResponse> {
   const { id: weddingId } = await params;
   const auth = await checkAuth(request, weddingId);
-  if ('error' in auth) return auth.error;
+  if (auth instanceof NextResponse) return auth;
 
   try {
     const items = await db.programItem.findMany({

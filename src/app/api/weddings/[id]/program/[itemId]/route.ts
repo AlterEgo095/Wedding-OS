@@ -52,7 +52,7 @@ async function checkAuth(request: NextRequest, weddingId: string): Promise<NextR
 export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string; itemId: string }> }
-) {
+): Promise<NextResponse> {
   const { id: weddingId, itemId } = await params;
   const auth = await checkAuth(request, weddingId);
   if (auth instanceof NextResponse) return auth;

@@ -49,10 +49,10 @@ async function checkAuth(request: NextRequest, weddingId: string): Promise<NextR
 async function listGroups(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
-) {
+): Promise<NextResponse> {
   const { id: weddingId } = await params;
   const auth = await checkAuth(request, weddingId);
-  if ('error' in auth) return auth.error;
+  if (auth instanceof NextResponse) return auth;
 
   try {
     const groups = await db.guestGroup.findMany({
