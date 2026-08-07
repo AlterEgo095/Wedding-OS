@@ -3,8 +3,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getAuthUser, requirePlatformAdmin } from '@/lib/auth';
 import { isValidSlug, buildCoupleLabel, type Plan, type WeddingStatus } from '@/lib/types';
-// P2-CQ-1 + P2-SEC-3: shared VALID_PLANS from @/lib/constants.
+// P2-CQ-1 + P2-SEC-3: shared VALID_PLANS from @lib/constants.
 import { VALID_PLANS } from '@/lib/constants';
+// CONS-2-SECURITY (Fix 5): rate-limit HOF for create endpoints.
+import { withRateLimit } from '@/lib/rate-limit';
 // P2-SEC-1: structured logger (no stack leak).
 import { logger } from '@/lib/logger';
 // P2-CQ-5: standardised API errors.
@@ -127,7 +129,7 @@ export async function GET(request: NextRequest) {
   }
 }
 
-export async function POST(request: NextRequest) {
+export async function createPlatformWeddingHandler(request: NextRequest) {
   try {
     const user = await getAuthUser(request);
     const denied = requirePlatformAdmin(user);
@@ -280,3 +282,9 @@ export async function POST(request: NextRequest) {
     return internalError();
   }
 }
+
+// CONS-2-SECURITY (Fix 5): wrap the POST handler with rate-limit (30/min/IP).
+// Each POST creates a Wedding + AdminUser + Subscription + Invoice + 3 AuditLogs
+// inside a $transaction — the rate limit keeps the transaction pool bounded
+// and prevents a compromised PLATFORM_ADMIN from flooding the DB.
+export const POST = withRateLimit(30, 60_000)(createPlatformWeddingHandler);

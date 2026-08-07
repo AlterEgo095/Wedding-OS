@@ -3,6 +3,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db, tenantDb } from '@/lib/db';
 import { getAuthUser, hasPermission } from '@/lib/auth';
 import { withPublicTenant, withAdminTenantHandler, TenantContext } from '@/lib/tenant-context';
+// CONS-2-SECURITY (Fix 5): rate-limit HOF for upload endpoints.
+import { withRateLimit } from '@/lib/rate-limit';
 import { writeFile, unlink, mkdir } from 'fs/promises';
 import path from 'path';
 // P2-SEC-1: structured logger (no stack leak).
@@ -68,8 +70,14 @@ export const GET = withPublicTenant(async (_req, ctx) => {
   }
 });
 
-/** POST — Upload a new audio file */
-export async function POST(request: NextRequest) {
+// CONS-2-SECURITY (Fix 5): rate-limited at 20 req/min per IP — matches the
+// task brief's "20/min for uploads" ceiling. Authenticated ORGANIZER only,
+// but the rate-limit still applies (defends against compromised accounts +
+// keeps upload bandwidth bounded).
+// Casts withAdminTenantHandler's Promise<Response> to Promise<NextResponse>
+// — runtime is NextResponse, but the lib's signature types it as Response
+// (same pattern as /api/media/route.ts).
+async function uploadMusicHandler(request: NextRequest): Promise<NextResponse> {
   try {
     const user = await getAuthUser(request);
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -136,7 +144,7 @@ export async function POST(request: NextRequest) {
       };
       const playableUrl = `/api/music/file?f=${encodeURIComponent(uniqueName)}`;
       return NextResponse.json({ music: settings, music_url: playableUrl }, { status: 201 });
-    });
+    }) as unknown as NextResponse;
   } catch (error) {
     // P2-SEC-1: never log error.stack.
     logger.error('Upload music error', {
@@ -146,6 +154,9 @@ export async function POST(request: NextRequest) {
     return internalError();
   }
 }
+
+// CONS-2-SECURITY (Fix 5): wrap the POST handler with rate-limit (20/min/IP).
+export const POST = withRateLimit(20, 60_000)(uploadMusicHandler);
 
 /** PUT — Update music settings (enable/disable, volume) */
 export async function PUT(request: NextRequest) {
