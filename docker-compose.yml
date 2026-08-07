@@ -3,7 +3,6 @@
 # Ultra-secure production deployment with Nginx reverse proxy & auto-updates
 # ══════════════════════════════════════════════════════════════════════════════
 
-version: '3.8'
 
 services:
   # ─── Next.js Application ──────────────────────────────────────────────────
@@ -15,6 +14,8 @@ services:
     restart: unless-stopped
     env_file:
       - .env
+    environment:
+      - REDIS_URL=redis://redis:6379
     volumes:
       - wedding-db:/app/db
       - wedding-uploads:/app/public/uploads
@@ -26,7 +27,7 @@ services:
     ports:
       - "127.0.0.1:3080:3000"
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/"]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:3000/api/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -80,7 +81,7 @@ services:
     security_opt:
       - no-new-privileges:true
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:80/"]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:80/"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -122,6 +123,8 @@ volumes:
   wedding-logs:
     driver: local
   wedding-nginx-logs:
+    driver: local
+  wedding-redis-data:
     driver: local
 
 # ══════════════════════════════════════════════════════════════════════════════

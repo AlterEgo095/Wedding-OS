@@ -6,7 +6,7 @@
 # ─── Stage 1: Dependencies ────────────────────────────────────────────────────
 FROM node:20-alpine AS deps
 
-# Install libc6-compat for native module compatibility (bcryptjs, sharp, etc.)
+# Install libc6-compat for native module compatibility (sharp, etc.)
 RUN apk add --no-cache libc6-compat
 
 WORKDIR /app
@@ -107,11 +107,9 @@ COPY --from=builder /app/node_modules/prisma ./node_modules/prisma
 # ── Copy Prisma schema (required for db push at runtime) ──
 COPY --from=builder /app/prisma ./prisma
 
-# ── Copy required runtime dependencies for init-db.js ──
-COPY --from=builder /app/node_modules/bcryptjs ./node_modules/bcryptjs
+# ── Runtime dependencies ──
 
-# ── Copy database init script and entrypoint ──
-COPY --from=builder /app/init-db.js ./init-db.js
+# ── Copy entrypoint ──
 COPY --from=builder /app/docker-entrypoint.sh ./docker-entrypoint.sh
 RUN chmod +x ./docker-entrypoint.sh
 
@@ -122,7 +120,7 @@ RUN mkdir -p /app/db /app/public/uploads /app/logs && \
 
 # Ensure the nextjs user owns everything it needs
 RUN chown -R nextjs:nodejs /app/.next /app/node_modules /app/prisma && \
-    chown nextjs:nodejs /app/server.js /app/package.json /app/init-db.js /app/docker-entrypoint.sh 2>/dev/null || true
+    chown nextjs:nodejs /app/server.js /app/package.json /app/docker-entrypoint.sh 2>/dev/null || true
 
 # ── Entrypoint runs as ROOT to fix volume permissions, then drops to nextjs ──
 # Do NOT set USER nextjs here — the entrypoint handles privilege dropping
@@ -135,5 +133,5 @@ EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
   CMD wget --no-verbose --tries=1 --spider http://127.0.0.1:3000/api/health || exit 1
 
-# ── Start via entrypoint (init-db + server) ──
+# ── Start via entrypoint ──
 ENTRYPOINT ["sh", "./docker-entrypoint.sh"]
