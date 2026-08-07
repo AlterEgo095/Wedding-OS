@@ -47,8 +47,8 @@ function getGuestJwtSecret(): string {
 }
 
 // ─── Encryption key (C3 remediation — CONS-2-SECURITY) ─────────────────────
-// Previously: this function fell back to process.env.JWT_SECRET when
-// ENCRYPTION_KEY was absent. That collapsed two orthogonal secrets into
+// Previously: this function fell back to `process.env.JWT_SECRET` when
+// `ENCRYPTION_KEY` was absent. That collapsed two orthogonal secrets into
 // one — a leak of JWT_SECRET would also leak the AES-256-GCM key used to
 // encrypt guest invitation linkTokens and 2FA secrets. The two secrets
 // MUST be distinct: JWT_SECRET signs stateless auth tokens (rotated often,
@@ -313,6 +313,21 @@ export function verifyGuestToken(token: string): GuestTokenPayload | null {
   }
 }
 
+// ─── GuestSession.token hashing (C-SEC-4 remediation — CONS-2-SECURITY) ─────
+// The `GuestSession.token` column has a @unique constraint and was previously
+// stored as the raw JWT plaintext. A DB read alone would let an attacker
+// impersonate any guest for the duration of the 30-day session window. We now
+// store SHA-256(rawToken) in the DB instead — the cookie/JWT still carries the
+// raw token (so the client is unaffected), but the persisted value is a
+// 64-char hex hash that cannot be replayed as a bearer.
+//
+// Migration: existing plaintext sessions become unvalidatable (their hash no
+// longer matches the stored row) — guests simply re-authenticate. No data
+// migration script is needed; old rows age out via the 30-day expiresAt.
+export function hashGuestToken(token: string): string {
+  return crypto.createHash('sha256').update(token).digest('hex');
+}
+
 // ─── Session Management ───
 // All session operations use tenantDb which auto-injects weddingId when a
 // tenant context is active (set by the calling route via runWithTenant).
@@ -349,12 +364,16 @@ export async function createGuestSession(
   // weddingId is auto-injected by tenant extension when context is active.
   // P3: also pass it explicitly so Prisma's static types are satisfied (the
   // extension relaxes the runtime contract but not the create-input type).
+  //
+  // CONS-2-SECURITY (Fix 4): persist hashGuestToken(token) instead of the raw
+  // token. The cookie sent to the client carries the raw token; the DB only
+  // ever stores the SHA-256 hash.
   const tenantCtx = getTenantContext();
   const session = await tenantDb.guestSession.create({
     data: {
       weddingId: tenantCtx!.weddingId,
       guestId,
-      token,
+      token: hashGuestToken(token),
       userAgent: userAgent || null,
       ipAddress: ipAddress || null,
       fingerprint,
@@ -374,7 +393,7 @@ export async function createGuestSession(
 
   await tenantDb.guestSession.update({
     where: { id: session.id },
-    data: { token: finalToken },
+    data: { token: hashGuestToken(finalToken) },
   });
 
   // Update guest access info (scoped to current tenant)
@@ -408,10 +427,14 @@ export async function validateGuestSession(
   const payload = verifyGuestToken(token);
   if (!payload) return { valid: false };
 
+  // CONS-2-SECURITY (Fix 4): hash the incoming raw token before querying the
+  // DB — the persisted column stores SHA-256(token), not the plaintext.
+  const tokenHash = hashGuestToken(token);
+
   // findFirst (not findUnique) so the tenant extension can auto-inject weddingId.
   // Without the extension, this would be a global token lookup (cross-tenant risk).
   const session = await tenantDb.guestSession.findFirst({
-    where: { id: payload.sessionId, token, isActive: true },
+    where: { id: payload.sessionId, token: tokenHash, isActive: true },
   });
 
   if (!session) return { valid: false };
