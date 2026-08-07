@@ -71,7 +71,7 @@ dbs:
   - path: /app/db/custom.db
     replicas:
       - type: s3
-        bucket: heureuxmariage-litestream
+        bucket: wedding-litestream
         path: custom.db
         region: eu-west-1
         # Endpoint override for S3-compatible providers
@@ -91,13 +91,13 @@ dbs:
     {
       "Effect": "Allow",
       "Action": ["s3:ListBucket"],
-      "Resource": ["arn:aws:s3:::heureuxmariage-litestream"],
+      "Resource": ["arn:aws:s3:::wedding-litestream"],
       "Condition": {"StringLike": {"s3:prefix": ["custom.db*"]}}
     },
     {
       "Effect": "Allow",
       "Action": ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"],
-      "Resource": ["arn:aws:s3:::heureuxmariage-litestream/custom.db*"]
+      "Resource": ["arn:aws:s3:::wedding-litestream/custom.db*"]
     }
   ]
 }
@@ -131,7 +131,7 @@ services:
     environment:
       AWS_ACCESS_KEY_ID:     ${BACKUP_AWS_ACCESS_KEY_ID}
       AWS_SECRET_ACCESS_KEY: ${BACKUP_AWS_SECRET_ACCESS_KEY}
-      BACKUP_S3_BUCKET:      ${BACKUP_S3_BUCKET}      # e.g. heureuxmariage-backups
+      BACKUP_S3_BUCKET:      ${BACKUP_S3_BUCKET}      # e.g. wedding-backups
       BACKUP_S3_PREFIX:      ${BACKUP_S3_PREFIX}      # e.g. db/
     deploy:
       resources:
@@ -282,7 +282,7 @@ A backup you haven't tested restoring is not a backup — it's a hope. Weekly ve
    curl -fsS http://127.0.0.1:3081/ | grep -q "Josué"
    curl -fsS -X POST http://127.0.0.1:3081/api/admin/login \
      -H 'Content-Type: application/json' \
-     -d '{"email":"admin@heureuxmariage.aenews.net","password":"<staging-only-password>"}' \
+     -d '{"email":"admin@wedding.hpph.net","password":"<staging-only-password>"}' \
      | jq -e '.token' >/dev/null
    sqlite3 /var/lib/docker/volumes/staging-wedding-db/_data/custom.db \
      "SELECT COUNT(*) FROM Wedding; SELECT COUNT(*) FROM Guest; SELECT COUNT(*) FROM AdminUser;"

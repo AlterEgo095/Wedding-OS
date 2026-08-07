@@ -38,7 +38,7 @@
 - [ ] If this PR is destined for production: trigger the
       [`Deploy (production)` workflow](../../actions/workflows/deploy.yml)
       manually with the SHA of the merge commit.
-- [ ] After the deploy: verify `https://heureuxmariage.aenews.net/api/health`
+- [ ] After the deploy: verify `https://wedding.hpph.net/api/health`
       returns `{"status":"ok"}` and tail `docker logs wedding-app` for 30s
       to catch any boot-time errors.
 

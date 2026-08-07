@@ -2,7 +2,7 @@
 
 > Multi-tenant SaaS platform for premium wedding design, deployment and
 > day-of-event operations. Built and operated by **AENEWS**, deployed in
-> production at [heureuxmariage.aenews.net](https://heureuxmariage.aenews.net).
+> production at [wedding.hpph.net](https://wedding.hpph.net).
 
 ---
 
@@ -364,4 +364,4 @@ complète et honnête. Résumé:
 ## Licence
 
 Propriétaire — © AENEWS. Tous droits réservés.
-Usage limité à la plateforme `heureuxmariage.aenews.net` et ses tenants.
+Usage limité à la plateforme `wedding.hpph.net` et ses tenants.

@@ -4,7 +4,7 @@
 //
 // Premium/Élite weddings can map a custom domain (e.g. mariage-awa-david.fr)
 // to their wedding page. The reverse proxy (Caddy/nginx) routes:
-//   - heureuxmariage.aenews.net/{slug}  → default domain (multi-tenant)
+//   - wedding.hpph.net/{slug}  → default domain (multi-tenant)
 //   - {custom-domain}                    → /w/{slug} (wildcard cert required)
 //
 // This module validates domains and checks plan eligibility.
@@ -15,8 +15,8 @@ import { PLAN_LIMITS, type Plan } from './types';
  * Known platform domains — a request to these is NOT a custom domain.
  */
 const PLATFORM_DOMAINS = [
-  'heureuxmariage.aenews.net',
-  'www.heureuxmariage.aenews.net',
+  'wedding.hpph.net',
+  'www.wedding.hpph.net',
   'localhost',
   '127.0.0.1',
 ];
@@ -31,6 +31,7 @@ export function isCustomDomainRequest(host: string): boolean {
   if (PLATFORM_DOMAINS.includes(normalized)) return false;
   // If it ends with the platform domain, it's a subdomain, not custom
   if (normalized.endsWith('.aenews.net')) return false;
+  if (normalized.endsWith('.hpph.net')) return false;
   return true;
 }
 
@@ -68,6 +69,7 @@ export function validateCustomDomain(domain: string): { valid: boolean; error?: 
   if (!d.includes('.')) return { valid: false, error: 'Le domaine doit contenir au moins un point (ex: mon-mariage.fr)' };
   if (PLATFORM_DOMAINS.includes(d)) return { valid: false, error: 'Ce domaine est réservé à la plateforme' };
   if (d.endsWith('.aenews.net')) return { valid: false, error: 'Les sous-domaines aenews.net ne sont pas personnalisables' };
+  if (d.endsWith('.hpph.net')) return { valid: false, error: 'Les sous-domaines hpph.net ne sont pas personnalisables' };
 
   // Validate each label
   const labels = d.split('.');
@@ -114,5 +116,5 @@ export function buildDnsVerificationRecord(domain: string, slug: string): {
  * Get the CNAME target a couple should point their custom domain to.
  */
 export function getCnameTarget(): string {
-  return 'heureuxmariage.aenews.net';
+  return 'wedding.hpph.net';
 }

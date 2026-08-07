@@ -27,7 +27,7 @@ GitHub main SHA
 
 Verify at any time:
 ```bash
-curl https://heureuxmariage.aenews.net/api/health | jq .deploySha
+curl https://wedding.hpph.net/api/health | jq .deploySha
 git rev-parse HEAD  # on VPS
 ```
 

@@ -194,7 +194,7 @@ export interface WhatsAppMessageInput {
   billingCycle: BillingCycle;
   currency?: 'usd' | 'eur' | 'fcfa';
   weddingSlug: string;
-  publicBaseUrl?: string; // e.g. https://heureuxmariage.aenews.net
+  publicBaseUrl?: string; // e.g. https://wedding.hpph.net
   notes?: string | null;
 }
 
@@ -217,7 +217,7 @@ export function buildWhatsAppMessage(input: WhatsAppMessageInput): string {
     billingCycle,
     currency = 'usd',
     weddingSlug,
-    publicBaseUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'https://heureuxmariage.aenews.net',
+    publicBaseUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'https://wedding.hpph.net',
     notes,
   } = input;
 

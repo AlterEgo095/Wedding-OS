@@ -110,7 +110,7 @@ So the on-disk log footprint is capped at ~30 MB per container. Older entries ar
 
 Used by:
 1. Docker `HEALTHCHECK` directive in `Dockerfile` (every 30s).
-2. The deploy workflow (`.github/workflows/deploy.yml`) waits for the container health check + then hits `https://heureuxmariage.aenews.net/api/health` as a final smoke test.
+2. The deploy workflow (`.github/workflows/deploy.yml`) waits for the container health check + then hits `https://wedding.hpph.net/api/health` as a final smoke test.
 3. External uptime monitors (recommended — see TL;DR).
 
 ---

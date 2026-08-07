@@ -601,7 +601,7 @@ export function ThemeCustomizer({ slug: explicitSlug }: ThemeCustomizerProps = {
               </div>
               <div className="text-[11px] text-muted-foreground space-y-1">
                 <p className="font-medium text-foreground">Instructions DNS :</p>
-                <p>1. Créez un enregistrement CNAME pointant votre domaine vers <code className="text-gold">heureuxmariage.aenews.net</code></p>
+                <p>1. Créez un enregistrement CNAME pointant votre domaine vers <code className="text-gold">wedding.hpph.net</code></p>
                 <p>2. Ajoutez un enregistrement TXT <code className="text-gold">_heureux-mariage.{domainInput || 'votre-domaine.fr'}</code> avec la valeur <code className="text-gold">hm-verify={slug}</code></p>
                 <p>3. Attendez la propagation DNS (5-30 min) puis contactez le support pour activer le SSL.</p>
               </div>

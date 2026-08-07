@@ -45,7 +45,7 @@ export const viewport: Viewport = {
 // (e.g. for the homepage, 404, platform/admin routes) and must NEVER leak a
 // specific couple's identity into another wedding's social shares.
 export const metadata: Metadata = {
-  metadataBase: new URL(process.env.NEXT_PUBLIC_BASE_URL || "https://heureuxmariage.aenews.net"),
+  metadataBase: new URL(process.env.NEXT_PUBLIC_BASE_URL || "https://wedding.hpph.net"),
   title: "AENEWS Event Experience Platform — Créez vos expériences événementielles",
   description:
     "Plateforme numérique de création, personnalisation et déploiement d'expériences événementielles premium. Mariages, anniversaires, conférences — sans coder.",

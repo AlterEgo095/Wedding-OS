@@ -60,7 +60,7 @@ docker stop wedding-app
 docker cp /opt/wedding-backups/custom-YYYYMMDD-HHMMSS.db wedding-app:/app/db/custom.db
 docker start wedding-app
 # Verify health
-curl https://heureuxmariage.aenews.net/api/health
+curl https://wedding.hpph.net/api/health
 ```
 
 ### Full disaster recovery (VPS lost)
@@ -86,7 +86,7 @@ docker cp /path/to/latest-backup.db wedding-app:/app/db/custom.db
 docker restart wedding-app
 
 # 7. Verify
-curl https://heureuxmariage.aenews.net/api/health
+curl https://wedding.hpph.net/api/health
 # → deploySha should match GitHub main SHA
 ```
 
@@ -120,7 +120,7 @@ git ls-remote origin refs/heads/main | cut -f1
 git rev-parse HEAD
 
 # Runtime deploySha
-curl -s https://heureuxmariage.aenews.net/api/health | python3 -c "import sys,json;print(json.load(sys.stdin)['deploySha'])"
+curl -s https://wedding.hpph.net/api/health | python3 -c "import sys,json;print(json.load(sys.stdin)['deploySha'])"
 ```
 
 All three MUST be identical. If not, the deployment is not certified.

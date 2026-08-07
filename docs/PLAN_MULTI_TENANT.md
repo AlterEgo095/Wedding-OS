@@ -268,7 +268,7 @@ Les correctifs (21H30 + sync displayName) sont déployés via une branche **`hot
 9. ✅ Fix `GuestManager.tsx` (UI fields)
 10. ⏳ **Déploiement VPS en cours** (95.111.226.63, conteneur Docker `wedding-app`)
 11. ⏳ Fix DB direct VPS : `MBOYO` → `CHRIST MPEPE` + vérif 21H30
-12. ⏳ Vérif prod https://heureuxmariage.aenews.net
+12. ⏳ Vérif prod https://wedding.hpph.net
 
 ### Rollback plan
 Si hotfix problematic en prod : `docker stop wedding-app && docker start wedding-app-old` + restore DB pre-hotfix.

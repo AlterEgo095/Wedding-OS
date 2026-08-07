@@ -1,6 +1,6 @@
 # ══════════════════════════════════════════════════════════════════════════════
 # docker-compose.prod.yml — AENEWS Wedding OS
-# Production deployment for heureuxmariage.aenews.net
+# Production deployment for wedding.hpph.net
 # Port: 3080 (localhost only) — Nginx reverse proxy handles SSL/public access
 # ══════════════════════════════════════════════════════════════════════════════
 

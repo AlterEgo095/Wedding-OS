@@ -81,7 +81,7 @@ const nextConfig: NextConfig = {
       },
       {
         protocol: 'https',
-        hostname: 'heureuxmariage.aenews.net',
+        hostname: 'wedding.hpph.net',
       },
     ],
   },

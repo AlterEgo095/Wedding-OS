@@ -10,11 +10,11 @@
 #   2. git fetch + checkout the selected ref.
 #   3. docker compose -f docker-compose.prod.yml up -d --build
 #   4. Wait for the container health check to flip to healthy.
-#   5. Hit https://heureuxmariage.aenews.net/api/health to confirm the new
+#   5. Hit https://wedding.hpph.net/api/health to confirm the new
 #      revision is live and the DB connection is healthy.
 #
 # Required GitHub secrets (Settings → Secrets and variables → Actions):
-#   - SSH_HOST       — production VPS hostname or IP (e.g. heureuxmariage.aenews.net)
+#   - SSH_HOST       — production VPS hostname or IP (e.g. wedding.hpph.net)
 #   - SSH_USER       — SSH user with docker access (e.g. deploy)
 #   - SSH_PRIVATE_KEY — PEM-encoded private key matching the user's authorized_keys
 #   - DEPLOY_PATH    — absolute path on the VPS where the repo is checked out
@@ -98,12 +98,12 @@ jobs:
             "docker logs --tail 80 wedding-app || true"
           exit 1
 
-      - name: External health check (https://heureuxmariage.aenews.net/api/health)
+      - name: External health check (https://wedding.hpph.net/api/health)
         run: |
           sleep 5
           echo "Hitting /api/health on the public domain..."
           CODE=$(curl -sS -o /tmp/health.json -w '%{http_code}' --max-time 15 \
-            https://heureuxmariage.aenews.net/api/health || echo "000")
+            https://wedding.hpph.net/api/health || echo "000")
           echo "HTTP status: $CODE"
           cat /tmp/health.json
           echo ""
