@@ -46,32 +46,54 @@ function getGuestJwtSecret(): string {
   return _guestJwtSecret;
 }
 
+// ─── Encryption key (C3 remediation — CONS-2-SECURITY) ─────────────────────
+// Previously: this function fell back to process.env.JWT_SECRET when
+// ENCRYPTION_KEY was absent. That collapsed two orthogonal secrets into
+// one — a leak of JWT_SECRET would also leak the AES-256-GCM key used to
+// encrypt guest invitation linkTokens and 2FA secrets. The two secrets
+// MUST be distinct: JWT_SECRET signs stateless auth tokens (rotated often,
+// leaked = forged sessions); ENCRYPTION_KEY protects data-at-rest (rotated
+// rarely, leaked = decryptable historical ciphertext).
+//
+// Fix: ENCRYPTION_KEY is now REQUIRED in production and must NOT equal
+// JWT_SECRET. Dev-only fallback remains (machine-derived, never committed).
 let _encryptionKeySource: string | null = null;
 function getEncryptionKeySource(): string {
   if (_encryptionKeySource !== null) return _encryptionKeySource;
-  const env =
-    process.env.ENCRYPTION_KEY ||
-    process.env.JWT_SECRET;
-  if (env && env.length >= 32) {
-    _encryptionKeySource = env;
-    return _encryptionKeySource;
-  }
+  const env = process.env.ENCRYPTION_KEY;
   const isProd =
     process.env.NODE_ENV === 'production' &&
     process.env.NEXT_PHASE !== 'phase-production-build';
+
+  if (env && env.length >= 32) {
+    // Defense-in-depth: refuse to operate if ENCRYPTION_KEY === JWT_SECRET.
+    // Even if both are set explicitly, sharing them collapses the two
+    // secrets into one — fail-fast so the operator notices.
+    if (process.env.JWT_SECRET && env === process.env.JWT_SECRET) {
+      throw new Error(
+        'FATAL: ENCRYPTION_KEY must differ from JWT_SECRET. ' +
+        'Generate a separate key with: openssl rand -base64 48'
+      );
+    }
+    _encryptionKeySource = env;
+    return _encryptionKeySource;
+  }
+
   if (isProd) {
     throw new Error(
       'FATAL: ENCRYPTION_KEY is missing or too short (<32 chars) in production. ' +
-      'Invitation link encryption is disabled until ENCRYPTION_KEY is set.'
+      'Invitation link encryption is disabled until ENCRYPTION_KEY is set. ' +
+      'Generate one with: openssl rand -base64 48'
     );
   }
   console.warn(
     'WARNING: ENCRYPTION_KEY not set — using insecure dev-only fallback. ' +
     'Set ENCRYPTION_KEY in your .env file with: openssl rand -base64 48'
   );
-  // P2-SEC-9: derived from machine signals (not hardcoded). The downstream
-  // getEncryptionKey() derives a 32-byte AES-256 key via SHA-256, so any
-  // stable source string ≥ 32 chars works correctly here.
+  // P2-SEC-9 + CONS-2-SECURITY: dev-only fallback derived from machine
+  // signals (not hardcoded, NOT JWT_SECRET). The downstream getEncryptionKey()
+  // derives a 32-byte AES-256 key via SHA-256, so any stable source string
+  // ≥ 32 chars works correctly here.
   _encryptionKeySource = devFallbackSecret('encryption-key');
   return _encryptionKeySource;
 }
