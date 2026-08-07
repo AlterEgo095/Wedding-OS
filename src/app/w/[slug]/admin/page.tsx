@@ -32,6 +32,8 @@ import {
   LayoutDashboard, Users, Grid3X3, Image as ImageIcon, Clock, Shield, Settings, LogOut,
   X, Menu, FileSearch, Music, Sparkles, Crown, Loader2, Palette, LayoutTemplate, BookOpen,
   Mail, QrCode,
+  // CONS-5-CLIENT-BACKEND — icons for the 6 new organizer tabs
+  Heart, Tag, Gift, CalendarDays, BarChart3,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import dynamic from 'next/dynamic';
@@ -54,6 +56,13 @@ import { CoupleStoryManager } from '@/components/admin/CoupleStoryManager';
 // Mission 4.9 — wire InvitationManager + CheckInManager into the wedding admin
 const InvitationManager = dynamic(() => import('@/components/admin/InvitationManager'), { ssr: false })
 const CheckInManager = dynamic(() => import('@/components/admin/CheckInManager'), { ssr: false })
+// CONS-5-CLIENT-BACKEND — lazy-load the 6 new organizer tab components.
+const FamiliesManager = dynamic(() => import('@/components/admin/FamiliesManager'), { ssr: false })
+const GroupsManager = dynamic(() => import('@/components/admin/GroupsManager'), { ssr: false })
+const GiftsManager = dynamic(() => import('@/components/admin/GiftsManager'), { ssr: false })
+const ProgramManager = dynamic(() => import('@/components/admin/ProgramManager'), { ssr: false })
+const StatisticsPanel = dynamic(() => import('@/components/admin/StatisticsPanel'), { ssr: false })
+const QRCodeManager = dynamic(() => import('@/components/admin/QRCodeManager'), { ssr: false })
 
 interface AuthUser {
   id: string
@@ -63,7 +72,7 @@ interface AuthUser {
   weddingId?: string | null
 }
 
-type TabId = 'dashboard' | 'designer' | 'guests' | 'invitations' | 'check-in' | 'tables' | 'media' | 'music' | 'timeline' | 'story' | 'users' | 'settings' | 'access-logs' | 'appearance' | 'theme'
+type TabId = 'dashboard' | 'designer' | 'guests' | 'families' | 'groups' | 'invitations' | 'qrcodes' | 'check-in' | 'tables' | 'gifts' | 'media' | 'music' | 'timeline' | 'program' | 'story' | 'stats' | 'users' | 'settings' | 'access-logs' | 'appearance' | 'theme'
 
 interface NavItem {
   id: TabId
@@ -76,14 +85,21 @@ const NAV_ITEMS: NavItem[] = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { id: 'designer', label: 'Designer', icon: LayoutTemplate },
   { id: 'guests', label: 'Invités', icon: Users },
+  // CONS-5-CLIENT-BACKEND — organizer guest-grouping tabs.
+  { id: 'families', label: 'Familles', icon: Heart },
+  { id: 'groups', label: 'Groupes', icon: Tag },
   { id: 'invitations', label: 'Invitations', icon: Mail },
+  { id: 'qrcodes', label: 'QR Codes', icon: QrCode },
   { id: 'check-in', label: 'Réception', icon: QrCode },
   { id: 'tables', label: 'Tables', icon: Grid3X3 },
+  { id: 'gifts', label: 'Cadeaux', icon: Gift },
   { id: 'access-logs', label: 'Accès', icon: FileSearch },
   { id: 'media', label: 'Médias', icon: ImageIcon },
   { id: 'music', label: 'Musique', icon: Music },
-  { id: 'timeline', label: 'Programme', icon: Clock },
+  { id: 'timeline', label: 'Chronologie', icon: Clock },
+  { id: 'program', label: 'Programme du jour', icon: CalendarDays },
   { id: 'story', label: 'Histoire', icon: BookOpen },
+  { id: 'stats', label: 'Statistiques', icon: BarChart3 },
   { id: 'theme', label: 'Thème', icon: Palette },
   { id: 'appearance', label: 'Apparence', icon: Sparkles },
   { id: 'users', label: 'Utilisateurs', icon: Shield, superAdminOnly: true },
@@ -335,6 +351,19 @@ export default function PerWeddingAdminPage() {
         return <CoupleStoryManager weddingSlug={slug} />
       case 'appearance':
         return <AppearanceManager token={token} onSessionExpired={handleSessionExpired} />
+      // CONS-5-CLIENT-BACKEND — 6 new organizer tab cases.
+      case 'families':
+        return <FamiliesManager weddingId={wedding.id} />
+      case 'groups':
+        return <GroupsManager weddingId={wedding.id} />
+      case 'gifts':
+        return <GiftsManager weddingId={wedding.id} />
+      case 'program':
+        return <ProgramManager weddingId={wedding.id} />
+      case 'stats':
+        return <StatisticsPanel weddingId={wedding.id} />
+      case 'qrcodes':
+        return <QRCodeManager weddingId={wedding.id} weddingSlug={slug} />
       default:
         return <Dashboard token={token} onSessionExpired={handleSessionExpired} />
     }
