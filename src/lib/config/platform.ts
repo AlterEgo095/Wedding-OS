@@ -59,7 +59,6 @@ export const FEATURES = {
   mediaEngine: process.env.NEXT_PUBLIC_FEATURE_MEDIA_ENGINE === 'true',
   analyticsEngine: process.env.NEXT_PUBLIC_FEATURE_ANALYTICS === 'true',
   marketplace: process.env.NEXT_PUBLIC_FEATURE_MARKETPLACE === 'true',
-  penpot: process.env.NEXT_PUBLIC_FEATURE_PENPOT === 'true',
   commandCenter: process.env.NEXT_PUBLIC_FEATURE_COMMAND_CENTER === 'true',
 } as const;
 

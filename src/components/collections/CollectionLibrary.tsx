@@ -12,7 +12,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Crown, Sparkles, Check, Loader2, Lock, Wand2 } from 'lucide-react';
+import { Crown, Sparkles, Check, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import type { CollectionPublic, CollectionVariantPublic } from '@/lib/collections';
 
@@ -42,8 +42,7 @@ export function CollectionLibrary({ slug }: CollectionLibraryProps) {
   const [applying, setApplying] = useState<string | null>(null);
   const [selectedVariant, setSelectedVariant] = useState<Record<string, string>>({});
   const [appliedCollectionSlug, setAppliedCollectionSlug] = useState<string | null>(null);
-  // Phase 5 — Designer Portal handles module mapping via Penpot auto-detect.
-  // The couple-facing catalog no longer mounts the manual frame ID mapper.
+  // The couple-facing catalog shows the curated built-in Collections.
 
   // Load catalog
   const loadCollections = useCallback(async () => {
@@ -164,7 +163,7 @@ export function CollectionLibrary({ slug }: CollectionLibraryProps) {
         </h2>
         <p className="text-sm text-muted-foreground mt-1">
           Choisissez une Collection Premium pour votre mariage. Chaque Collection
-          inclut le thème, l&apos;ambiance visuelle et les designs Penpot associés.
+          inclut le thème et l&apos;ambiance visuelle associée.
         </p>
       </div>
 
@@ -307,7 +306,7 @@ function CollectionCard({
           </span>
         </div>
 
-        {/* Phase 5 — Quality score badge (couple-facing indicator) */}
+        {/* Quality score badge (couple-facing indicator) */}
         {collection.qualityScore !== null && collection.qualityScore !== undefined && (
           <div className="flex items-center gap-1.5 text-xs">
             <span className="text-muted-foreground">Qualité:</span>
@@ -324,12 +323,6 @@ function CollectionCard({
               <Sparkles className="h-2.5 w-2.5" />
               {collection.qualityScore}/100
             </Badge>
-            {collection.penpotFileUrl && (
-              <Badge variant="outline" className="text-[10px] gap-0.5 border-blue-300 text-blue-700">
-                <Wand2 className="h-2.5 w-2.5" />
-                Penpot
-              </Badge>
-            )}
           </div>
         )}
 

@@ -30,7 +30,7 @@ import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import {
   LayoutDashboard, Users, Grid3X3, Image as ImageIcon, Clock, Shield, Settings, LogOut,
-  X, Menu, FileSearch, Music, Sparkles, Crown, Loader2, Palette, PenTool, LayoutTemplate, BookOpen,
+  X, Menu, FileSearch, Music, Sparkles, Crown, Loader2, Palette, LayoutTemplate, BookOpen,
   Mail, QrCode,
 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -51,7 +51,6 @@ import AppearanceManager from '@/components/admin/AppearanceManager';
 import { ThemeCustomizer } from '@/components/admin/ThemeCustomizer';
 import { DesignerTab } from '@/components/admin/DesignerTab';
 import { CoupleStoryManager } from '@/components/admin/CoupleStoryManager';
-import { PenpotStudio } from '@/components/penpot/PenpotStudio';
 // Mission 4.9 — wire InvitationManager + CheckInManager into the wedding admin
 const InvitationManager = dynamic(() => import('@/components/admin/InvitationManager'), { ssr: false })
 const CheckInManager = dynamic(() => import('@/components/admin/CheckInManager'), { ssr: false })
@@ -64,7 +63,7 @@ interface AuthUser {
   weddingId?: string | null
 }
 
-type TabId = 'dashboard' | 'designer' | 'guests' | 'invitations' | 'check-in' | 'tables' | 'media' | 'music' | 'timeline' | 'story' | 'users' | 'settings' | 'access-logs' | 'appearance' | 'theme' | 'studio'
+type TabId = 'dashboard' | 'designer' | 'guests' | 'invitations' | 'check-in' | 'tables' | 'media' | 'music' | 'timeline' | 'story' | 'users' | 'settings' | 'access-logs' | 'appearance' | 'theme'
 
 interface NavItem {
   id: TabId
@@ -86,7 +85,6 @@ const NAV_ITEMS: NavItem[] = [
   { id: 'timeline', label: 'Programme', icon: Clock },
   { id: 'story', label: 'Histoire', icon: BookOpen },
   { id: 'theme', label: 'Thème', icon: Palette },
-  { id: 'studio', label: 'Studio', icon: PenTool },
   { id: 'appearance', label: 'Apparence', icon: Sparkles },
   { id: 'users', label: 'Utilisateurs', icon: Shield, superAdminOnly: true },
   { id: 'settings', label: 'Paramètres', icon: Settings, superAdminOnly: true },
@@ -335,12 +333,6 @@ export default function PerWeddingAdminPage() {
       case 'story':
         // Slice 4: Couple Story admin CRUD — API already existed, UI was missing
         return <CoupleStoryManager weddingSlug={slug} />
-      case 'studio':
-        // Penpot native integration: the official design Studio of Wedding OS.
-        // Embeds Penpot via iframe, syncs design tokens with the Theme Engine,
-        // and lets couples design their invitations visually. Coexists with
-        // LuxuryVisualEngine (ambiance overlay) and ThemeInjector (token injection).
-        return <PenpotStudio slug={slug} />
       case 'appearance':
         return <AppearanceManager token={token} onSessionExpired={handleSessionExpired} />
       default:

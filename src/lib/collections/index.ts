@@ -1,8 +1,8 @@
 // ══════════════════════════════════════════════════════════════════════════════
 // Collection Engine — Phase 1 (AENEWS Wedding OS Enterprise)
 // ══════════════════════════════════════════════════════════════════════════════
-// Orchestrates existing motors (Theme Engine, ThemeInjector, LuxuryVisualEngine,
-// PenpotStudio) — does NOT replace any of them.
+// Orchestrates existing motors (Theme Engine, ThemeInjector, LuxuryVisualEngine)
+// — does NOT replace any of them. (P4-penpot: Penpot integration removed.)
 //
 // Phase 1 scope (minimal, immediately useful):
 //   - listCollections / getCollection — read catalog
@@ -17,7 +17,6 @@
 // ══════════════════════════════════════════════════════════════════════════════
 
 import { db } from '@/lib/db'
-import { themeToPenpotTokens, parsePenpotUrl } from '@/lib/penpot/config'
 import type { Plan } from '@/lib/types'
 // Slice 1 (manifest-driven renderer): applyCollection must create a
 // WeddingCollectionBinding so resolveWeddingManifest() reads a real manifest
@@ -731,9 +730,7 @@ export async function ensureCollectionsSeeded(): Promise<void> {
       continue
     }
 
-    const { fileId, pageId } = seed.penpotFileUrl
-      ? parsePenpotUrl(seed.penpotFileUrl)
-      : { fileId: null, pageId: null }
+    const { fileId, pageId } = { fileId: null, pageId: null }
 
     await db.collection.create({
       data: {
@@ -931,14 +928,14 @@ export async function applyCollection(params: {
     ...(paletteOverride ?? {}),
   }
 
-  // Build customizations blob (additive — preserves existing penpot integration
-  // shape, adds luxury + collectionMeta keys)
+  // Build customizations blob (additive — preserves existing luxury +
+  // collectionMeta keys). Penpot integration was removed in P4-penpot.
   const luxuryPreset = collection.luxuryPreset
     ? (JSON.parse(collection.luxuryPreset) as LuxuryPreset)
     : null
 
-  // Fetch existing customizations to merge (don't clobber a manually-pushed
-  // Penpot token set from PenpotStudio)
+  // Fetch existing customizations to merge (don't clobber manually-pushed
+  // luxury/collectionMeta keys from a previous apply).
   const existingTheme = await db.theme.findUnique({
     where: { weddingId },
     select: { customizations: true },
@@ -952,25 +949,8 @@ export async function applyCollection(params: {
     }
   }
 
-  // Merge: keep existing penpot.tokens if present (couple may have pushed from Studio),
-  // but update the file reference to the Collection's master file.
-  // P3: type the existing penpot blob so we can safely read fileUrl/fileId/pageId.
-  const existingPenpot: { fileUrl?: string | null; fileId?: string | null; pageId?: string | null } =
-    typeof existingCustomizations.penpot === 'object' && existingCustomizations.penpot
-      ? (existingCustomizations.penpot as { fileUrl?: string | null; fileId?: string | null; pageId?: string | null })
-      : {};
-  const penpotIntegration = {
-    ...existingPenpot,
-    fileUrl: collection.penpotFileUrl ?? existingPenpot.fileUrl ?? null,
-    fileId: collection.penpotFileId ?? existingPenpot.fileId ?? null,
-    pageId: variant.penpotPageId ?? existingPenpot.pageId ?? null,
-    tokens: themeToPenpotTokens(finalTheme),
-    lastSyncedAt: new Date().toISOString(),
-  }
-
   const customizations = {
     ...existingCustomizations,
-    penpot: penpotIntegration,
     luxury: luxuryPreset,
     collectionMeta: {
       collectionId: collection.id,
@@ -1157,9 +1137,8 @@ export async function listModules(
 }
 
 /**
- * Update the Penpot frameId mapping for a single module slot.
- * Used by the CollectionModulesManager admin UI to let designers/admins map
- * Penpot frames to module slots.
+ * Update the frameId mapping for a single module slot.
+ * Used by the admin UI to let designers/admins map frames to module slots.
  *
  * Setting frameId to null "unmaps" the slot — the renderer falls back to the
  * existing component (zero regression).
@@ -1555,8 +1534,8 @@ export async function listAllCollectionsForDesigner(): Promise<CollectionDesigne
 
 /**
  * Shape of a single entry consumed by autoMapModules.
- * Matches DetectionEntry from src/lib/penpot/autoDetect.ts but redeclared here
- * to avoid a circular import (autoDetect.ts imports MODULE_SLOTS from this file).
+ * (P4-penpot: the original Penpot autoDetect module was removed; this shape
+ * is preserved for backward compatibility with any persisted detection reports.)
  */
 export interface AutoMapEntry {
   frameId: string
@@ -1727,75 +1706,8 @@ export async function autoMapModules(
   }
 }
 
-/**
- * Link a Penpot file URL to a Collection (sets penpotFileUrl + penpotFileId).
- * Idempotent — re-linking with the same URL is a no-op.
- *
- * @param collectionId Target Collection
- * @param fileUrl Penpot URL (view/share/editor — parsePenpotUrl accepts all)
- * @param tokenId Optional designer-scoped Penpot API token (stored on Collection)
- */
-export async function linkPenpotFile(params: {
-  collectionId: string
-  fileUrl: string
-  tokenId?: string | null
-}): Promise<{ collectionId: string; fileId: string | null; pageId: string | null }> {
-  const { collectionId, fileUrl } = params
-
-  // Use parsePenpotUrl from penpot/config (lazy import to avoid circular deps)
-  const { parsePenpotUrl } = await import('@/lib/penpot/config')
-  const { fileId, pageId } = parsePenpotUrl(fileUrl)
-
-  const updated = await db.collection.update({
-    where: { id: collectionId },
-    data: {
-      penpotFileUrl: fileUrl,
-      penpotFileId: fileId,
-      penpotTokenId: params.tokenId ?? null,
-    },
-    select: { id: true, penpotFileId: true },
-  })
-
-  await db.auditLog.create({
-    data: {
-      weddingId: null,
-      action: 'LINK_PENPOT_FILE',
-      details: `Collection ${collectionId} linked to Penpot file ${fileId || '(invalid URL)'}`,
-    },
-  })
-
-  return {
-    collectionId: updated.id,
-    fileId: updated.penpotFileId,
-    pageId,
-  }
-}
-
-/**
- * Unlink a Penpot file from a Collection.
- * Sets penpotFileUrl + penpotFileId + penpotTokenId to null.
- * Does NOT touch CollectionModule rows — auto-mapped slots remain mapped
- * (the designer can re-sync or manually unmap them).
- */
-export async function unlinkPenpotFile(
-  collectionId: string,
-): Promise<{ collectionId: string }> {
-  await db.collection.update({
-    where: { id: collectionId },
-    data: {
-      penpotFileUrl: null,
-      penpotFileId: null,
-      penpotTokenId: null,
-    },
-  })
-
-  await db.auditLog.create({
-    data: {
-      weddingId: null,
-      action: 'UNLINK_PENPOT_FILE',
-      details: `Collection ${collectionId} unlinked from Penpot`,
-    },
-  })
-
-  return { collectionId }
-}
+// NOTE (P4-penpot): linkPenpotFile() and unlinkPenpotFile() were removed when
+// the Penpot integration was deleted. The DB columns (penpotFileUrl,
+// penpotFileId, penpotTokenId) remain on the Collection model for backward
+// compatibility with existing rows, but are no longer populated or read by
+// the application code.

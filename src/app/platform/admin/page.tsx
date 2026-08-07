@@ -43,6 +43,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import {
+  LayoutGrid,
   LayoutDashboard,
   Heart,
   Users as UsersIcon,
@@ -67,7 +68,6 @@ import {
   Wallet,
   Rocket,
   Palette,
-  PenTool,
   Send,
   CheckCircle,
   Pause,
@@ -77,7 +77,6 @@ import {
   Megaphone,
   TrendingUp,
   Layers,
-  Factory,
 } from 'lucide-react'
 
 import {
@@ -108,17 +107,13 @@ import dynamic from 'next/dynamic'
 
 // Heavy tab components are lazy-loaded (P1-UX-9 + P2-PERF-13) so the initial
 // JS bundle for /platform/admin only contains the dashboard shell. Each tab is
-// fetched on first activation. ssr:false for the two design-surface components
-// (PenpotStudio, ThemeCustomizer) which use canvas/iframe APIs unavailable
-// during SSR; the data tabs (Billing, Onboarding, CollectionsFactory) keep
-// ssr:true (default) so they can participate in streaming.
+// fetched on first activation. ssr:false for ThemeCustomizer (canvas/iframe APIs
+// unavailable during SSR); the data tabs (Billing, Onboarding, CollectionsFactory)
+// keep ssr:true (default) so they can participate in streaming.
 const BillingTab = dynamic(() => import('./BillingTab').then((m) => m.BillingTab))
 const OnboardingTab = dynamic(() => import('./OnboardingTab').then((m) => m.OnboardingTab))
 const CollectionsFactoryTab = dynamic(() => import('./CollectionsFactoryTab').then((m) => m.CollectionsFactoryTab))
-const DesignFactoryTab = dynamic(() => import('./DesignFactoryTab').then((m) => m.DesignFactoryTab))
-const ProductionStudioTab = dynamic(() => import('./ProductionStudioTab').then((m) => m.ProductionStudioTab))
 const ThemeCustomizer = dynamic(() => import('@/components/admin/ThemeCustomizer').then((m) => m.ThemeCustomizer), { ssr: false })
-const PenpotStudio = dynamic(() => import('@/components/penpot/PenpotStudio').then((m) => m.PenpotStudio), { ssr: false })
 const MarketingControlPlane = dynamic(() => import('@/components/marketing/MarketingControlPlane'), { ssr: false })
 const CommercialOS = dynamic(() => import('@/components/commercial/CommercialOS'), { ssr: false })
 
@@ -269,7 +264,7 @@ interface PaginatedUsers {
   limit: number
 }
 
-type TabId = 'dashboard' | 'weddings' | 'users' | 'audit' | 'billing' | 'onboarding' | 'appearance' | 'studio' | 'collections' | 'marketing' | 'commercial' | 'design-factory' | 'production-studio'
+type TabId = 'dashboard' | 'weddings' | 'users' | 'audit' | 'billing' | 'onboarding' | 'appearance' | 'collections' | 'marketing' | 'commercial'
 
 interface NavItem {
   id: TabId
@@ -289,10 +284,8 @@ const NAV_ITEMS: NavItem[] = [
   { id: 'onboarding', label: 'Onboarding', icon: Rocket },
   // ── EVENT OPERATIONS ──
   { id: 'weddings', label: 'Mariages', icon: Heart },
-  // ── PRODUCTION STUDIO (unified — single entry point) ──
-  { id: 'production-studio', label: 'Production Studio', icon: Factory },
-  // Legacy tabs (collections, design-factory, appearance, studio, marketing)
-  // are NOT in primary nav but remain accessible as compatibility aliases.
+  // ── PRODUCTION (collections catalogue built-in) ──
+  { id: 'collections', label: 'Collections', icon: LayoutGrid },
   // ── SYSTEM ──
   { id: 'users', label: 'Utilisateurs', icon: UsersIcon },
   { id: 'audit', label: "Journal d'audit", icon: ScrollText },
@@ -2385,18 +2378,8 @@ export default function PlatformAdminPage() {
         return <AuditTab fetchWithAuth={fetchWithAuth} />
       case 'appearance':
         return <ThemeCustomizer />
-      case 'studio':
-        // Penpot Studio — the official design Studio of Wedding OS.
-        // Platform admin can link a Penpot file per wedding and sync design tokens.
-        // The PenpotStudio component reads the active wedding from the ThemeCustomizer
-        // wedding picker (same X-Wedding-Slug header pattern).
-        return <PenpotStudio />
       case 'collections':
         return <CollectionsFactoryTab csrfToken={getCsrfToken()} />
-      case 'production-studio':
-        return <ProductionStudioTab csrfToken={getCsrfToken()} />
-      case 'design-factory':
-        return <DesignFactoryTab csrfToken={getCsrfToken()} />
       case 'marketing':
         return <MarketingControlPlane csrfToken={getCsrfToken()} />
       case 'commercial':

@@ -89,7 +89,7 @@ export async function GET(request: NextRequest) {
         },
       });
 
-      // Parse customizations defensively — may contain luxury, penpot,
+      // Parse customizations defensively — may contain luxury,
       // collectionMeta, variantSelections, designSystem.
       let customizations: Record<string, unknown> | null = null;
       if (themeRow?.customizations) {
