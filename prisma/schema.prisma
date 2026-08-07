@@ -94,6 +94,11 @@ model Wedding {
   deliveryJobs    DeliveryJob[]
   // CONS-3-SUPER-ADMIN: Production Studio deployments using this wedding.
   deployments    Deployment[]
+  // CONS-5-CLIENT-BACKEND — per-wedding client backend entities.
+  families       Family[]
+  guestGroups    GuestGroup[]
+  gifts          Gift[]
+  programItems   ProgramItem[]
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -272,6 +277,12 @@ model Guest {
   sessions            GuestSession[]
   accessLogs          GuestAccessLog[]
   deliveryJobs        DeliveryJob[]
+  // CONS-5-CLIENT-BACKEND — optional family + group relations.
+  // Nullable for backward compat (existing guests have null).
+  familyId            String?
+  family              Family?    @relation(fields: [familyId], references: [id], onDelete: SetNull)
+  groupId             String?
+  group               GuestGroup? @relation(fields: [groupId], references: [id], onDelete: SetNull)
 
   @@unique([weddingId, invitationCode]) // uniqueness within wedding only
   @@index([weddingId, status])
@@ -1100,4 +1111,86 @@ model Deployment {
 
   @@index([weddingId])
   @@index([status])
+}
+
+
+// ══════════════════════════════════════════════════════════════════════════════
+// CONS-5-CLIENT-BACKEND — Client backend (organizer) models.
+// Per-wedding entities for the simplified organizer experience.
+// Tenant-scoped: every row belongs to exactly one Wedding. Use `db` with
+// explicit `where: { weddingId }` after `assertWeddingAccess(user, weddingId)`,
+// OR use `tenantDb` inside `runWithTenant()` (auto-scoped).
+// ══════════════════════════════════════════════════════════════════════════════
+
+// Guest family (group guests by family: bride side / groom side / common).
+// A family typically groups parents + siblings + children with shared contact.
+model Family {
+  id            String   @id @default(cuid())
+  weddingId     String
+  wedding       Wedding  @relation(fields: [weddingId], references: [id], onDelete: Cascade)
+  name          String
+  side          String   @default("COMMON") // BRIDE | GROOM | COMMON
+  contactPhone  String?
+  contactEmail  String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  guests        Guest[]
+
+  @@index([weddingId])
+  @@unique([weddingId, name])
+}
+
+// Guest group (friends, colleagues, VIP, church, etc.). Different from Family
+// (which is blood-relation based) — a Group is any categorisation the organizer
+// finds useful for seating / messaging / filtering.
+model GuestGroup {
+  id          String   @id @default(cuid())
+  weddingId   String
+  wedding     Wedding  @relation(fields: [weddingId], references: [id], onDelete: Cascade)
+  name        String
+  color       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  guests      Guest[]
+
+  @@index([weddingId])
+  @@unique([weddingId, name])
+}
+
+// Wedding gift tracker (giver name, description, amount, thank-you note status).
+// amount is in cents (Int) to avoid float rounding issues. currency is ISO 4217.
+model Gift {
+  id               String    @id @default(cuid())
+  weddingId        String
+  wedding          Wedding   @relation(fields: [weddingId], references: [id], onDelete: Cascade)
+  giverName        String
+  giftDescription  String?
+  amount           Int       @default(0) // in cents
+  currency         String    @default("USD")
+  receivedAt       DateTime?
+  thankYouSent     Boolean   @default(false)
+  note             String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@index([weddingId])
+}
+
+// Wedding day program item (ceremony, cocktail, dinner, dance, etc.).
+// Different from EventTimeline (love-story events) — ProgramItem is the
+// schedule of the wedding DAY.
+model ProgramItem {
+  id          String    @id @default(cuid())
+  weddingId   String
+  wedding     Wedding   @relation(fields: [weddingId], references: [id], onDelete: Cascade)
+  scheduledAt DateTime?
+  title       String
+  description String?
+  location    String?
+  iconName    String?
+  sortOrder   Int       @default(0)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([weddingId, sortOrder])
 }
