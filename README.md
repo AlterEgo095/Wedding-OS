@@ -1,361 +1,328 @@
 # AENEWS Wedding OS
 
-> Plateforme SaaS multi-tenant de gestion et déploiement de mariages premium.
-> Conçue et opérée par **AENEWS** — déployée en production sur
-> [heureuxmariage.aenews.net](https://heureuxmariage.aenews.net).
+> Multi-tenant SaaS platform for premium wedding design, deployment and
+> day-of-event operations. Built and operated by **AENEWS**, deployed in
+> production at [heureuxmariage.aenews.net](https://heureuxmariage.aenews.net).
 
 ---
 
 ## Sommaire
 
 - [Vue d'ensemble](#vue-densemble)
-- [Fonctionnalités principales](#fonctionnalités-principales)
 - [Pile technologique](#pile-technologique)
 - [Architecture](#architecture)
-- [Structure du projet](#structure-du-projet)
-- [Collection Engine (Phase 1)](#collection-engine-phase-1)
-- [Développement local](#développement-local)
-- [Déploiement production (VPS)](#déploiement-production-vps)
+- [Isolation multi-tenant](#isolation-multi-tenant)
+- [Pipeline de déploiement](#pipeline-de-déploiement)
+- [Démarrage rapide](#démarrage-rapide)
 - [Variables d'environnement](#variables-denvironnement)
 - [Aperçu de l'API](#aperçu-de-lapi)
 - [Documentation](#documentation)
-- [Roadmap](#roadmap)
-- [Opérations](#opérations)
+- [Limitations connues](#limitations-connues)
 
 ---
 
 ## Vue d'ensemble
 
-**Wedding OS** est une plateforme multi-tenant où chaque mariage est un tenant
-isolé. Le couple (et ses organisateurs) gère invités, tables, médias,
-programme, thème et ambiance visuelle depuis un admin dédié
-(`/w/[slug]/admin`), tandis que les invités accèdent à leur espace personnel
-sécurisé par token AES-256-GCM via `/w/[slug]`.
+**Wedding OS** is a multi-tenant SaaS: each wedding is an isolated tenant.
+Three distinct surfaces share one Next.js codebase:
 
-La plateforme ne **fabrique pas** de thèmes — elle **déploie** des
-**Collections Premium** créées dans Penpot par des designers. Le moteur
-**Collection Engine** orchestre les moteurs existants (Theme Engine,
-ThemeInjector, LuxuryVisualEngine, PenpotStudio) sans les remplacer.
+1. **Super Admin Production Studio** (`/platform/admin`) — platform-level
+   command center where SUPER_ADMIN / PLATFORM_ADMIN operators manage the
+   template catalog, theme library, component registry, platform assets,
+   deployments, audit log and platform users. Drives the deployment
+   pipeline that publishes weddings.
+2. **Client backend** (`/w/[slug]/admin`) — per-wedding admin where the
+   couple + their organizers manage 21 tabs: dashboard, weddings, guests,
+   tables, families, groups, gifts, program, timeline, statistics, QR
+   codes, invitations, check-in, media, music, settings, designer,
+   appearance, access logs, users, audit.
+3. **Public wedding frontend** (`/w/[slug]`) — guest-facing experience
+   rendered from a published config snapshot: hero, couple story,
+   gallery, timeline, map, RSVP, QR check-in, secure guest space.
 
-### Vision produit
-
-Wedding OS est un **SaaS de déploiement** — pas un constructeur de thèmes.
-Le design vit dans Penpot (le Studio du designer), Wedding OS orchestre le
-déploiement sur les mariages. Cette séparation permet à un écosystème de
-designers de créer des Collections commercialisables sans aucune compétence
-de développement.
-
----
-
-## Fonctionnalités principales
-
-### Côté couple (tenant admin)
-- **Dashboard** — vue d'ensemble du mariage (invités, tables, médias, stats)
-- **Collections** — catalogue de Collections Premium (Phase 1 : Royal Gold)
-- **Invités** — CRUD complet, import en masse, codes d'invitation uniques
-- **Tables** — plan de placement drag-and-drop
-- **Médias** — galerie photos + uploads (gallerie couple + hero)
-- **Musique** — musique d'ambiance avec lecteur intégré
-- **Programme** — timeline détaillée du jour J
-- **Accès** — logs d'accès invités (fingerprint, device, IP)
-- **Apparence** — LuxuryVisualEngine (poussière dorée, halos, respiration)
-- **Thème** — ThemeCustomizer (couleurs, polices, layout)
-- **Studio** — PenpotStudio (éditeur Penpot intégré par iframe)
-- **Utilisateurs** — gestion des organisateurs/contrôleurs
-- **Paramètres** — configuration du mariage
-
-### Côté invité
-- **Espace personnel sécurisé** — authentification par code unique
-- **Invitation digitale** — rendu personnalisé avec QR code
-- **Confirmation RSVP** — statut de présence
-- **Recherche de table** — finding tool intégré
-- **Galerie couple** — photos personnalisées
-- **Programme** — timeline du jour
-- **Lieu** — carte interactive (OpenStreetMap)
-
-### Côté plateforme (super admin)
-- **Command Center** — dashboard global multi-mariages
-- **Gestion des mariages** — création, duplication, archivage
-- **Leads** — pipeline de prospects (plan, collection)
-- **Billing** — subscriptions + factures (4 tiers : TRIAL/ESSENTIEL/PREMIUM/ELITE)
-- **Onboarding** — wizard de création de mariage
-- **Domaines personnalisés** — custom-domain mapping
+The platform **deploys** wedding frontends — it does not author themes
+manually. Designers work in the Production Studio; templates + themes +
+assets + components are bound into a Collection, then a Super-Admin
+triggers the 9-stage deployment pipeline which compiles and publishes
+the frontend snapshot.
 
 ---
 
 ## Pile technologique
 
-| Couche | Technologie |
-|---|---|
-| **Framework** | Next.js 16 (App Router, Turbopack) |
-| **Langage** | TypeScript 5 strict |
-| **Styling** | Tailwind CSS 4 + shadcn/ui (New York) |
-| **Icônes** | Lucide React |
-| **Base de données** | SQLite + Prisma ORM 6 |
-| **Auth** | JWT custom (bcryptjs) — NextAuth disponible |
-| **Multi-tenant** | AsyncLocalStorage + Prisma extension (12 modèles tenant-scoped) |
-| **State client** | Zustand |
-| **State serveur** | TanStack Query |
-| **Forms** | React Hook Form + Zod |
-| **Drag-and-drop** | @dnd-kit |
-| **Canvas/Luxury** | Canvas 2D (LuxuryVisualEngine) |
-| **QR codes** | qrcode (AES-256-GCM tokens) |
-| **Studio design** | Penpot (iframe embed + token sync) |
-| **Production** | Docker multi-stage + docker-compose |
-| **Reverse proxy** | Nginx + SSL (sur le VPS) |
-| **Runtime** | Node.js 20-alpine (conteneur) / Bun (dev local) |
+| Couche | Technologie | Notes |
+|---|---|---|
+| **Framework** | Next.js 16 (App Router, Turbopack, standalone output) | React 19 |
+| **Langage** | TypeScript 5 (strict) | `noImplicitAny: false` (legacy) |
+| **Styling** | Tailwind CSS 4 + shadcn/ui (New York variant) | Radix primitives |
+| **Icônes** | Lucide React | — |
+| **Base de données** | SQLite (dev) + Prisma ORM 6 | PostgreSQL migration planned (P3) |
+| **Auth** | JWT custom (`jsonwebtoken` + `bcryptjs`) | 2FA TOTP via `otplib` |
+| **Multi-tenant** | `AsyncLocalStorage` + Prisma extension (fail-closed) | 17 tenant-scoped models |
+| **State client** | Zustand (lightweight) | TanStack Query installed but not wired |
+| **Forms** | React Hook Form + Zod (server-side schemas) | — |
+| **Validation** | Zod 4 | Server-side on all CONS-5+ routes |
+| **Drag-and-drop** | @dnd-kit | Table seating, program reorder |
+| **Canvas** | Canvas 2D (LuxuryVisualEngine) | Gold dust, halos, breathing |
+| **QR codes** | `qrcode` + AES-256-GCM tokens | Day-of-event check-in |
+| **Charts** | Recharts | Statistics tab |
+| **PDF** | jsPDF | Bulk QR code export |
+| **Rate-limit** | in-memory + optional Redis (ioredis) | distributed when REDIS_URL set |
+| **Production** | Docker multi-stage + docker-compose.prod.yml | non-root `nextjs`, no-new-privileges |
+| **Reverse proxy** | Caddy (sur le VPS) | TLS automatique |
+| **Runtime** | Node.js 20-alpine (container) / Bun (dev local) | — |
+
+> **Note:** `next-auth` v4 is **not** wired — auth is JWT custom.
+> `socket.io` + `socket.io-client` are installed but not used in `src/`.
 
 ---
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                    AENEWS Wedding OS                        │
-├─────────────────────────────────────────────────────────────┤
-│  Multi-tenant (AsyncLocalStorage + Prisma extension)        │
-│  ┌─────────────────────────────────────────────────────┐   │
-│  │  /                    → public site (default tenant) │   │
-│  │  /w/[slug]            → tenant public site           │   │
-│  │  /w/[slug]/admin      → tenant admin (12 tabs)       │   │
-│  │  /admin               → platform Command Center      │   │
-│  │  /onboarding          → couple onboarding wizard     │   │
-│  │  /api/...             → REST API (tenant-scoped)     │   │
-│  └─────────────────────────────────────────────────────┘   │
-├─────────────────────────────────────────────────────────────┤
-│  Moteurs (orchestrés, jamais remplacés)                     │
-│  • Theme Engine (Theme 1:1 Wedding, customizations JSON)    │
-│  • ThemeInjector (CSS vars + luxury store hydration)        │
-│  • LuxuryVisualEngine (Canvas 2D, 7 effects, 4 thèmes)      │
-│  • PenpotStudio (iframe + push/pull tokens)                 │
-│  • Collection Engine (Phase 1 : Royal Gold) ← NEW           │
-│  • Guest Engine (Guest + GuestSession + AES tokens)         │
-│  • QR Engine (src/lib/guest-auth.ts)                        │
-│  • Billing (Subscription + Invoice + PLAN_LIMITS)           │
-│  • Media Engine (Media + Upload Manager)                    │
-│  • Timeline + Couple Story + Settings                       │
-└─────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────┐
+│                       AENEWS Wedding OS (Next.js 16)                      │
+├──────────────────────────────────────────────────────────────────────────┤
+│  Multi-tenant core (AsyncLocalStorage + Prisma extension fail-closed)     │
+│                                                                           │
+│  ┌─────────────────────────┐   ┌─────────────────────────┐               │
+│  │  Super Admin            │   │  Client backend         │               │
+│  │  Production Studio      │   │  /w/[slug]/admin        │               │
+│  │  /platform/admin        │   │  21 tabs (15 + 6 new)   │               │
+│  │  10 tabs (4 + 6 prod)   │   │  weddings · guests      │               │
+│  │  Dashboard · Weddings   │   │  tables · families      │               │
+│  │  Users · Audit          │   │  groups · gifts         │               │
+│  │  ── production/ ──      │   │  program · timeline     │               │
+│  │  Templates · Themes     │   │  stats · qrcodes        │               │
+│  │  Components · Assets    │   │  invitations · check-in │               │
+│  │  Deployments            │   │  media · music          │               │
+│  │  Governance             │   │  designer · appearance  │               │
+│  │                         │   │  access · users · audit │               │
+│  │  ↓ triggers             │   │  ↓ edits                │               │
+│  │  deployment pipeline    │   │  tenant-scoped Prisma   │               │
+│  └────────────┬────────────┘   └────────────┬────────────┘               │
+│               │                              │                            │
+│               ▼                              ▼                            │
+│  ┌───────────────────────────────────────────────────────────┐           │
+│  │  Deployment pipeline (9 stages)                           │           │
+│  │  Template → Theme → Assets → Components → Bindings →      │           │
+│  │  Collection → Wedding → Frontend                          │           │
+│  │  persiste Wedding.publishedConfigJson + publishedVersion  │           │
+│  └───────────────────────────────────────────────────────────┘           │
+│                              │                                            │
+│                              ▼                                            │
+│  ┌───────────────────────────────────────────────────────────┐           │
+│  │  Public wedding frontend (/w/[slug])                      │           │
+│  │  layout.tsx reads publishedConfigJson → ThemeInjector     │           │
+│  │  + SectionRenderer (hero, story, gallery, timeline, map)  │           │
+│  │  + guest space (RSVP, QR check-in, personal gallery)      │           │
+│  └───────────────────────────────────────────────────────────┘           │
+└──────────────────────────────────────────────────────────────────────────┘
 ```
 
-### Modèle multi-tenant
+### Three surfaces, one codebase
 
-Chaque mariage est un tenant. Le contexte tenant est résolu via :
-1. Le subdomain (custom-domain) — optionnel
-2. Le segment `/w/[slug]` dans l'URL
-3. Le header `X-Wedding-Slug`
-4. Fallback : mariage par défaut (`isDefault=true`)
-
-Les middlewares `withPublicTenant` (lectures publiques) et
-`withAdminTenantHandler` (mutations authentifiées) résolvent le contexte
-automatiquement — aucune logique tenant à écrire dans les routes.
+| Surface | Path | Audience | Tabs |
+|---|---|---|---|
+| Super Admin Production Studio | `/platform/admin` | SUPER_ADMIN, PLATFORM_ADMIN | 10 (Dashboard, Weddings, Users, Audit + Templates, Themes, Components, Assets, Deployments, Governance) |
+| Client backend | `/w/[slug]/admin` | ORGANIZER, CONTROLLER, RECEPTION (per-wedding) | 21 (15 original + 6 new: families, groups, gifts, program, stats, qrcodes) |
+| Public frontend | `/w/[slug]` | Guests (token-scoped) | — (server-rendered from published config) |
 
 ---
 
-## Structure du projet
+## Isolation multi-tenant
 
-```
-.
-├── prisma/
-│   └── schema.prisma          # 20 modèles (Wedding, Guest, Theme, Collection, ...)
-├── init-db.js                 # Script d'initialisation DB (lancé au démarrage conteneur)
-├── docker-compose.prod.yml    # Stack production (app + volumes)
-├── Dockerfile                 # Build multi-stage (deps → builder → runner)
-├── docker-entrypoint.sh       # Entrypoint (init-db + privilege drop)
-├── src/
-│   ├── app/
-│   │   ├── api/               # Routes API REST
-│   │   │   ├── collections/   # Collection Engine (Phase 1)
-│   │   │   ├── theme/         # Theme Engine
-│   │   │   ├── guests/        # Guest Engine
-│   │   │   ├── media/         # Media Engine
-│   │   │   ├── platform/      # Platform admin (weddings, leads, billing)
-│   │   │   └── ...
-│   │   ├── w/[slug]/          # Tenant routes (public + admin)
-│   │   ├── admin/             # Platform Command Center
-│   │   ├── onboarding/        # Couple onboarding wizard
-│   │   └── page.tsx           # Public home (default tenant)
-│   ├── components/
-│   │   ├── ui/                # shadcn/ui (New York)
-│   │   ├── admin/             # ThemeCustomizer, MusicManager, AppearanceManager
-│   │   ├── collections/       # CollectionLibrary
-│   │   ├── wedding/           # ThemeInjector, InvitationCard, HeroSection, ...
-│   │   ├── luxury/            # LuxuryVisualEngine
-│   │   ├── penpot/            # PenpotStudio
-│   │   └── effects/           # Visual effects
-│   ├── lib/
-│   │   ├── collections/       # Collection Engine (index.ts)
-│   │   ├── penpot/            # Penpot config (tokens, URL parsing)
-│   │   ├── themes/            # Theme templates
-│   │   ├── auth.ts            # JWT auth
-│   │   ├── tenant-context.ts  # Multi-tenant middleware
-│   │   ├── db.ts              # Prisma client
-│   │   ├── plan-limits.ts     # Billing tiers + quotas
-│   │   ├── guest-auth.ts      # AES-256-GCM token system
-│   │   └── luxury-engine-store.ts  # Zustand luxury store
-│   └── ...
-├── COLLECTION_PRODUCT_SPEC.md # Spécification fonctionnelle Collection Product
-├── COLLECTION_ENGINE_PLAN.md  # Plan technique v1
-├── COLLECTION_ENGINE_PLAN_V2.md # Plan technique v2 (4-level abstraction)
-├── deploy-collection-engine.mjs  # Script de déploiement VPS
-└── worklog.md                 # Journal de développement détaillé
-```
+Each wedding is a tenant. The tenant context (`weddingId`, `slug`, `status`,
+`plan`) is propagated per-request via `AsyncLocalStorage` — no thread-local
+leakage, no manual plumbing in route handlers.
+
+### Tenant resolution priority
+
+1. Custom domain (middleware `/api/resolve-domain`)
+2. URL segment `/w/[slug]`
+3. Header `X-Wedding-Slug`
+4. Query string `?wedding=<slug>`
+5. Default wedding (`isDefault=true`) — public showcase only
+
+### Prisma extension fail-closed
+
+`src/lib/prisma-extensions/tenant-scoped.ts` auto-injects `weddingId` into
+all queries against **17 tenant-scoped models**:
+
+> `Guest`, `Table`, `Media`, `EventTimeline`, `CoupleStory`, `Settings`,
+> `Theme`, `MusicTrack`, `GuestSession`, `GuestAccessLog`, `Invitation`,
+> `UsageCounter`, `WeddingCollectionBinding`, `Family`, `GuestGroup`,
+> `Gift`, `ProgramItem`
+
+If a query hits a tenant-scoped model **outside** a `runWithTenant()` block,
+the extension throws `TENANT_FAIL_CLOSED`. Cross-tenant queries must use
+the explicitly-named `unsafePlatformDb` client (visible in code review).
+
+### Route wrappers
+
+- `withPublicTenant(handler)` — unauthenticated public reads (33 routes).
+- `withAdminTenantHandler(request, user, handler)` — authenticated mutations
+  (49 routes). Resolves tenant, runs handler inside `runWithTenant()`.
+- `resolveAdminTenant(request, user)` — lower-level resolver for routes
+  that need custom control flow (pagination, etc.).
+
+~82 wrapped routes out of 88 total. 6 platform-level routes use neither
+(cross-tenant by design).
+
+### Three Prisma clients (intentional vocabulary)
+
+- `db` — platform-level (no tenant scope).
+- `tenantDb` — auto-scoped via the extension (default for routes).
+- `unsafePlatformDb` — explicit cross-tenant operations; name itself is a
+  code-review red flag.
 
 ---
 
-## Collection Engine (Phase 1)
+## Pipeline de déploiement
 
-Le Collection Engine est le cœur commercial de Wedding OS. Une **Collection
-Product** est un actif commercial (pas juste un thème) qui encapsule :
+The deployment pipeline compiles a wedding's configuration into an
+immutable, published snapshot that the public frontend renders.
 
-- **Theme seed** — couleurs, polices, layout
-- **Luxury preset** — ambiance visuelle (theme gold/rose/champagne/midnight + 7 effects + intensity/density/speed/haloCount)
-- **Penpot file reference** — le design source of truth (Penpot est le Studio)
-- **Variants** — versions A/B/C/D avec palette overrides
+### 9 stages
 
-### Phase 1 — livrée
+```
+1. validateInputs      → verify wedding/template/theme IDs exist + are PUBLISHED
+2. resolveTemplate     → load Template row (themeSeed, layout, luxury preset)
+3. resolveTheme        → load PlatformTheme row (CSS vars, fonts, palette)
+4. resolveAssets       → load PlatformAsset[] (images, fonts, icons)
+5. resolveComponents   → load ComponentRegistry[] (section-level React components)
+6. resolveBindings     → load WeddingCollectionBinding (section→component map)
+7. resolveCollection   → load Collection + Variants (manifest source)
+8. compileFrontend     → build PublishedConfig JSON snapshot
+9. publishFrontend     → persist Wedding.publishedConfigJson + .publishedVersion
+                         + Wedding.status = PUBLISHED + Deployment.status = DEPLOYED
+```
 
-- ✅ Modèles Prisma `Collection` + `CollectionVariant` (+ `Wedding.collectionId`/`variantId` nullable)
-- ✅ API `/api/collections` (GET list), `/api/collections/[id]` (GET detail), `/api/collections/apply` (POST deploy)
-- ✅ Composant `CollectionLibrary` monté dans l'admin tenant (onglet "Collections")
-- ✅ `ThemeInjector` hydrate le luxury store depuis `customizations.luxury`
-- ✅ Royal Gold seedé automatiquement (idempotent — `ensureRoyalGoldSeeded`)
-- ✅ Tier gating (`canAccessCollection` — additif à `PLAN_LIMITS`)
-- ✅ Fix data-leak sur duplication de mariage (sanitization Penpot file refs)
-- ✅ Déployé sur VPS + vérifié end-to-end
+### Trigger model
 
-### Royal Gold — première Collection Product
+- **Who can trigger:** SUPER_ADMIN, PLATFORM_ADMIN only.
+- **API:** `POST /api/platform/deployments/trigger` — Zod body, rate-limited
+  10/min, audit-logged.
+- **Retry:** `POST /api/platform/deployments/[id]/retry` — re-runs the
+  pipeline from stage 1.
+- **Public read:** `GET /api/weddings/[id]/published-config` — no auth,
+  CDN-cached 60s/5min stale-while-revalidate.
 
-| Attribut | Valeur |
-|---|---|
-| Slug | `royal-gold` |
-| Catégorie | LUXURY |
-| Tier | FREE (Phase 1 — accessible à tous les plans) |
-| Couleur primaire | `#D4AF37` (or royal) |
-| Couleur accent | `#1a1a2e` (noir nuit) |
-| Police display | Cormorant Garamond |
-| Police body | Inter |
-| Layout | royal |
-| Luxury theme | gold |
-| Effects activés | starrySky, goldenDust, microSparkles, luminousHalos, globalBreathing |
-| Intensity / Density / Speed | 80 / 70 / 50 |
-| Halo count | 4 |
-| Variantes | A — Or classique (défaut) |
+### Render path (post-publish)
+
+```
+/w/[slug]/layout.tsx
+  ├─ resolveWeddingBySlug(slug)
+  ├─ db.wedding.findUnique({ publishedConfigJson, publishedVersion })
+  ├─ safeJsonParse(publishedConfigJson) → PublishedConfigSnapshot | null
+  └─ <WeddingContextProvider manifest publishedConfig>
+       ↓
+/w/[slug]/page.tsx
+  ├─ activeManifest = previewManifest || wedding.publishedConfig?.manifest || wedding.manifest
+  └─ <ThemeInjector theme={wedding.publishedConfig?.theme ?? null} />
+       ↓
+ThemeInjector
+  ├─ if theme prop → inject CSS vars + Google Fonts directly (no /api/theme fetch)
+  └─ else           → fallback fetch /api/theme (backward-compat)
+       ↓
+SectionRenderer (renders manifest.sections[] in order)
+```
+
+Full pipeline docs: [`docs/DEPLOYMENT_PIPELINE.md`](./docs/DEPLOYMENT_PIPELINE.md)
 
 ---
 
-## Développement local
+## Démarrage rapide
 
 ### Prérequis
 
-- [Bun](https://bun.sh/) (runtime + package manager)
-- Node.js 20+ (pour Prisma CLI)
+- [Bun](https://bun.sh/) ≥ 1.3 (runtime + package manager)
+- Node.js 20+ (pour Prisma CLI + Next.js build)
+- SQLite (préinstallé sur tous les OS modernes)
 
 ### Installation
 
 ```bash
 bun install
-bun run db:push     # Crée/migre le schéma SQLite
-bun run db:generate # Génère le client Prisma
+bun run db:push       # Crée/migre le schéma SQLite
+bun run db:generate   # Génère le client Prisma
+bun run db:seed       # (optionnel) seed admin + demo wedding
 ```
 
 ### Démarrage
 
 ```bash
-bun run dev         # Démarre Next.js sur http://localhost:3000
-bun run lint        # Vérifie la qualité du code
+bun run dev           # Next.js dev server sur http://localhost:3000
+bun run lint          # ESLint
+bun run build         # Build production (standalone output)
 ```
 
-Le serveur dev écoute sur le port 3000. Les logs sont tee'd dans `dev.log`.
+Le serveur dev écoute sur le port **3000**. En production Docker, le
+container `wedding-app` écoute sur le port **3080** (Caddy reverse-proxy
+sur 443).
 
-### Comptes par défaut (dev local)
+### Compte admin (dev local)
 
-- **Super Admin** : `admin@heureuxmariage.aenews.net` / `HeureuxMariage2026!`
-- (Le mariage par défaut `isDefault=true` est servi sur `/`)
+Après `bun run db:seed` (variables d'env requises):
 
----
-
-## Déploiement production (VPS)
-
-### Cible
-
-- **VPS** : `95.111.226.63` (utilisateur `aenews`)
-- **Dossier** : `/opt/wedding-platform`
-- **Conteneur** : `wedding-app` (Docker, port 3080 interne)
-- **Reverse proxy** : Nginx + SSL sur `heureuxmariage.aenews.net`
-
-### Procédure de déploiement
-
-```bash
-# 1. Builder le tarball des fichiers modifiés
-tar -czf /tmp/bundle.tar.gz src/ prisma/ init-db.js package.json
-
-# 2. Uploader + extraire + rebuild via le script
-node deploy-collection-engine.mjs
-# (ou un script similaire — SFTP upload + SSH extract + docker compose build --no-cache)
-```
-
-Le `Dockerfile` est multi-stage :
-1. **deps** — installe les dépendances (`npm i`)
-2. **builder** — génère le client Prisma + build Next.js (standalone output)
-3. **runner** — image finale minimaliste (node:20-alpine, user nextjs non-root)
-
-Le `docker-entrypoint.sh` :
-1. Fixe les permissions des volumes (root)
-2. Lance `init-db.js` (crée les tables manquantes + seed admin)
-3. Drop de privilèges vers `nextjs`
-4. Démarre `node server.js` (standalone)
-
-### Vérification post-déploiement
-
-```bash
-# Sur le VPS :
-docker ps --filter name=wedding-app           # conteneur healthy
-curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:3080/  # 200
-curl -s http://127.0.0.1:3080/api/collections  # retourne Royal Gold
-docker logs wedding-app --tail 20              # init-db OK + Next.js ready
-```
+- **Email** : valeur de `PLATFORM_ADMIN_EMAIL` (default `admin@example.com`)
+- **Mot de passe** : valeur de `PLATFORM_ADMIN_PASSWORD` (requis en prod)
 
 ---
 
 ## Variables d'environnement
 
-| Variable | Description | Défaut |
-|---|---|---|
-| `DATABASE_URL` | Chemin SQLite | `file:/home/z/my-project/db/custom.db` |
-| `ADMIN_EMAIL` | Email super admin | `admin@heureuxmariage.aenews.net` |
-| `ADMIN_PASSWORD` | Mot de passe super admin | `HeureuxMariage2026!` |
-| `JWT_SECRET` | Secret JWT (signature tokens) | (à définir en prod) |
-| `NEXT_TELEMETRY_DISABLED` | Désactive télémétrie Next.js | `1` |
-| `NODE_ENV` | Environnement | `production` (VPS) / `development` (dev) |
+Voir [`.env.example`](./.env.example) pour le template complet.
 
-> ⚠️ En production, `ADMIN_PASSWORD` et `JWT_SECRET` doivent être surchargés
-> via le `.env` du VPS (non commité dans le repo).
+| Variable | Description | Requis |
+|---|---|---|
+| `DATABASE_URL` | Chemin SQLite (dev) ou URL PostgreSQL (prod) | ✅ |
+| `JWT_SECRET` | Secret signature JWT (min 32 chars). Rotation = invalidation sessions. | ✅ prod |
+| `ENCRYPTION_KEY` | Clé AES-256-GCM (tokens invité, 2FA TOTP). **MUST differ from `JWT_SECRET`** (app refuse to start if equal). Min 32 chars. | ✅ prod |
+| `PLATFORM_ADMIN_EMAIL` | Email admin initial (seed) | ✅ prod |
+| `PLATFORM_ADMIN_PASSWORD` | Mot de passe admin initial (seed). Aucun fallback en prod. | ✅ prod |
+| `NEXT_PUBLIC_BASE_URL` | URL publique (invitations, reset, CORS) | ✅ prod |
+| `NODE_ENV` | `production` / `development` | ✅ |
+| `SEED_DEMO_DATA` | `1` pour seed couple démo + invités | dev only |
+| `REDIS_URL` | Optionnel — rate-limit distribué | optionnel |
+| `SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASSWORD` / `SMTP_FROM` | Optionnel — envoi email (password reset). Non connecté = stub logger. | optionnel |
+
+> ⚠️ **Rotation des secrets** : si `JWT_SECRET` ou `ENCRYPTION_KEY` sont
+> leakés (git history, .env backup), ils doivent être **rotés** immédiatement.
+> Voir `docs/ARCHITECTURE-CANONICAL.md` §6 (auth model) + `RELEASE-CHECKLIST.md`.
 
 ---
 
 ## Aperçu de l'API
 
-### Publiques (avec tenant context)
-- `GET /api/collections` — liste des Collections accessibles au plan
-- `GET /api/collections/[id]` — détail d'une Collection + variantes
+### Publiques (avec tenant context, sans auth)
+- `GET /api/collections` — catalogue Collections accessibles au plan
 - `GET /api/theme` — thème du mariage courant
-- `GET /api/settings` — paramètres du mariage
-- `GET /api/guest/me` — espace invité (token-required)
+- `GET /api/settings` — paramètres publics du mariage
+- `GET /api/guest/me` — espace invité (token AES-256-GCM required)
 - `GET /api/couple-story` — histoire du couple
 - `GET /api/timeline` — programme du jour
-- `GET /api/media` — médias (filtrables par type/catégorie)
+- `GET /api/media` — médias (filtrables)
 - `GET /api/music` — configuration musique
+- `GET /api/weddings/[id]/published-config` — snapshot publié (CDN-cached)
 
-### Authentifiées (ORGANIZER+)
-- `POST /api/collections/apply` — déploie une Collection sur le mariage
-- `PUT /api/theme` — met à jour le thème
-- `POST /api/guests` — CRUD invités
+### Authentifiées (ORGANIZER+, tenant-scoped)
+- `POST /api/guests` — CRUD invités (Zod validé)
+- `POST /api/tables` — CRUD tables (Zod validé)
+- `POST /api/timeline` — CRUD programme (Zod validé)
+- `PUT /api/settings` — update paramètres (Zod validé)
+- `POST /api/check-in` — check-in QR code (Zod validé)
 - `POST /api/media` — upload médias
-- `PUT /api/settings` — met à jour les paramètres
+- `POST /api/weddings/[id]/{families,groups,gifts,program}` — CRUD étendu
+- `GET /api/weddings/[id]/stats` — dashboard statistiques agrégées
 
-### Plateforme (PLATFORM_ADMIN)
+### Plateforme (SUPER_ADMIN / PLATFORM_ADMIN)
 - `GET/POST /api/platform/weddings` — CRUD mariages
 - `POST /api/platform/weddings/[id]/duplicate` — duplique un mariage
+- `GET/POST /api/platform/{templates,themes,components,assets}` — Production Studio
+- `POST /api/platform/deployments/trigger` — déclenche le pipeline
+- `GET /api/platform/deployments/[id]` — statut déploiement
+- `POST /api/platform/deployments/[id]/retry` — retry
 - `GET/POST /api/platform/leads` — pipeline leads
 - `GET/POST /api/platform/billing` — subscriptions + factures
 
@@ -365,76 +332,25 @@ docker logs wedding-app --tail 20              # init-db OK + Next.js ready
 
 | Document | Description |
 |---|---|
-| [`COLLECTION_PRODUCT_SPEC.md`](./COLLECTION_PRODUCT_SPEC.md) | Spécification fonctionnelle définitive du Collection Product Engine (16 attributs, 5 packs, 6 états lifecycle, 8 invariants designer) |
-| [`COLLECTION_ENGINE_PLAN.md`](./COLLECTION_ENGINE_PLAN.md) | Plan technique v1 (audit, modèle de données, sync Penpot→WOS) |
-| [`COLLECTION_ENGINE_PLAN_V2.md`](./COLLECTION_ENGINE_PLAN_V2.md) | Plan technique v2 (4-level abstraction, marketplace prep, phases séquentielles) |
-| [`worklog.md`](./worklog.md) | Journal de développement détaillé (6800+ lignes) |
+| [`docs/ARCHITECTURE-CANONICAL.md`](./docs/ARCHITECTURE-CANONICAL.md) | Architecture canonique post-consolidation (3 surfaces, isolation, modèle de données, auth) |
+| [`docs/DEPLOYMENT_PIPELINE.md`](./docs/DEPLOYMENT_PIPELINE.md) | Pipeline 9 stages, data model, security model, failure modes, versioning |
+| [`docs/PLAN_MULTI_TENANT.md`](./docs/PLAN_MULTI_TENANT.md) | Détails isolation multi-tenant (AsyncLocalStorage + Prisma extension) |
+| [`docs/MONITORING.md`](./docs/MONITORING.md) | Healthcheck, logs, métriques runtime |
+| [`docs/BACKUP.md`](./docs/BACKUP.md) | Stratégie de backup DB + volumes |
+| [`KNOWN-LIMITATIONS.md`](./KNOWN-LIMITATIONS.md) | Ce qui est DEFER / PARTIAL / FUTURE (honnête) |
+| [`RECOVERY.md`](./RECOVERY.md) | Branches/tags de recovery + procédure rollback DB |
+| [`RELEASE-CHECKLIST.md`](./RELEASE-CHECKLIST.md) | Checklist de provenance GitHub SHA = VPS HEAD = Docker DEPLOY_SHA = runtime /api/health |
 
 ---
 
-## Roadmap
+## Limitations connues
 
-### Phase 1 — ✅ Livrée
-- Collection Engine fonctionnel
-- Royal Gold sélectionnable + associable à un mariage
-- Déployé sur VPS
+Voir [`KNOWN-LIMITATIONS.md`](./KNOWN-LIMITATIONS.md) pour la liste
+complète et honnête. Résumé:
 
-### Phase 2 — À venir
-- Attacher les modules à Royal Gold :
-  - Website (10 frames)
-  - Invitations (8 frames)
-  - Print (8 frames)
-  - Communication (8 frames)
-- Frame registry (34 slots auto-détectés par convention de nommage Penpot)
-
-### Phase 3 — ✅ Livrée
-- 12 Collections sur 5 catégories (LUXURY, CLASSIC, AFRICAN, MINIMAL, DESTINATION)
-- Tier gating FREE / PREMIUM / EXCLUSIVE
-- 4 luxury themes (gold, midnight, champagne, rose)
-
-### Phase 4 — ✅ Livrée
-- Lifecycle 6 états complet (BROUILLON → EN_COURS → VALIDATION → PUBLIÉ → COMMERCIALISÉ → ARCHIVÉ)
-- Designer Portal (zone isolée pour designers + directeurs artistiques)
-- Matrice des transitions par rôle (DESIGNER, ART_DIRECTOR, PLATFORM_ADMIN)
-- Gate de complétude (34 slots mappés requis pour VALIDATION/PUBLIÉ)
-- API transitions + audit log
-
-### Phases futures
-- Marketplace UI + paiement
-- Print & Communication renderers
-- Designer onboarding (création de comptes designers)
-- Penpot auto-mapping (scan frames via convention de nommage)
-
----
-
-## Opérations
-
-### Commandes utiles
-
-```bash
-# Dev local
-bun run dev                    # serveur dev port 3000
-bun run lint                   # ESLint
-bun run db:push                # migrer le schéma
-bun run db:generate            # régénérer le client Prisma
-
-# VPS (via SSH)
-docker compose -f docker-compose.prod.yml logs -f app   # logs temps réel
-docker compose -f docker-compose.prod.yml restart app   # restart
-docker compose -f docker-compose.prod.yml build app     # rebuild
-docker exec wedding-app sh -c 'cd /app && node init-db.js'  # re-init DB
-
-# Git
-git remote -v                  # vérifier le remote
-git log --oneline -10          # historique récent
-git push origin main           # pousser sur GitHub
-```
-
-### Monitoring
-
-- **Healthcheck** : `HEALTHCHECK` Docker sur `http://127.0.0.1:3000/` (30s interval)
-- **Logs container** : `json-file` driver, rotation 10MB × 3 files
-- **Ressources** : limité à 512M RAM / 1 CPU, réservé 256M / 0.25 CPU
+- **DEFER_EXTERNAL** — Stripe (colonnes existent, non connectées), SMS/Email/WhatsApp providers (Twilio/SendGrid/WhatsApp Business), Event OS full rendering (data model ready, renderer partiel).
+- **PARTIAL** — GuestManager n'expose pas encore les sélecteurs `familyId` / `groupId` (FKs existent en DB, compteurs visibles dans FamiliesManager/GroupsManager via `_count`, mais l'UI d'assignation reste à ajouter). EventTimeline vs ProgramItem coexistent (timeline = histoire du couple, program = programme du jour J).
+- **NON-BLOCKING** — Docker rebuild requis pour activer les routes API ajoutées après CONS-5/CONS-6 (le container `wedding-app` tourne sur une image bakée avant ces commits).
 
 ---
 
