@@ -34,6 +34,13 @@ import {
   Wallet,
   Rocket,
   TrendingUp,
+  // Production Studio icons (CONS-3)
+  FileText,
+  Palette,
+  Boxes,
+  Image as ImageIcon,
+  Cloud,
+  ShieldCheck,
 } from 'lucide-react'
 
 import dynamic from 'next/dynamic'
@@ -51,6 +58,14 @@ import { DashboardTab } from './tabs/DashboardTab'
 import { WeddingsTab } from './tabs/WeddingsTab'
 import { UsersTab } from './tabs/UsersTab'
 import { AuditTab } from './tabs/AuditTab'
+
+// Production Studio tabs (CONS-3) — lazy-loaded.
+const TemplatesManager = dynamic(() => import('./tabs/production/TemplatesManager').then((m) => m.TemplatesManager))
+const ThemesManager = dynamic(() => import('./tabs/production/ThemesManager').then((m) => m.ThemesManager))
+const ComponentsRegistry = dynamic(() => import('./tabs/production/ComponentsRegistry').then((m) => m.ComponentsRegistry))
+const AssetsLibrary = dynamic(() => import('./tabs/production/AssetsLibrary').then((m) => m.AssetsLibrary))
+const DeploymentsPanel = dynamic(() => import('./tabs/production/DeploymentsPanel').then((m) => m.DeploymentsPanel))
+const GovernancePanel = dynamic(() => import('./tabs/production/GovernancePanel').then((m) => m.GovernancePanel))
 
 import {
   type AuthUser,
@@ -86,8 +101,14 @@ const NAV_ITEMS: NavItem[] = [
   { id: 'onboarding', label: 'Onboarding', icon: Rocket },
   // ── EVENT OPERATIONS ──
   { id: 'weddings', label: 'Mariages', icon: Heart },
-  // ── PRODUCTION (collections catalogue built-in) ──
+  // ── PRODUCTION STUDIO (CONS-3) ──
   { id: 'collections', label: 'Collections', icon: LayoutGrid },
+  { id: 'templates', label: 'Templates', icon: FileText },
+  { id: 'themes', label: 'Thèmes', icon: Palette },
+  { id: 'components-registry', label: 'Composants', icon: Boxes },
+  { id: 'assets', label: 'Assets', icon: ImageIcon },
+  { id: 'deployments', label: 'Déploiements', icon: Cloud },
+  { id: 'governance', label: 'Gouvernance', icon: ShieldCheck },
   // ── SYSTEM ──
   { id: 'users', label: 'Utilisateurs', icon: UsersIcon },
   { id: 'audit', label: "Journal d'audit", icon: ScrollText },
@@ -99,7 +120,13 @@ const NAV_SECTIONS: Record<string, string> = {
   dashboard: 'COMMAND CENTER',
   commercial: 'COMMERCIAL',
   weddings: 'EVENT OPERATIONS',
-  collections: 'DESIGN FACTORY',
+  collections: 'PRODUCTION STUDIO',
+  templates: 'PRODUCTION STUDIO',
+  themes: 'PRODUCTION STUDIO',
+  'components-registry': 'PRODUCTION STUDIO',
+  assets: 'PRODUCTION STUDIO',
+  deployments: 'PRODUCTION STUDIO',
+  governance: 'PRODUCTION STUDIO',
   users: 'SYSTEM',
 }
 
@@ -293,6 +320,19 @@ export default function PlatformAdminPage() {
         return <MarketingControlPlane csrfToken={getCsrfToken()} />
       case 'commercial':
         return <CommercialOS csrfToken={getCsrfToken()} />
+      // ── Production Studio (CONS-3) ──
+      case 'templates':
+        return <TemplatesManager csrfToken={getCsrfToken()} />
+      case 'themes':
+        return <ThemesManager csrfToken={getCsrfToken()} />
+      case 'components-registry':
+        return <ComponentsRegistry csrfToken={getCsrfToken()} />
+      case 'assets':
+        return <AssetsLibrary csrfToken={getCsrfToken()} />
+      case 'deployments':
+        return <DeploymentsPanel csrfToken={getCsrfToken()} />
+      case 'governance':
+        return <GovernancePanel fetchWithAuth={fetchWithAuth} />
       default:
         return <DashboardTab fetchWithAuth={fetchWithAuth} setActiveTab={setActiveTab} />
     }

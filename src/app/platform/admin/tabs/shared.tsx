@@ -161,6 +161,12 @@ export type TabId =
   | 'collections'
   | 'marketing'
   | 'commercial'
+  | 'templates'
+  | 'themes'
+  | 'components-registry'
+  | 'assets'
+  | 'deployments'
+  | 'governance'
 
 export interface NavItem {
   id: TabId
