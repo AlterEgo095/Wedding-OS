@@ -22,6 +22,23 @@ export const db =
     log: process.env.NODE_ENV === 'development' ? ['query', 'error', 'warn'] : ['error'],
   })
 
+// Mission 6.0 P0.3 — enable SQLite WAL mode for better write concurrency.
+// WAL (Write-Ahead Logging) allows concurrent readers + 1 writer, vs the
+// default DELETE mode which locks the entire DB on every write. This is
+// critical for the B2B2C vision: multiple weddings accepting RSVPs
+// simultaneously would otherwise serialize on the DB lock.
+// The PRAGMA is idempotent — safe to run on every cold start.
+if (!globalForPrisma.prisma && process.env.DATABASE_URL?.startsWith('file:')) {
+  // NOTE: PRAGMA statements in SQLite RETURN a result row, so we MUST use
+  // $queryRawUnsafe (not $executeRawUnsafe, which rejects any returned rows
+  // with "Execute returned results, which is not allowed in SQLite").
+  // Best-effort: if this fails (e.g. DB not yet created), the app still works
+  // in default DELETE mode.
+  db.$queryRawUnsafe('PRAGMA journal_mode=WAL').catch(() => {})
+  db.$queryRawUnsafe('PRAGMA synchronous=NORMAL').catch(() => {})
+  db.$queryRawUnsafe('PRAGMA busy_timeout=5000').catch(() => {})
+}
+
 // ─── unsafePlatformDb alias ───────────────────────────────────────────────────
 // Explicit alias for the raw Prisma client, for code that needs cross-tenant
 // access. The name "unsafePlatformDb" makes it visible in code review that a

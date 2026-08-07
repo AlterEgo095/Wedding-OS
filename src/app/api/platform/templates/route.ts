@@ -23,6 +23,7 @@ import { getClientInfo } from '@/lib/guest-auth';
  * platform-wide reusable building blocks).
  */
 
+// P3.9: layoutId is additive (P3-Foundation added the column + Layout relation).
 const TEMPLATE_SELECT = {
   id: true,
   name: true,
@@ -32,6 +33,7 @@ const TEMPLATE_SELECT = {
   schemaJson: true,
   version: true,
   status: true,
+  layoutId: true,
   createdAt: true,
   updatedAt: true,
 } as const;
@@ -43,6 +45,9 @@ const createTemplateSchema = z.object({
   thumbnailUrl: z.string().url().optional().nullable().default(null),
   schemaJson: z.string().max(200_000).optional().default('{}'),
   status: z.enum(['DRAFT', 'PUBLISHED', 'ARCHIVED']).optional().default('DRAFT'),
+  // P3.9 — link template to a Layout row (P3.2 foundation). Optional + nullable
+  // so existing templates without a layout remain valid.
+  layoutId: z.string().min(1).max(120).optional().nullable().default(null),
 });
 
 async function getList(request: NextRequest) {
@@ -124,6 +129,8 @@ async function createHandler(request: NextRequest) {
           thumbnailUrl: data.thumbnailUrl ?? null,
           schemaJson: data.schemaJson,
           status: data.status,
+          // P3.9 — persist layoutId when provided (additive; null = no layout)
+          layoutId: data.layoutId ?? null,
         },
         select: TEMPLATE_SELECT,
       });
@@ -162,3 +169,4 @@ async function createHandler(request: NextRequest) {
 
 export const GET = getList;
 export const POST = withRateLimit(30, 60_000)(createHandler);
+

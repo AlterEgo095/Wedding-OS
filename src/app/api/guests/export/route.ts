@@ -16,12 +16,24 @@ import { resolveAdminTenant, runWithTenant } from '@/lib/tenant-context';
 // P2-SEC-1: structured logger (no stack leak).
 import { logger } from '@/lib/logger';
 import * as XLSX from 'xlsx';
+import { checkRateLimitAsync, getRateLimitKey } from '@/lib/rate-limit'; // P0.7
+// P2.4: usage metering (EXPORTS counter increment after successful export).
+import { incrementUsage } from '@/lib/usage';
 
 /** P2-PERF-3: hard cap on exported rows to bound XLSX generation time. */
 const EXPORT_MAX_ROWS = 5000;
 
 export async function GET(request: NextRequest) {
   try {
+    // Mission 6.0 P0.7 — rate limit (10 req/min — XLSX export is expensive)
+    const rlKey = getRateLimitKey(request);
+    const { allowed: rlAllowed, retryAfterSeconds: rlRetry } = await checkRateLimitAsync(rlKey, 10, 60_000);
+    if (!rlAllowed) {
+      return NextResponse.json(
+        { error: 'Trop de requêtes. Veuillez réessayer dans un instant.' },
+        { status: 429, headers: { 'Retry-After': String(rlRetry ?? Math.ceil(60_000 / 1000)) } }
+      );
+    }
     const user = await getAuthUser(request);
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     if (!hasPermission(user.role, ['CONTROLLER'])) {
@@ -72,6 +84,12 @@ export async function GET(request: NextRequest) {
       XLSX.utils.book_append_sheet(wb, ws, 'Invités');
 
       const buffer = XLSX.write(wb, { bookType: 'xlsx', type: 'buffer' });
+
+      // P2.4: meter EXPORTS — one per successful export generation. Best-effort;
+      // helper swallows internally, .catch is belt-and-suspenders. Counted
+      // even when the export is capped (X-Export-Capped) — the export was
+      // still generated and delivered.
+      await incrementUsage(context.weddingId, 'EXPORTS', 1).catch(() => {});
 
       const responseHeaders: Record<string, string> = {
         'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',

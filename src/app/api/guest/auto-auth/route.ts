@@ -71,6 +71,12 @@ export async function POST(request: NextRequest) {
         }
       }
 
+      // Mission 6.0 P0.7 — rate limit review: this route already enforces a
+      // 5 req/min IP-based rate limit below (stricter than the 10 req/min
+      // target). Per task instructions, left as-is. The existing check uses
+      // the sync in-memory `checkRateLimit` (not Redis-backed); a future
+      // hardening pass could swap it for `checkRateLimitAsync` for multi-
+      // instance parity, but the per-IP gate is already in place.
       if (!checkRateLimit(`auto-auth-${rateLimitKey}`, 5, 60 * 1000)) {
         await logGuestAccess({ action: 'AUTH_RATE_LIMITED', details: `Auto-auth rate limited: ${rateLimitKey}`, ...clientInfo });
         return NextResponse.json({ error: 'Trop de tentatives. Veuillez réessayer dans un instant.' }, { status: 429 });

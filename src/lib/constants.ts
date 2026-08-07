@@ -145,3 +145,62 @@ export { PLAN_LIST } from './ui-labels';
 // flow (P1-SEC-9, currently not implemented). Centralising the constant now
 // means the eventual implementation doesn't pick a different magic number.
 export const PASSWORD_RESET_TOKEN_EXPIRY_HOURS = 1;
+
+// ─── P2.3: Per-invitation pricing (flagship B2B2C revenue) ───────────────────
+// The platform's flagship offer: 1 invitation sent = 0.70 USD.
+// Used by:
+//   - /api/weddings/[id]/invitations/bulk (auto-OrderItem generator)
+//   - /api/plans public route (display "0.70 USD/invitation" above plan pricing)
+//   - /api/org/[slug]/buy-credits (compute credit pack prices)
+//   - src/lib/credits.ts (default price when no custom org price is set)
+//
+// Value is in USD cents (minor units) to avoid float rounding. 70 cents = $0.70.
+export const PRICE_PER_INVITATION_USD_CENTS = 70;
+
+// ─── P2.1: Credit types ──────────────────────────────────────────────────────
+// The 5 billable credit types defined in the cahier des charges.
+// Mirrors the Credit.type column values. Order matches the spec priority.
+export const CREDIT_TYPES = ['INVITATION', 'SMS', 'WHATSAPP', 'QR', 'EXPORT'] as const;
+export type CreditType = typeof CREDIT_TYPES[number];
+
+// Default prices per credit type (USD cents). Used by Stripe checkout when
+// buying credit packs. SMS/WhatsApp prices are placeholders — providers will
+// be wired in P3+. QR is 0 (locally generated, but tracked for usage stats).
+export const CREDIT_PRICES_USD_CENTS: Record<CreditType, number> = {
+  INVITATION: 70,   // $0.70 per invitation (flagship)
+  SMS: 7,           // $0.07 per SMS (placeholder — Twilio pricing tier)
+  WHATSAPP: 5,      // $0.05 per WhatsApp message (placeholder — WhatsApp Business API)
+  QR: 0,            // $0 (locally generated; tracked for usage stats only)
+  EXPORT: 50,       // $0.50 per guest-list export (PDF/CSV)
+};
+
+// ─── P2.6: Commercial status state machine ───────────────────────────────────
+// Allowed transitions for Wedding.commercialStatus. Mirrors the wedding-status.ts
+// pattern. Used by src/lib/commercial-status.ts (P2.6).
+export const COMMERCIAL_STATUS_STATES = [
+  'LEAD', 'PENDING_PAYMENT', 'PAID', 'IN_PRODUCTION', 'READY',
+  'LIVE', 'COMPLETED', 'ARCHIVED', 'CANCELLED'
+] as const;
+export type CommercialStatus = typeof COMMERCIAL_STATUS_STATES[number];
+
+// ─── P2.5: Stripe configuration ──────────────────────────────────────────────
+// Loaded from env. Webhook secret MUST be set for production. Keys can be
+// empty in dev (the Stripe SDK init will throw a clear error if a route is hit).
+export const STRIPE_CONFIG = {
+  publicKey: process.env.STRIPE_PUBLIC_KEY || '',
+  secretKey: process.env.STRIPE_SECRET_KEY || '',
+  webhookSecret: process.env.STRIPE_WEBHOOK_SECRET || '',
+  // Default currency for Stripe Checkout sessions (ISO 4217 lowercase).
+  currency: 'usd',
+  // Credit pack definitions surfaced in the buy-credits UI. Each pack is a
+  // pre-bundled quantity of one credit type at a fixed price. Custom quantities
+  // are also allowed via the API.
+  creditPacks: [
+    { id: 'invitations_50',  type: 'INVITATION' as CreditType, quantity: 50,  label: 'Pack 50 invitations'  },
+    { id: 'invitations_200', type: 'INVITATION' as CreditType, quantity: 200, label: 'Pack 200 invitations' },
+    { id: 'invitations_500', type: 'INVITATION' as CreditType, quantity: 500, label: 'Pack 500 invitations' },
+    { id: 'sms_100',         type: 'SMS' as CreditType,         quantity: 100, label: 'Pack 100 SMS'         },
+    { id: 'whatsapp_100',    type: 'WHATSAPP' as CreditType,    quantity: 100, label: 'Pack 100 WhatsApp'    },
+    { id: 'export_10',       type: 'EXPORT' as CreditType,      quantity: 10,  label: 'Pack 10 exports'      },
+  ],
+};

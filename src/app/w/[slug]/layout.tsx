@@ -8,23 +8,60 @@
 //      when present — it's the source of truth after a successful pipeline run.
 //   4. Passes BOTH identity + manifest + publishedConfig to the client via
 //      WeddingContextProvider
+//   5. P1.10: renders <ThemeInjector /> — when the request arrives via a
+//      custom domain bound to an Organization, injects the org's brandColor
+//      as a CSS variable override on :root. On the default platform domain
+//      (wedding.hpph.net) it renders nothing (no DB lookup, ISR preserved).
 //
 // The manifest is the single source of truth for section rendering.
 // page.tsx reads it from context and renders via SectionRenderer.
+//
+// ─── Mission 6.0 P0.9 — ISR + per-wedding cache tags ──────────────────────────
+// Previously this layout used `export const dynamic = 'force-dynamic'`, forcing
+// a full server-side data fetch on every request. Now it uses ISR:
+//   - `revalidate = 300` (5-min fallback revalidation)
+//   - The data fetch is wrapped in `unstable_cache` (see src/lib/wedding/cache.ts)
+//     with a per-wedding cache tag `wedding-${slug}`.
+//   - On publish, the pipeline calls `invalidateWeddingCache(slug)` which calls
+//     `revalidateTag('wedding-{slug}')` → the next request re-fetches fresh data.
+//
+// Cross-tenant safety (§11 leak fix) is PRESERVED: the cache key is the slug
+// itself, so wedding A's cache entry is 100% isolated from wedding B's.
+//
+// What stays dynamic (not cached): the DRAFT admin-route check uses `headers()`
+// which is a per-request dynamic API — it runs AFTER the cached data fetch,
+// so the cache only stores the wedding row + manifest + publishedConfig.
+//
+// ─── Mission 6.0 P1.10 — White Label runtime ─────────────────────────────────
+// The <ThemeInjector /> server component below is async (it reads `headers()`
+// and may call `getOrgThemeByHost` which hits the DB). On the default platform
+// domain it returns null after the `headers()` read (no DB lookup, no SSR cost)
+// so ISR cache behaviour is unchanged. On a custom domain it opts the layout
+// out of static prerendering for THAT host — which is correct, because the
+// org-level branding is host-specific and cannot be cached at the wedding-slug
+// level (two different custom domains bound to the same wedding would render
+// different brand colors).
 
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { headers } from 'next/headers';
-import { resolveWeddingBySlug } from '@/lib/tenant-context';
-import { resolveWeddingManifest } from '@/lib/wedding/manifest';
-import type { WeddingManifest } from '@/lib/wedding/manifest';
-import { db } from '@/lib/db';
-import { safeJsonParse } from '@/lib/safe-json';
-import { logger } from '@/lib/logger';
+import { getCachedWeddingData } from '@/lib/wedding/cache';
 import { WeddingContextProvider } from './wedding-context';
-import type { PublishedConfigSnapshot } from './wedding-context';
+import { ThemeInjector } from '@/components/ThemeInjector';
 
-export const dynamic = 'force-dynamic';
+// ─── ISR config ───────────────────────────────────────────────────────────────
+// Fallback time-based revalidation: 5 minutes. The per-wedding cache tag
+// (`wedding-${slug}`) is the primary invalidation mechanism (on-demand via
+// `revalidateTag` in the publish pipeline). This `revalidate` value is the
+// safety net for cases where an invalidation call is missed.
+export const revalidate = 300;
+
+// Allow generating new wedding pages on-demand (not just pre-rendered ones).
+// New weddings are published → cache invalidated → first request renders &
+// caches them. No need for generateStaticParams at build time.
+export const dynamicParams = true;
+
+// ─── Metadata (also uses the cached fetch) ────────────────────────────────────
 
 export async function generateMetadata({
   params,
@@ -32,12 +69,13 @@ export async function generateMetadata({
   params: Promise<{ slug: string }>;
 }): Promise<Metadata> {
   const { slug } = await params;
-  const wedding = await resolveWeddingBySlug(slug);
+  const data = await getCachedWeddingData(slug);
 
-  if (!wedding) {
+  if (!data) {
     return { title: 'Mariage — Introuvable' };
   }
 
+  const wedding = data.wedding;
   const coupleLabel = wedding.coupleLabel;
   const weddingDate = wedding.weddingDate
     ? new Date(wedding.weddingDate).toLocaleDateString('fr-FR', {
@@ -79,6 +117,8 @@ export async function generateMetadata({
   };
 }
 
+// ─── Layout component ─────────────────────────────────────────────────────────
+
 export default async function WeddingLayout({
   children,
   params,
@@ -87,16 +127,22 @@ export default async function WeddingLayout({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  const wedding = await resolveWeddingBySlug(slug);
+  const data = await getCachedWeddingData(slug);
 
-  if (!wedding) {
+  if (!data) {
     notFound();
   }
+
+  const { wedding, manifest, publishedConfig } = data;
 
   if (wedding.status === 'DRAFT' && !wedding.isDefault) {
     // Mission 5.3.1: Allow admin routes (/w/[slug]/admin/*) for DRAFT weddings
     // so organizers can log in, configure, and publish their event.
     // Public routes (/w/[slug]) remain hidden until PUBLISHED.
+    //
+    // NOTE: `headers()` is a dynamic API and runs OUTSIDE the cached fetch,
+    // so this per-request check is not cached. The cached `wedding.status`
+    // is the source of truth for the status value itself.
     const h = await headers();
     const pathname = h.get('x-invoke-path') || h.get('referer') || '';
     const isAdminRoute = pathname.includes('/admin');
@@ -107,89 +153,42 @@ export default async function WeddingLayout({
 
   if (wedding.status === 'SUSPENDED') {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-warm p-6">
-        <div className="max-w-md text-center space-y-4">
-          <div className="text-6xl">💍</div>
-          <h1 className="font-serif text-3xl text-foreground">Mariage temporairement indisponible</h1>
-          <p className="text-muted-foreground">
-            Le mariage de <strong>{wedding.coupleLabel}</strong> est actuellement suspendu.
-            Veuillez contacter les organisateurs ou réessayer plus tard.
-          </p>
+      <>
+        {/* P1.10: org-level branding still applies on custom domains even
+            when the wedding is suspended (the holding page is the org's
+            face to the visitor). On the default domain this is a no-op. */}
+        <ThemeInjector />
+        <div className="min-h-screen flex items-center justify-center bg-gradient-warm p-6">
+          <div className="max-w-md text-center space-y-4">
+            <div className="text-6xl">💍</div>
+            <h1 className="font-serif text-3xl text-foreground">Mariage temporairement indisponible</h1>
+            <p className="text-muted-foreground">
+              Le mariage de <strong>{wedding.coupleLabel}</strong> est actuellement suspendu.
+              Veuillez contacter les organisateurs ou réessayer plus tard.
+            </p>
+          </div>
         </div>
-      </div>
+      </>
     );
   }
 
   if (wedding.status === 'ARCHIVED') {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-warm p-6">
-        <div className="max-w-md text-center space-y-4">
-          <div className="text-6xl">📖</div>
-          <h1 className="font-serif text-3xl text-foreground">Souvenirs archivés</h1>
-          <p className="text-muted-foreground">
-            Le mariage de <strong>{wedding.coupleLabel}</strong> a eu lieu. Les souvenirs sont désormais archivés.
-          </p>
+      <>
+        {/* P1.10: org-level branding still applies on custom domains even
+            when the wedding is archived. On the default domain this is a no-op. */}
+        <ThemeInjector />
+        <div className="min-h-screen flex items-center justify-center bg-gradient-warm p-6">
+          <div className="max-w-md text-center space-y-4">
+            <div className="text-6xl">📖</div>
+            <h1 className="font-serif text-3xl text-foreground">Souvenirs archivés</h1>
+            <p className="text-muted-foreground">
+              Le mariage de <strong>{wedding.coupleLabel}</strong> a eu lieu. Les souvenirs sont désormais archivés.
+            </p>
+          </div>
         </div>
-      </div>
+      </>
     );
-  }
-
-  // ── CONS-6-PIPELINE: prefer publishedConfigJson (deployment snapshot) ──────
-  // The deployment pipeline writes a PublishedConfig JSON blob to
-  // Wedding.publishedConfigJson on successful publish. When present, it's the
-  // source of truth for the manifest + theme (it captures the exact
-  // Template+Theme+Collection combination that was deployed). We pass it
-  // through context so page.tsx can feed ThemeInjector + SectionRenderer
-  // without an extra HTTP round-trip.
-  //
-  // If publishedConfigJson is missing OR malformed, we fall back to the
-  // binding-based manifest (resolveWeddingManifest) — backward compat for
-  // weddings deployed before the pipeline existed.
-  let publishedConfig: PublishedConfigSnapshot | null = null;
-  let manifest: WeddingManifest;
-  try {
-    const publishedRow = await db.wedding.findUnique({
-      where: { id: wedding.id },
-      select: { publishedConfigJson: true, publishedVersion: true },
-    });
-    if (publishedRow?.publishedConfigJson) {
-      const parsed = safeJsonParse<{
-        manifest?: WeddingManifest;
-        theme?: {
-          primaryColor: string;
-          accentColor: string;
-          fontDisplay: string;
-          fontBody: string;
-          layout: string;
-        };
-        templateName?: string;
-        themeName?: string;
-        version?: string;
-        compiledAt?: string;
-      } | null>(publishedRow.publishedConfigJson, null);
-      if (parsed && parsed.manifest && parsed.theme) {
-        publishedConfig = {
-          manifest: parsed.manifest,
-          theme: parsed.theme,
-          templateName: parsed.templateName ?? '',
-          themeName: parsed.themeName ?? '',
-          version: parsed.version ?? publishedRow.publishedVersion ?? '',
-          compiledAt: parsed.compiledAt ?? '',
-        };
-      }
-    }
-  } catch (error) {
-    // Non-fatal — fall back to binding-based manifest.
-    logger.warn('layout: failed to read publishedConfigJson', {
-      weddingId: wedding.id,
-      errMessage: error instanceof Error ? error.message : String(error),
-    });
-  }
-
-  if (publishedConfig) {
-    manifest = publishedConfig.manifest;
-  } else {
-    manifest = await resolveWeddingManifest(wedding.id);
   }
 
   return (
@@ -200,7 +199,7 @@ export default async function WeddingLayout({
         coupleLabel: wedding.coupleLabel,
         brideName: wedding.brideName,
         groomName: wedding.groomName,
-        weddingDate: wedding.weddingDate?.toISOString() ?? null,
+        weddingDate: wedding.weddingDate ?? null,
         venueName: wedding.venueName,
         venueCity: wedding.venueCity,
         status: wedding.status,
@@ -210,6 +209,10 @@ export default async function WeddingLayout({
         publishedConfig,
       }}
     >
+      {/* P1.10 White Label — injects org brandColor as a CSS variable override
+          when the request is on a custom domain bound to an Organization.
+          Renders nothing on the default platform domain (preserves ISR). */}
+      <ThemeInjector />
       {children}
     </WeddingContextProvider>
   );

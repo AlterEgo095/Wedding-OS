@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Image from 'next/image'
 import { motion, useInView } from 'framer-motion'
 import {
@@ -12,6 +12,46 @@ import { Button } from '@/components/ui/button'
 
 const WHATSAPP_URL = 'https://wa.me/243816515095?text=Bonjour%2C%20je%20souhaite%20obtenir%20une%20plateforme%20similaire%20pour%20mon%20%C3%A9v%C3%A9nement.'
 const AENEWS_URL = 'https://aenews.net'
+
+// ─── P1.10 White Label — platform domain detection ──────────────────────────
+// The AENEWS banner is the platform's marketing CTA (WhatsApp + aenews.net
+// link). White-label customers pay to remove AENEWS branding from their custom
+// domain — so this component must auto-hide when rendered on a non-platform
+// host.
+//
+// Detection is client-side because AENEWSBanner is a Client Component (uses
+// framer-motion's useInView). The server-side equivalent — reading the
+// `x-white-label` response header set by middleware — is unavailable to client
+// components (the header is on the HTTP response, not accessible from
+// `document`). Instead we mirror the `isCustomDomainRequest` logic from
+// `src/lib/custom-domains.ts` here in a client-safe form.
+//
+// Hydration safety:
+//   - `shouldRender` starts at `false` (matches SSR — server can't read window).
+//   - After mount, we read `window.location.hostname` and flip to `true` only
+//     on platform domains. On custom domains it stays `false` and the banner
+//     is never attached to the DOM.
+//   - This means a brief delay before the banner appears on the default
+//     platform domain (~1 tick after hydration). Acceptable: the banner is
+//     below the fold, and the alternative (SSR-render then hide) would flash
+//     the AENEWS logo on white-label domains for ~1 frame.
+const PLATFORM_DOMAIN_SUFFIXES = ['.aenews.net', '.hpph.net']
+const PLATFORM_HOSTS = new Set([
+  'wedding.hpph.net',
+  'www.wedding.hpph.net',
+  'localhost',
+  '127.0.0.1',
+])
+
+function isPlatformHost(host: string): boolean {
+  const normalized = host.toLowerCase().trim()
+  if (!normalized) return false
+  if (PLATFORM_HOSTS.has(normalized)) return true
+  for (const suffix of PLATFORM_DOMAIN_SUFFIXES) {
+    if (normalized.endsWith(suffix)) return true
+  }
+  return false
+}
 
 const features = [
   { icon: Users, label: 'Gestion intelligente des invités' },
@@ -31,6 +71,28 @@ interface AENEWSBannerProps {
 export default function AENEWSBanner({ variant = 'homepage' }: AENEWSBannerProps) {
   const sectionRef = useRef<HTMLDivElement>(null)
   const isInView = useInView(sectionRef, { once: true, margin: '-60px' })
+
+  // ─── P1.10 White Label — auto-hide on custom domains ─────────────────────
+  // `shouldRender` starts false on both server and client first render (no
+  // hydration mismatch). After mount, we check `window.location.hostname`:
+  //   - Platform domain (wedding.hpph.net, *.aenews.net, *.hpph.net,
+  //     localhost) → set to true → banner appears.
+  //   - Custom domain → leave false → banner never attaches.
+  //
+  // This is the only behavior change to this component: on the default
+  // platform domain the banner renders exactly as before (after a ~1-tick
+  // delay imperceptible to users since the banner is below the fold). On a
+  // custom domain it never appears — exactly what white-label customers expect.
+  const [shouldRender, setShouldRender] = useState(false)
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    if (isPlatformHost(window.location.hostname)) {
+      setShouldRender(true)
+    }
+    // Else: leave false — custom domain, white-label mode, hide the banner.
+  }, [])
+
+  if (!shouldRender) return null
 
   return (
     <section

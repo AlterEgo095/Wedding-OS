@@ -84,6 +84,10 @@ export const PLAN_LIST: Plan[] = ['TRIAL', 'ESSENTIEL', 'PREMIUM', 'ELITE'];
 export const ROLE_LABELS: Record<Role, string> = {
   PLATFORM_ADMIN: 'Administrateur Plateforme',
   SUPER_ADMIN: 'Super Admin',
+  // Mission 6.0 P1.3 — Organization roles (B2B2C agency model).
+  ORG_ADMIN: 'Admin Organisation',
+  ORG_MEMBER: 'Membre Organisation',
+  ORG_VIEWER: 'Observateur Organisation',
   ORGANIZER: 'Organisateur',
   RECEPTION: 'Réception',
   CONTROLLER: 'Contrôleur',
@@ -97,6 +101,10 @@ export const ROLE_LABELS: Record<Role, string> = {
 export const ROLE_BADGE_CLASS: Record<Role, string> = {
   PLATFORM_ADMIN: 'bg-gold/15 text-gold border-gold/40',
   SUPER_ADMIN: 'bg-gold/15 text-gold border-gold/40',
+  // Mission 6.0 P1.3 — Organization roles (teal/cyan family for B2B2C).
+  ORG_ADMIN: 'bg-teal-500/15 text-teal-400 border-teal-500/30',
+  ORG_MEMBER: 'bg-cyan-500/15 text-cyan-400 border-cyan-500/30',
+  ORG_VIEWER: 'bg-sky-500/15 text-sky-400 border-sky-500/30',
   ORGANIZER: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30',
   RECEPTION: 'bg-zinc-500/15 text-zinc-400 border-zinc-500/30',
   CONTROLLER: 'bg-zinc-500/15 text-zinc-400 border-zinc-500/30',

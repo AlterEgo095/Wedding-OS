@@ -177,4 +177,11 @@ export const CSRF_EXEMPT_PATHS: readonly string[] = [
   '/api/guest/logout',    // guest ends their session
   '/api/guest/access-logs', // guest access log write (beacon-style)
   '/api/health',          // public health check (no state change anyway)
+  // Mission 6.0 P1.9 — Org signup (public entry point). The user has no CSRF
+  // cookie yet when first reaching the wizard. The route issues its own fresh
+  // CSRF cookie on success (alongside the auth cookie) so subsequent state-
+  // changing requests from /org/[slug]/admin are protected. The GET pre-check
+  // (slug/email availability) is also CSRF-exempt because it's read-only.
+  '/api/org/signup',
+  '/api/org/login', // P1.8 — org login (pre-auth, no CSRF token yet)
 ] as const;

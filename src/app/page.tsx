@@ -32,6 +32,8 @@
 
 import { db } from '@/lib/db'
 import type { Plan } from '@/lib/types'
+import Link from 'next/link'
+import { Building2, ArrowRight } from 'lucide-react'
 import MarketingHero from '@/components/marketing/MarketingHero'
 import ProductPromise from '@/components/marketing/ProductPromise'
 import RealCapabilities from '@/components/marketing/RealCapabilities'
@@ -235,6 +237,31 @@ export default async function MarketingHome() {
 
   return (
     <main className="min-h-screen bg-background text-foreground">
+      {/* ── Mission 6.0 P1.9 — Espace Agences banner (top strip) ─────────────── */}
+      {/* Thin top-of-page strip inviting agencies to sign up. Placed ABOVE the
+          hero so it's prominent on first paint without breaking the existing
+          MarketingHero layout. Links to /org/signup (the P1.9 onboarding wizard). */}
+      <div className="relative z-20 border-b border-gold/20 bg-gradient-to-r from-gold/10 via-gold/5 to-transparent">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2.5 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2 min-w-0">
+            <Building2 className="size-4 text-gold shrink-0" />
+            <span className="text-xs sm:text-sm text-foreground/90 truncate">
+              <span className="font-medium">Vous êtes une agence mariage&nbsp;?</span>{' '}
+              <span className="text-muted-foreground hidden sm:inline">
+                Gérez tous vos événements depuis un seul espace.
+              </span>
+            </span>
+          </div>
+          <Link
+            href="/org/signup"
+            className="inline-flex items-center gap-1.5 px-3 sm:px-4 py-1.5 rounded-full bg-gold hover:bg-gold-dark text-white text-xs sm:text-sm font-medium transition-colors shrink-0"
+          >
+            Créer votre espace
+            <ArrowRight className="size-3.5" />
+          </Link>
+        </div>
+      </div>
+
       {/* SECTION 1 — HERO PLATFORM: What / Who / Action */}
       <MarketingHero />
 

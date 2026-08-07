@@ -22,6 +22,8 @@ import { logger } from '@/lib/logger';
 import { internalError } from '@/lib/api-errors';
 // P2-SEC-14: writeAuditLog populates ipAddress + userAgent.
 import { writeAuditLog } from '@/lib/audit';
+// Mission 6.0 P0.5 — route all publications through the deployment pipeline.
+import { publishWeddingViaPipeline, type PublishResult } from '@/lib/pipeline/publish-helper';
 
 /**
  * POST /api/onboarding/create-wedding    (PLATFORM_ADMIN)
@@ -370,10 +372,11 @@ async function createWeddingHandler(request: NextRequest) {
           timezone: typeof timezone === 'string' ? timezone : 'Africa/Kinshasa',
           venueName: venueName && typeof venueName === 'string' ? venueName.trim() || null : null,
           venueCity: venueCity && typeof venueCity === 'string' ? venueCity.trim() || null : null,
-          status: shouldPublish ? 'PUBLISHED' : 'DRAFT',
+          // Mission 6.0 P0.5 — always create as DRAFT; publish via pipeline post-tx.
+          status: 'DRAFT',
           plan,
           isDefault: false, // NEVER auto-default
-          publishedAt: shouldPublish ? new Date() : null,
+          publishedAt: null,
         },
         select: WEDDING_RESPONSE_SELECT,
       });
@@ -553,6 +556,14 @@ async function createWeddingHandler(request: NextRequest) {
     // ─── Post-transaction side effects ─────────────────────────────────────
     invalidateWeddingCache(normalizedSlug);
 
+    // Mission 6.0 P0.5 — if the wizard requested immediate publish, route it
+    // through the deployment pipeline (creates Deployment row + config snapshot).
+    let publishResult: PublishResult | null = null;
+    if (shouldPublish) {
+      publishResult = await publishWeddingViaPipeline(result.wedding.id, user!.id);
+      invalidateWeddingCache(normalizedSlug);
+    }
+
     // P2-SEC-14: writeAuditLog populates ipAddress + userAgent from request.
     // (Best-effort — the in-tx auditLogs above already committed; this is a
     // supplementary platform-level audit row for the WhatsApp deeplink build.)
@@ -588,6 +599,7 @@ async function createWeddingHandler(request: NextRequest) {
           message: whatsappMessage,
         },
         lead: result.convertedLead,
+        ...(publishResult ? { deployment: { id: publishResult.deploymentId, version: publishResult.version, mode: publishResult.mode } } : {}),
       },
       { status: 201 },
     );

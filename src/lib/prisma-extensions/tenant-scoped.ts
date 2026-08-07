@@ -6,6 +6,25 @@
 // against tenant-scoped models, when a tenant context is active (set via
 // runWithTenant() from tenant-context.ts).
 //
+// ──── Mission 6.0 P1.5 — Dual-Scope Design ────────────────────────────────────
+// The TenantContext now carries a `scope` field ('wedding' | 'org' | 'platform')
+// and an `organizationId`. The extension STILL filters by `weddingId` regardless
+// of scope, because:
+//   - 'wedding' scope: user operates on their own wedding (weddingId from user.weddingId)
+//   - 'org' scope: org member operates on ONE wedding at a time (weddingId from
+//     the X-Wedding-Slug header, verified to belong to their org in resolveAdminTenant)
+//   - 'platform' scope: platform admin operates on ONE wedding at a time (weddingId
+//     from X-Wedding-Slug header or default)
+//
+// The "dual-scope" is therefore at the AUTHORIZATION layer (assertWeddingAccess
+// in auth.ts checks organizationId for org-scoped users), NOT at the Prisma
+// extension layer. The extension's job is unchanged: prevent cross-wedding
+// leaks by injecting weddingId into every tenant-scoped query.
+//
+// For legitimate cross-wedding aggregates (org dashboard, platform dashboard),
+// use `unsafePlatformDb` (the raw Prisma client without this extension) with
+// explicit `where: { organizationId }` or `where: { id: { in: [...] } }` filters.
+//
 // ──── Scoping rules ────────────────────────────────────────────────────────────
 // | Operation   | Auto-inject? | Reason                                                |
 // |-------------|--------------|-------------------------------------------------------|

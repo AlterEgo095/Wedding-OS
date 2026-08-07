@@ -13,6 +13,8 @@ import { logger } from '@/lib/logger';
 import { internalError } from '@/lib/api-errors';
 // CONS-7 task 5: Zod request-body validation.
 import { z } from 'zod';
+// P2.4: usage metering (GUESTS counter increment after successful create).
+import { incrementUsage } from '@/lib/usage';
 
 export async function GET(request: NextRequest) {
   try {
@@ -248,6 +250,10 @@ export async function POST(request: NextRequest) {
         details: `Created guest ${firstName} ${lastName}`,
         request,
       });
+
+      // P2.4: meter GUESTS — best-effort, never breaks the primary op.
+      // Helper swallows internally; .catch is belt-and-suspenders.
+      await incrementUsage(context.weddingId, 'GUESTS', 1).catch(() => {});
 
       return NextResponse.json({ guest }, { status: 201 });
     });

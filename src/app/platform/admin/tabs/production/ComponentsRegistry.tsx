@@ -3,6 +3,12 @@
 // ════════════════════════════════════════════════════════════════════════════
 // ComponentsRegistry — Super Admin Production Studio (CONS-3-SUPER-ADMIN).
 // Registry of reusable UI components. Uses /api/platform/components.
+//
+// P3.9 enhancements:
+//  • Type filter (pre-existing) + Status filter (NEW).
+//  • Version column (pre-existing).
+//  • Preview modal: slug, type, version, status + pretty-printed schemaJson.
+//  • Duplicate button per row (clone with `-copy` slug suffix).
 // ════════════════════════════════════════════════════════════════════════════
 
 import { useState, useEffect, useCallback } from 'react'
@@ -12,7 +18,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Textarea } from '@/components/ui/textarea'
 import {
@@ -44,7 +50,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { Plus, Search, Pencil, Trash2, MoreHorizontal, Loader2, RefreshCw } from 'lucide-react'
+import { Plus, Pencil, Trash2, MoreHorizontal, Loader2, RefreshCw, Copy, Eye } from 'lucide-react'
 
 
 interface ComponentRow {
@@ -88,21 +94,39 @@ const TYPE_BADGE: Record<string, string> = {
   story: 'bg-rose-500/15 text-rose-400 border-rose-500/30',
 }
 
+const STATUS_BADGE: Record<string, string> = {
+  DRAFT: 'bg-amber-500/15 text-amber-400 border-amber-500/30',
+  PUBLISHED: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30',
+  ARCHIVED: 'bg-zinc-500/15 text-zinc-400 border-zinc-500/30',
+}
+
+function prettyJson(raw: string): string {
+  try {
+    return JSON.stringify(JSON.parse(raw), null, 2)
+  } catch {
+    return raw
+  }
+}
+
 export function ComponentsRegistry({ csrfToken }: { csrfToken: string }) {
   const [components, setComponents] = useState<ComponentRow[]>([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [typeFilter, setTypeFilter] = useState<string>('ALL')
+  const [statusFilter, setStatusFilter] = useState<string>('ALL')
 
   const [showDialog, setShowDialog] = useState(false)
   const [editing, setEditing] = useState<ComponentRow | null>(null)
   const [form, setForm] = useState<FormState>(EMPTY_FORM)
   const [saving, setSaving] = useState(false)
 
+  // Preview modal state
+  const [preview, setPreview] = useState<ComponentRow | null>(null)
+
   const load = useCallback(async () => {
     setLoading(true)
-    const params = new URLSearchParams({ page: '1', limit: '50', search, type: typeFilter })
+    const params = new URLSearchParams({ page: '1', limit: '50', search, type: typeFilter, status: statusFilter })
     try {
       const res = await fetch(`/api/platform/components?${params}`, { credentials: 'include' })
       if (!res.ok) throw new Error('fetch failed')
@@ -114,7 +138,7 @@ export function ComponentsRegistry({ csrfToken }: { csrfToken: string }) {
     } finally {
       setLoading(false)
     }
-  }, [search, typeFilter])
+  }, [search, typeFilter, statusFilter])
 
   useEffect(() => { load() }, [load])
 
@@ -160,6 +184,51 @@ export function ComponentsRegistry({ csrfToken }: { csrfToken: string }) {
       toast.success(editing ? 'Composant mis à jour' : 'Composant créé')
       setShowDialog(false)
       load()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Erreur')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  // P3.9 — Duplicate component (clone with `-copy` slug).
+  const duplicate = async (c: ComponentRow) => {
+    const baseSlug = `${c.slug}-copy`
+    setSaving(true)
+    try {
+      let attempt = 0
+      let lastErr = ''
+      while (attempt < 5) {
+        const slug = attempt === 0 ? baseSlug : `${baseSlug}-${attempt + 1}`
+        const res = await fetch('/api/platform/components', {
+          method: 'POST',
+          credentials: 'include',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRF-Token': csrfToken,
+          },
+          body: JSON.stringify({
+            name: `${c.name} (copie)`,
+            slug,
+            type: c.type,
+            schemaJson: c.schemaJson,
+            status: 'DRAFT',
+          }),
+        })
+        if (res.ok) {
+          toast.success(`Composant dupliqué → ${slug}`)
+          load()
+          return
+        }
+        if (res.status === 409) {
+          attempt++
+          continue
+        }
+        const body = await res.json().catch(() => ({}))
+        lastErr = body?.error || 'Erreur serveur'
+        break
+      }
+      throw new Error(lastErr || 'Impossible de dupliquer (slug en conflit)')
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Erreur')
     } finally {
@@ -218,6 +287,18 @@ export function ComponentsRegistry({ csrfToken }: { csrfToken: string }) {
                 ))}
               </SelectContent>
             </Select>
+            {/* P3.9 — Status filter */}
+            <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <SelectTrigger className="w-[180px]">
+                <SelectValue placeholder="Statut" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ALL">Tous les statuts</SelectItem>
+                <SelectItem value="DRAFT">Brouillon</SelectItem>
+                <SelectItem value="PUBLISHED">Publié</SelectItem>
+                <SelectItem value="ARCHIVED">Archivé</SelectItem>
+              </SelectContent>
+            </Select>
             <Button variant="outline" size="icon" onClick={load}>
               <RefreshCw className="w-4 h-4" />
             </Button>
@@ -258,7 +339,7 @@ export function ComponentsRegistry({ csrfToken }: { csrfToken: string }) {
                       </TableCell>
                       <TableCell>v{c.version}</TableCell>
                       <TableCell>
-                        <Badge variant="outline" className="text-[10px] uppercase">
+                        <Badge variant="outline" className={`text-[10px] uppercase ${STATUS_BADGE[c.status] || ''}`}>
                           {c.status}
                         </Badge>
                       </TableCell>
@@ -273,6 +354,14 @@ export function ComponentsRegistry({ csrfToken }: { csrfToken: string }) {
                             <DropdownMenuItem onClick={() => openEdit(c)}>
                               <Pencil className="w-3.5 h-3.5 mr-2" />
                               Éditer
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => setPreview(c)}>
+                              <Eye className="w-3.5 h-3.5 mr-2" />
+                              Aperçu
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => duplicate(c)} disabled={saving}>
+                              <Copy className="w-3.5 h-3.5 mr-2" />
+                              Dupliquer
                             </DropdownMenuItem>
                             <DropdownMenuSeparator />
                             <DropdownMenuItem
@@ -295,6 +384,7 @@ export function ComponentsRegistry({ csrfToken }: { csrfToken: string }) {
         </CardContent>
       </Card>
 
+      {/* Create/Edit Dialog */}
       <Dialog open={showDialog} onOpenChange={setShowDialog}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
@@ -354,6 +444,57 @@ export function ComponentsRegistry({ csrfToken }: { csrfToken: string }) {
               {saving && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
               {editing ? 'Mettre à jour' : 'Créer'}
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* P3.9 — Preview Modal */}
+      <Dialog open={!!preview} onOpenChange={(o) => { if (!o) setPreview(null) }}>
+        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>
+              Aperçu · {preview?.name}
+              <span className="ml-2 text-xs font-mono text-muted-foreground">{preview?.slug}</span>
+            </DialogTitle>
+          </DialogHeader>
+          {preview && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+                <div>
+                  <div className="text-muted-foreground uppercase">Slug</div>
+                  <div className="font-mono">{preview.slug}</div>
+                </div>
+                <div>
+                  <div className="text-muted-foreground uppercase">Type</div>
+                  <Badge variant="outline" className={`text-[10px] uppercase ${TYPE_BADGE[preview.type] || ''}`}>
+                    {preview.type}
+                  </Badge>
+                </div>
+                <div>
+                  <div className="text-muted-foreground uppercase">Version</div>
+                  <div className="font-medium">v{preview.version}</div>
+                </div>
+                <div>
+                  <div className="text-muted-foreground uppercase">Statut</div>
+                  <Badge variant="outline" className={`text-[10px] uppercase ${STATUS_BADGE[preview.status] || ''}`}>
+                    {preview.status}
+                  </Badge>
+                </div>
+              </div>
+
+              {/* SchemaJson pretty-printed */}
+              <div>
+                <div className="text-xs text-muted-foreground uppercase mb-1">
+                  Schéma (props acceptées — JSON pretty)
+                </div>
+                <pre className="bg-black/40 border border-white/10 rounded p-3 text-[11px] font-mono overflow-x-auto max-h-96">
+                  {prettyJson(preview.schemaJson)}
+                </pre>
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPreview(null)}>Fermer</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

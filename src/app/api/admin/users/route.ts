@@ -19,6 +19,8 @@ import { internalError } from '@/lib/api-errors';
 import { writeAuditLog } from '@/lib/audit';
 // P2-CQ-7: getClientInfo to resolve IP/UA for tx-scoped audit writes.
 import { getClientInfo } from '@/lib/guest-auth';
+// P2.4: usage metering (ADMINS counter increment after successful create).
+import { incrementUsage } from '@/lib/usage';
 
 // AdminUser is platform-level (not tenant-scoped) — SUPER_ADMIN has weddingId=null.
 // However, non-SUPER_ADMIN users can only see users in their own wedding.
@@ -168,6 +170,13 @@ export async function POST(request: NextRequest) {
 
       return created;
     });
+
+    // P2.4: meter ADMINS — only for wedding-scoped roles (assignedWeddingId
+    // is null for platform admins, which are NOT counted against any wedding).
+    // Best-effort; helper swallows internally, .catch is belt-and-suspenders.
+    if (assignedWeddingId) {
+      await incrementUsage(assignedWeddingId, 'ADMINS', 1).catch(() => {});
+    }
 
     return NextResponse.json({ user: newUser }, { status: 201 });
   } catch (error: unknown) {

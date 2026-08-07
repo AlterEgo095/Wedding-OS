@@ -10,6 +10,13 @@ import { invalidateWeddingCache } from '@/lib/tenant-context';
 import { isValidTransition, getAllowedTransitions } from '@/lib/wedding-status';
 // P2-CQ-7: writeAuditLog populates ipAddress + userAgent from request.
 import { writeAuditLog } from '@/lib/audit';
+// Mission 6.0 P0.5 — route all publications through the deployment pipeline
+// so every PUBLISHED wedding has a Deployment row (visible in Production Studio).
+import { publishWeddingViaPipeline } from '@/lib/pipeline/publish-helper';
+// P2.6 — auto-transition commercialStatus PAID → LIVE when the wedding is
+// published. Idempotent: no-op if not PUBLISHED, or commercialStatus is
+// already LIVE / not in [PAID, READY, IN_PRODUCTION].
+import { autoTransitionToLive } from '@/lib/commercial-status';
 
 /**
  * POST /api/onboarding/publish    (PLATFORM_ADMIN)
@@ -17,6 +24,11 @@ import { writeAuditLog } from '@/lib/audit';
  * Publish a previously-drafted wedding created via the onboarding wizard.
  * Sets status='PUBLISHED' + publishedAt=now() + invalidates the slug cache so
  * the next /w/{slug} request resolves the live wedding.
+ *
+ * P2.6 — After a successful publish, auto-transitions the wedding's
+ * commercialStatus from PAID/READY/IN_PRODUCTION → LIVE. This bridges the
+ * two state machines (Wedding.status + Wedding.commercialStatus) so they
+ * no longer drift silently.
  *
  * Body:
  *   { weddingId: string }
@@ -100,13 +112,20 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const updated = await db.wedding.update({
+    // Mission 6.0 P0.5 — publish via the deployment pipeline (no more bypass).
+    // This creates a Deployment row + publishedConfigJson snapshot.
+    const publishResult = await publishWeddingViaPipeline(wedding.id, user!.id);
+
+    if (!publishResult.success) {
+      return NextResponse.json(
+        { error: 'Échec de la publication via le pipeline de déploiement.', code: 'PUBLISH_FAILED', detail: publishResult.error },
+        { status: 500 },
+      );
+    }
+
+    const updated = await db.wedding.findUnique({
       where: { id: wedding.id },
-      data: {
-        status: 'PUBLISHED',
-        publishedAt: new Date(),
-      },
-      select: { id: true, slug: true, status: true, publishedAt: true },
+      select: { id: true, slug: true, status: true, publishedAt: true, commercialStatus: true },
     });
 
     invalidateWeddingCache(wedding.slug);
@@ -120,7 +139,18 @@ export async function POST(request: NextRequest) {
       request,
     });
 
-    return NextResponse.json({ wedding: updated });
+    // P2.6 — Bridge the two state machines: now that Wedding.status is
+    // PUBLISHED, auto-flip commercialStatus PAID → LIVE (idempotent —
+    // no-op if already LIVE or if commercialStatus is not in the allowed
+    // source set). Errors here MUST NOT fail the publish — the wedding is
+    // already public. We log and continue.
+    try {
+      await autoTransitionToLive(wedding.id, user!.id);
+    } catch (e) {
+      console.error('[publish] autoTransitionToLive failed (non-blocking):', e);
+    }
+
+    return NextResponse.json({ wedding: updated, deployment: { id: publishResult.deploymentId, version: publishResult.version, mode: publishResult.mode } });
   } catch (error) {
     console.error('Publish wedding error:', error);
     return NextResponse.json(

@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { Plus, Edit, Trash2, Rocket, Eye, Star, Layers, Crown } from 'lucide-react'
+import { Plus, Edit, Trash2, Rocket, Eye, Star, Layers, Crown, MoreVertical, Archive, EyeOff } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card } from '@/components/ui/card'
@@ -10,19 +10,29 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog'
 import { toast } from 'sonner'
 import { safeJsonParse } from '@/lib/safe-json'
 
 // ══════════════════════════════════════════════════════════════════════════════
-// COLLECTIONS FACTORY TAB — Real CRUD (Slice 3)
+// COLLECTIONS FACTORY TAB — Real CRUD (Slice 3) + Lifecycle transitions (P3.10)
 // ══════════════════════════════════════════════════════════════════════════════
 // Reads from /api/collections (DB source of truth). Supports:
 //   - Create new Collection (name, slug, category, theme colors/fonts/layout)
 //   - Edit Collection metadata + theme
 //   - Publish/Unpublish
 //   - Delete (soft — archive)
+//   - Lifecycle transitions via POST /api/collections/[id]/transition (P3.10):
+//     Publier / Commercialiser / Dépublier / Archiver — each disabled when
+//     not valid for the Collection's current lifecycle status.
 //
 // After creation, a collection can be assigned to a wedding via the Designer tab
 // (which calls /api/collections/deploy).
@@ -93,6 +103,45 @@ const LAYOUTS = [
 ]
 
 const CATEGORIES = ['LUXURY', 'CLASSIC', 'AFRICAN', 'MINIMAL', 'DESTINATION', 'CUSTOM']
+
+// ══════════════════════════════════════════════════════════════════════════════
+// P3.10 — Lifecycle transition helpers
+// ══════════════════════════════════════════════════════════════════════════════
+// The actual state machine lives in src/lib/collections/index.ts (function
+// `transitionCollection`, 9-edge matrix). The action → target-status mapping
+// below mirrors the matrix EXACTLY so the UI can disable invalid actions
+// without round-tripping to the server. Any mismatch is caught server-side
+// (the route returns 422/403).
+//
+//   publish       : BROUILLON→EN_COURS, EN_COURS→VALIDATION, VALIDATION→PUBLIE, ARCHIVE→PUBLIE (restore)
+//   commercialise : PUBLIE→COMMERCIALISE
+//   unpublish     : EN_COURS→BROUILLON, VALIDATION→EN_COURS
+//                   (PUBLIE→BROUILLON is NOT in the matrix → UI disables "Dépublier" in PUBLIE state)
+//   archive       : PUBLIE→ARCHIVE, COMMERCIALISE→ARCHIVE
+
+type TransitionAction = 'publish' | 'commercialise' | 'unpublish' | 'archive'
+
+const ACTION_LABELS: Record<TransitionAction, string> = {
+  publish: 'Publier',
+  commercialise: 'Commercialiser',
+  unpublish: 'Dépublier',
+  archive: 'Archiver',
+}
+
+function isValidAction(status: string, action: TransitionAction): boolean {
+  switch (action) {
+    case 'publish':
+      return status === 'BROUILLON' || status === 'EN_COURS' || status === 'VALIDATION' || status === 'ARCHIVE'
+    case 'commercialise':
+      return status === 'PUBLIE'
+    case 'unpublish':
+      return status === 'EN_COURS' || status === 'VALIDATION'
+    case 'archive':
+      return status === 'PUBLIE' || status === 'COMMERCIALISE'
+    default:
+      return false
+  }
+}
 
 interface CollectionsFactoryTabProps { csrfToken: string }
 export function CollectionsFactoryTab({ csrfToken }: CollectionsFactoryTabProps) {
@@ -232,21 +281,29 @@ export function CollectionsFactoryTab({ csrfToken }: CollectionsFactoryTabProps)
     }
   }
 
-  // Mission 5.7 B7: wire the lifecycle transition API (was DISCONNECTED).
-  // Calls POST /api/collections/[id]/transition with the target status,
-  // enforcing the role matrix + completeness gate server-side.
-  const transitionCollection = async (c: DBCollection, to: 'EN_COURS' | 'VALIDATION' | 'PUBLIE' | 'COMMERCIALISE' | 'ARCHIVE') => {
+  // P3.10 — Lifecycle transition via the dedicated /transition endpoint.
+  // Posts `{ action }` (not `{ to }`) so the route maps the verb to the right
+  // target status for the Collection's current state. Server-side the
+  // transitionCollection function enforces the role matrix + completeness gate.
+  const transitionAction = async (c: DBCollection, action: TransitionAction) => {
+    // Defensive UI guard — the dropdown already disables invalid actions, but
+    // double-check before firing the request so we surface a friendly toast
+    // instead of a 422 round-trip if state has drifted.
+    if (!isValidAction(c.status, action)) {
+      toast.error(`Action "${ACTION_LABELS[action]}" non disponible pour le statut ${c.status}`)
+      return
+    }
     try {
       const res = await fetch(`/api/collections/${c.id}/transition`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },
-        body: JSON.stringify({ to }),
+        body: JSON.stringify({ action }),
       })
       if (!res.ok) {
         const d = await res.json().catch(() => ({}))
-        throw new Error(d.error || d.message || 'Failed')
+        throw new Error(d.error || d.message || 'Échec de la transition')
       }
-      toast.success(`${c.name} -> ${to}`)
+      toast.success(`Collection "${c.name}" → ${ACTION_LABELS[action]}`)
       fetchCollections()
     } catch (e) {
       toast.error('Erreur: ' + (e instanceof Error ? e.message : 'inconnue'))
@@ -347,12 +404,47 @@ export function CollectionsFactoryTab({ csrfToken }: CollectionsFactoryTabProps)
                     variant="outline"
                     size="sm"
                     className="text-gold border-gold/30 hover:bg-gold/10"
-                    onClick={() => transitionCollection(c, 'COMMERCIALISE')}
+                    onClick={() => transitionAction(c, 'commercialise')}
                     title="Commercialiser (transition via lifecycle API)"
                   >
                     <Crown className="w-3 h-3" />
                   </Button>
                 )}
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="outline" size="sm" title="Actions de transition">
+                      <MoreVertical className="w-3 h-3" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem
+                      disabled={!isValidAction(c.status, 'publish')}
+                      onSelect={() => transitionAction(c, 'publish')}
+                    >
+                      <Rocket className="w-3 h-3 mr-2" /> Publier
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      disabled={!isValidAction(c.status, 'commercialise')}
+                      onSelect={() => transitionAction(c, 'commercialise')}
+                    >
+                      <Crown className="w-3 h-3 mr-2" /> Commercialiser
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      disabled={!isValidAction(c.status, 'unpublish')}
+                      onSelect={() => transitionAction(c, 'unpublish')}
+                    >
+                      <EyeOff className="w-3 h-3 mr-2" /> Dépublier
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      variant="destructive"
+                      disabled={!isValidAction(c.status, 'archive')}
+                      onSelect={() => transitionAction(c, 'archive')}
+                    >
+                      <Archive className="w-3 h-3 mr-2" /> Archiver
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
                 <Button variant="outline" size="sm" onClick={() => deleteCollection(c)}>
                   <Trash2 className="w-3 h-3" />
                 </Button>

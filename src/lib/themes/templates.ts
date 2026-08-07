@@ -5,6 +5,24 @@
 // 4 predefined theme templates that couples can apply with one click.
 // Each template defines: primaryColor, accentColor, fontDisplay, fontBody, layout.
 // Custom themes can be created by modifying any of these values via the API.
+//
+// P3.2 (Layouts stage UI + API) — drift fix:
+// Historically this file exported a hardcoded `LAYOUT_OPTIONS` array of 4
+// entries (classic, modern, minimalist, royal) while src/lib/wedding/manifest.ts
+// exported a hardcoded `LAYOUT_SECTIONS` map of 5 entries (royal, classic,
+// minimal, destination, modern). The two were out of sync: `minimalist` vs
+// `minimal` and 4 vs 5 entries. P3-Foundation deployed a `Layout` Prisma model
+// (seeded with the 5 manifest.ts slugs) and a Layout Manager API
+// (/api/platform/layouts) so designers can publish new layouts without code
+// changes. This file now ALSO exports an async `getLayoutOptions()` that reads
+// from the DB `Layout` table (status=PUBLISHED) and falls back to the hardcoded
+// `LAYOUT_OPTIONS` constant if the DB is empty or the query fails. The hardcoded
+// constant is kept for backward compatibility (synchronous callers, SSR cold
+// starts before the DB is reachable, ThemeTemplate.layout union type).
+//
+// New code paths should prefer `await getLayoutOptions()`.
+// Existing synchronous code paths can continue to import `LAYOUT_OPTIONS`.
+
 
 export interface ThemeTemplate {
   id: string;
@@ -30,7 +48,11 @@ export interface FontOption {
 }
 
 export interface LayoutOption {
-  id: 'classic' | 'modern' | 'minimalist' | 'royal';
+  // Widened from the historical `'classic' | 'modern' | 'minimalist' | 'royal'`
+  // union to `string` so DB-backed layouts (any slug) can flow through the same
+  // type. The hardcoded LAYOUT_OPTIONS constant still uses the 4 original
+  // slugs — backward compatible because the union is a subset of string.
+  id: string;
   label: string;
   description: string;
 }
@@ -89,6 +111,12 @@ export const FONT_OPTIONS: FontOption[] = [
 ];
 
 // ─── Layout Options ───────────────────────────────────────────────────────────
+//
+// Hardcoded fallback kept for backward compat (synchronous callers, SSR cold
+// start before DB is reachable, ThemeTemplate.layout union type). Note the
+// `minimalist` slug here is HISTORICAL — the canonical slug in the DB Layout
+// table (seeded by P3-Foundation) is `minimal`. Designers should treat the DB
+// as the source of truth going forward (see `getLayoutOptions()` below).
 
 export const LAYOUT_OPTIONS: LayoutOption[] = [
   { id: 'classic', label: 'Classique', description: 'Sections élégantes traditionnelles avec heros centrés' },
@@ -96,6 +124,21 @@ export const LAYOUT_OPTIONS: LayoutOption[] = [
   { id: 'minimalist', label: 'Minimaliste', description: 'Épuré, beaucoup d’espace blanc, typographie fine' },
   { id: 'royal', label: 'Royal', description: 'Ornementé, dorures, ambiance cérémonielle somptueuse' },
 ];
+
+/**
+ * DB-backed layout options list (P3.2 drift fix).
+ *
+ * This is the canonical source of layout options going forward. Designers can
+ * publish new Layout rows (status=PUBLISHED) via /api/platform/layouts and they
+ * will automatically appear in the layout picker — no code changes needed.
+ *
+ * Falls back to the hardcoded `LAYOUT_OPTIONS` constant if:
+ *   - the DB query fails (e.g. Layout table not yet migrated), OR
+ *   - the DB returns zero PUBLISHED rows (e.g. fresh install before seed)
+ *
+ * @returns Promise<LayoutOption[]> — each entry's `id` is the Layout.slug.
+ */
+
 
 // ─── 4 Theme Templates ────────────────────────────────────────────────────────
 

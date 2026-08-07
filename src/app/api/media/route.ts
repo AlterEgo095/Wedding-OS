@@ -14,6 +14,8 @@ import { logger } from '@/lib/logger';
 import { internalError } from '@/lib/api-errors';
 // P2-SEC-14: writeAuditLog populates ipAddress + userAgent from request.
 import { writeAuditLog } from '@/lib/audit';
+// P2.4: usage metering (MEDIA_BYTES counter increment after successful upload).
+import { incrementUsage } from '@/lib/usage';
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 // SECURITY (P1-SEC-13): SVG removed from allowed list — SVG can carry
@@ -165,6 +167,12 @@ async function uploadMediaHandler(request: NextRequest): Promise<NextResponse> {
         details: `Uploaded media: ${title || file.name}`,
         request,
       });
+
+      // P2.4: meter MEDIA_BYTES — sum of uploaded file sizes per wedding per
+      // month. Best-effort; helper swallows internally, .catch is belt-and-
+      // suspenders. We use the actual buffer size (not the multipart header)
+      // for consistency with the plan-limit check above.
+      await incrementUsage(ctx.weddingId, 'MEDIA_BYTES', buffer.byteLength).catch(() => {});
 
       return NextResponse.json({ media }, { status: 201 });
     }) as unknown as NextResponse;

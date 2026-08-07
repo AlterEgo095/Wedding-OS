@@ -8,6 +8,101 @@ datasource db {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
+// ORGANIZATION — Mission 6.0 Phase P1 (B2B2C enabler)
+//
+// An Organization represents a wedding agency / event planner that manages
+// MULTIPLE weddings. This is the critical missing layer for B2B2C: today
+// AdminUser.weddingId is 1:1 (one user → one wedding), which blocks agency
+// teams (5 staff × 50 weddings).
+//
+// With Organization:
+//   - AdminUser.organizationId → Organization (nullable, backward compat)
+//   - OrganizationMember join table (user ↔ org with role)
+//   - Wedding.organizationId → Organization (nullable, backward compat)
+//
+// Access path: user → OrganizationMember → Organization → Wedding[]
+// Backward compat: existing users with weddingId set still work (per-wedding
+// access via assertWeddingAccess). New org members get org-scoped access to
+// ALL weddings under their org.
+// ══════════════════════════════════════════════════════════════════════════════
+
+model Organization {
+  id              String   @id @default(cuid())
+  slug            String   @unique // for /org/[slug]/admin routing
+  name            String
+  email           String   @unique // primary contact
+  phone           String?
+
+  // ── Branding / White Label (P1.10) ───────────────────────────────────────
+  logoUrl         String?
+  brandColor      String?  // primary brand color override (hex)
+  customDomain    String?  @unique // white-label domain (e.g. mariage-agency.fr)
+
+  // ── Mission 6.0 P3.1 — Brand Kit (org-level brand identity) ──────────────
+  // Optional FK to a Brand record (logo + colors + typography + voice/tone).
+  // When set, the deployment pipeline's resolveBrand stage reads this brand
+  // and embeds it in PublishedConfig.brand so the frontend renders the
+  // agency's brand badge + applies voice rules to AI-generated copy.
+  brandId         String?
+
+  // ── Stripe (P2.5) — org-level billing for credit packs ───────────────────
+  stripeCustomerId String? @unique // Stripe customer ID for org-level billing (P2.5)
+
+  // ── Status ───────────────────────────────────────────────────────────────
+  status          String   @default("ACTIVE") // ACTIVE | SUSPENDED | ARCHIVED
+  plan            String   @default("TRIAL")  // TRIAL | ESSENTIEL | PREMIUM | ELITE (org-level)
+
+  // ── Limits (org-level, overrides per-wedding for agency model) ───────────
+  maxWeddings     Int      @default(1)  // how many weddings this org can manage
+  maxMembers      Int      @default(5)  // how many members can join
+  maxInvitationsPerMonth Int @default(50)  // P2.8 — org-level monthly invitation quota
+
+  // ── Metadata ─────────────────────────────────────────────────────────────
+  description     String?
+  websiteUrl      String?
+  address         String?
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  // ── Relations ────────────────────────────────────────────────────────────
+  members         OrganizationMember[]
+  weddings        Wedding[]
+  // P1.2 — AdminUsers who have this org as their "primary org" (denormalized FK
+  // on AdminUser.organizationId for quick lookups). The authoritative multi-org
+  // membership is in OrganizationMember (join table).
+  primaryMembers  AdminUser[]
+  // Mission 6.0 P2.1 — Credits system (org-level for white-label)
+  credits             Credit[]
+  creditTransactions  CreditTransaction[]
+  creditBalances      CreditBalance[]
+  // Mission 6.0 P3.1 — Brand Kit relation (optional)
+  brand               Brand?  @relation(fields: [brandId], references: [id], onDelete: SetNull)
+
+  @@index([status])
+}
+
+model OrganizationMember {
+  id              String   @id @default(cuid())
+  organizationId  String
+  userId          String   // → AdminUser.id
+  // Roles: ORG_ADMIN (full org CRUD + invite), ORG_MEMBER (read/write weddings),
+  //        ORG_VIEWER (read-only)
+  role            String   @default("ORG_MEMBER")
+  invitedBy       String?  // → AdminUser.id (who invited this member)
+  invitedAt       DateTime @default(now())
+  joinedAt        DateTime? // null until the invite is accepted
+  status          String   @default("PENDING") // PENDING | ACTIVE | REVOKED
+
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user            AdminUser    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, userId]) // one membership per org per user
+  @@index([userId])
+  @@index([organizationId, status])
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
 // TENANT — A Wedding is the top-level tenant entity.
 // Each wedding owns its guests, tables, settings, media, timeline, etc.
 // ══════════════════════════════════════════════════════════════════════════════
@@ -33,6 +128,14 @@ model Wedding {
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
   publishedAt     DateTime?
+
+  // ─── Mission 6.0 P1.2 — Organization FK (B2B2C) ────────────────────────────
+  // Nullable for backward compat: existing weddings have no org. New weddings
+  // created by org members get organizationId set. When set, all org members
+  // (ORG_ADMIN/ORG_MEMBER/ORG_VIEWER) inherit access to this wedding via the
+  // org membership chain (assertWeddingAccess checks org → wedding).
+  organizationId    String?
+  organization      Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
 
   // ─── Mission 5.0 — Commercial OS ────────────────────────────────────────────
   customerId        String?          // link to Customer (nullable, additive)
@@ -99,6 +202,17 @@ model Wedding {
   guestGroups    GuestGroup[]
   gifts          Gift[]
   programItems   ProgramItem[]
+  // Mission 6.0 P2.1 — Credits system
+  credits             Credit[]
+  creditTransactions  CreditTransaction[]
+  creditBalances      CreditBalance[]
+  // Mission 6.0 P3.1+P3.2 — Brand Kit + Layout (optional wedding-level overrides)
+  brand               Brand?   @relation(fields: [brandId], references: [id], onDelete: SetNull)
+  layout              Layout?  @relation(fields: [layoutId], references: [id], onDelete: SetNull)
+  // Mission 6.0 P3.4 — Experience (post-deploy analytics, A/B variants, reports)
+  experienceEvents    ExperienceEvent[]
+  experienceVariants  ExperienceVariant[]
+  experienceReports   ExperienceReport[]
 
   // ─── CONS-6-PIPELINE — published frontend snapshot ────────────────────────
   // Snapshot of the last successful deployment pipeline run. Consumed by
@@ -106,6 +220,19 @@ model Wedding {
   // publishedVersion mirrors Deployment.version for fast equality checks.
   publishedConfigJson String?
   publishedVersion   String?
+
+  // ─── Mission 6.0 P3.1 — Brand Kit (optional wedding-level override) ───────
+  // When set, overrides the org-level brand for this specific wedding
+  // (e.g. a couple's monogram + ceremony aesthetic). Null = inherit from org.
+  brandId            String?
+
+  // ─── Mission 6.0 P3.2 — Layout (first-class) ──────────────────────────────
+  // When set, the resolveLayouts stage reads this layout's sectionsJson
+  // instead of falling back to the hardcoded LAYOUT_SECTIONS map.
+  layoutId           String?
+
+  @@index([organizationId])
+  @@index([status, organizationId])
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -122,12 +249,25 @@ model AdminUser {
   // Roles: SUPER_ADMIN, PLATFORM_ADMIN, ORGANIZER, RECEPTION, CONTROLLER,
   //        DESIGNER (Phase 4 — Designer Portal access),
   //        ART_DIRECTOR (Phase 4 — validates submissions)
+  // Mission 6.0 P1.3 — ORG_ADMIN, ORG_MEMBER, ORG_VIEWER (org-scoped, weddingId=null)
   role         String     @default("CONTROLLER")
-  weddingId    String?    // null for SUPER_ADMIN (platform-wide); set for ORGANIZER/STAFF
+  weddingId    String?    // null for SUPER_ADMIN/ORG_* (platform/org-wide); set for ORGANIZER/STAFF
   lastLoginAt  DateTime?
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
   wedding      Wedding?   @relation(fields: [weddingId], references: [id], onDelete: Cascade)
+
+  // ─── Mission 6.0 P1.2 — Organization membership (B2B2C) ─────────────────────
+  // Nullable for backward compat: existing users have no org. New org members
+  // get this set. When set + role is ORG_*, the user accesses ALL weddings
+  // under their org via the OrganizationMember join table.
+  // NOTE: the authoritative membership is in OrganizationMember (join table),
+  // which allows a user to belong to MULTIPLE orgs. This denormalized FK is
+  // the "primary org" for quick lookups (dashboard routing, default context).
+  organizationId    String?
+  organization      Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  orgMemberships    OrganizationMember[]
+
   auditLogs    AuditLog[]
   // Phase 4 — Collections authored by this designer (inverse of Collection.authorId).
   authoredCollections Collection[] @relation("CollectionAuthor")
@@ -150,6 +290,7 @@ model AdminUser {
   twoFactorBackupCodes  String?
 
   @@index([weddingId])
+  @@index([organizationId])
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -295,6 +436,10 @@ model Guest {
   @@index([weddingId, status])
   @@index([weddingId, category])
   @@index([weddingId, tableId])
+  // Mission 6.0 P0.3 — performance indexes for QR lookup + RSVP stats
+  @@index([weddingId, invitationCode])
+  @@index([weddingId, rsvpAt])
+  @@index([weddingId, checkedIn])
 }
 
 model Table {
@@ -808,6 +953,8 @@ model CommercialOrder {
   items       OrderItem[]
   payments    Payment[]
   entitlements Entitlement[]
+  // Mission 6.0 P2.1 — Credits purchased via this order
+  creditTransactions CreditTransaction[]
 
   @@index([customerId])
   @@index([status])
@@ -862,6 +1009,9 @@ model Entitlement {
   value         String   @default("true") // flexible: "true", "500", "-1" for unlimited
   sourceOrderId String?
   sourceOrder   CommercialOrder? @relation(fields: [sourceOrderId], references: [id], onDelete: SetNull)
+  // Mission 6.0 P3.3 — Product reference (entitlement granted by a Product purchase)
+  productId     String?
+  product       Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
@@ -1048,8 +1198,15 @@ model Template {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
+  // Mission 6.0 P3.2 — Layout reference (optional). When set, the deployment
+  // pipeline's resolveLayouts stage reads this layout's sectionsJson instead
+  // of the hardcoded LAYOUT_SECTIONS map.
+  layoutId     String?
+
   // Optional deployments using this template.
   deployments  Deployment[]
+  // Mission 6.0 P3.2 — Layout relation (optional)
+  layout       Layout?  @relation(fields: [layoutId], references: [id], onDelete: SetNull)
 
   @@index([status])
 }
@@ -1109,15 +1266,23 @@ model Deployment {
   wedding     Wedding?  @relation(fields: [weddingId], references: [id], onDelete: SetNull)
   templateId  String?
   template    Template? @relation(fields: [templateId], references: [id], onDelete: SetNull)
-  version     String
-  status      String    @default("PENDING") // PENDING | BUILDING | DEPLOYED | FAILED
-  url         String?
-  logsJson    String    @default("[]") // JSON array of log lines
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  // Mission 6.0 P0.6 — persist the full published config snapshot per deployment
+  // so rollback is possible (previously only Wedding.publishedConfigJson held it,
+  // and each new deploy overwrote the previous config with no history).
+  themeId       String?
+  collectionId  String?
+  configJson    String?   // full PublishedConfig JSON snapshot
+  version       String
+  status        String    @default("PENDING") // PENDING | BUILDING | DEPLOYED | FAILED | LEGACY
+  url           String?
+  logsJson      String    @default("[]") // JSON array of log lines
+  triggeredBy   String?   // acting admin user ID (for audit trail)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
   @@index([weddingId])
   @@index([status])
+  @@index([weddingId, createdAt])
 }
 
 
@@ -1200,4 +1365,247 @@ model ProgramItem {
   updatedAt   DateTime  @updatedAt
 
   @@index([weddingId, sortOrder])
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// MISSION 6.0 — PHASE P2.1: CREDITS SYSTEM (5 types: Invitations/SMS/WhatsApp/QR/Export)
+// ══════════════════════════════════════════════════════════════════════════════
+// Pre-purchased consumable units. Each wedding (and optionally each organization
+// for white-label billing) holds a per-type balance that is decremented atomically
+// on each metered action (send invitation, send SMS, export guest list, etc.).
+// The companion CreditTransaction table is an immutable ledger of every credit
+// movement (purchase / consumption / refund / adjustment) for audit + reconciliation.
+
+/// Per-wedding credit balance for one of 5 billable types.
+/// Composite unique on (weddingId, type) enforces one row per type per wedding.
+/// `reserved` is decremented from `balance` but kept for "in-flight" operations
+/// (e.g. queued SMS) — net available = balance - reserved.
+model Credit {
+  id          String   @id @default(cuid())
+  weddingId   String
+  wedding     Wedding  @relation(fields: [weddingId], references: [id], onDelete: Cascade)
+
+  // Optional: org-level credit (white-label resellers pre-purchase at org level
+  // and the platform draws down per-wedding). When organizationId is null the
+  // credit is wedding-scoped (the normal B2C case).
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+
+  type        String   // INVITATION | SMS | WHATSAPP | QR | EXPORT
+  balance     Int      @default(0)  // current available units
+  reserved    Int      @default(0)  // in-flight (queued but not yet consumed/refunded)
+  updatedAt   DateTime @updatedAt
+
+  transactions CreditTransaction[]
+
+  @@unique([weddingId, type])
+  @@unique([organizationId, type])  // one org-credit per type per org (nullable → null allowed multiple)
+  @@index([organizationId])
+}
+
+/// Immutable ledger of every credit movement. Append-only by design — refunds
+/// are positive delta rows, never UPDATEs to historical rows.
+model CreditTransaction {
+  id              String   @id @default(cuid())
+  weddingId       String
+  wedding         Wedding  @relation(fields: [weddingId], references: [id], onDelete: Cascade)
+  organizationId  String?
+  organization    Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+
+  creditType      String   // INVITATION | SMS | WHATSAPP | QR | EXPORT (denormalized for fast filtering)
+  creditId        String?
+  credit          Credit?  @relation(fields: [creditId], references: [id], onDelete: SetNull)
+
+  delta           Int      // positive = credit added; negative = consumed
+  reason          String   // PURCHASE | CONSUMPTION | REFUND | ADJUSTMENT
+  sourceOrderId   String?
+  sourceOrder     CommercialOrder? @relation(fields: [sourceOrderId], references: [id], onDelete: SetNull)
+  sourceDeliveryJobId String?
+  note            String?
+  createdBy       String?  // AdminUser.id who triggered the movement (null for system/webhook)
+  createdAt       DateTime @default(now())
+
+  @@index([weddingId, createdAt])
+  @@index([organizationId, createdAt])
+  @@index([creditType, reason])
+}
+
+/// Aggregated CreditBalance snapshot — fast read for dashboards without
+/// scanning the full CreditTransaction ledger. Materialized by consumeCredit()
+/// and addCredits() on every write. One row per (weddingId, type).
+/// NOTE: This is technically redundant with Credit.balance, but kept as a
+/// separate model so that historical "lifetime purchased" / "lifetime consumed"
+/// totals can be tracked without re-scanning CreditTransaction.
+model CreditBalance {
+  id                  String   @id @default(cuid())
+  weddingId           String
+  wedding             Wedding  @relation(fields: [weddingId], references: [id], onDelete: Cascade)
+  organizationId      String?
+  organization        Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+
+  type                String   // INVITATION | SMS | WHATSAPP | QR | EXPORT
+  lifetimePurchased   Int      @default(0)
+  lifetimeConsumed    Int      @default(0)
+  lifetimeRefunded    Int      @default(0)
+  currentBalance      Int      @default(0)
+  updatedAt           DateTime @updatedAt
+
+  @@unique([weddingId, type])
+  @@index([organizationId, type])
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Mission 6.0 P3 — PIPELINE & PRODUCTION STUDIO
+// 4 new pipeline stages (Brand, Layouts, Products, Experience) + governance.
+// All models are platform-wide (no tenant scoping) — managed by SUPER_ADMIN
+// via the Production Studio panels. The deployment pipeline reads them via
+// unsafePlatformDb during resolveBrand/resolveLayouts/resolveProducts stages.
+// ══════════════════════════════════════════════════════════════════════════════
+
+// ─── P3.1 — Brand Kit ─────────────────────────────────────────────────────────
+// Brand identity at the org level (agency's own brand) AND optionally at the
+// couple level (their monogram, wedding colors, ceremony aesthetic). The
+// resolveBrand pipeline stage embeds Brand into PublishedConfig.brand so the
+// frontend renders the agency's brand badge + applies voice rules to AI copy.
+model Brand {
+  id              String   @id @default(cuid())
+  name            String   // "AENEWS Luxury"
+  slug            String   @unique
+  description     String   @default("")
+  logoAssetId     String?  // → PlatformAsset (best-effort link; not enforced FK to avoid coupling)
+  logoUrl         String?  // direct URL (used when logoAssetId is null — e.g. external CDN)
+  // JSON blobs for flexible brand guidelines (voice, iconography, do/don't)
+  voiceToneJson   String   @default("{}")  // { tone, vocabulary[], do[], dont[] }
+  iconographyJson String   @default("{}")  // { style, motifs[] }
+  colorsJson      String   @default("{}")  // { primary, secondary, accent, background, text }
+  typographyJson  String   @default("{}")  // { displayFont, bodyFont, weights }
+  status          String   @default("DRAFT") // DRAFT | PUBLISHED | ARCHIVED
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  // Reverse relations
+  organizations   Organization[]
+  weddings        Wedding[]
+
+  @@index([status])
+}
+
+// ─── P3.2 — Layout (first-class) ──────────────────────────────────────────────
+// Replaces the hardcoded LAYOUT_SECTIONS map in src/lib/wedding/manifest.ts
+// and the hardcoded LAYOUT_OPTIONS array in src/lib/themes/templates.ts.
+// Designers can publish new layouts without code changes. The resolveLayouts
+// pipeline stage reads sectionsJson and merges it into the wedding manifest.
+model Layout {
+  id           String   @id @default(cuid())
+  name         String   // "Royal Gold"
+  slug         String   @unique
+  description  String   @default("")
+  // JSON: ManifestSection[] (ordered) — same shape as LAYOUT_SECTIONS values
+  sectionsJson String   @default("[]")
+  // JSON: default props per section (e.g. { hero: { variant: "split" } })
+  propsJson    String   @default("{}")
+  thumbnailUrl String?
+  version      Int      @default(1)
+  status       String   @default("DRAFT") // DRAFT | PUBLISHED | ARCHIVED
+  isBuiltIn    Boolean  @default(false) // true for the 5 original layouts migrated from manifest.ts
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Reverse relations
+  templates    Template[]
+  weddings     Wedding[]
+
+  @@index([status])
+}
+
+// ─── P3.3 — Product (sellable pipeline artifact) ─────────────────────────────
+// A Product bundles 1+ Collections + add-ons (print materials, SMS credits,
+// custom domain) + pricing + licensing. Sits ABOVE Collection in the pipeline
+// vision — Collection remains the design bundle, Product wraps it with commerce.
+// The resolveProducts pipeline stage verifies the wedding's Entitlement grants
+// access to all Collections referenced in the bundle.
+model Product {
+  id           String   @id @default(cuid())
+  name         String   // "Royal Gold Complete"
+  slug         String   @unique
+  description  String   @default("")
+  // JSON: { collectionIds: [], addOns: [], features: [] }
+  // - collectionIds: array of Collection.id that this product bundles
+  // - addOns: array of { type: "SMS_CREDITS"|"EXPORT_CREDITS"|..., quantity: N }
+  // - features: array of { key: "CUSTOM_DOMAIN"|"PREMIUM_QR"|..., value: "true"|"500" }
+  bundleJson   String   @default("{}")
+  priceCents   Int      @default(0) // in cents (e.g. 4999 = $49.99)
+  currency     String   @default("USD")
+  licence      String   @default("STANDARD") // STANDARD | EXCLUSIVE | CUSTOM
+  status       String   @default("DRAFT") // DRAFT | PUBLISHED | ARCHIVED
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // 1 Product → N Entitlements (post-purchase access records)
+  entitlements Entitlement[]
+
+  @@index([status])
+}
+
+// ─── P3.4 — Experience (post-deploy analytics, A/B, journey) ─────────────────
+// The pipeline ends at publishFrontend today — no post-deployment analytics,
+// no A/B variant assignment, no personalization. The Experience layer observes
+// how guests interact with the deployed frontend and feeds back into A/B testing.
+// The resolveExperience pipeline stage (post-publishFrontend) initializes the
+// default A/B variants for the wedding's active sections.
+
+// Raw event stream — written by the public /api/weddings/[id]/experience/track
+// endpoint (called from the guest-facing frontend via beacon). High volume.
+model ExperienceEvent {
+  id           String   @id @default(cuid())
+  weddingId    String
+  wedding      Wedding  @relation(fields: [weddingId], references: [id], onDelete: Cascade)
+  guestId      String?  // nullable for anonymous visitors
+  eventType    String   // SCROLL | CLICK | RSVP_VIEW | PHOTO_TAP | SECTION_VIEW | TIME_SPENT | ...
+  sectionId    String?  // which manifest section (e.g. "hero", "gallery")
+  variantId    String?  // A/B variant code (A | B | C)
+  payloadJson  String   @default("{}")
+  createdAt    DateTime @default(now())
+
+  @@index([weddingId, createdAt])
+  @@index([weddingId, eventType])
+}
+
+// A/B variant configuration — which variant a guest sees for a given section.
+// One row per (weddingId, sectionId, variantCode). The guest frontend picks
+// the variant deterministically (hash of guestId + sectionId) weighted by trafficPct.
+model ExperienceVariant {
+  id           String   @id @default(cuid())
+  weddingId    String
+  wedding      Wedding  @relation(fields: [weddingId], references: [id], onDelete: Cascade)
+  sectionId    String   // "hero" | "gallery" | "rsvp" | ...
+  variantCode  String   // "A" | "B" | "C"
+  trafficPct   Int      @default(50) // 0-100
+  description  String   @default("")
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([weddingId, sectionId, variantCode])
+  @@index([weddingId, sectionId])
+}
+
+// Aggregated report per wedding per period (daily/weekly/monthly). Materialized
+// by a scheduled job (TODO P3.4 cron) from ExperienceEvent. Fast read for the
+// ExperienceManager dashboard without scanning the raw event stream.
+model ExperienceReport {
+  id           String   @id @default(cuid())
+  weddingId    String
+  wedding      Wedding  @relation(fields: [weddingId], references: [id], onDelete: Cascade)
+  periodStart  DateTime
+  periodEnd    DateTime
+  granularity  String   @default("DAILY") // DAILY | WEEKLY | MONTHLY
+  // JSON: { sectionEngagement: { sectionId: { views, avgTimeSec, bounceRate } },
+  //         variantPerformance: { sectionId: { variantCode: { conversionRate, ... } } },
+  //         topEvents: [{ eventType, count }] }
+  metricsJson  String   @default("{}")
+  createdAt    DateTime @default(now())
+
+  @@unique([weddingId, periodStart, granularity])
+  @@index([weddingId, periodStart])
 }

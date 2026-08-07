@@ -20,7 +20,7 @@
 
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { NextRequest } from 'next/server';
-import { DEFAULT_WEDDING_SLUG, isPlatformAdmin } from './types';
+import { DEFAULT_WEDDING_SLUG, isPlatformAdmin, isOrgRole } from './types';
 
 // ─── Lazy db getter (breaks circular import) ─────────────────────────────────
 // Cycle was: db.ts → tenant-scoped.ts → tenant-context.ts → db.ts
@@ -39,6 +39,17 @@ function getDb(): Promise<typeof import('./db').db> {
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
+/**
+ * Mission 6.0 P1.5 — Tenant scope mode.
+ *   - 'wedding'   : the request is scoped to a single wedding (default, legacy)
+ *   - 'org'       : the request is scoped to an organization (B2B2C agency model)
+ *                  — queries against tenant-scoped models are filtered by
+ *                    `weddingId IN (orgWeddingIds)` via the dual-scope extension
+ *   - 'platform'  : the request is platform-wide (super admin) — NO auto-scoping,
+ *                    caller must use `unsafePlatformDb` for cross-tenant queries
+ */
+export type TenantScope = 'wedding' | 'org' | 'platform';
+
 export interface TenantContext {
   /** Wedding ID (cuid) — never null when context is active. */
   weddingId: string;
@@ -50,6 +61,17 @@ export interface TenantContext {
   plan: string;
   /** Whether this is the default wedding (legacy client at "/"). */
   isDefault: boolean;
+  /**
+   * Mission 6.0 P1.5 — Organization ID for org-scoped requests.
+   * Set when scope === 'org' (the user is an ORG_ADMIN/ORG_MEMBER/ORG_VIEWER
+   * operating on a wedding under their org). Carries the wedding's
+   * organizationId so assertWeddingAccess can do a sync check.
+   */
+  organizationId?: string | null;
+  /**
+   * Mission 6.0 P1.5 — Scope mode (default 'wedding' for backward compat).
+   */
+  scope?: TenantScope;
 }
 
 // ─── AsyncLocalStorage — per-request isolation ────────────────────────────────
@@ -117,10 +139,19 @@ interface CachedWedding {
   weddingDate: Date | null;
   venueName: string | null;
   venueCity: string | null;
+  /**
+   * Mission 6.0 P1.5 — organizationId of the wedding (nullable for legacy
+   * weddings not yet attached to an org).
+   */
+  organizationId: string | null;
   fetchedAt: number;
 }
 
-const WEDDING_CACHE_TTL_MS = 60 * 1000; // 60 seconds
+// Mission 6.0 P0.9 — increased from 60s to 300s (5 min) for better hit rate.
+// The cache is invalidated on every write (invalidateWeddingCache), so staleness
+// is bounded. For 1M guests hitting the same wedding page, this reduces DB
+// queries from ~16k/sec to ~3k/sec (5x reduction).
+const WEDDING_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 const weddingCache = new Map<string, CachedWedding>();
 
 /**
@@ -143,6 +174,9 @@ export async function resolveWeddingBySlug(slug: string): Promise<CachedWedding 
       id: true, slug: true, status: true, plan: true, isDefault: true,
       brideName: true, groomName: true, coupleLabel: true,
       weddingDate: true, venueName: true, venueCity: true,
+      // Mission 6.0 P1.5 — carry organizationId so assertWeddingAccess can do
+      // a sync check for org-scoped users without an extra DB lookup.
+      organizationId: true,
     },
   });
 
@@ -172,12 +206,41 @@ export async function resolveDefaultWedding(): Promise<CachedWedding> {
  * Invalidate the wedding cache for a specific slug (or all weddings).
  * Call this after admin updates wedding identity / status / plan so the
  * next request re-fetches fresh data.
+ *
+ * Mission 6.0 P0.9 — this now busts BOTH cache layers:
+ *   1. The in-memory `weddingCache` Map (L1, per-process) — cleared synchronously.
+ *   2. The Next.js `unstable_cache` ISR layer (L2, per-wedding tag) — cleared
+ *      via `revalidateTag('wedding-{slug}', 'default')` through a dynamic
+ *      import of `next/cache`. Dynamic import avoids pulling the server-only
+ *      `next/cache` module into non-server contexts (e.g. scripts, tests).
+ *
+ * The L2 invalidation is best-effort: if `next/cache` is not available
+ * (e.g. called outside a Next.js server context), the dynamic import silently
+ * fails and only L1 is cleared. The L2 cache has a 5-min fallback revalidate,
+ * so staleness is bounded even if the invalidation call is missed.
  */
 export function invalidateWeddingCache(slug?: string): void {
-  if (slug) {
-    weddingCache.delete(slug.toLowerCase().trim());
+  // Layer 1: clear the in-memory L1 cache (synchronous, always works).
+  const normalizedSlug = slug?.toLowerCase().trim();
+  if (normalizedSlug) {
+    weddingCache.delete(normalizedSlug);
   } else {
     weddingCache.clear();
+  }
+
+  // Layer 2: bust the Next.js unstable_cache ISR layer via revalidateTag.
+  // Best-effort: if next/cache is unavailable, the 5-min fallback revalidate
+  // will eventually refresh the cache.
+  if (normalizedSlug) {
+    import('next/cache')
+      .then(({ revalidateTag }) => {
+        // Next.js 16: revalidateTag(tag, profile) — 'default' marks the tag's
+        // cache entries as stale immediately.
+        revalidateTag(`wedding-${normalizedSlug}`, 'default');
+      })
+      .catch(() => {
+        // Non-fatal: L1 cleared, L2 will expire on its own (5 min).
+      });
   }
 }
 
@@ -204,14 +267,23 @@ export function extractSlugFromRequest(request: NextRequest): string | undefined
 /**
  * Build a TenantContext object from a resolved CachedWedding.
  * Used by route handlers before calling runWithTenant().
+ *
+ * Mission 6.0 P1.5 — the context now carries `organizationId` and `scope`
+ * so downstream code (assertWeddingAccess, dual-scope Prisma extension)
+ * can do org-aware checks without an extra DB lookup.
  */
-export function buildTenantContext(wedding: CachedWedding): TenantContext {
+export function buildTenantContext(
+  wedding: CachedWedding,
+  scope: TenantScope = 'wedding'
+): TenantContext {
   return {
     weddingId: wedding.id,
     slug: wedding.slug,
     status: wedding.status,
     plan: wedding.plan,
     isDefault: wedding.isDefault,
+    organizationId: wedding.organizationId,
+    scope,
   };
 }
 
@@ -278,80 +350,170 @@ export async function resolvePublicTenant(
 /**
  * Resolve the tenant context for an admin/authenticated request.
  *
- * Priority:
- *   1. If user is a platform admin (PLATFORM_ADMIN or legacy SUPER_ADMIN):
- *      use the X-Wedding-Slug header (or default) so platform admins can
- *      operate on any wedding. weddingId is expected to be null.
- *   2. Otherwise (ORGANIZER/RECEPTION/CONTROLLER): lock to their own wedding
- *      via user.weddingId — the X-Wedding-Slug header is IGNORED to prevent
- *      cross-tenant access by non-platform admins.
- *   3. Fallback: default wedding (legacy compat for platform admin without header).
+ * Mission 6.0 P1.4 + P1.5 — now supports 3 access paths:
+ *
+ *   1. PLATFORM_ADMIN / SUPER_ADMIN: use the X-Wedding-Slug header (or default)
+ *      so platform admins can operate on any wedding. scope = 'platform'.
+ *   2. ORG_ADMIN / ORG_MEMBER / ORG_VIEWER (org-scoped): use the X-Wedding-Slug
+ *      header if provided AND verify the wedding belongs to the user's org.
+ *      If no slug is provided, pick the first wedding in the org. scope = 'org'.
+ *   3. ORGANIZER / RECEPTION / CONTROLLER (per-wedding): lock to their own
+ *      weddingId. The X-Wedding-Slug header is IGNORED. scope = 'wedding'.
+ *
+ * SECURITY (P0-SEC-4): non-platform-admin users with NO weddingId AND NO
+ * organizationId are rejected with 403 (prevents privilege escalation via
+ * misconfigured accounts falling through to the platform-admin path).
  *
  * @returns { context, wedding, error }
  */
 export async function resolveAdminTenant(
   request: NextRequest,
-  user: { role: string; weddingId?: string | null }
+  user: { role: string; weddingId?: string | null; organizationId?: string | null }
 ): Promise<{
   context: TenantContext | null;
   wedding: CachedWedding | null;
   error: { status: number; message: string } | null;
 }> {
-  // Non-platform admin: lock to their own wedding (ignore X-Wedding-Slug header
-  // to prevent cross-tenant access). Uses isPlatformAdmin() so BOTH PLATFORM_ADMIN
-  // and legacy SUPER_ADMIN are treated as platform-wide.
-  //
-  // SECURITY (P0-SEC-4): If a non-platform-admin user has NO weddingId (null /
-  // undefined), they MUST be rejected — otherwise they fall through to the
-  // platform-admin path below and can act as platform admin on the default
-  // wedding (or any wedding via X-Wedding-Slug header). This was a privilege
-  // escalation allowing a misconfigured ORGANIZER/RECEPTION/CONTROLLER account
-  // to bypass tenant locking.
-  if (!isPlatformAdmin(user.role)) {
-    if (!user.weddingId) {
+  // ─── Path 1: Platform admin ────────────────────────────────────────────
+  if (isPlatformAdmin(user.role)) {
+    const slug = extractSlugFromRequest(request) ?? DEFAULT_WEDDING_SLUG;
+    const wedding = await resolveWeddingBySlug(slug);
+    if (!wedding) {
+      return {
+        context: null,
+        wedding: null,
+        error: { status: 404, message: `Wedding "${slug}" not found` },
+      };
+    }
+    return {
+      context: buildTenantContext(wedding, 'platform'),
+      wedding,
+      error: null,
+    };
+  }
+
+  // ─── Path 2: Org-scoped user (ORG_ADMIN / ORG_MEMBER / ORG_VIEWER) ─────
+  // Mission 6.0 P1.4 — org-scoped users access weddings through their org.
+  // The X-Wedding-Slug header is RESPECTED (unlike per-wedding roles) because
+  // org members can legitimately work on any wedding under their org — but we
+  // verify the wedding's organizationId matches the user's before granting.
+  if (isOrgRole(user.role)) {
+    if (!user.organizationId) {
       return {
         context: null,
         wedding: null,
         error: {
           status: 403,
           message:
-            'Votre compte n\u2019est rattach\u00e9 \u00e0 aucun mariage. Contactez un administrateur de la plateforme.',
+            'Votre compte n\u2019est rattach\u00e9 \u00e0 aucune organisation. Contactez un administrateur de la plateforme.',
         },
       };
     }
-    // Need slug for context — fetch wedding by ID
+
     const db = await getDb();
-    const wedding = await db.wedding.findUnique({
-      where: { id: user.weddingId },
+    const requestedSlug = extractSlugFromRequest(request);
+
+    if (requestedSlug) {
+      // Verify the requested wedding belongs to the user's org.
+      const wedding = await db.wedding.findUnique({
+        where: { slug: requestedSlug },
+        select: {
+          id: true, slug: true, status: true, plan: true, isDefault: true,
+          brideName: true, groomName: true, coupleLabel: true,
+          weddingDate: true, venueName: true, venueCity: true,
+          organizationId: true,
+        },
+      });
+      if (!wedding) {
+        return {
+          context: null,
+          wedding: null,
+          error: { status: 404, message: `Wedding "${requestedSlug}" not found` },
+        };
+      }
+      if (wedding.organizationId !== user.organizationId) {
+        // Cross-org access attempt — return 404 to avoid leaking existence.
+        return {
+          context: null,
+          wedding: null,
+          error: { status: 404, message: `Wedding "${requestedSlug}" not found` },
+        };
+      }
+      const cached: CachedWedding = { ...wedding, fetchedAt: Date.now() };
+      return {
+        context: buildTenantContext(cached, 'org'),
+        wedding: cached,
+        error: null,
+      };
+    }
+
+    // No slug provided: pick the first wedding in the user's org.
+    const firstWedding = await db.wedding.findFirst({
+      where: { organizationId: user.organizationId },
+      orderBy: { createdAt: 'asc' },
       select: {
         id: true, slug: true, status: true, plan: true, isDefault: true,
         brideName: true, groomName: true, coupleLabel: true,
         weddingDate: true, venueName: true, venueCity: true,
+        organizationId: true,
       },
     });
-    if (!wedding) {
+    if (!firstWedding) {
       return {
         context: null,
         wedding: null,
-        error: { status: 403, message: 'Your assigned wedding no longer exists' },
+        error: {
+          status: 403,
+          message:
+            'Votre organisation n\u2019a pas encore de mariage. Cr\u00e9ez-en un depuis votre espace organisation.',
+        },
       };
     }
-    const cached: CachedWedding = { ...wedding, fetchedAt: Date.now() };
-    return { context: buildTenantContext(cached), wedding: cached, error: null };
+    const cached: CachedWedding = { ...firstWedding, fetchedAt: Date.now() };
+    return {
+      context: buildTenantContext(cached, 'org'),
+      wedding: cached,
+      error: null,
+    };
   }
 
-  // Platform admin (PLATFORM_ADMIN or SUPER_ADMIN): respect X-Wedding-Slug
-  // header or fall back to the default wedding.
-  const slug = extractSlugFromRequest(request) ?? DEFAULT_WEDDING_SLUG;
-  const wedding = await resolveWeddingBySlug(slug);
+  // ─── Path 3: Per-wedding user (ORGANIZER / RECEPTION / CONTROLLER) ─────
+  // Lock to their own weddingId — ignore X-Wedding-Slug header to prevent
+  // cross-tenant access. SECURITY (P0-SEC-4): reject if no weddingId.
+  if (!user.weddingId) {
+    return {
+      context: null,
+      wedding: null,
+      error: {
+        status: 403,
+        message:
+          'Votre compte n\u2019est rattach\u00e9 \u00e0 aucun mariage. Contactez un administrateur de la plateforme.',
+      },
+    };
+  }
+  const db = await getDb();
+  const wedding = await db.wedding.findUnique({
+    where: { id: user.weddingId },
+    select: {
+      id: true, slug: true, status: true, plan: true, isDefault: true,
+      brideName: true, groomName: true, coupleLabel: true,
+      weddingDate: true, venueName: true, venueCity: true,
+      organizationId: true,
+    },
+  });
   if (!wedding) {
     return {
       context: null,
       wedding: null,
-      error: { status: 404, message: `Wedding "${slug}" not found` },
+      error: { status: 403, message: 'Your assigned wedding no longer exists' },
     };
   }
-  return { context: buildTenantContext(wedding), wedding, error: null };
+  const cached: CachedWedding = { ...wedding, fetchedAt: Date.now() };
+  return {
+    context: buildTenantContext(cached, 'wedding'),
+    wedding: cached,
+    error: null,
+  };
 }
 
 // ─── Higher-Order route wrappers ──────────────────────────────────────────────
@@ -402,7 +564,7 @@ export function withPublicTenant<TParams = unknown>(handler: Handler): (req: Nex
  */
 export async function withAdminTenantHandler(
   request: NextRequest,
-  user: { role: string; weddingId?: string | null },
+  user: { role: string; weddingId?: string | null; organizationId?: string | null },
   handler: (req: NextRequest, ctx: TenantContext) => Promise<Response> | Response
 ): Promise<Response> {
   const { context, error } = await resolveAdminTenant(request, user);

@@ -34,6 +34,7 @@ import {
   Wallet,
   Rocket,
   TrendingUp,
+  Building2,
   // Production Studio icons (CONS-3)
   FileText,
   Palette,
@@ -41,6 +42,13 @@ import {
   Image as ImageIcon,
   Cloud,
   ShieldCheck,
+  // Mission 6.0 P3 — new Production Studio tab icons
+  Package,           // P3.3 Products
+  Layout,            // P3.2 Layouts
+  Activity,          // P3.4 Experience + P3.11 Ops
+  QrCode,            // P3.8 QR/Invitations
+  Server,            // P3.11 Ops
+  HeartPulse,        // P3.7 Platform Health
 } from 'lucide-react'
 
 import dynamic from 'next/dynamic'
@@ -60,12 +68,23 @@ import { UsersTab } from './tabs/UsersTab'
 import { AuditTab } from './tabs/AuditTab'
 
 // Production Studio tabs (CONS-3) — lazy-loaded.
+// Mission 6.0 P1.7 — Organizations tab (lazy-loaded).
+const OrganizationsTab = dynamic(() => import('./tabs/OrganizationsTab').then((m) => m.OrganizationsTab))
 const TemplatesManager = dynamic(() => import('./tabs/production/TemplatesManager').then((m) => m.TemplatesManager))
 const ThemesManager = dynamic(() => import('./tabs/production/ThemesManager').then((m) => m.ThemesManager))
 const ComponentsRegistry = dynamic(() => import('./tabs/production/ComponentsRegistry').then((m) => m.ComponentsRegistry))
 const AssetsLibrary = dynamic(() => import('./tabs/production/AssetsLibrary').then((m) => m.AssetsLibrary))
 const DeploymentsPanel = dynamic(() => import('./tabs/production/DeploymentsPanel').then((m) => m.DeploymentsPanel))
 const GovernancePanel = dynamic(() => import('./tabs/production/GovernancePanel').then((m) => m.GovernancePanel))
+
+// Mission 6.0 P3 — new Production Studio panels (lazy-loaded).
+const BrandManager = dynamic(() => import('./tabs/production/BrandManager').then((m) => m.BrandManager))
+const LayoutsManager = dynamic(() => import('./tabs/production/LayoutsManager').then((m) => m.LayoutsManager))
+const ProductManager = dynamic(() => import('./tabs/production/ProductManager').then((m) => m.ProductManager))
+const ExperienceManager = dynamic(() => import('./tabs/production/ExperienceManager').then((m) => m.ExperienceManager))
+const PlatformHealthPanel = dynamic(() => import('./tabs/production/PlatformHealthPanel').then((m) => m.PlatformHealthPanel))
+const QRInvitationsPanel = dynamic(() => import('./tabs/production/QRInvitationsPanel').then((m) => m.QRInvitationsPanel))
+const OpsPanel = dynamic(() => import('./tabs/production/OpsPanel').then((m) => m.OpsPanel))
 
 import {
   type AuthUser,
@@ -101,6 +120,8 @@ const NAV_ITEMS: NavItem[] = [
   { id: 'onboarding', label: 'Onboarding', icon: Rocket },
   // ── EVENT OPERATIONS ──
   { id: 'weddings', label: 'Mariages', icon: Heart },
+  // ── ORGANIZATIONS (P1.7 — B2B2C agency layer) ──
+  { id: 'organizations', label: 'Organisations', icon: Building2 },
   // ── PRODUCTION STUDIO (CONS-3) ──
   { id: 'collections', label: 'Collections', icon: LayoutGrid },
   { id: 'templates', label: 'Templates', icon: FileText },
@@ -109,6 +130,14 @@ const NAV_ITEMS: NavItem[] = [
   { id: 'assets', label: 'Assets', icon: ImageIcon },
   { id: 'deployments', label: 'Déploiements', icon: Cloud },
   { id: 'governance', label: 'Gouvernance', icon: ShieldCheck },
+  // Mission 6.0 P3 — new Production Studio tabs
+  { id: 'brands', label: 'Brands', icon: Palette },
+  { id: 'layouts', label: 'Layouts', icon: Layout },
+  { id: 'products', label: 'Produits', icon: Package },
+  { id: 'experience', label: 'Experience', icon: Activity },
+  { id: 'platform-health', label: 'Santé plateforme', icon: HeartPulse },
+  { id: 'qr-invitations', label: 'QR & Invitations', icon: QrCode },
+  { id: 'ops', label: 'Opérations', icon: Server },
   // ── SYSTEM ──
   { id: 'users', label: 'Utilisateurs', icon: UsersIcon },
   { id: 'audit', label: "Journal d'audit", icon: ScrollText },
@@ -120,6 +149,7 @@ const NAV_SECTIONS: Record<string, string> = {
   dashboard: 'COMMAND CENTER',
   commercial: 'COMMERCIAL',
   weddings: 'EVENT OPERATIONS',
+  organizations: 'ORGANIZATIONS',
   collections: 'PRODUCTION STUDIO',
   templates: 'PRODUCTION STUDIO',
   themes: 'PRODUCTION STUDIO',
@@ -127,6 +157,14 @@ const NAV_SECTIONS: Record<string, string> = {
   assets: 'PRODUCTION STUDIO',
   deployments: 'PRODUCTION STUDIO',
   governance: 'PRODUCTION STUDIO',
+  // Mission 6.0 P3 — new Production Studio tabs
+  brands: 'PRODUCTION STUDIO',
+  layouts: 'PRODUCTION STUDIO',
+  products: 'PRODUCTION STUDIO',
+  experience: 'PRODUCTION STUDIO',
+  'platform-health': 'PRODUCTION STUDIO',
+  'qr-invitations': 'PRODUCTION STUDIO',
+  ops: 'PRODUCTION STUDIO',
   users: 'SYSTEM',
 }
 
@@ -304,6 +342,8 @@ export default function PlatformAdminPage() {
         return <DashboardTab fetchWithAuth={fetchWithAuth} setActiveTab={setActiveTab} />
       case 'weddings':
         return <WeddingsTab fetchWithAuth={fetchWithAuth} />
+      case 'organizations':
+        return <OrganizationsTab fetchWithAuth={fetchWithAuth} />
       case 'billing':
         return <BillingTab fetchWithAuth={fetchWithAuth} />
       case 'onboarding':
@@ -333,6 +373,21 @@ export default function PlatformAdminPage() {
         return <DeploymentsPanel csrfToken={getCsrfToken()} />
       case 'governance':
         return <GovernancePanel fetchWithAuth={fetchWithAuth} />
+      // Mission 6.0 P3 — new Production Studio tabs
+      case 'brands':
+        return <BrandManager csrfToken={getCsrfToken()} />
+      case 'layouts':
+        return <LayoutsManager csrfToken={getCsrfToken()} />
+      case 'products':
+        return <ProductManager csrfToken={getCsrfToken()} />
+      case 'experience':
+        return <ExperienceManager csrfToken={getCsrfToken()} />
+      case 'platform-health':
+        return <PlatformHealthPanel fetchWithAuth={fetchWithAuth} />
+      case 'qr-invitations':
+        return <QRInvitationsPanel csrfToken={getCsrfToken()} />
+      case 'ops':
+        return <OpsPanel fetchWithAuth={fetchWithAuth} />
       default:
         return <DashboardTab fetchWithAuth={fetchWithAuth} setActiveTab={setActiveTab} />
     }

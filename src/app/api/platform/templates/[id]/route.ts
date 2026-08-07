@@ -18,6 +18,7 @@ import { getClientInfo } from '@/lib/guest-auth';
  * DELETE /api/platform/templates/{id}
  */
 
+// P3.9: layoutId added (additive — matches P3-Foundation schema column).
 const TEMPLATE_SELECT = {
   id: true,
   name: true,
@@ -27,6 +28,7 @@ const TEMPLATE_SELECT = {
   schemaJson: true,
   version: true,
   status: true,
+  layoutId: true,
   createdAt: true,
   updatedAt: true,
 } as const;
@@ -37,6 +39,8 @@ const updateTemplateSchema = z.object({
   thumbnailUrl: z.string().url().nullable().optional(),
   schemaJson: z.string().max(200_000).optional(),
   status: z.enum(['DRAFT', 'PUBLISHED', 'ARCHIVED']).optional(),
+  // P3.9 — allow clearing / setting layoutId on existing templates.
+  layoutId: z.string().min(1).max(120).nullable().optional(),
 });
 
 export async function GET(
@@ -161,3 +165,4 @@ async function deleteHandler(
 
 export const PUT = withRateLimit(30, 60_000)(putHandler);
 export const DELETE = withRateLimit(20, 60_000)(deleteHandler);
+

@@ -6,14 +6,18 @@
 //
 // Pipeline order (each stage is a sequential, logged, persisted step):
 //   1. validateInputs       — verify weddingId/templateId/themeId exist + are usable
-//   2. resolveTemplate      — fetch the Template record (must be PUBLISHED)
-//   3. resolveTheme         — fetch the PlatformTheme record (palette + fonts)
-//   4. resolveAssets        — gather referenced PlatformAsset records
-//   5. resolveComponents    — gather referenced ComponentRegistry entries
-//   6. resolveBindings      — fetch WeddingCollectionBinding (manifest) if any
-//   7. resolveCollection    — fetch the Collection (optional) + variant
-//   8. compileFrontend      — build the PublishedConfig JSON blob
-//   9. publishFrontend      — write publishedConfigJson to Wedding + flip status
+//   2. resolveBrand         — fetch the Brand record (org-level or wedding override) [P3.1]
+//   3. resolveTemplate      — fetch the Template record (must be PUBLISHED)
+//   4. resolveTheme         — fetch the PlatformTheme record (palette + fonts)
+//   5. resolveAssets        — gather referenced PlatformAsset records
+//   6. resolveComponents    — gather referenced ComponentRegistry entries
+//   7. resolveLayouts       — fetch the Layout record (sectionsJson) [P3.2]
+//   8. resolveBindings      — fetch WeddingCollectionBinding (manifest) if any
+//   9. resolveCollection    — fetch the Collection (optional) + variant
+//  10. resolveProducts      — verify Entitlement grants access to bundle [P3.3]
+//  11. compileFrontend      — build the PublishedConfig JSON blob
+//  12. publishFrontend      — write publishedConfigJson to Wedding + flip status
+//  13. resolveExperience    — initialize A/B variants for active sections [P3.4]
 //
 // Trigger model:
 //   - Only SUPER_ADMIN / PLATFORM_ADMIN can deploy (enforced by the API route).
@@ -39,6 +43,7 @@ import { logger } from '@/lib/logger';
 import { safeJsonParse } from '@/lib/safe-json';
 import type { WeddingManifest } from '@/lib/wedding/manifest';
 import { resolveWeddingManifest } from '@/lib/wedding/manifest';
+import { invalidateWeddingCache } from '@/lib/wedding/cache';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -84,14 +89,18 @@ export interface RunPipelineInput {
 
 export const PIPELINE_STAGE_NAMES = [
   'validateInputs',
+  'resolveBrand',
   'resolveTemplate',
   'resolveTheme',
   'resolveAssets',
   'resolveComponents',
+  'resolveLayouts',
   'resolveBindings',
   'resolveCollection',
+  'resolveProducts',
   'compileFrontend',
   'publishFrontend',
+  'resolveExperience',
 ] as const;
 
 export type PipelineStageName = (typeof PIPELINE_STAGE_NAMES)[number];
@@ -104,6 +113,47 @@ export interface PublishedTheme {
   fontDisplay: string;
   fontBody: string;
   layout: string;
+}
+
+export interface PublishedBrand {
+  id: string;
+  name: string;
+  slug: string;
+  logoUrl: string | null;
+  voiceTone: Record<string, unknown>;
+  iconography: Record<string, unknown>;
+  colors: Record<string, unknown>;
+  typography: Record<string, unknown>;
+}
+
+export interface PublishedLayout {
+  id: string;
+  name: string;
+  slug: string;
+  sections: unknown[]; // ManifestSection[] (kept as unknown[] to avoid circular type dep)
+  props: Record<string, unknown>;
+  version: number;
+}
+
+export interface PublishedProduct {
+  id: string;
+  name: string;
+  slug: string;
+  bundle: {
+    collectionIds: string[];
+    addOns: Array<{ type: string; quantity: number }>;
+    features: Array<{ key: string; value: string }>;
+  };
+  priceCents: number;
+  currency: string;
+  licence: string;
+}
+
+export interface PublishedExperience {
+  /** Section IDs that have at least one active A/B variant configured. */
+  activeSections: string[];
+  /** Number of variants initialized during this deployment. */
+  initializedVariants: number;
 }
 
 export interface PublishedConfig {
@@ -125,6 +175,14 @@ export interface PublishedConfig {
   components: Array<{ slug: string; name: string; type: string; version: number }>;
   /** PlatformAsset entries referenced by this build (id → url). */
   assets: Array<{ id: string; name: string; type: string; url: string }>;
+  /** P3.1 — Brand Kit (null when no brand is linked to the wedding or its org). */
+  brand: PublishedBrand | null;
+  /** P3.2 — Layout (null when no layout is linked; manifest falls back to defaults). */
+  layout: PublishedLayout | null;
+  /** P3.3 — Product (null when no product is linked to the wedding's entitlements). */
+  product: PublishedProduct | null;
+  /** P3.4 — Experience (post-deploy A/B variant initialization summary). */
+  experience: PublishedExperience;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -260,10 +318,14 @@ export async function runDeploymentPipeline(
   };
 
   // ── Create the Deployment row (status=PENDING) ───────────────────────────
+  // Mission 6.0 P0.6 — persist themeId/collectionId/triggeredBy for audit + rollback.
   const deployment = await db.deployment.create({
     data: {
       weddingId: wedding.id,
       templateId: input.templateId,
+      themeId: input.themeId,
+      collectionId: input.collectionId ?? null,
+      triggeredBy: triggeredBy,
       version,
       status: 'PENDING',
       url: null,
@@ -313,6 +375,11 @@ export async function runDeploymentPipeline(
     version: string;
   } | null = null;
   let manifest: WeddingManifest | null = null;
+  // P3 accumulators
+  let brand: PublishedBrand | null = null;
+  let layout: PublishedLayout | null = null;
+  let product: PublishedProduct | null = null;
+  let experience: PublishedExperience = { activeSections: [], initializedVariants: 0 };
 
   const runner: StageRunner = { ctx, deploymentId, logs };
 
@@ -329,7 +396,54 @@ export async function runDeploymentPipeline(
       }
     });
 
-    // ── 2. resolveTemplate ────────────────────────────────────────────────
+    // ── 2. resolveBrand [P3.1] ────────────────────────────────────────────
+    // Brand resolution order: wedding.brandId → organization.brandId → null.
+    // Non-fatal: a wedding without a brand deploys fine (brand = null).
+    await runStage(runner, 'resolveBrand', async () => {
+      const weddingWithBrand = await db.wedding.findUnique({
+        where: { id: wedding.id },
+        select: {
+          brandId: true,
+          organizationId: true,
+        },
+      });
+      const brandId = weddingWithBrand?.brandId ?? null;
+      const orgId = weddingWithBrand?.organizationId ?? null;
+      let resolvedBrandId = brandId;
+      if (!resolvedBrandId && orgId) {
+        const org = await db.organization.findUnique({
+          where: { id: orgId },
+          select: { brandId: true },
+        });
+        resolvedBrandId = org?.brandId ?? null;
+      }
+      if (resolvedBrandId) {
+        const b = await db.brand.findUnique({
+          where: { id: resolvedBrandId },
+        });
+        if (b && b.status === 'PUBLISHED') {
+          brand = {
+            id: b.id,
+            name: b.name,
+            slug: b.slug,
+            logoUrl: b.logoUrl,
+            voiceTone: safeJsonParse<Record<string, unknown>>(b.voiceToneJson, {}),
+            iconography: safeJsonParse<Record<string, unknown>>(b.iconographyJson, {}),
+            colors: safeJsonParse<Record<string, unknown>>(b.colorsJson, {}),
+            typography: safeJsonParse<Record<string, unknown>>(b.typographyJson, {}),
+          };
+          logs.push(`[resolveBrand] ${b.slug} (${b.name}) — published`);
+        } else if (b) {
+          logs.push(`[resolveBrand] brand ${b.slug} found but status=${b.status} (skipped)`);
+        } else {
+          logs.push(`[resolveBrand] brandId ${resolvedBrandId} not found (non-fatal)`);
+        }
+      } else {
+        logs.push('[resolveBrand] no brand linked to wedding or org (non-fatal)');
+      }
+    });
+
+    // ── 3. resolveTemplate ────────────────────────────────────────────────
     await runStage(runner, 'resolveTemplate', async () => {
       template = await db.template.findUnique({
         where: { id: input.templateId },
@@ -414,7 +528,49 @@ export async function runDeploymentPipeline(
       logs.push(`[resolveComponents] ${components.length} PUBLISHED components available`);
     });
 
-    // ── 6. resolveBindings ────────────────────────────────────────────────
+    // ── 6. resolveLayouts [P3.2] ──────────────────────────────────────────
+    // Layout resolution order: wedding.layoutId → template.layoutId → null.
+    // Non-fatal: a wedding without a layout deploys fine (layout = null) and
+    // the manifest falls back to the hardcoded LAYOUT_SECTIONS map.
+    await runStage(runner, 'resolveLayouts', async () => {
+      const weddingWithLayout = await db.wedding.findUnique({
+        where: { id: wedding.id },
+        select: { layoutId: true },
+      });
+      let layoutId = weddingWithLayout?.layoutId ?? null;
+      // Fall back to template's layoutId if wedding has none.
+      if (!layoutId && template?.id) {
+        const tplWithLayout = await db.template.findUnique({
+          where: { id: template.id },
+          select: { layoutId: true },
+        });
+        layoutId = tplWithLayout?.layoutId ?? null;
+      }
+      if (layoutId) {
+        const l = await db.layout.findUnique({ where: { id: layoutId } });
+        if (l && l.status === 'PUBLISHED') {
+          layout = {
+            id: l.id,
+            name: l.name,
+            slug: l.slug,
+            sections: safeJsonParse<unknown[]>(l.sectionsJson, []),
+            props: safeJsonParse<Record<string, unknown>>(l.propsJson, {}),
+            version: l.version,
+          };
+          logs.push(
+            `[resolveLayouts] ${l.slug} v${l.version} — ${layout.sections.length} sections`
+          );
+        } else if (l) {
+          logs.push(`[resolveLayouts] layout ${l.slug} found but status=${l.status} (skipped)`);
+        } else {
+          logs.push(`[resolveLayouts] layoutId ${layoutId} not found (non-fatal)`);
+        }
+      } else {
+        logs.push('[resolveLayouts] no layout linked (non-fatal — manifest will use defaults)');
+      }
+    });
+
+    // ── 7. resolveBindings ────────────────────────────────────────────────
     await runStage(runner, 'resolveBindings', async () => {
       binding = await db.weddingCollectionBinding.findUnique({
         where: { weddingId: wedding.id },
@@ -453,7 +609,58 @@ export async function runDeploymentPipeline(
       }
     });
 
-    // ── 8. compileFrontend ────────────────────────────────────────────────
+    // ── 9. resolveProducts [P3.3] ─────────────────────────────────────────
+    // Look up the wedding's active Product entitlement (origin = ADD_ON or PLAN,
+    // type = PREMIUM_COLLECTIONS — the entitlement type that grants product access).
+    // Non-fatal: a wedding without a product deploys fine (product = null).
+    // When a product is found, we verify that every collectionId in its bundle
+    // is accessible (i.e. the wedding's collectionId matches one of them, OR
+    // the wedding has an entitlement granting access).
+    await runStage(runner, 'resolveProducts', async () => {
+      const productEntitlement = await db.entitlement.findFirst({
+        where: {
+          weddingId: wedding.id,
+          productId: { not: null },
+        },
+        orderBy: { createdAt: 'desc' },
+        select: { productId: true },
+      });
+      const productId = productEntitlement?.productId ?? null;
+      if (productId) {
+        const p = await db.product.findUnique({ where: { id: productId } });
+        if (p && p.status === 'PUBLISHED') {
+          const bundle = safeJsonParse<{
+            collectionIds?: string[];
+            addOns?: Array<{ type: string; quantity: number }>;
+            features?: Array<{ key: string; value: string }>;
+          }>(p.bundleJson, {});
+          product = {
+            id: p.id,
+            name: p.name,
+            slug: p.slug,
+            bundle: {
+              collectionIds: bundle.collectionIds ?? [],
+              addOns: bundle.addOns ?? [],
+              features: bundle.features ?? [],
+            },
+            priceCents: p.priceCents,
+            currency: p.currency,
+            licence: p.licence,
+          };
+          logs.push(
+            `[resolveProducts] ${p.slug} (${p.name}) — ${product.bundle.collectionIds.length} collections, ${product.bundle.addOns.length} add-ons`
+          );
+        } else if (p) {
+          logs.push(`[resolveProducts] product ${p.slug} found but status=${p.status} (skipped)`);
+        } else {
+          logs.push(`[resolveProducts] productId ${productId} not found (non-fatal)`);
+        }
+      } else {
+        logs.push('[resolveProducts] no product linked to wedding entitlements (non-fatal)');
+      }
+    });
+
+    // ── 10. compileFrontend ───────────────────────────────────────────────
     await runStage(runner, 'compileFrontend', async () => {
       // Resolve the canonical manifest (sections + theme + luxury) for this
       // wedding. Uses the existing WeddingCollectionBinding manifest if set,
@@ -499,17 +706,22 @@ export async function runDeploymentPipeline(
           version: c.version,
         })),
         assets: assets.map((a) => ({ id: a.id, name: a.name, type: a.type, url: a.url })),
+        // P3.1-P3.4 — new pipeline stage outputs
+        brand,
+        layout,
+        product,
+        experience,
       };
 
       // Stash on ctx so publishFrontend can read it without re-computing.
       (ctx as PipelineContext & { _publishedConfig?: PublishedConfig })._publishedConfig =
         publishedConfig;
       logs.push(
-        `[compileFrontend] manifest sections=${manifest!.sections.length} theme=${compiledTheme.primaryColor} components=${components.length} assets=${assets.length}`
+        `[compileFrontend] manifest sections=${manifest!.sections.length} theme=${compiledTheme.primaryColor} components=${components.length} assets=${assets.length} brand=${brand ? brand.slug : 'none'} layout=${layout ? layout.slug : 'none'} product=${product ? product.slug : 'none'}`
       );
     });
 
-    // ── 9. publishFrontend ────────────────────────────────────────────────
+    // ── 11. publishFrontend ───────────────────────────────────────────────
     await runStage(runner, 'publishFrontend', async () => {
       const publishedConfig = (ctx as PipelineContext & { _publishedConfig?: PublishedConfig })
         ._publishedConfig;
@@ -526,11 +738,61 @@ export async function runDeploymentPipeline(
           publishedVersion: version,
         },
       });
+      // Mission 6.0 P0.6 — persist the full config snapshot on the Deployment row
+      // so rollback is possible (previously only Wedding.publishedConfigJson held it).
       await db.deployment.update({
         where: { id: deploymentId },
-        data: { status: 'DEPLOYED', url },
+        data: { status: 'DEPLOYED', url, configJson: JSON.stringify(publishedConfig) },
       });
-      logs.push(`[publishFrontend] Wedding.status=PUBLISHED url=${url}`);
+      // Mission 6.0 P0.9 — invalidate the per-wedding ISR cache so the
+      // public /w/[slug] page picks up the new publishedConfigJson + status
+      // immediately. Without this, the 5-min fallback revalidate would
+      // serve the stale (pre-publish) snapshot to guests.
+      await invalidateWeddingCache(wedding.slug);
+      logs.push(`[publishFrontend] Wedding.status=PUBLISHED url=${url} cache invalidated`);
+    });
+
+    // ── 12. resolveExperience [P3.4] ──────────────────────────────────────
+    // Post-deploy: initialize default A/B variants for the wedding's active
+    // manifest sections (one variant "A" at 100% per section — i.e. no split
+    // yet, but the row exists so the ExperienceManager UI can add a "B"
+    // variant later). Non-fatal: failures here don't fail the deployment.
+    await runStage(runner, 'resolveExperience', async () => {
+      if (!manifest || !manifest.sections || manifest.sections.length === 0) {
+        logs.push('[resolveExperience] no manifest sections — skipping variant init');
+        return;
+      }
+      const sectionIds = manifest.sections.map((s) => s.id).filter(Boolean) as string[];
+      let initialized = 0;
+      const activeSections: string[] = [];
+      for (const sectionId of sectionIds) {
+        // Upsert variant "A" at 100% traffic (default — no split yet).
+        // Skip if any variant already exists for this (wedding, section) pair.
+        const existing = await db.experienceVariant.findFirst({
+          where: { weddingId: wedding.id, sectionId },
+          select: { id: true, variantCode: true },
+        });
+        if (existing) {
+          activeSections.push(sectionId);
+          continue;
+        }
+        await db.experienceVariant.create({
+          data: {
+            weddingId: wedding.id,
+            sectionId,
+            variantCode: 'A',
+            trafficPct: 100,
+            description: 'Default variant (initialized by deployment pipeline)',
+            isActive: true,
+          },
+        });
+        initialized++;
+        activeSections.push(sectionId);
+      }
+      experience = { activeSections, initializedVariants: initialized };
+      logs.push(
+        `[resolveExperience] ${initialized} new variants initialized, ${activeSections.length} active sections`
+      );
     });
 
     // ── Success — final persist ───────────────────────────────────────────
@@ -582,10 +844,14 @@ export interface DeploymentStatusRow {
   id: string;
   weddingId: string | null;
   templateId: string | null;
+  themeId: string | null;
+  collectionId: string | null;
+  configJson: string | null;
   version: string;
   status: string;
   url: string | null;
   logsJson: string;
+  triggeredBy: string | null;
   createdAt: Date;
   updatedAt: Date;
   wedding: { id: string; slug: string; coupleLabel: string } | null;
@@ -596,10 +862,14 @@ const DEPLOYMENT_FULL_SELECT = {
   id: true,
   weddingId: true,
   templateId: true,
+  themeId: true,
+  collectionId: true,
+  configJson: true,
   version: true,
   status: true,
   url: true,
   logsJson: true,
+  triggeredBy: true,
   createdAt: true,
   updatedAt: true,
   wedding: { select: { id: true, slug: true, coupleLabel: true } },

@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto';
 import os from 'node:os';
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from './db';
-import { isPlatformAdmin, normalizeRole, type Role } from './types';
+import { isPlatformAdmin, isOrgRole, normalizeRole, type Role } from './types';
 
 // P2-SEC-9: dev-fallback secret is now derived from machine signals (not hardcoded).
 
@@ -82,6 +82,12 @@ export interface AuthUser {
   role: string;
   /** ID of the wedding this user belongs to. null for PLATFORM_ADMIN (platform-wide). */
   weddingId?: string | null;
+  /**
+   * Mission 6.0 P1.4 — ID of the organization this user belongs to.
+   * Set for ORG_ADMIN / ORG_MEMBER / ORG_VIEWER roles (org-scoped users).
+   * null for PLATFORM_ADMIN (platform-wide) and per-wedding roles (ORGANIZER etc.).
+   */
+  organizationId?: string | null;
 }
 
 // ─── Password helpers ─────────────────────────────────────────────────────────
@@ -113,6 +119,8 @@ export function generateToken(user: AuthUser): string {
       name: user.name,
       role: user.role,
       weddingId: user.weddingId ?? null,
+      // Mission 6.0 P1.4: carry organizationId in JWT for org-scoped RBAC.
+      organizationId: user.organizationId ?? null,
       // Phase 3: explicit platform-admin flag for fast RBAC checks
       isPlatformAdmin: isPlatformAdmin(user.role),
     },
@@ -130,6 +138,8 @@ export function verifyToken(token: string): AuthUser | null {
       name: payload.name,
       role: payload.role,
       weddingId: payload.weddingId ?? null,
+      // Mission 6.0 P1.4: read organizationId from JWT (if present)
+      organizationId: payload.organizationId ?? null,
     };
   } catch {
     return null;
@@ -163,12 +173,16 @@ export async function getAuthUser(request: NextRequest): Promise<AuthUser | null
   // Verify user still exists
   const dbUser = await db.adminUser.findUnique({ where: { id: user.id } });
   if (!dbUser) return null;
-  // Refresh weddingId + role from DB in case they changed since token was issued
-  // (e.g. user was demoted, or assigned to a different wedding)
+  // Refresh weddingId + role + organizationId from DB in case they changed
+  // since token was issued (e.g. user was demoted, reassigned to a different
+  // wedding, or moved to a different org).
   return {
     ...user,
     role: dbUser.role,
     weddingId: dbUser.weddingId,
+    // Mission 6.0 P1.4: refresh organizationId from DB (covers role changes
+    // where the user was moved from per-wedding to org-scoped or vice versa).
+    organizationId: dbUser.organizationId,
   };
 }
 
@@ -214,21 +228,72 @@ function roleLevel(role: string): number {
 /**
  * Assert that a user is allowed to operate on a given wedding.
  *
- * Rules:
- *   - PLATFORM_ADMIN can access any wedding (returns true)
- *   - Other roles can only access their own wedding (user.weddingId === weddingId)
+ * Mission 6.0 P1.4 — now supports 3 access paths:
+ *   1. PLATFORM_ADMIN / SUPER_ADMIN → any wedding (platform-wide)
+ *   2. ORG_ADMIN / ORG_MEMBER / ORG_VIEWER → any wedding under their organization
+ *      (requires the caller to pass the wedding's organizationId; use
+ *      `assertWeddingAccessAsync` for automatic DB-backed resolution)
+ *   3. ORGANIZER / RECEPTION / CONTROLLER → only their own weddingId
+ *
+ * SYNC FAST-PATH: this function does NOT do a DB lookup. For org-scoped users,
+ * the caller MUST pass `weddingOrganizationId` (the wedding's organizationId,
+ * typically fetched as part of the tenant context resolution). If
+ * `weddingOrganizationId` is undefined, org-scoped users are DENIED (fail-closed).
+ *
+ * For routes where the wedding's organizationId is not readily available,
+ * use `assertWeddingAccessAsync(user, weddingId)` instead — it does the DB
+ * lookup automatically.
  *
  * Use this in API routes after resolving the tenant context:
- *   if (!assertWeddingAccess(user, ctx.weddingId)) {
+ *   if (!assertWeddingAccess(user, ctx.weddingId, ctx.organizationId)) {
  *     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
  *   }
  */
 export function assertWeddingAccess(
-  user: { role: string; weddingId?: string | null },
-  weddingId: string
+  user: { role: string; weddingId?: string | null; organizationId?: string | null },
+  weddingId: string,
+  weddingOrganizationId?: string | null
 ): boolean {
   if (isPlatformAdmin(user.role)) return true;
+
+  // Mission 6.0 P1.4: org-scoped users access weddings via their organization.
+  if (isOrgRole(user.role)) {
+    // Fail-closed: if the caller didn't pass the wedding's organizationId,
+    // or if the user has no organizationId, deny access.
+    if (!user.organizationId) return false;
+    if (!weddingOrganizationId) return false;
+    return weddingOrganizationId === user.organizationId;
+  }
+
+  // Per-wedding roles: only their own weddingId.
   return user.weddingId === weddingId;
+}
+
+/**
+ * Mission 6.0 P1.4 — Async variant of assertWeddingAccess.
+ *
+ * Use this when the caller doesn't already have the wedding's organizationId
+ * cached. This function does a DB lookup to fetch the wedding's organizationId,
+ * then delegates to the sync `assertWeddingAccess`.
+ *
+ * Returns false if the wedding doesn't exist (treat as 403/404 in the caller).
+ */
+export async function assertWeddingAccessAsync(
+  user: { role: string; weddingId?: string | null; organizationId?: string | null },
+  weddingId: string
+): Promise<boolean> {
+  if (isPlatformAdmin(user.role)) return true;
+  if (!isOrgRole(user.role)) {
+    return user.weddingId === weddingId;
+  }
+  // Org-scoped: need DB lookup for wedding's organizationId.
+  if (!user.organizationId) return false;
+  const wedding = await db.wedding.findUnique({
+    where: { id: weddingId },
+    select: { organizationId: true },
+  });
+  if (!wedding) return false;
+  return wedding.organizationId === user.organizationId;
 }
 
 /**
@@ -297,6 +362,8 @@ export async function getServerAuthUser(): Promise<AuthUser | null> {
     ...user,
     role: dbUser.role,
     weddingId: dbUser.weddingId,
+    // Mission 6.0 P1.4: refresh organizationId for SSR auth too.
+    organizationId: dbUser.organizationId,
   };
 }
 

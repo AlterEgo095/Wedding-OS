@@ -5,6 +5,7 @@ import { getAuthUser, requirePlatformAdmin } from '@/lib/auth';
 import { PLAN_METADATA, type Plan } from '@/lib/types';
 import { logger } from '@/lib/logger'; // P2-SEC-1
 import { internalError } from '@/lib/api-errors'; // P2-CQ-5
+import { checkRateLimitAsync, getRateLimitKey } from '@/lib/rate-limit'; // P0.7
 
 /**
  * Platform-wide dashboard stats.
@@ -68,6 +69,15 @@ function getMonthSeries(): Array<{
 
 export async function GET(request: NextRequest) {
   try {
+    // Mission 6.0 P0.7 — rate limit (30 req/min — aggregation query is expensive)
+    const rlKey = getRateLimitKey(request);
+    const { allowed: rlAllowed, retryAfterSeconds: rlRetry } = await checkRateLimitAsync(rlKey, 30, 60_000);
+    if (!rlAllowed) {
+      return NextResponse.json(
+        { error: 'Trop de requêtes. Veuillez réessayer dans un instant.' },
+        { status: 429, headers: { 'Retry-After': String(rlRetry ?? Math.ceil(60_000 / 1000)) } }
+      );
+    }
     const user = await getAuthUser(request);
     const denied = requirePlatformAdmin(user);
     if (denied) return denied;

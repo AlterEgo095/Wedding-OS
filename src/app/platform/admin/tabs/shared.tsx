@@ -167,6 +167,16 @@ export type TabId =
   | 'assets'
   | 'deployments'
   | 'governance'
+  // Mission 6.0 P1.7 — Organization B2B2C layer.
+  | 'organizations'
+  // Mission 6.0 P3 — Pipeline & Production Studio extensions.
+  | 'brands'           // P3.1 — Brand Manager
+  | 'layouts'          // P3.2 — Layouts Manager
+  | 'products'         // P3.3 — Product Manager
+  | 'experience'       // P3.4 — Experience Manager (A/B + analytics)
+  | 'platform-health'  // P3.7 — Platform Health (renamed from old GovernancePanel)
+  | 'qr-invitations'   // P3.8 — Cross-tenant QR + Invitations supervision
+  | 'ops'              // P3.11 — Ops panel (security events, DB size, audit totals)
 
 export interface NavItem {
   id: TabId

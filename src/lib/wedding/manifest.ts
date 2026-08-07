@@ -13,6 +13,20 @@
 //   Collection (DB) → generateManifest() → binding.manifest → SectionRenderer → public page
 //
 // No hardcoded section order. No decorative manifest. No write-only field.
+//
+// P3.2 (Layouts stage UI + API) — drift fix:
+// This file historically exported a hardcoded `LAYOUT_SECTIONS` map of 5 layouts
+// (royal, classic, minimal, destination, modern). src/lib/themes/templates.ts
+// exported a hardcoded `LAYOUT_OPTIONS` array of 4 layouts (classic, modern,
+// minimalist, royal) — `minimalist` vs `minimal` slug drift + 4 vs 5 entries.
+// P3-Foundation deployed a `Layout` Prisma model (seeded with the 5 manifest.ts
+// slugs) and a Layout Manager API (/api/platform/layouts). This file now ALSO
+// exports an async `getLayoutSections(layoutSlug)` that reads from the DB
+// `Layout` table (slug=layoutSlug, status=PUBLISHED) and falls back to the
+// hardcoded `LAYOUT_SECTIONS[layoutSlug]` if the DB is empty or the query
+// fails. `generateManifest` and `resolveWeddingManifest` prefer the DB version.
+// The hardcoded `LAYOUT_SECTIONS` constant is kept (and now exported) for
+// backward compatibility (sync callers, SSR cold start before DB reachable).
 // ══════════════════════════════════════════════════════════════════════════════
 
 import { db } from '@/lib/db';
@@ -67,7 +81,14 @@ export interface WeddingManifest {
 }
 
 // ─── Layout → Section Configuration ───────────────────────────────────────────
-const LAYOUT_SECTIONS: Record<string, Omit<ManifestSection, 'props'>[]> = {
+//
+// Hardcoded fallback for `getLayoutSections()` (P3.2). Kept for backward
+// compat (sync callers, SSR cold start before DB reachable) and as the source
+// of truth for the 5 canonical layouts that are seeded into the DB Layout
+// table by the P3-Foundation migration. Designers should treat the DB as the
+// source of truth going forward — new layouts are added via
+// /api/platform/layouts, NOT by editing this map.
+export const LAYOUT_SECTIONS: Record<string, Omit<ManifestSection, 'props'>[]> = {
   royal: [
     { id: 'accueil', type: 'hero', enabled: true, order: 0 },
     { id: 'notre-histoire', type: 'story', enabled: true, order: 1 },
@@ -106,6 +127,75 @@ const LAYOUT_SECTIONS: Record<string, Omit<ManifestSection, 'props'>[]> = {
     { id: 'authentification', type: 'guest-auth', enabled: true, order: 4 },
   ],
 };
+
+/**
+ * DB-backed layout sections lookup (P3.2 drift fix).
+ *
+ * Reads `Layout.sectionsJson` (ManifestSection[] shape) from the DB Layout
+ * table where `slug=layoutSlug` and `status=PUBLISHED`. Falls back to the
+ * hardcoded `LAYOUT_SECTIONS[layoutSlug]` (or `LAYOUT_SECTIONS.classic`) if:
+ *   - the DB query fails (e.g. Layout table not yet migrated, query error), OR
+ *   - the DB row is missing or not PUBLISHED, OR
+ *   - the DB row's sectionsJson is empty / unparseable / fails validation.
+ *
+ * Resolves the historical naming drift where this file used `minimal` and
+ * src/lib/themes/templates.ts used `minimalist`: the DB Layout table (seeded
+ * in P3-Foundation) uses `minimal`, and this function is the canonical lookup
+ * for both codepaths.
+ *
+ * Used by:
+ *   - `generateManifest()` — when a Collection's `themeSeed.layout` slug is a
+ *     DB layout, we pull its section ordering from the DB.
+ *   - `resolveWeddingManifest()` — when a Wedding has a `layoutId` but no
+ *     persisted binding manifest, we build a default manifest from the
+ *     layout's sections.
+ */
+export async function getLayoutSections(
+  layoutSlug: string,
+): Promise<Omit<ManifestSection, 'props'>[]> {
+  try {
+    const row = await db.layout.findUnique({
+      where: { slug: layoutSlug },
+      select: { sectionsJson: true, status: true },
+    });
+    if (row && row.status === 'PUBLISHED') {
+      const parsed = safeJsonParse<unknown>(row.sectionsJson, null);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        // Validate each section + strip `props` to match LAYOUT_SECTIONS value
+        // shape. Props per section live in `Layout.propsJson`, not embedded in
+        // sectionsJson.
+        const sections: Omit<ManifestSection, 'props'>[] = [];
+        for (const item of parsed) {
+          if (!item || typeof item !== 'object') continue;
+          const s = item as Record<string, unknown>;
+          if (
+            typeof s.id !== 'string' ||
+            typeof s.type !== 'string' ||
+            !SECTION_TYPES.includes(s.type as SectionType) ||
+            typeof s.enabled !== 'boolean' ||
+            typeof s.order !== 'number'
+          ) {
+            continue;
+          }
+          sections.push({
+            id: s.id,
+            type: s.type as SectionType,
+            enabled: s.enabled,
+            order: s.order,
+          });
+        }
+        if (sections.length > 0) return sections;
+      }
+    }
+  } catch {
+    // DB query failed (table missing, schema not migrated, etc.) — fall through
+    // to the hardcoded fallback. Non-fatal: kept silent to avoid log noise
+    // during SSR when the DB is briefly unreachable.
+  }
+  // Hardcoded fallback (matches the original `LAYOUT_SECTIONS[layout] ||
+  // LAYOUT_SECTIONS.classic` behavior).
+  return (LAYOUT_SECTIONS[layoutSlug] || LAYOUT_SECTIONS.classic).map((s) => ({ ...s }));
+}
 
 export function createDefaultManifest(): WeddingManifest {
   return {
@@ -173,7 +263,7 @@ export async function generateManifest(
     ? safeJsonParse<ManifestLuxury | null>(collection.luxuryPreset, null)
     : null;
 
-  const sections = (LAYOUT_SECTIONS[layout] || LAYOUT_SECTIONS.classic).map((s) => ({ ...s }));
+  const sections = await getLayoutSections(layout);
 
   return {
     schemaVersion: 1,
@@ -244,6 +334,36 @@ export async function resolveWeddingManifest(weddingId: string): Promise<Wedding
 
   const parsed = parseManifest(binding?.manifest);
   if (parsed) return parsed;
+
+  // P3.2: no persisted binding manifest — check if the wedding has a layoutId.
+  // If so, build a default manifest from the layout's sections (DB-backed via
+  // `getLayoutSections`, with hardcoded fallback inside). This lets designers
+  // publish new layouts without touching the hardcoded LAYOUT_SECTIONS map.
+  const wedding = await db.wedding.findUnique({
+    where: { id: weddingId },
+    select: { layout: { select: { slug: true } } },
+  });
+  if (wedding?.layout?.slug) {
+    const sections = await getLayoutSections(wedding.layout.slug);
+    if (sections.length > 0) {
+      return {
+        schemaVersion: 1,
+        collectionId: '',
+        collectionSlug: 'default',
+        collectionName: 'Default',
+        collectionVersion: '0.0.0',
+        variantId: null,
+        sections: sections.map((s) => ({ ...s })),
+        theme: {
+          primaryColor: '#D4A853',
+          accentColor: '#1a1a2e',
+          fontDisplay: 'Cormorant Garamond',
+          fontBody: 'Inter',
+        },
+        luxury: null,
+      };
+    }
+  }
 
   return createDefaultManifest();
 }

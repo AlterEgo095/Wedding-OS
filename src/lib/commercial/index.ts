@@ -3,6 +3,8 @@
 // ══════════════════════════════════════════════════════════════════════════════
 import { db } from '@/lib/db'
 import { logger } from '@/lib/logger'
+import { PRICE_PER_INVITATION_USD_CENTS } from '@/lib/constants'
+import { autoTransitionToLive, transitionCommercialStatus } from '@/lib/commercial-status'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 export type CustomerType = 'INDIVIDUAL' | 'COUPLE' | 'BUSINESS' | 'AGENCY' | 'ORGANIZATION'
@@ -255,11 +257,22 @@ export async function provisionFromOrder(orderId: string, provisionedById: strin
       })
     }
 
-    // Update wedding commercialStatus
-    await db.wedding.update({
-      where: { id: order.weddingId },
-      data: { commercialStatus: 'PAID' },
+    // P2.6 — Route the commercialStatus='PAID' write through the state
+    // machine (transitionCommercialStatus) instead of a direct db update.
+    // This (a) validates the transition is legal (e.g. PENDING_PAYMENT → PAID
+    // is allowed; CANCELLED → PAID is not), (b) writes an audit-log row,
+    // and (c) is idempotent if already PAID.
+    await transitionCommercialStatus({
+      weddingId: order.weddingId,
+      to: 'PAID',
+      userId: provisionedById,
+      reason: `Order ${orderId} provisioned`,
     })
+
+    // P2.6 — If the wedding is already PUBLISHED, auto-flip PAID → LIVE.
+    // Idempotent: no-op if status is not PUBLISHED or commercialStatus is
+    // already LIVE / not in [PAID, READY, IN_PRODUCTION].
+    await autoTransitionToLive(order.weddingId, provisionedById)
   }
 
   logger.info('provisionFromOrder: complete', { orderId, entitlements: entitlements.length })
@@ -359,4 +372,140 @@ export async function getCommercialDashboard() {
     events: { total: totalEvents, published: publishedEvents },
     delivery: { total: totalDeliveryJobs, failed: failedDeliveryJobs },
   }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// P2.3 — Per-invitation usage metering
+// ══════════════════════════════════════════════════════════════════════════════
+//
+// When bulk invitations are generated (POST /api/weddings/[id]/invitations/bulk),
+// this helper creates (or appends to) an OrderItem on the wedding's most recent
+// CommercialOrder. If no order exists, it auto-creates one. The OrderItem has:
+//   - description: "Invitations électroniques x N (YYYY-MM-DD)"
+//   - planId: 'PER_INVITATION'
+//   - quantity: N
+//   - unitPrice: PRICE_PER_INVITATION_USD_CENTS (70 cents = $0.70)
+//   - total: N * 70
+//
+// Also auto-creates a Payment(status='AWAITING_VERIFICATION') for the OrderItem
+// total, with method='STRIPE' (the Stripe webhook will flip it to VERIFIED when
+// the invoice is paid — see src/lib/stripe.ts + /api/stripe/webhook).
+//
+// Idempotency: this helper is called once per bulk-generation request, NOT per
+// invitation. Each call creates a NEW OrderItem (no deduplication) — the audit
+// log + the OrderItem.description (which includes a date stamp) provide
+// traceability. A re-call with the same count would create a duplicate item,
+// which is the intended behavior (each bulk batch is a separate billable event).
+//
+// Failure modes:
+//   - count < 1: returns { orderItem: null, payment: null } (no-op)
+//   - wedding not found: logs a warning, returns nulls (does NOT throw — the
+//     caller's invitation generation has already happened and should not be
+//     rolled back just because the metering failed)
+//   - DB error: bubbles up to the caller (the invitation bulk route catches
+//     and continues — metering is best-effort, not a hard dependency)
+//
+// @param weddingId  The wedding generating invitations
+// @param count      Number of invitations generated in this bulk batch
+// @returns The created OrderItem + Payment, or nulls if count is 0
+// ══════════════════════════════════════════════════════════════════════════════
+export async function meterInvitationUsage(weddingId: string, count: number): Promise<{
+  orderItem: { id: string; total: number } | null;
+  payment: { id: string; amount: number } | null;
+}> {
+  if (!count || count < 1) return { orderItem: null, payment: null };
+
+  const wedding = await db.wedding.findUnique({
+    where: { id: weddingId },
+    select: { id: true, customerId: true, slug: true },
+  });
+  if (!wedding) {
+    logger.warn('meterInvitationUsage: wedding not found', { weddingId });
+    return { orderItem: null, payment: null };
+  }
+
+  // Find the wedding's most recent DRAFT or CONFIRMED order, or create a new one.
+  // DRAFT orders are reusable (the customer may add more items before paying).
+  // CONFIRMED orders are also reusable for metering (append-only — the existing
+  // items are already paid, the new item is a separate Payment).
+  let order = await db.commercialOrder.findFirst({
+    where: { weddingId, status: { in: ['DRAFT', 'CONFIRMED'] } },
+    orderBy: { createdAt: 'desc' },
+  });
+
+  if (!order) {
+    // Auto-create a Customer if the wedding doesn't have one (e.g. a TRIAL
+    // wedding whose organizer is generating invitations for the first time).
+    let customerId = wedding.customerId;
+    if (!customerId) {
+      const customer = await db.customer.create({
+        data: {
+          type: 'INDIVIDUAL',
+          displayName: wedding.slug || weddingId,
+          country: 'CD',
+          currency: 'usd',
+        },
+      });
+      await db.wedding.update({
+        where: { id: weddingId },
+        data: { customerId: customer.id },
+      });
+      customerId = customer.id;
+    }
+    order = await db.commercialOrder.create({
+      data: {
+        customerId,
+        weddingId,
+        currency: 'usd',
+        status: 'DRAFT',
+        notes: 'Auto-generated from invitation usage metering',
+      },
+    });
+  }
+
+  // Create the OrderItem — 1 row per bulk batch, quantity = N
+  const unitPrice = PRICE_PER_INVITATION_USD_CENTS; // 70 cents = $0.70
+  const total = count * unitPrice;
+  const orderItem = await db.orderItem.create({
+    data: {
+      orderId: order.id,
+      description: `Invitations électroniques x${count} (${new Date().toISOString().slice(0, 10)})`,
+      planId: 'PER_INVITATION',
+      quantity: count,
+      unitPrice,
+      total,
+    },
+  });
+
+  // Recalculate order totals (subtotal, total — discount is left untouched)
+  await recalculateOrderTotals(order.id);
+
+  // Auto-create a Payment (AWAITING_VERIFICATION — Stripe webhook will flip
+  // to VERIFIED when the invoice is paid). method='STRIPE' so the dashboard
+  // can distinguish metered payments from manual ones.
+  const payment = await db.payment.create({
+    data: {
+      orderId: order.id,
+      weddingId,
+      amount: total,
+      currency: 'usd',
+      method: 'STRIPE',
+      status: 'AWAITING_VERIFICATION',
+      submittedAt: new Date(),
+      reference: `metered_invitations_${Date.now()}`,
+    },
+  });
+
+  logger.info('meterInvitationUsage: OrderItem + Payment created', {
+    weddingId,
+    count,
+    orderItemId: orderItem.id,
+    paymentId: payment.id,
+    total,
+  });
+
+  return {
+    orderItem: { id: orderItem.id, total },
+    payment: { id: payment.id, amount: total },
+  };
 }

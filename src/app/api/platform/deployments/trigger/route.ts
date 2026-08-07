@@ -1,6 +1,6 @@
 export const dynamic = 'force-dynamic';
 
-import { NextRequest } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getAuthUser, requirePlatformAdmin } from '@/lib/auth';
 import { withRateLimit } from '@/lib/rate-limit';
@@ -8,6 +8,7 @@ import { apiSuccess, apiError, internalError } from '@/lib/api-errors';
 import { logger } from '@/lib/logger';
 import { writeAuditLog } from '@/lib/audit';
 import { runDeploymentPipeline } from '@/lib/pipeline/deployment-pipeline';
+import { withDeployLock } from '@/lib/pipeline/deploy-lock';
 
 /**
  * Trigger a frontend deployment pipeline run (CONS-6-PIPELINE task 3).
@@ -15,9 +16,16 @@ import { runDeploymentPipeline } from '@/lib/pipeline/deployment-pipeline';
  * POST /api/platform/deployments/trigger
  *   body: { weddingId, templateId, themeId, collectionId? }
  *   → 201 { deploymentId, status, logs, url, version }
+ *   → 409 { error: 'DEPLOYMENT_IN_PROGRESS', lockedBy, lockedAt, weddingId }
+ *          (another deploy for the same wedding is already in flight)
  *
  * Platform-admin only. Rate-limited at 10 req/min (deploys are expensive —
  * they write PublishedConfig to the Wedding row + flip status to PUBLISHED).
+ *
+ * P3.6 — The pipeline call is wrapped in `withDeployLock(weddingId, userId, fn)`
+ * to prevent two concurrent deploys for the same wedding racing on
+ * Wedding.publishedConfigJson + Deployment rows. If the lock is already held,
+ * returns 409 immediately (no audit log written — no deployment was attempted).
  */
 
 const triggerSchema = z.object({
@@ -53,13 +61,37 @@ async function triggerHandler(request: NextRequest) {
       triggeredBy: user!.id,
     });
 
-    const result = await runDeploymentPipeline({
-      weddingId: input.weddingId,
-      templateId: input.templateId,
-      themeId: input.themeId,
-      collectionId: input.collectionId ?? null,
-      triggeredBy: user!.id,
-    });
+    // P3.6 — Acquire per-weddingId deploy lock BEFORE entering the pipeline.
+    // If another deploy is already in flight for this wedding, return 409
+    // immediately. The lock is released in a `finally` inside withDeployLock,
+    // so it's always freed even if the pipeline throws.
+    const lockOutcome = await withDeployLock(
+      input.weddingId,
+      user!.id,
+      () =>
+        runDeploymentPipeline({
+          weddingId: input.weddingId,
+          templateId: input.templateId,
+          themeId: input.themeId,
+          collectionId: input.collectionId ?? null,
+          triggeredBy: user!.id,
+        }),
+    );
+
+    if (lockOutcome.error) {
+      // Lock was held — return 409 Conflict. No audit log: no deployment
+      // was attempted, the request was rejected at the gate.
+      logger.warn('deployments.trigger.locked', {
+        weddingId: input.weddingId,
+        triggeredBy: user!.id,
+        lockError: lockOutcome.error,
+      });
+      return NextResponse.json(lockOutcome.error.body, {
+        status: lockOutcome.error.status,
+      });
+    }
+
+    const result = lockOutcome.result!;
 
     // Audit log (best-effort, never throws).
     await writeAuditLog({

@@ -20,6 +20,12 @@ import { logger } from '@/lib/logger';
 import { internalError } from '@/lib/api-errors';
 // P2-SEC-14: writeAuditLog populates ipAddress + userAgent from request.
 import { writeAuditLog } from '@/lib/audit';
+// Mission 6.0 P0.5 — route status='PUBLISHED' transitions through the pipeline.
+import { publishWeddingViaPipeline } from '@/lib/pipeline/publish-helper';
+// P2.6 — auto-transition commercialStatus PAID → LIVE when the wedding is
+// published. Idempotent: no-op if not PUBLISHED, or commercialStatus is
+// already LIVE / not in [PAID, READY, IN_PRODUCTION].
+import { autoTransitionToLive } from '@/lib/commercial-status';
 
 /**
  * Per-wedding operations for the platform admin.
@@ -36,6 +42,11 @@ import { writeAuditLog } from '@/lib/audit';
  *
  * Cache invalidation: after PUT, invalidateWeddingCache(slug) ensures the
  * next public/admin request re-fetches fresh data from the DB.
+ *
+ * P2.6 — When PUT transitions Wedding.status from non-PUBLISHED → PUBLISHED
+ * (via the deployment pipeline), this route also calls autoTransitionToLive()
+ * to flip Wedding.commercialStatus PAID → LIVE. This bridges the two state
+ * machines so they no longer drift silently.
  */
 
 // P2-CQ-1 + P2-SEC-3: VALID_PLANS now imported from @/lib/constants.
@@ -56,6 +67,7 @@ const WEDDING_DETAIL_SELECT = {
   venueReference: true,
   status: true,
   plan: true,
+  commercialStatus: true,
   customDomain: true,
   isDefault: true,
   createdAt: true,
@@ -257,6 +269,48 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     if (venueReference !== undefined) updateData.venueReference = venueReference || null;
 
     if (status !== undefined) {
+      // Mission 6.0 P0.5 — when transitioning TO PUBLISHED, route through the
+      // deployment pipeline (creates Deployment row + config snapshot). We do
+      // NOT set status directly here; the pipeline handles it.
+      if (status === 'PUBLISHED' && existing.status !== 'PUBLISHED') {
+        const publishResult = await publishWeddingViaPipeline(id, user!.id);
+        if (!publishResult.success) {
+          return NextResponse.json(
+            { error: 'Échec de la publication via le pipeline.', code: 'PUBLISH_FAILED', detail: publishResult.error },
+            { status: 500 },
+          );
+        }
+        // Skip the status update below — the pipeline already set it.
+        // Re-fetch the wedding so the response reflects the pipeline's changes.
+        const refreshed = await db.wedding.findUnique({
+          where: { id },
+          select: WEDDING_DETAIL_SELECT,
+        });
+        invalidateWeddingCache(existing.slug);
+        await writeAuditLog({
+          weddingId: null,
+          userId: user!.id,
+          action: 'PUBLISH_WEDDING',
+          details: `Published wedding ${existing.slug} via PUT (deployment ${publishResult.deploymentId}, mode ${publishResult.mode})`,
+          request,
+        });
+
+        // P2.6 — Bridge the two state machines: now that Wedding.status is
+        // PUBLISHED, auto-flip commercialStatus PAID → LIVE. Idempotent —
+        // no-op if commercialStatus is already LIVE or not in [PAID, READY,
+        // IN_PRODUCTION]. Errors here MUST NOT fail the publish — the
+        // wedding is already public. We log and continue.
+        try {
+          await autoTransitionToLive(id, user!.id);
+        } catch (e) {
+          logger.error('PUT /api/platform/weddings/[id]: autoTransitionToLive failed (non-blocking)', {
+            weddingId: id,
+            errMessage: e instanceof Error ? e.message : String(e),
+          });
+        }
+
+        return NextResponse.json({ wedding: refreshed, deployment: { id: publishResult.deploymentId, version: publishResult.version, mode: publishResult.mode } });
+      }
       updateData.status = status;
       // Set publishedAt when transitioning to PUBLISHED for the first time
       if (status === 'PUBLISHED' && existing.status !== 'PUBLISHED') {

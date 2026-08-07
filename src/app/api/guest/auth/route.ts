@@ -13,7 +13,7 @@ import {
   validateGuestSession,
   setGuestSessionCookie, // P2-SEC-4 + P2-CQ-21
 } from '@/lib/guest-auth';
-import { checkRateLimit, getRateLimitKey } from '@/lib/rate-limit';
+import { checkRateLimit, checkRateLimitAsync, getRateLimitKey } from '@/lib/rate-limit';
 import { resolvePublicTenant, runWithTenant } from '@/lib/tenant-context';
 // P2-SEC-1: structured logger (no stack leak).
 import { logger } from '@/lib/logger';
@@ -31,6 +31,18 @@ export async function POST(request: NextRequest) {
 
   return runWithTenant(context, async () => {
     try {
+      // Mission 6.0 P0.7 — rate limit (10 req/min — brute force protection, IP-based)
+      // Complements per-key checkBruteForce below (which is keyed on the same IP
+      // but applies progressive lockout). This Redis-backed gate fires first and
+      // is shared across all app instances (horizontal scale).
+      const rlKey = getRateLimitKey(request);
+      const { allowed: rlAllowed, retryAfterSeconds: rlRetry } = await checkRateLimitAsync(rlKey, 10, 60_000);
+      if (!rlAllowed) {
+        return NextResponse.json(
+          { error: 'Trop de requêtes. Veuillez réessayer dans un instant.' },
+          { status: 429, headers: { 'Retry-After': String(rlRetry ?? Math.ceil(60_000 / 1000)) } }
+        );
+      }
       const clientInfo = getClientInfo(request);
       const rateLimitKey = getRateLimitKey(request);
 

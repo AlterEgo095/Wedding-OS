@@ -3,6 +3,7 @@
 // ════════════════════════════════════════════════════════════════════════════
 // DeploymentsPanel — Super Admin Production Studio (CONS-3-SUPER-ADMIN).
 // Updated CONS-6-PIPELINE: trigger new deployments + retry failed + poll.
+// Updated Mission 6.0 P3.5: rollback to a previous deployment + view config.
 // Lists all wedding frontend deployments across all weddings.
 // Uses /api/platform/deployments + /api/platform/{weddings,templates,themes,collections}.
 // ════════════════════════════════════════════════════════════════════════════
@@ -38,7 +39,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { RefreshCw, ExternalLink, Loader2, Cloud, Plus, Rocket } from 'lucide-react'
+import { RefreshCw, ExternalLink, Loader2, Cloud, Plus, Rocket, History, Eye } from 'lucide-react'
 
 interface DeploymentRow {
   id: string
@@ -106,6 +107,15 @@ export function DeploymentsPanel({ csrfToken: _csrfToken }: { csrfToken: string 
   const [loading, setLoading] = useState(true)
   const [statusFilter, setStatusFilter] = useState<string>('ALL')
   const [retrying, setRetrying] = useState<string | null>(null)
+
+  // P3.5 — Rollback state
+  const [rollbackTarget, setRollbackTarget] = useState<DeploymentRow | null>(null)
+  const [rollingBack, setRollingBack] = useState<string | null>(null)
+
+  // P3.5 — View config state
+  const [viewConfigFor, setViewConfigFor] = useState<DeploymentRow | null>(null)
+  const [viewConfigData, setViewConfigData] = useState<string>('')
+  const [loadingConfig, setLoadingConfig] = useState(false)
 
   // New Deployment dialog state
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -271,6 +281,63 @@ export function DeploymentsPanel({ csrfToken: _csrfToken }: { csrfToken: string 
     }
   }
 
+  // ─── P3.5 — Rollback to a previous DEPLOYED deployment ────────────────────
+  // confirm → POST /api/platform/deployments/{id}/rollback → refresh list.
+  const confirmRollback = async () => {
+    if (!rollbackTarget) return
+    const target = rollbackTarget
+    setRollingBack(target.id)
+    try {
+      const res = await fetch(`/api/platform/deployments/${target.id}/rollback`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({}),
+      })
+      const json = await res.json()
+      if (!res.ok) {
+        throw new Error(json?.error || 'Échec du rollback')
+      }
+      toast.success(
+        `Rollback réussi — wedding restauré à v${target.version} (nouveau déploiement v${json.version})`
+      )
+      setRollbackTarget(null)
+      await load()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Échec du rollback')
+    } finally {
+      setRollingBack(null)
+    }
+  }
+
+  // ─── P3.5 — Open the View-config modal for a deployment ───────────────────
+  // Fetches the full PublishedConfig snapshot from /api/platform/deployments/{id}/config
+  // and displays it pretty-printed in a modal.
+  const openConfigView = async (d: DeploymentRow) => {
+    setViewConfigFor(d)
+    setViewConfigData('')
+    setLoadingConfig(true)
+    try {
+      const res = await fetch(`/api/platform/deployments/${d.id}/config`, {
+        credentials: 'include',
+      })
+      const json = await res.json()
+      if (!res.ok) {
+        throw new Error(json?.error || 'Échec du chargement de la config')
+      }
+      if (!json.hasConfig || json.config === null) {
+        setViewConfigData('// Aucun configJson enregistré pour ce déploiement.\n// (Déploiement pré-P0.6 ou échoué avant l\'étape publishFrontend.)')
+      } else {
+        setViewConfigData(JSON.stringify(json.config, null, 2))
+      }
+    } catch (e) {
+      setViewConfigData(`// Erreur: ${e instanceof Error ? e.message : 'échec inconnu'}`)
+      toast.error(e instanceof Error ? e.message : 'Échec du chargement de la config')
+    } finally {
+      setLoadingConfig(false)
+    }
+  }
+
   const hasRunning = deployments.some((d) => RUNNING_STATUSES.has(d.status))
 
   return (
@@ -338,7 +405,7 @@ export function DeploymentsPanel({ csrfToken: _csrfToken }: { csrfToken: string 
                     <TableHead>Statut</TableHead>
                     <TableHead>Créé</TableHead>
                     <TableHead>URL</TableHead>
-                    <TableHead className="w-24" />
+                    <TableHead className="w-[280px]">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -373,17 +440,46 @@ export function DeploymentsPanel({ csrfToken: _csrfToken }: { csrfToken: string 
                         )}
                       </TableCell>
                       <TableCell>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="h-7 text-[10px]"
-                          onClick={() => retry(d)}
-                          disabled={retrying === d.id || d.status === 'DEPLOYED'}
-                          title={d.status === 'FAILED' ? 'Relancer le pipeline' : 'Disponible uniquement pour les déploiements échoués'}
-                        >
-                          {retrying === d.id && <Loader2 className="w-3 h-3 mr-1 animate-spin" />}
-                          Retry
-                        </Button>
+                        <div className="flex items-center gap-1">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-7 text-[10px]"
+                            onClick={() => retry(d)}
+                            disabled={retrying === d.id || d.status === 'DEPLOYED'}
+                            title={d.status === 'FAILED' ? 'Relancer le pipeline' : 'Disponible uniquement pour les déploiements échoués'}
+                          >
+                            {retrying === d.id && <Loader2 className="w-3 h-3 mr-1 animate-spin" />}
+                            Retry
+                          </Button>
+                          {d.status === 'DEPLOYED' && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-7 text-[10px]"
+                              onClick={() => setRollbackTarget(d)}
+                              disabled={rollingBack === d.id}
+                              title="Restaurer la config de ce déploiement (crée un nouveau déploiement rollback-*)"
+                            >
+                              {rollingBack === d.id ? (
+                                <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                              ) : (
+                                <History className="w-3 h-3 mr-1" />
+                              )}
+                              Rollback
+                            </Button>
+                          )}
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 text-[10px]"
+                            onClick={() => openConfigView(d)}
+                            title="Voir le PublishedConfig JSON"
+                          >
+                            <Eye className="w-3 h-3 mr-1" />
+                            Config
+                          </Button>
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -515,6 +611,117 @@ export function DeploymentsPanel({ csrfToken: _csrfToken }: { csrfToken: string 
                   Déployer
                 </>
               )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ─── P3.5 — Rollback Confirmation Dialog ──────────────────────────── */}
+      <Dialog open={rollbackTarget !== null && rollingBack === null} onOpenChange={(o) => { if (!o) setRollbackTarget(null) }}>
+        <DialogContent className="sm:max-w-[480px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <History className="w-4 h-4 text-amber-400" />
+              Confirmer le rollback
+            </DialogTitle>
+            <DialogDescription>
+              Cette action va restaurer la configuration du déploiement{' '}
+              <span className="font-mono text-amber-300">{rollbackTarget?.version}</span>{' '}
+              du mariage{' '}
+              <span className="font-medium text-foreground">{rollbackTarget?.wedding?.coupleLabel || rollbackTarget?.wedding?.slug || '—'}</span>.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-2 text-sm">
+            <p className="text-muted-foreground">
+              Un <strong>nouveau déploiement</strong> sera créé avec la version{' '}
+              <span className="font-mono text-amber-300">rollback-{rollbackTarget?.version}</span>,
+              la configuration publishedConfigJson du mariage sera restaurée, et le cache ISR
+              sera invalidé. Le déploiement original est <strong>préservé</strong> (piste d'audit).
+            </p>
+            <p className="text-amber-400 text-xs">
+              ⚠️ Si le mariage est actuellement PUBLISHED, le statut sera conservé. Les
+              mariages ARCHIVED ou SUSPENDED ne seront pas réactivés automatiquement.
+            </p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRollbackTarget(null)}>
+              Annuler
+            </Button>
+            <Button
+              onClick={confirmRollback}
+              className="bg-amber-500/90 hover:bg-amber-500 text-black"
+            >
+              <History className="w-4 h-4 mr-2" />
+              Confirmer le rollback
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ─── P3.5 — Rolling back overlay (shown while rollback is in flight) ── */}
+      <Dialog open={rollingBack !== null} onOpenChange={() => { /* no-op — wait for completion */ }}>
+        <DialogContent className="sm:max-w-[400px]" >
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Loader2 className="w-4 h-4 animate-spin text-amber-400" />
+              Rollback en cours…
+            </DialogTitle>
+            <DialogDescription>
+              Restauration de la configuration — ne pas fermer cette fenêtre.
+            </DialogDescription>
+          </DialogHeader>
+        </DialogContent>
+      </Dialog>
+
+      {/* ─── P3.5 — View Config Modal ──────────────────────────────────────── */}
+      <Dialog open={viewConfigFor !== null} onOpenChange={(o) => { if (!o) { setViewConfigFor(null); setViewConfigData('') } }}>
+        <DialogContent className="sm:max-w-[800px] max-h-[80vh]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Eye className="w-4 h-4 text-gold" />
+              Configuration publiée
+            </DialogTitle>
+            <DialogDescription>
+              PublishedConfig JSON pour le déploiement{' '}
+              <span className="font-mono text-gold">{viewConfigFor?.version}</span>
+              {viewConfigFor?.wedding && (
+                <>
+                  {' '}(mariage: {viewConfigFor.wedding.coupleLabel || viewConfigFor.wedding.slug})
+                </>
+              )}
+              .
+            </DialogDescription>
+          </DialogHeader>
+          <div className="overflow-auto max-h-[55vh] rounded-md border border-white/10 bg-black/40 p-3">
+            {loadingConfig ? (
+              <div className="space-y-2">
+                {Array.from({ length: 6 }).map((_, i) => (
+                  <Skeleton key={i} className="h-4 rounded" />
+                ))}
+              </div>
+            ) : (
+              <pre className="text-[11px] leading-relaxed font-mono text-emerald-300 whitespace-pre-wrap break-all">
+                {viewConfigData || '// Aucune donnée'}
+              </pre>
+            )}
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                if (viewConfigData) {
+                  navigator.clipboard.writeText(viewConfigData).then(
+                    () => toast.success('Config copiée dans le presse-papier'),
+                    () => toast.error('Échec de la copie')
+                  )
+                }
+              }}
+              disabled={loadingConfig || !viewConfigData}
+            >
+              Copier
+            </Button>
+            <Button variant="outline" onClick={() => { setViewConfigFor(null); setViewConfigData('') }}>
+              Fermer
             </Button>
           </DialogFooter>
         </DialogContent>

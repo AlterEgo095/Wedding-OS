@@ -7,6 +7,7 @@ import { resolvePublicTenant, resolveAdminTenant, runWithTenant } from '@/lib/te
 import QRCode from 'qrcode';
 import { logger } from '@/lib/logger'; // P2-SEC-1
 import { internalError } from '@/lib/api-errors'; // P2-CQ-5
+import { checkRateLimitAsync, getRateLimitKey } from '@/lib/rate-limit'; // P0.7
 
 /**
  * QR Code Generation API — with access control (tenant-scoped since Phase 2)
@@ -16,6 +17,15 @@ export async function GET(
   { params }: { params: Promise<{ code: string }> }
 ) {
   try {
+    // Mission 6.0 P0.7 — rate limit (60 req/min — QR generation is expensive)
+    const rlKey = getRateLimitKey(request);
+    const { allowed: rlAllowed, retryAfterSeconds: rlRetry } = await checkRateLimitAsync(rlKey, 60, 60_000);
+    if (!rlAllowed) {
+      return NextResponse.json(
+        { error: 'Trop de requêtes. Veuillez réessayer dans un instant.' },
+        { status: 429, headers: { 'Retry-After': String(rlRetry ?? Math.ceil(60_000 / 1000)) } }
+      );
+    }
     const { code } = await params;
     const clientInfo = getClientInfo(request);
 

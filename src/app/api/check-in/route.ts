@@ -8,6 +8,9 @@ import { logger } from '@/lib/logger';
 import { internalError, badRequest } from '@/lib/api-errors';
 // CONS-7 task 5: Zod request-body validation.
 import { z } from 'zod';
+import { checkRateLimitAsync, getRateLimitKey } from '@/lib/rate-limit'; // P0.7
+// P2.4: usage metering (QR_SCANS counter increment after successful check-in).
+import { incrementUsage } from '@/lib/usage';
 
 /**
  * POST /api/check-in
@@ -43,6 +46,15 @@ const checkInSchema = z.object({
 
 export async function POST(request: NextRequest) {
   try {
+    // Mission 6.0 P0.7 — rate limit (30 req/min — reception staff scanning)
+    const rlKey = getRateLimitKey(request);
+    const { allowed: rlAllowed, retryAfterSeconds: rlRetry } = await checkRateLimitAsync(rlKey, 30, 60_000);
+    if (!rlAllowed) {
+      return NextResponse.json(
+        { error: 'Trop de requêtes. Veuillez réessayer dans un instant.' },
+        { status: 429, headers: { 'Retry-After': String(rlRetry ?? Math.ceil(60_000 / 1000)) } }
+      );
+    }
     const user = await getAuthUser(request);
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     if (!hasPermission(user.role, ['CONTROLLER'])) {
@@ -144,6 +156,11 @@ export async function POST(request: NextRequest) {
         details: `Checked in ${guest.firstName} ${guest.lastName} (code ${normalizedCode.slice(0, 4)}…)`,
         request,
       });
+
+      // P2.4: meter QR_SCANS — one per successful check-in. Already-checked-in
+      // responses (ALREADY_CHECKED_IN above) are NOT counted (the code returns
+      // before reaching this point). Best-effort; helper swallows internally.
+      await incrementUsage(context.weddingId, 'QR_SCANS', 1).catch(() => {});
 
       return NextResponse.json({
         status: 'CHECKED_IN',
