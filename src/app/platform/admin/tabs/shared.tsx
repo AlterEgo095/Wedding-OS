@@ -73,6 +73,10 @@ export interface DashboardData {
   weddings: { total: number; byStatus: Record<string, number>; byPlan: Record<string, number> }
   users: { total: number; byRole: Record<string, number>; platformAdmins: number }
   guests: { total: number; last7days: number }
+  // P5.2-3 (HIGH-CMD-1): total invitations sent across all weddings (platform-wide).
+  invitations?: { total: number }
+  // P5.2-3 (HIGH-CMD-2): total checked-in guests across all weddings (platform-wide).
+  checkIns?: { total: number }
   recentWeddings: Array<{
     id: string
     slug: string

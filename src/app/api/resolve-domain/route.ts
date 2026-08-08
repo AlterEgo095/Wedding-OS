@@ -53,9 +53,18 @@ export async function GET(request: NextRequest): Promise<Response> {
   // ─── 1. Wedding lookup (existing Slice 5 behaviour) ──────────────────────
   // Only PUBLISHED weddings are resolvable via custom domain — DRAFT/SUSPENDED
   // weddings remain hidden (defence-in-depth, matches the public layout gate).
+  //
+  // P5.2-2 (PRE-P5.X-AUDIT-B, HIGH-4): only VERIFIED custom domains resolve.
+  // A couple that just typed `google.com` into the custom-domain field will
+  // see `customDomainVerified = false` and the domain won't route until they
+  // prove ownership via the TXT record (see /api/weddings/{id}/verify-domain).
   try {
     const wedding = await db.wedding.findFirst({
-      where: { customDomain: normalized, status: { in: ['PUBLISHED'] } },
+      where: {
+        customDomain: normalized,
+        status: { in: ['PUBLISHED'] },
+        customDomainVerified: true,
+      },
       select: { slug: true },
     });
     if (wedding?.slug) {

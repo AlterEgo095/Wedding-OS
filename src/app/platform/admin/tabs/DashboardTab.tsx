@@ -20,6 +20,8 @@ import {
   Wallet,
   Rocket,
   Activity,
+  Mail,
+  UserCheck,
 } from 'lucide-react'
 
 import {
@@ -76,8 +78,8 @@ export function DashboardTab({ fetchWithAuth, setActiveTab }: { fetchWithAuth: (
   if (loading) {
     return (
       <div className="space-y-6 p-4 md:p-6">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          {Array.from({ length: 4 }).map((_, i) => (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {Array.from({ length: 6 }).map((_, i) => (
             <Skeleton key={i} className="h-28 rounded-xl" />
           ))}
         </div>
@@ -101,6 +103,15 @@ export function DashboardTab({ fetchWithAuth, setActiveTab }: { fetchWithAuth: (
   const archived30d = data.churn?.archived30d ?? 0
   const newWeddings30d = data.growth?.newWeddings30d ?? 0
   const newGuests30d = data.growth?.newGuests30d ?? 0
+
+  // P5.2-3 (HIGH-CMD-1 + HIGH-CMD-2): platform-wide invitations + check-ins.
+  // Falls back to 0 if the API hasn't been updated yet (older deployments).
+  const invitationsTotal = data.invitations?.total ?? 0
+  const checkInsTotal = data.checkIns?.total ?? 0
+  const checkInPct =
+    data.guests.total > 0
+      ? Math.round((checkInsTotal / data.guests.total) * 100)
+      : 0
 
   // Chart datasets — MRR over 6 months + plan distribution donut
   const mrrSeries = data.revenue?.mrrSeries ?? []
@@ -138,6 +149,24 @@ export function DashboardTab({ fetchWithAuth, setActiveTab }: { fetchWithAuth: (
       gradient: 'from-violet-500/20 to-violet-600/10',
       iconClass: 'text-violet-400',
     },
+    // P5.2-3 / HIGH-CMD-1 — total invitations sent across all weddings.
+    {
+      title: 'Invitations',
+      value: invitationsTotal,
+      subtitle: 'Tous canaux confondus',
+      icon: Mail,
+      gradient: 'from-blue-500/20 to-blue-600/10',
+      iconClass: 'text-blue-400',
+    },
+    // P5.2-3 / HIGH-CMD-2 — total guests checked in across all weddings.
+    {
+      title: 'Check-ins',
+      value: checkInsTotal,
+      subtitle: `${checkInPct}% des ${data.guests.total} invités`,
+      icon: UserCheck,
+      gradient: 'from-emerald-500/20 to-emerald-600/10',
+      iconClass: 'text-emerald-400',
+    },
     {
       title: "Taux d'attrition",
       value: `${churnRate}%`,
@@ -151,7 +180,7 @@ export function DashboardTab({ fetchWithAuth, setActiveTab }: { fetchWithAuth: (
   return (
     <div className="space-y-6 p-4 md:p-6">
       {/* KPI grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 md:gap-4">
         {kpiCards.map((card, i) => (
           <motion.div
             key={card.title}

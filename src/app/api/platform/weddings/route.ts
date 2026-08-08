@@ -1,10 +1,10 @@
 export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { getAuthUser, requirePlatformAdmin } from '@/lib/auth';
+import { getAuthUser, requirePlatformAdmin, hashPassword } from '@/lib/auth';
 import { isValidSlug, buildCoupleLabel, type Plan, type WeddingStatus } from '@/lib/types';
 // P2-CQ-1 + P2-SEC-3: shared VALID_PLANS from @lib/constants.
-import { VALID_PLANS } from '@/lib/constants';
+import { VALID_PLANS, EMAIL_REGEX } from '@/lib/constants';
 // CONS-2-SECURITY (Fix 5): rate-limit HOF for create endpoints.
 import { withRateLimit } from '@/lib/rate-limit';
 // P2-SEC-1: structured logger (no stack leak).
@@ -13,8 +13,13 @@ import { logger } from '@/lib/logger';
 import { internalError } from '@/lib/api-errors';
 // P2-SEC-14: writeAuditLog populates ipAddress + userAgent from request.
 import { writeAuditLog } from '@/lib/audit';
-// Cascade provisioning — auto-creates theme, settings, couple story for new weddings
-import { provisionWedding } from '@/lib/services/wedding-provisioning';
+// P5.2-1 — unified provisioning: creates Wedding + Settings + Theme + CoupleStory
+// + (optional) AdminUser atomically. Replaces the old `provisionWedding` call
+// (which only handled Settings/Theme/CoupleStory on an already-created wedding).
+import {
+  provisionWeddingFully,
+  WeddingProvisioningError,
+} from '@/lib/services/wedding-provisioning';
 
 /**
  * Platform-level wedding CRUD.
@@ -149,9 +154,21 @@ export async function createPlatformWeddingHandler(request: NextRequest) {
       weddingDate,
       timezone,
       venueName,
+      venueAddress,
       venueCity,
+      venueReference,
+      customDomain,
+      organizationId,
       status,
       plan,
+      // P5.2-1 — optional admin fields (additive). When provided, an AdminUser
+      // (role=ORGANIZER) is created atomically with the wedding. Previously the
+      // platform POST endpoint created the wedding WITHOUT any admin, leaving it
+      // inaccessible until an admin was manually added — the onboarding wizard
+      // had this but the platform endpoint didn't, causing the divergence.
+      adminEmail,
+      adminName,
+      adminPassword,
     } = body;
 
     // ─── Validation ────────────────────────────────────────────────────────
@@ -178,6 +195,12 @@ export async function createPlatformWeddingHandler(request: NextRequest) {
         { status: 400 }
       );
     }
+    if (typeof brideName !== 'string' || typeof groomName !== 'string') {
+      return NextResponse.json(
+        { error: 'brideName and groomName must be strings' },
+        { status: 400 }
+      );
+    }
 
     if (status && !VALID_STATUSES.includes(status as WeddingStatus)) {
       return NextResponse.json(
@@ -193,7 +216,55 @@ export async function createPlatformWeddingHandler(request: NextRequest) {
       );
     }
 
-    // ─── Uniqueness check (slug + customDomain) ────────────────────────────
+    // P5.2-1 — optional admin fields validation (only when adminEmail is provided).
+    let normalizedAdminEmail: string | undefined;
+    let cleanAdminName: string | undefined;
+    if (adminEmail !== undefined && adminEmail !== null) {
+      if (typeof adminEmail !== 'string' || !EMAIL_REGEX.test(adminEmail.trim())) {
+        return NextResponse.json(
+          { error: 'adminEmail is invalid' },
+          { status: 400 }
+        );
+      }
+      normalizedAdminEmail = adminEmail.trim().toLowerCase();
+      if (typeof adminName !== 'string' || adminName.trim().length < 1) {
+        return NextResponse.json(
+          { error: 'adminName is required when adminEmail is provided' },
+          { status: 400 }
+        );
+      }
+      cleanAdminName = adminName.trim();
+      if (typeof adminPassword !== 'string' || adminPassword.length < 8) {
+        return NextResponse.json(
+          { error: 'adminPassword must be at least 8 characters when adminEmail is provided' },
+          { status: 400 }
+        );
+      }
+    }
+
+    // P5.2-1 — optional customDomain validation (additive). The domain is
+    // stored on the Wedding row but NOT activated — customDomainVerified stays
+    // false until the DNS verification flow (P5.2-2) flips it.
+    let normalizedCustomDomain: string | null = null;
+    if (customDomain !== undefined && customDomain !== null && customDomain !== '') {
+      if (typeof customDomain !== 'string') {
+        return NextResponse.json(
+          { error: 'customDomain must be a string' },
+          { status: 400 }
+        );
+      }
+      normalizedCustomDomain = customDomain.toLowerCase().trim();
+      if (!normalizedCustomDomain) {
+        return NextResponse.json(
+          { error: 'customDomain cannot be empty when provided' },
+          { status: 400 }
+        );
+      }
+    }
+
+    // ─── Pre-flight uniqueness check (early 409, outside tx) ───────────────
+    // The service does this check again inside the tx for race-safety, but
+    // we keep the early check for fast-fail (avoid bcrypt if slug collides).
     const existing = await db.wedding.findUnique({
       where: { slug: normalizedSlug },
       select: { id: true },
@@ -204,75 +275,147 @@ export async function createPlatformWeddingHandler(request: NextRequest) {
         { status: 409 }
       );
     }
+    if (normalizedCustomDomain) {
+      const existingDomain = await db.wedding.findUnique({
+        where: { customDomain: normalizedCustomDomain },
+        select: { id: true },
+      });
+      if (existingDomain) {
+        return NextResponse.json(
+          { error: `Wedding with customDomain "${normalizedCustomDomain}" already exists` },
+          { status: 409 }
+        );
+      }
+    }
+    if (normalizedAdminEmail) {
+      const existingAdmin = await db.adminUser.findUnique({
+        where: { email: normalizedAdminEmail },
+        select: { id: true },
+      });
+      if (existingAdmin) {
+        return NextResponse.json(
+          { error: `AdminUser with email "${normalizedAdminEmail}" already exists` },
+          { status: 409 }
+        );
+      }
+    }
 
-    // ─── Create wedding ────────────────────────────────────────────────────
-    const coupleLabel = buildCoupleLabel(
-      typeof brideName === 'string' ? brideName : '',
-      typeof groomName === 'string' ? groomName : ''
-    );
+    // ─── Hash password BEFORE provisioning (CPU-bound — kept out of tx) ────
+    // P2-SEC-10 + P2-PERF-5: bcrypt holds the SQLite single-writer lock for
+    // ~250ms at rounds=12. Computing it before opening the tx cuts lock hold
+    // time dramatically.
+    let hashedAdminPassword: string | undefined;
+    if (normalizedAdminEmail && cleanAdminName && adminPassword) {
+      hashedAdminPassword = await hashPassword(adminPassword);
+    }
 
+    // ─── Couple label + final status/plan ──────────────────────────────────
+    const cleanBride = brideName.trim();
+    const cleanGroom = groomName.trim();
+    const coupleLabel = buildCoupleLabel(cleanBride, cleanGroom);
     const finalStatus = (status as WeddingStatus) || 'DRAFT';
     const finalPlan = (plan as Plan) || 'TRIAL';
 
-    const wedding = await db.wedding.create({
-      data: {
+    // ─── Atomic fully-provisioned creation ──────────────────────────────────
+    // provisionWeddingFully opens its own $transaction and creates:
+    //   1. Wedding row (with customDomain set but customDomainVerified=false)
+    //   2. Essential Settings (unified list)
+    //   3. Default Theme (classic-gold)
+    //   4. Default CoupleStory placeholder
+    //   5. (Optional) AdminUser with role=ORGANIZER, linked to the new wedding
+    // All inside one atomic tx — if any step fails, none of them persist.
+    let provisioned: Awaited<ReturnType<typeof provisionWeddingFully>>;
+    try {
+      provisioned = await provisionWeddingFully({
         slug: normalizedSlug,
-        brideName: typeof brideName === 'string' ? brideName : '',
-        groomName: typeof groomName === 'string' ? groomName : '',
+        brideName: cleanBride,
+        groomName: cleanGroom,
         coupleLabel,
         weddingDate: weddingDate ? new Date(weddingDate) : null,
-        timezone: timezone || 'Africa/Kinshasa',
-        venueName: venueName || null,
-        venueCity: venueCity || null,
+        timezone: typeof timezone === 'string' ? timezone : 'Africa/Kinshasa',
+        venueName: typeof venueName === 'string' ? venueName.trim() || null : null,
+        venueAddress: typeof venueAddress === 'string' ? venueAddress.trim() || null : null,
+        venueCity: typeof venueCity === 'string' ? venueCity.trim() || null : null,
+        venueReference: typeof venueReference === 'string' ? venueReference.trim() || null : null,
         status: finalStatus,
         plan: finalPlan,
-        isDefault: false, // never auto-default — protected by migration script
-        publishedAt: finalStatus === 'PUBLISHED' ? new Date() : null,
-      },
-      select: WEDDING_LIST_SELECT,
-    });
-
-    // ─── Cascade provisioning: auto-create theme, settings, couple story ────
-    // This makes the wedding immediately functional — the public page renders
-    // with a working theme + the couple's own identity (not hardcoded defaults).
-    // Provisioning is idempotent + non-fatal: if it fails, the wedding still
-    // exists and the admin can manually configure via the Designer tab.
-    let provisioning: { settingsCreated: number; themeCreated: boolean; coupleStoryCreated: boolean } | null = null;
-    try {
-      provisioning = await provisionWedding({
-        id: wedding.id,
-        slug: wedding.slug,
-        brideName: wedding.brideName,
-        groomName: wedding.groomName,
-        coupleLabel: wedding.coupleLabel,
-        weddingDate: wedding.weddingDate,
-        timezone: wedding.timezone,
-        venueName: wedding.venueName,
-        venueAddress: null,
-        venueCity: wedding.venueCity,
-        venueReference: null,
+        customDomain: normalizedCustomDomain,
+        organizationId: typeof organizationId === 'string' ? organizationId : null,
+        adminEmail: normalizedAdminEmail,
+        adminName: cleanAdminName,
+        hashedAdminPassword,
       });
     } catch (provError) {
-      // Non-fatal: wedding is created, provisioning can be retried via repair script
-      logger.error('Wedding provisioning failed (non-fatal)', {
-        weddingId: wedding.id,
+      // P5.2-1 — translate provisioning errors to HTTP responses.
+      if (provError instanceof WeddingProvisioningError) {
+        const httpStatus =
+          provError.code === 'INVALID_INPUT' ? 400 : 409;
+        return NextResponse.json(
+          { error: provError.message, code: provError.code },
+          { status: httpStatus }
+        );
+      }
+      // P2002 — race condition (two concurrent creates won the pre-flight
+      // check then both tried to insert). Translate to 409.
+      if (
+        typeof provError === 'object' &&
+        provError !== null &&
+        'code' in provError &&
+        (provError as { code: string }).code === 'P2002'
+      ) {
+        return NextResponse.json(
+          { error: 'Slug, customDomain, or email already exists (race condition)' },
+          { status: 409 }
+        );
+      }
+      logger.error('Create platform wedding: provisioning failed', {
+        slug: normalizedSlug,
         errMessage: provError instanceof Error ? provError.message : String(provError),
       });
+      return internalError();
     }
+
+    // ─── Re-fetch with the full WEDDING_LIST_SELECT shape ───────────────────
+    // provisionWeddingFully returns a slim wedding object (no _count, no
+    // portfolio fields). The platform endpoint's response shape (backward
+    // compat) requires WEDDING_LIST_SELECT — re-query to maintain the shape.
+    const wedding = await db.wedding.findUnique({
+      where: { id: provisioned.wedding.id },
+      select: WEDDING_LIST_SELECT,
+    });
+    if (!wedding) {
+      // Should never happen — the wedding was just created in the tx above.
+      logger.error('Create platform wedding: post-create re-fetch returned null', {
+        weddingId: provisioned.wedding.id,
+      });
+      return internalError();
+    }
+
+    // ─── Backward-compatible provisioning summary ───────────────────────────
+    const provisioning = {
+      settingsCreated: provisioned.settingsCreated,
+      themeCreated: !!provisioned.theme,
+      coupleStoryCreated: !!provisioned.coupleStory,
+    };
 
     // ─── Audit log (P2-SEC-14: writeAuditLog populates ipAddress + userAgent) ─
     await writeAuditLog({
       weddingId: null, // platform-level event (action targets a wedding, not in it)
       userId: user!.id,
       action: 'CREATE_WEDDING',
-      details: `Created wedding ${normalizedSlug}` +
-        (provisioning
-          ? ` (provisioned: ${provisioning.settingsCreated} settings, theme=${provisioning.themeCreated}, story=${provisioning.coupleStoryCreated})`
-          : ' (provisioning failed — manual setup required)'),
+      details:
+        `Created wedding ${normalizedSlug}` +
+        ` (provisioned: ${provisioning.settingsCreated} settings, theme=${provisioning.themeCreated}, story=${provisioning.coupleStoryCreated})` +
+        (provisioned.admin ? `, admin=${provisioned.admin.email}` : ''),
       request,
     });
 
-    return NextResponse.json({ wedding, provisioning }, { status: 201 });
+    // Response is additive vs. the previous shape: { wedding, provisioning, admin? }.
+    // `admin` is included only when an AdminUser was created.
+    return NextResponse.json(
+      { wedding, provisioning, ...(provisioned.admin ? { admin: provisioned.admin } : {}) },
+      { status: 201 }
+    );
   } catch (error) {
     // P2-SEC-1: never log error.stack.
     logger.error('Create platform wedding error', {

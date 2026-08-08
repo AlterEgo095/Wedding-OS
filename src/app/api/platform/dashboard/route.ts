@@ -11,9 +11,11 @@ import { checkRateLimitAsync, getRateLimitKey } from '@/lib/rate-limit'; // P0.7
  * Platform-wide dashboard stats.
  *
  * Aggregates cross-tenant metrics for the super-admin dashboard:
- *   - weddings: total, by status, by plan
- *   - users:    total, by role, # platform admins
- *   - guests:   total, last-7-day growth
+ *   - weddings:    total, by status, by plan
+ *   - users:       total, by role, # platform admins
+ *   - guests:      total, last-7-day growth
+ *   - invitations: total across all weddings (P5.2-3 / HIGH-CMD-1)
+ *   - checkIns:    total checked-in guests across all weddings (P5.2-3 / HIGH-CMD-2)
  *   - recentWeddings: 5 newest tenants
  *   - recentActivity: 20 latest audit log entries (platform-wide)
  *   - revenue:  MRR, ARPU, byPlan breakdown, 6-month MRR series
@@ -105,7 +107,9 @@ export async function GET(request: NextRequest) {
     const [weddingsTotal, weddingsByStatus, weddingsByPlan, usersTotal, platformAdminCount, usersByRole, guestsTotal, guestsLast7Days, recentWeddings, recentActivity, // ── Phase 5-a: revenue / churn / growth inputs ──
       // P2-PERF-6: groupBy replaces the full-array findMany for current MRR.
       publishedWeddingsByPlanForMrr, // P2-PERF-6: scoped 6-month findMany for the mrrSeries only.
-      publishedWeddingsLast6Mo, weddingsCreatedSince6Mo, suspended30d, archived30d, newWeddings30d, newGuests30d, pendingLeadsCount, recentLeads, pendingPaymentsCount, recentPendingPayments, draftWeddingsCount, recentDrafts] = await Promise.all([
+      publishedWeddingsLast6Mo, weddingsCreatedSince6Mo, suspended30d, archived30d, newWeddings30d, newGuests30d, pendingLeadsCount, recentLeads, pendingPaymentsCount, recentPendingPayments, draftWeddingsCount, recentDrafts,
+      // ── P5.2-3 (HIGH-CMD-1 + HIGH-CMD-2): platform-wide invitations + check-ins counts ──
+      invitationsTotal, checkedInGuestsTotal] = await Promise.all([
       db.wedding.count(),
 
       db.wedding.groupBy({
@@ -238,6 +242,17 @@ export async function GET(request: NextRequest) {
         take: 5,
         select: { id: true, slug: true, coupleLabel: true, plan: true, commercialStatus: true, createdAt: true },
       }),
+
+      // ── P5.2-3 (HIGH-CMD-1): Total invitations sent across ALL weddings.
+      // Invitation.weddingId is non-nullable; counting without a where clause
+      // gives the cross-tenant platform-wide total (raw `db` — not tenantDb).
+      db.invitation.count(),
+
+      // ── P5.2-3 (HIGH-CMD-2): Total guests who have checked in across ALL weddings.
+      // Guest.checkedIn is a non-nullable Boolean @default(false), so we filter
+      // on `checkedIn: true` (NOT on `not: null` which would match every row).
+      // A separate Guest.checkedInAt DateTime? exists for the timestamp.
+      db.guest.count({ where: { checkedIn: true } }),
     ]);
 
     // ─── Format grouped results into Record<string, number> ───────────────
@@ -361,6 +376,13 @@ export async function GET(request: NextRequest) {
       guests: {
         total: guestsTotal,
         last7days: guestsLast7Days,
+      },
+      // ── P5.2-3 (HIGH-CMD-1 + HIGH-CMD-2): platform-wide invitations + check-ins ──
+      invitations: {
+        total: invitationsTotal,
+      },
+      checkIns: {
+        total: checkedInGuestsTotal,
       },
       recentWeddings,
       recentActivity,

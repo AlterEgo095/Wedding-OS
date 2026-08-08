@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getAuthUser, hasPermission } from '@/lib/auth';
 import { withPublicTenant, withAdminTenantHandler } from '@/lib/tenant-context';
-import { validateCustomDomain, planSupportsCustomDomain } from '@/lib/custom-domains';
+import { validateCustomDomain, planSupportsCustomDomain, buildDnsVerificationRecord, buildVerificationToken } from '@/lib/custom-domains';
 import { getClientInfo } from '@/lib/guest-auth';
 import { badRequest, internalError } from '@/lib/api-errors';
 import { logger } from '@/lib/logger';
@@ -86,11 +86,18 @@ export async function PUT(request: NextRequest) {
       // P2-CQ-7: resolve IP/UA before the tx.
       const client = getClientInfo(request);
 
+      // P5.2-2 (PRE-P5.X-AUDIT-B, HIGH-4): resetting customDomain also
+      // resets `customDomainVerified`. The couple must re-prove ownership of
+      // the new domain by adding the TXT record returned below and calling
+      // POST /api/weddings/{id}/verify-domain.
+      const verificationToken = buildVerificationToken(ctx.weddingId, normalizedDomain);
+      const dnsRecord = buildDnsVerificationRecord(normalizedDomain, verificationToken);
+
       // P1-CQ-17: wedding.update + auditLog.create in a single tx.
       await db.$transaction(async (tx) => {
         await tx.wedding.update({
           where: { id: ctx.weddingId },
-          data: { customDomain: normalizedDomain },
+          data: { customDomain: normalizedDomain, customDomainVerified: false },
         });
 
         await tx.auditLog.create({
@@ -98,7 +105,7 @@ export async function PUT(request: NextRequest) {
             weddingId: ctx.weddingId,
             userId: user.id,
             action: 'SET_CUSTOM_DOMAIN',
-            details: `Custom domain set: ${normalizedDomain}`,
+            details: `Custom domain set: ${normalizedDomain} (verification reset)`,
             ipAddress: client.ipAddress ?? null,
             userAgent: client.userAgent ?? null,
           },
@@ -109,6 +116,10 @@ export async function PUT(request: NextRequest) {
         customDomain: normalizedDomain,
         plan: wedding?.plan ?? ctx.plan,
         canUseCustomDomain: true,
+        // P5.2-2: DNS verification instructions for the couple.
+        customDomainVerified: false,
+        dnsVerification: dnsRecord,
+        verifyEndpoint: `/api/weddings/${ctx.weddingId}/verify-domain`,
       });
     });
   } catch (error) {
@@ -137,7 +148,8 @@ export async function DELETE(request: NextRequest) {
       await db.$transaction(async (tx) => {
         await tx.wedding.update({
           where: { id: ctx.weddingId },
-          data: { customDomain: null },
+          // P5.2-2: clearing the domain also clears the verification flag.
+          data: { customDomain: null, customDomainVerified: false },
         });
 
         await tx.auditLog.create({
@@ -145,14 +157,14 @@ export async function DELETE(request: NextRequest) {
             weddingId: ctx.weddingId,
             userId: user.id,
             action: 'CLEAR_CUSTOM_DOMAIN',
-            details: 'Custom domain cleared',
+            details: 'Custom domain cleared (verification reset)',
             ipAddress: client.ipAddress ?? null,
             userAgent: client.userAgent ?? null,
           },
         });
       });
 
-      return NextResponse.json({ customDomain: null });
+      return NextResponse.json({ customDomain: null, customDomainVerified: false });
     });
   } catch (error) {
     logger.error('clear-custom-domain failed', {

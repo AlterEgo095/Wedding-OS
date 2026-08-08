@@ -4,6 +4,11 @@ import { db } from '@/lib/db';
 import { getAuthUser, requirePlatformAdmin } from '@/lib/auth';
 import { buildCoupleLabel, type Plan, type WeddingStatus } from '@/lib/types';
 import { invalidateWeddingCache } from '@/lib/tenant-context';
+// P5.2-2 (PRE-P5.X-AUDIT-B, HIGH-4): DNS verification for custom domains.
+import {
+  buildDnsVerificationRecord,
+  buildVerificationToken,
+} from '@/lib/custom-domains';
 // VALID_STATUSES + VALID_TRANSITIONS + isValidTransition extracted to
 // src/lib/wedding-status.ts (Phase 3 ÉTAPE 6) so other routes (publish,
 // onboarding, etc.) can reuse the same lifecycle rules without drift.
@@ -69,6 +74,8 @@ const WEDDING_DETAIL_SELECT = {
   plan: true,
   commercialStatus: true,
   customDomain: true,
+  // P5.2-2: surface verification status to the admin UI.
+  customDomainVerified: true,
   isDefault: true,
   createdAt: true,
   updatedAt: true,
@@ -137,6 +144,8 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
         status: true,
         commercialStatus: true,
         customDomain: true,
+        // P5.2-2: needed to detect change → reset verification.
+        customDomainVerified: true,
       },
     });
 
@@ -319,9 +328,19 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     }
     if (plan !== undefined) updateData.plan = plan;
 
+    // P5.2-2 (PRE-P5.X-AUDIT-B, HIGH-4): when customDomain changes, reset
+    // verification — the couple must re-prove ownership of the new domain.
+    // Clearing the domain (null) also clears the flag (no domain → no need
+    // to verify). The TXT record instructions are returned in the response.
+    let dnsVerificationInstruction: ReturnType<typeof buildDnsVerificationRecord> | null = null;
     if (customDomain !== undefined) {
       const trimmed = customDomain ? String(customDomain).toLowerCase().trim() : null;
       updateData.customDomain = trimmed;
+      updateData.customDomainVerified = false;
+      if (trimmed) {
+        const token = buildVerificationToken(id, trimmed);
+        dnsVerificationInstruction = buildDnsVerificationRecord(trimmed, token);
+      }
     }
 
     // ─── Persist + invalidate cache ────────────────────────────────────────
@@ -342,6 +361,16 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       request,
     });
 
+    // P5.2-2: when customDomain was set/changed, return the TXT record the
+    // couple must add to verify ownership. The frontend uses this to display
+    // step-by-step instructions and a "Vérifier le domaine" button.
+    if (dnsVerificationInstruction) {
+      return NextResponse.json({
+        wedding,
+        dnsVerification: dnsVerificationInstruction,
+        customDomainVerified: false,
+      });
+    }
     return NextResponse.json({ wedding });
   } catch (error) {
     // P2-SEC-1: never log error.stack.

@@ -24,6 +24,15 @@ import { internalError } from '@/lib/api-errors';
 import { writeAuditLog } from '@/lib/audit';
 // Mission 6.0 P0.5 — route all publications through the deployment pipeline.
 import { publishWeddingViaPipeline, type PublishResult } from '@/lib/pipeline/publish-helper';
+// P5.2-1 — unified provisioning service. Replaces the inline wedding.create +
+// essential-settings + organizer.create that used to live in this handler.
+// Both creation endpoints (platform POST + onboarding POST) now share the same
+// `provisionWeddingFully` so couples always get Theme + CoupleStory + Settings
+// + AdminUser regardless of which path they hit.
+import {
+  provisionWeddingFully,
+  WeddingProvisioningError,
+} from '@/lib/services/wedding-provisioning';
 
 /**
  * POST /api/onboarding/create-wedding    (PLATFORM_ADMIN)
@@ -81,28 +90,10 @@ import { publishWeddingViaPipeline, type PublishResult } from '@/lib/pipeline/pu
 // duplicated locally with a slightly different pattern — /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 // — which is permissive on the TLD. The shared one requires 2+ chars).
 
-const WEDDING_RESPONSE_SELECT = {
-  id: true,
-  slug: true,
-  brideName: true,
-  groomName: true,
-  coupleLabel: true,
-  status: true,
-  plan: true,
-  weddingDate: true,
-  venueCity: true,
-  timezone: true,
-  publishedAt: true,
-  createdAt: true,
-} as const;
-
-const ORGANIZER_RESPONSE_SELECT = {
-  id: true,
-  email: true,
-  name: true,
-  role: true,
-  weddingId: true,
-} as const;
+// P5.2-1 — the WEDDING_RESPONSE_SELECT and ORGANIZER_RESPONSE_SELECT constants
+// that used to live here have been removed. The slim wedding shape returned by
+// provisionWeddingFully is now mapped to the response inline (see the tx body
+// below), and the organizer shape is taken from provisioned.admin directly.
 
 // P2-SEC-6: rate-limited POST handler (5 requests / 60s per IP).
 // Resource-intensive: bcrypt hash + 5-row transaction + WhatsApp deeplink build.
@@ -357,106 +348,56 @@ async function createWeddingHandler(request: NextRequest) {
     const hashedPassword = await hashPassword(organizerPassword);
 
     // ─── Transactional create ────────────────────────────────────────────
+    // P5.2-1: the wedding + Settings + Theme + CoupleStory + organizer
+    // AdminUser are created atomically by `provisionWeddingFully`, which runs
+    // inside THIS tx (passed via { tx }). Subscription + Invoice + Lead
+    // conversion + audit logs stay in the same tx so the entire onboarding
+    // (provisioning + commercial + audit) commits atomically — same atomicity
+    // guarantee as before the refactor.
     const result = await db.$transaction(async (tx) => {
-      // 1. Create the wedding
-      const wedding = await tx.wedding.create({
-        data: {
+      // 1. Provision the wedding (Wedding + Settings + Theme + CoupleStory +
+      //    organizer AdminUser, role=ORGANIZER). The service does its own
+      //    slug/email pre-flight checks inside the tx for race-safety.
+      const provisioned = await provisionWeddingFully(
+        {
           slug: normalizedSlug,
           brideName: cleanBride,
           groomName: cleanGroom,
           coupleLabel,
           weddingDate:
             weddingDate && weddingDate !== '' ? new Date(String(weddingDate)) : null,
-          // P3: `timezone` is `unknown` (from Record<string, unknown> body) —
-          // narrow to string before passing to the non-nullable schema field.
           timezone: typeof timezone === 'string' ? timezone : 'Africa/Kinshasa',
-          venueName: venueName && typeof venueName === 'string' ? venueName.trim() || null : null,
-          venueCity: venueCity && typeof venueCity === 'string' ? venueCity.trim() || null : null,
+          venueName:
+            venueName && typeof venueName === 'string' ? venueName.trim() || null : null,
+          venueCity:
+            venueCity && typeof venueCity === 'string' ? venueCity.trim() || null : null,
           // Mission 6.0 P0.5 — always create as DRAFT; publish via pipeline post-tx.
           status: 'DRAFT',
           plan,
-          isDefault: false, // NEVER auto-default
-          publishedAt: null,
+          adminEmail: normalizedOrganizerEmail,
+          adminName: cleanOrganizerName,
+          hashedAdminPassword: hashedPassword,
         },
-        select: WEDDING_RESPONSE_SELECT,
-      });
+        { tx },
+      );
 
-      // 1b. Seed essential Settings rows so the public /w/{slug} page renders
-      // with the couple's real names instead of falling back to the hardcoded
-      // "Josué & Hornella" defaults in HeroSection. Without these rows, a
-      // freshly onboarded wedding would show the default couple's names until
-      // the organizer logs in and configures the admin panel.
-      const weddingDateObj =
-        weddingDate && weddingDate !== '' ? new Date(String(weddingDate)) : null;
-      const weddingDateIso = weddingDateObj
-        ? weddingDateObj.toISOString().split('T')[0]
-        : '';
-      const siteSubtitle = weddingDateObj
-        ? weddingDateObj.toLocaleDateString('fr-FR', {
-            weekday: 'long',
-            day: 'numeric',
-            month: 'long',
-            year: 'numeric',
-          })
-        : '';
-      const cleanVenueName =
-        venueName && typeof venueName === 'string' ? venueName.trim() : '';
-      const cleanVenueCity =
-        venueCity && typeof venueCity === 'string' ? venueCity.trim() : '';
-      const hashtag = `#${cleanBride.replace(/[^a-zA-Z]/g, '')}Et${cleanGroom.replace(/[^a-zA-Z]/g, '')}${weddingDateObj ? weddingDateObj.getFullYear() : ''}`;
-
-      const essentialSettings: { key: string; value: string }[] = [
-        { key: 'bride_name', value: cleanBride },
-        { key: 'groom_name', value: cleanGroom },
-        { key: 'site_title', value: `Mariage ${coupleLabel}` },
-        { key: 'site_subtitle', value: siteSubtitle },
-        { key: 'wedding_date', value: weddingDateIso },
-        { key: 'wedding_time', value: '21:30' },
-        { key: 'venue_time', value: '21H30' },
-        { key: 'venue_name', value: cleanVenueName },
-        { key: 'venue_city', value: cleanVenueCity },
-        { key: 'venue_address', value: '' },
-        { key: 'hashtag', value: hashtag },
-        {
-          key: 'welcome_message',
-          value: `Bienvenue sur la plateforme du mariage de ${coupleLabel}`,
-        },
-        {
-          key: 'invitation_message',
-          value: `${coupleLabel} ont l'honneur de vous inviter à leur célébration.`,
-        },
-        { key: 'primary_color', value: '#D4A853' },
-        { key: 'music_enabled', value: 'false' },
-        { key: 'music_volume', value: '0.30' },
-      ];
-
-      await tx.settings.createMany({
-        data: essentialSettings.map((s) => ({
-          weddingId: wedding.id,
-          key: s.key,
-          value: s.value,
-        })),
-      });
-
-      // P2-SEC-10 + P2-PERF-5: hashedPassword was computed above the tx.
-      // (Original line moved out of the transaction.)
-
-      // 3. Create the organizer AdminUser
-      const organizer = await tx.adminUser.create({
-        data: {
-          email: normalizedOrganizerEmail,
-          password: hashedPassword,
-          name: cleanOrganizerName,
-          role: 'ORGANIZER',
-          weddingId: wedding.id,
-        },
-        select: ORGANIZER_RESPONSE_SELECT,
-      });
+      // 1b. Map provisioned.admin → organizer (backward-compat response shape).
+      // provisionWeddingFully always creates the organizer when adminEmail is
+      // provided (which the wizard requires), so admin is non-null here.
+      const organizer = provisioned.admin
+        ? {
+            id: provisioned.admin.id,
+            email: provisioned.admin.email,
+            name: provisioned.admin.name,
+            role: provisioned.admin.role,
+            weddingId: provisioned.wedding.id,
+          }
+        : null;
 
       // 4. Create the subscription (weddingId UNIQUE)
       const subscription = await tx.subscription.create({
         data: {
-          weddingId: wedding.id,
+          weddingId: provisioned.wedding.id,
           plan,
           status: 'PENDING_PAYMENT',
           amountAgreed: amountAgreedCents,
@@ -482,7 +423,7 @@ async function createWeddingHandler(request: NextRequest) {
       const invoice = await tx.invoice.create({
         data: {
           subscriptionId: subscription.id,
-          weddingId: wedding.id,
+          weddingId: provisioned.wedding.id,
           amountDue: resolvedAmountUsdCents,
           amountPaid: 0,
           currency: 'usd',
@@ -510,14 +451,14 @@ async function createWeddingHandler(request: NextRequest) {
           where: { id: leadToConvert.id },
           data: {
             status: 'CONVERTED',
-            convertedWeddingId: wedding.id,
+            convertedWeddingId: provisioned.wedding.id,
             convertedAt: new Date(),
           },
         });
         convertedLead = {
           id: leadToConvert.id,
           status: 'CONVERTED',
-          convertedWeddingId: wedding.id,
+          convertedWeddingId: provisioned.wedding.id,
         };
       }
 
@@ -550,7 +491,25 @@ async function createWeddingHandler(request: NextRequest) {
         ],
       });
 
-      return { wedding, organizer, subscription, invoice, convertedLead };
+      // The slim wedding returned by provisionWeddingFully is a superset of
+      // the old WEDDING_RESPONSE_SELECT — extra fields are additive (per
+      // P5.2-1 backward-compat contract: additive only).
+      const weddingResponse = {
+        id: provisioned.wedding.id,
+        slug: provisioned.wedding.slug,
+        brideName: provisioned.wedding.brideName,
+        groomName: provisioned.wedding.groomName,
+        coupleLabel: provisioned.wedding.coupleLabel,
+        status: provisioned.wedding.status,
+        plan: provisioned.wedding.plan,
+        weddingDate: provisioned.wedding.weddingDate,
+        venueCity: provisioned.wedding.venueCity,
+        timezone: provisioned.wedding.timezone,
+        publishedAt: provisioned.wedding.publishedAt,
+        createdAt: provisioned.wedding.createdAt,
+      };
+
+      return { wedding: weddingResponse, organizer, subscription, invoice, convertedLead };
     });
 
     // ─── Post-transaction side effects ─────────────────────────────────────
@@ -604,6 +563,14 @@ async function createWeddingHandler(request: NextRequest) {
       { status: 201 },
     );
   } catch (error: unknown) {
+    // P5.2-1 — translate provisioning service errors to HTTP responses.
+    if (error instanceof WeddingProvisioningError) {
+      const httpStatus = error.code === 'INVALID_INPUT' ? 400 : 409;
+      return NextResponse.json(
+        { error: error.message, code: error.code },
+        { status: httpStatus },
+      );
+    }
     // P1-CQ-18: catch unique-constraint violations (email already exists).
     // The most likely cause is a duplicate organizer email — the wizard does
     // a pre-flight findUnique but two concurrent onboarding submissions with

@@ -124,6 +124,12 @@ model Wedding {
   status          String        @default("DRAFT") // DRAFT, PUBLISHED, COMPLETED, ARCHIVED, SUSPENDED
   plan            String        @default("TRIAL") // TRIAL, ESSENTIEL, PREMIUM, ELITE
   customDomain    String?       @unique // e.g. "mariage-sophie.fr" (Premium/Élite only)
+  // P5.2-2 (PRE-P5.X-AUDIT-B, HIGH-4): DNS verification gate for custom domains.
+  // Set to false whenever customDomain changes; flipped to true only after the
+  // couple adds the TXT record _heureux-mariage.{domain} and the
+  // /verify-domain endpoint confirms the token is present in DNS. The
+  // /api/resolve-domain resolver blocks routing for unverified domains.
+  customDomainVerified Boolean  @default(false)
   isDefault       Boolean       @default(false) // marks the legacy wedding served at "/"
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
