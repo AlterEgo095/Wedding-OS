@@ -5,10 +5,8 @@ import { getAuthUser, requirePlatformAdmin } from '@/lib/auth';
 import { buildCoupleLabel, type Plan, type WeddingStatus } from '@/lib/types';
 import { invalidateWeddingCache } from '@/lib/tenant-context';
 // P5.2-2 (PRE-P5.X-AUDIT-B, HIGH-4): DNS verification for custom domains.
-import {
-  buildDnsVerificationRecord,
-  buildVerificationToken,
-} from '@/lib/custom-domains';
+import { buildDnsVerificationRecord } from '@/lib/custom-domains';
+import { buildVerificationToken } from '@/lib/dns-verification';
 // VALID_STATUSES + VALID_TRANSITIONS + isValidTransition extracted to
 // src/lib/wedding-status.ts (Phase 3 ÉTAPE 6) so other routes (publish,
 // onboarding, etc.) can reuse the same lifecycle rules without drift.

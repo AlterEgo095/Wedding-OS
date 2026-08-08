@@ -17,14 +17,18 @@
 //   2. The couple adds the TXT record at their DNS provider.
 //   3. They call POST /api/platform/weddings/{id}/verify-domain (or the
 //      organizer-scoped /api/weddings/{id}/verify-domain) → the endpoint runs
-//      verifyDnsRecord(), which performs a DNS TXT lookup for
-//      `_heureux-mariage.{domain}` and checks that the deterministic token is
-//      present. On success `customDomainVerified` is flipped to true.
+//      verifyDnsRecord() (from dns-verification.ts, NOT this file), which
+//      performs a DNS TXT lookup for `_heureux-mariage.{domain}` and checks
+//      that the deterministic token is present. On success
+//      `customDomainVerified` is flipped to true.
 //   4. /api/resolve-domain only resolves verified domains, so unverified
 //      custom domains never reach the public routing layer.
+//
+// IMPORTANT: This file is imported by the middleware (Edge runtime). It MUST
+// NOT import any Node.js built-in modules (node:crypto, node:dns, etc.).
+// The DNS verification functions that use Node.js built-ins live in
+// src/lib/dns-verification.ts (imported only by API route handlers).
 
-import { createHash } from 'node:crypto';
-import { resolveTxt } from 'node:dns/promises';
 import { PLAN_LIMITS, type Plan } from './types';
 
 /**
@@ -113,30 +117,13 @@ export function planSupportsCustomDomain(plan: string): boolean {
 }
 
 /**
- * Compute a deterministic DNS verification token for a (weddingId, domain)
- * pair. The same couple+domain always gets the same token, so the TXT record
- * they add once keeps working across re-verification attempts — but a
- * different wedding claiming the same domain gets a different token, so a
- * squatter cannot reuse another wedding's TXT record.
- *
- * Format: `hm-verify-<16 hex chars>` (16 chars = 8 bytes of SHA-256).
- */
-export function buildVerificationToken(weddingId: string, domain: string): string {
-  const normalized = domain.toLowerCase().trim();
-  const hash = createHash('sha256')
-    .update(`${weddingId}:${normalized}`)
-    .digest('hex');
-  return `hm-verify-${hash.slice(0, 16)}`;
-}
-
-/**
  * Build the DNS verification record that a couple must add to verify
  * domain ownership (TXT record: _heureux-mariage.{domain} → hm-verify=...).
  *
  * P5.2-2: the TXT value is now a deterministic token derived from the
- * wedding ID + domain (see buildVerificationToken), NOT the bare slug.
- * This prevents a squatter who controls a different domain from simply
- * copying the slug into their own TXT record.
+ * wedding ID + domain (see buildVerificationToken in dns-verification.ts),
+ * NOT the bare slug. This prevents a squatter who controls a different
+ * domain from simply copying the slug into their own TXT record.
  *
  * Accepts the verification token directly (computed by the caller via
  * buildVerificationToken) so the same function works for both the
@@ -160,67 +147,6 @@ export function buildDnsVerificationRecord(
     type: 'TXT',
     name: `_heureux-mariage.${domain.toLowerCase().trim()}`,
     value,
-  };
-}
-
-/**
- * Perform the DNS TXT lookup for `_heureux-mariage.{domain}` and verify
- * that the expected verification token is present in at least one record.
- *
- * Uses Node's built-in `dns/promises` (no external deps). Resolves with a
- * structured result so callers can surface useful diagnostics to the user.
- *
- * Failure modes (all gracefully handled, none throw):
- *   - NXDOMAIN / ENOTFOUND  → verified=false, reason='NO_RECORD'
- *   - DNS timeout           → verified=false, reason='TIMEOUT'
- *   - Resolver error        → verified=false, reason='RESOLVER_ERROR'
- *   - Records found but no match → verified=false, reason='TOKEN_MISMATCH'
- *
- * The lookup is performed against the *system* resolver (which honours
- * /etc/resolv.conf). In production this is fine; for local dev the couple's
- * DNS provider has already propagated the record by the time they trigger
- * verification.
- */
-export async function verifyDnsRecord(
-  domain: string,
-  expectedToken: string
-): Promise<{
-  verified: boolean;
-  reason: 'OK' | 'NO_RECORD' | 'TOKEN_MISMATCH' | 'TIMEOUT' | 'RESOLVER_ERROR';
-  records: string[];
-  lookupName: string;
-}> {
-  const normalized = domain.toLowerCase().trim();
-  const lookupName = `_heureux-mariage.${normalized}`;
-
-  let records: string[] = [];
-  try {
-    // resolveTxt returns string[][] (each TXT record is split into chunks).
-    // We flatten so a multi-chunk TXT record is compared as a single string.
-    const result = await resolveTxt(lookupName);
-    records = result.map((r) => r.join(''));
-  } catch (err) {
-    const code = (err as NodeJS.ErrnoException)?.code;
-    if (code === 'ENOTFOUND' || code === 'ENODATA') {
-      return { verified: false, reason: 'NO_RECORD', records: [], lookupName };
-    }
-    if (code === 'ETIMEDOUT' || code === 'ESERVFAIL') {
-      return { verified: false, reason: 'TIMEOUT', records: [], lookupName };
-    }
-    return { verified: false, reason: 'RESOLVER_ERROR', records: [], lookupName };
-  }
-
-  // Accept either the bare token (`hm-verify-<hex>`) or the legacy
-  // `hm-verify=<slug>` form. The bare token is the canonical P5.2-2 form.
-  const matched = records.some(
-    (r) => r === expectedToken || r === `hm-verify=${expectedToken}`
-  );
-
-  return {
-    verified: matched,
-    reason: matched ? 'OK' : 'TOKEN_MISMATCH',
-    records,
-    lookupName,
   };
 }
 

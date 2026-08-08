@@ -4,11 +4,8 @@ import { db } from '@/lib/db';
 import { getAuthUser, hasPermission, assertWeddingAccessAsync } from '@/lib/auth';
 import { invalidateWeddingCache } from '@/lib/tenant-context';
 // P5.2-2 (PRE-P5.X-AUDIT-B, HIGH-4): DNS verification for custom domains.
-import {
-  buildDnsVerificationRecord,
-  buildVerificationToken,
-  verifyDnsRecord,
-} from '@/lib/custom-domains';
+import { buildDnsVerificationRecord } from '@/lib/custom-domains';
+import { buildVerificationToken, verifyDnsRecord } from '@/lib/dns-verification';
 import { logger } from '@/lib/logger';
 import { internalError } from '@/lib/api-errors';
 import { getClientInfo } from '@/lib/guest-auth';
