@@ -2,7 +2,7 @@ export const dynamic = 'force-dynamic';
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { db } from '@/lib/db';
-import { getAuthUser, hasPermission, assertWeddingAccess, type AuthUser } from '@/lib/auth';
+import { getAuthUser, hasPermission, assertWeddingAccessAsync, type AuthUser } from '@/lib/auth';
 import { withRateLimit } from '@/lib/rate-limit';
 import { badRequest, forbidden, internalError, unauthorized } from '@/lib/api-errors';
 import { logger } from '@/lib/logger';
@@ -40,7 +40,7 @@ async function checkAuth(request: NextRequest, weddingId: string): Promise<NextR
   if (!hasPermission(user.role, ['PLATFORM_ADMIN', 'ORGANIZER'])) {
     return forbidden('Réservé aux organisateurs');
   }
-  if (!assertWeddingAccess(user, weddingId)) {
+  if (!(await assertWeddingAccessAsync(user, weddingId))) {
     return forbidden('Accès refusé à ce mariage');
   }
   return user;

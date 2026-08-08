@@ -3,31 +3,35 @@
  * /api/platform/weddings/[id]/route.ts to be reused by /api/onboarding/publish
  * and any other route that needs to validate wedding status transitions).
  *
- * ADDITIVE ONLY — extracted 1:1 from the existing implementation in
- * /api/platform/weddings/[id]/route.ts (lines 25-61). Zero behavior change.
+ * P5.1 — Added UNPUBLISHED state (reversible unpublish without data loss).
  *
- * Lifecycle (Phase 3 ÉTAPE 5 — commercial lifecycle):
- *   DRAFT      → PUBLISHED, ARCHIVED
- *   PUBLISHED  → COMPLETED, SUSPENDED, ARCHIVED
- *   COMPLETED  → ARCHIVED
- *   SUSPENDED  → PUBLISHED, ARCHIVED
- *   ARCHIVED   → DRAFT, PUBLISHED   (un-archive)
+ * Lifecycle:
+ *   DRAFT       → PUBLISHED, ARCHIVED
+ *   PUBLISHED   → COMPLETED, SUSPENDED, UNPUBLISHED, ARCHIVED
+ *   UNPUBLISHED → PUBLISHED, DRAFT, ARCHIVED   (P5.1 — reversible)
+ *   COMPLETED   → ARCHIVED
+ *   SUSPENDED   → PUBLISHED, ARCHIVED
+ *   ARCHIVED    → DRAFT, PUBLISHED   (un-archive)
  *
  * Same-status transitions (e.g. PUBLISHED → PUBLISHED) are always allowed —
  * they are idempotent no-ops, not real transitions.
  *
- * TERMINATED is NOT used — COMPLETED is the business term for "wedding day has
- * passed and the event is closed". ARCHIVED is for administrative hiding
- * (e.g. cancelled contracts, test weddings). SUSPENDED is for non-payment or
- * ToS violation (reversible).
+ * UNPUBLISHED vs SUSPENDED vs ARCHIVED:
+ *   UNPUBLISHED — Super Admin intentionally takes the wedding offline (reversible).
+ *                 Frontend shows 410 Gone. Data preserved. Admin access preserved.
+ *   SUSPENDED   — System/billing suspension (non-payment, ToS violation). Reversible.
+ *                 Frontend shows holding page. Data preserved. Admin access preserved.
+ *   ARCHIVED    — Wedding day has passed, event is closed. Data preserved for memorial.
+ *                 Frontend shows "Souvenirs archivés". Admin access preserved.
  */
 
 import type { WeddingStatus } from '@/lib/types';
 
-/** Canonical list of valid wedding statuses (5 — includes COMPLETED from ÉTAPE 5). */
+/** Canonical list of valid wedding statuses (6 — includes UNPUBLISHED from P5.1). */
 export const VALID_STATUSES: WeddingStatus[] = [
   'DRAFT',
   'PUBLISHED',
+  'UNPUBLISHED',
   'COMPLETED',
   'ARCHIVED',
   'SUSPENDED',
@@ -37,12 +41,16 @@ export const VALID_STATUSES: WeddingStatus[] = [
  * Allowed status transitions. Same-status transitions are always allowed
  * (handled in `isValidTransition`).
  *
- * This matrix is a SUPERSET of every transition the previous (pre-ÉTAPE 5)
- * code allowed — no regression.
+ * P5.1: Added UNPUBLISHED state with reversible transitions:
+ *   PUBLISHED → UNPUBLISHED  (unpublish without deleting data)
+ *   UNPUBLISHED → PUBLISHED   (re-publish)
+ *   UNPUBLISHED → DRAFT       (reset to draft for reconfiguration)
+ *   UNPUBLISHED → ARCHIVED    (archive after unpublish)
  */
 export const VALID_TRANSITIONS: Record<string, WeddingStatus[]> = {
   DRAFT: ['PUBLISHED', 'ARCHIVED'],
-  PUBLISHED: ['COMPLETED', 'SUSPENDED', 'ARCHIVED'],
+  PUBLISHED: ['COMPLETED', 'SUSPENDED', 'UNPUBLISHED', 'ARCHIVED'],
+  UNPUBLISHED: ['PUBLISHED', 'DRAFT', 'ARCHIVED'],
   COMPLETED: ['ARCHIVED'],
   SUSPENDED: ['PUBLISHED', 'ARCHIVED'],
   ARCHIVED: ['DRAFT', 'PUBLISHED'],

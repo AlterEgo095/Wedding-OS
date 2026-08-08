@@ -54,6 +54,7 @@ export interface UserRow {
   name: string
   role: string
   weddingId: string | null
+  suspended?: boolean  // P5.1 H-DELEG-3
   wedding?: { slug: string; coupleLabel: string } | null
   createdAt: string
 }

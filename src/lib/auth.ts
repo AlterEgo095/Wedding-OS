@@ -174,6 +174,13 @@ export async function getAuthUser(request: NextRequest): Promise<AuthUser | null
   const dbUser = await db.adminUser.findUnique({ where: { id: user.id } });
   if (!dbUser) return null;
 
+  // ─── P5.1 H-DELEG-3 — Soft-suspend check for ALL admin users ─────────────
+  // When suspended=true, the user is denied access immediately (real-time,
+  // 1-request latency). Unlike hard delete, this preserves the AdminUser row
+  // and all audit history. Super Admin can re-activate by setting
+  // suspended=false. This works for per-wedding admins AND platform admins.
+  if (dbUser.suspended) return null;
+
   // ─── P5.0 CRITICAL-GAP-1 — Real-time org member revocation ───────────────
   // For org-scoped roles (ORG_ADMIN / ORG_MEMBER / ORG_VIEWER), verify the
   // user has an ACTIVE membership in their organization on EVERY request.

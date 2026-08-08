@@ -340,6 +340,23 @@ export async function resolvePublicTenant(
     };
   }
 
+  // P5.1 H-UNPUB-1 — UNPUBLISHED weddings' public APIs are blocked.
+  // Super Admin can unpublish a wedding (PUBLISHED → UNPUBLISHED) to take it
+  // offline intentionally without deleting data. The frontend shows a 410 Gone
+  // page (layout.tsx), and /api/* endpoints return 410 to prevent guest data
+  // access. Admin routes use resolveAdminTenant (not this function) so the
+  // organizer retains full management access via /admin/*.
+  if (wedding.status === 'UNPUBLISHED') {
+    return {
+      context: null,
+      wedding: null,
+      error: {
+        status: 410,
+        message: `Wedding "${slug}" is no longer published.`,
+      },
+    };
+  }
+
   // P5.0 H-ARCH-1 — ARCHIVED weddings' public APIs are blocked.
   // The memorial page (rendered by layout.tsx for non-admin routes) still
   // shows, but /api/* endpoints (guest data, photos, guestbook, QR) return

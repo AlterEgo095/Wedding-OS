@@ -259,6 +259,16 @@ model AdminUser {
   updatedAt    DateTime   @updatedAt
   wedding      Wedding?   @relation(fields: [weddingId], references: [id], onDelete: Cascade)
 
+  // ─── P5.1 H-DELEG-3 — Soft-suspend flag for per-wedding admins ──────────────
+  // When true, the user is denied access in getAuthUser (real-time, 1-request
+  // latency). Unlike hard delete, this preserves the AdminUser row + audit
+  // history. Super Admin can re-activate by setting suspended=false.
+  // NOTE: org-scoped admins use OrganizationMember.status='REVOKED' instead
+  // (checked separately in getAuthUser via CRITICAL-GAP-1 fix).
+  suspended    Boolean    @default(false)
+  suspendedAt  DateTime?
+  suspendedBy  String?    // → AdminUser.id (who suspended this user)
+
   // ─── Mission 6.0 P1.2 — Organization membership (B2B2C) ─────────────────────
   // Nullable for backward compat: existing users have no org. New org members
   // get this set. When set + role is ORG_*, the user accesses ALL weddings
@@ -621,7 +631,11 @@ model GuestAccessLog {
 model AuditLog {
   id        String    @id @default(cuid())
   weddingId String?   // null = platform-level event
-  wedding   Wedding?  @relation(fields: [weddingId], references: [id], onDelete: Cascade)
+  // P5.1 H-DEL-2 — Changed from Cascade to SetNull to preserve audit history
+  // when a wedding is deleted. Previously, deleting a wedding destroyed its
+  // ENTIRE audit trail (RSVPs, logins, config changes). Now the weddingId is
+  // nullified but the log entry survives for forensic/RGPD purposes.
+  wedding   Wedding?  @relation(fields: [weddingId], references: [id], onDelete: SetNull)
   userId    String?
   user      AdminUser? @relation(fields: [userId], references: [id], onDelete: SetNull)
   action    String
@@ -630,11 +644,22 @@ model AuditLog {
   // Both nullable for backward compat (existing rows have neither).
   ipAddress String?
   userAgent  String?
+  // P5.2 — Audit trail enrichment (HIGH-AUDIT-1 + HIGH-AUDIT-2)
+  // result: 'SUCCESS' | 'FAILURE' — captures whether the action succeeded.
+  // targetUserId: for user-targeted actions (create/revoke/suspend).
+  // targetResourceId: for resource-targeted actions (wedding publish/delete).
+  // targetType: 'WEDDING' | 'USER' | 'ORG' | 'COLLECTION' | 'DEPLOYMENT' | null.
+  result           String?  // SUCCESS | FAILURE
+  targetUserId     String?
+  targetResourceId String?
+  targetType       String?
   createdAt DateTime  @default(now())
 
   @@index([weddingId, createdAt])
   @@index([userId])
   @@index([ipAddress])
+  @@index([targetUserId])
+  @@index([targetResourceId])
 }
 
 // ══════════════════════════════════════════════════════════════════════════════

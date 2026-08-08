@@ -177,6 +177,27 @@ export default async function WeddingLayout({
     );
   }
 
+  {/* P5.1 H-UNPUB-1 — UNPUBLISHED: Super Admin has taken this wedding offline.
+      Public visitors see a 410 Gone page. Admin routes (/admin/*) bypass this
+      so the organizer can still manage the wedding and re-publish when ready. */}
+  if (wedding.status === 'UNPUBLISHED' && !isAdminRoute) {
+    return (
+      <>
+        <ThemeInjector />
+        <div className="min-h-screen flex items-center justify-center bg-gradient-warm p-6">
+          <div className="max-w-md text-center space-y-4">
+            <div className="text-6xl">🕊️</div>
+            <h1 className="font-serif text-3xl text-foreground">Ce mariage n&apos;est plus en ligne</h1>
+            <p className="text-muted-foreground">
+              Le mariage de <strong>{wedding.coupleLabel}</strong> a été retiré de la publication.
+              Pour toute question, veuillez contacter les organisateurs.
+            </p>
+          </div>
+        </div>
+      </>
+    );
+  }
+
   if (wedding.status === 'ARCHIVED' && !isAdminRoute) {
     return (
       <>

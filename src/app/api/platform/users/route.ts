@@ -37,6 +37,7 @@ const USER_LIST_SELECT = {
   name: true,
   role: true,
   weddingId: true,
+  suspended: true,  // P5.1 H-DELEG-3
   lastLoginAt: true,
   createdAt: true,
   updatedAt: true,

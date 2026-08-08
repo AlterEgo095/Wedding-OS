@@ -1,7 +1,7 @@
 export const dynamic = 'force-dynamic';
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { getAuthUser, hasPermission, assertWeddingAccess } from '@/lib/auth';
+import { getAuthUser, hasPermission, assertWeddingAccessAsync } from '@/lib/auth';
 import { forbidden, internalError, unauthorized } from '@/lib/api-errors';
 import { logger } from '@/lib/logger';
 
@@ -35,7 +35,7 @@ export async function GET(
     if (!hasPermission(user.role, ['PLATFORM_ADMIN', 'ORGANIZER', 'RECEPTION', 'CONTROLLER'])) {
       return forbidden('Accès réservé à l’équipe de l’événement');
     }
-    if (!assertWeddingAccess(user, weddingId)) {
+    if (!(await assertWeddingAccessAsync(user, weddingId))) {
       return forbidden('Accès refusé à ce mariage');
     }
 

@@ -1,7 +1,7 @@
 export const dynamic = 'force-dynamic';
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { getAuthUser, hasPermission } from '@/lib/auth';
+import { getAuthUser, hasPermission, assertWeddingAccessAsync } from '@/lib/auth';
 import { writeAuditLog } from '@/lib/audit';
 import { logger } from '@/lib/logger';
 import { badRequest, internalError } from '@/lib/api-errors';
@@ -25,8 +25,10 @@ async function checkAuth(request: NextRequest, weddingId: string) {
   if (!hasPermission(user.role, ['PLATFORM_ADMIN', 'ORGANIZER'])) {
     return { error: NextResponse.json({ error: 'Forbidden — ORGANIZER+ required' }, { status: 403 }) };
   }
-  // Non-platform admins can only access their own wedding
-  if (user.role !== 'SUPER_ADMIN' && user.role !== 'PLATFORM_ADMIN' && user.weddingId !== weddingId) {
+  // Tenant-scoped access check — resolves org-scoped access via DB lookup
+  // (P5.1-2: fixes B2B2C ORG_ADMIN/ORG_MEMBER denial — they have no weddingId
+  // but should be granted access to weddings under their organization).
+  if (!(await assertWeddingAccessAsync(user, weddingId))) {
     return { error: NextResponse.json({ error: 'Forbidden — not your wedding' }, { status: 403 }) };
   }
   return { user };

@@ -54,6 +54,8 @@ import {
   KeyRound,
   UserPlus,
   Users as UsersIcon,
+  Pause,
+  Play,
 } from 'lucide-react'
 
 import Link from 'next/link'
@@ -285,6 +287,30 @@ export function UsersTab({ fetchWithAuth }: { fetchWithAuth: (url: string, init?
     }
   }
 
+  // P5.1 H-DELEG-3 — Suspend/unsuspend a user (soft-revoke, preserves audit history)
+  const handleSuspendToggle = async (u: UserRow) => {
+    const newSuspended = !u.suspended
+    const action = newSuspended ? 'Suspendre' : 'Réactiver'
+    if (!confirm(`${action} l'utilisateur ${u.email} ?`)) return
+    try {
+      const res = await fetchWithAuth(`/api/platform/users/${u.id}/suspend`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ suspended: newSuspended }),
+      })
+      if (!res) return
+      const json = await res.json().catch(() => ({}))
+      if (res.ok) {
+        toast.success(`Utilisateur ${newSuspended ? 'suspendu' : 'réactivé'}`)
+        load(page)
+      } else {
+        toast.error(json.error || `Erreur lors de la ${action.toLowerCase()}`)
+      }
+    } catch {
+      toast.error('Erreur de connexion')
+    }
+  }
+
   const selectedRoleConfig = USER_ROLES.find((r) => r.value === form.role)
 
   return (
@@ -368,7 +394,14 @@ export function UsersTab({ fetchWithAuth }: { fetchWithAuth: (url: string, init?
                         {u.email}
                       </TableCell>
                       <TableCell>
-                        <RoleBadge role={u.role} />
+                        <div className="flex items-center gap-2">
+                          <RoleBadge role={u.role} />
+                          {u.suspended && (
+                            <span className="inline-flex items-center rounded-full border border-red-500/30 bg-red-500/15 px-2 py-0.5 text-xs font-medium text-red-400">
+                              Suspendu
+                            </span>
+                          )}
+                        </div>
                       </TableCell>
                       <TableCell className="hidden lg:table-cell text-sm text-muted-foreground">
                         {u.wedding ? (
@@ -397,6 +430,23 @@ export function UsersTab({ fetchWithAuth }: { fetchWithAuth: (url: string, init?
                             <DropdownMenuItem onClick={() => openEdit(u)}>
                               <Pencil className="w-3.5 h-3.5 mr-2" />
                               Modifier
+                            </DropdownMenuItem>
+                            {/* P5.1 H-DELEG-3 — Soft-suspend toggle */}
+                            <DropdownMenuItem
+                              className={u.suspended ? "text-emerald-400 focus:text-emerald-300" : "text-orange-400 focus:text-orange-300"}
+                              onClick={() => handleSuspendToggle(u)}
+                            >
+                              {u.suspended ? (
+                                <>
+                                  <Play className="w-3.5 h-3.5 mr-2" />
+                                  Réactiver
+                                </>
+                              ) : (
+                                <>
+                                  <Pause className="w-3.5 h-3.5 mr-2" />
+                                  Suspendre
+                                </>
+                              )}
                             </DropdownMenuItem>
                             <DropdownMenuSeparator />
                             <DropdownMenuItem

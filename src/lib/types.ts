@@ -42,7 +42,7 @@ export const PLAN_METADATA: Record<Plan, { label: string; priceFcfa: number; pri
  *
  * TERMINATED is NOT used — "COMPLETED" is the business term for a finished wedding.
  */
-export type WeddingStatus = 'DRAFT' | 'PUBLISHED' | 'COMPLETED' | 'ARCHIVED' | 'SUSPENDED';
+export type WeddingStatus = 'DRAFT' | 'PUBLISHED' | 'UNPUBLISHED' | 'COMPLETED' | 'ARCHIVED' | 'SUSPENDED';
 
 /**
  * User roles.

@@ -83,6 +83,15 @@ export interface WriteAuditLogParams {
   ipAddress?: string | null;
   /** Override User-Agent (skips getClientInfo extraction if set). */
   userAgent?: string | null;
+  // ─── P5.2 — Audit trail enrichment (HIGH-AUDIT-1 + HIGH-AUDIT-2) ──────────
+  /** Result of the action: 'SUCCESS' | 'FAILURE'. null = not specified (backward compat). */
+  result?: string | null;
+  /** Target user for user-targeted actions (create/revoke/suspend). */
+  targetUserId?: string | null;
+  /** Target resource ID for resource-targeted actions (wedding publish/delete). */
+  targetResourceId?: string | null;
+  /** Target type: 'WEDDING' | 'USER' | 'ORG' | 'COLLECTION' | 'DEPLOYMENT' | null. */
+  targetType?: string | null;
 }
 
 /**
@@ -125,6 +134,11 @@ export async function writeAuditLog(params: WriteAuditLogParams): Promise<void> 
     details: params.details ?? null,
     ipAddress,
     userAgent,
+    // P5.2 — new enrichment fields (all nullable for backward compat)
+    result: params.result ?? null,
+    targetUserId: params.targetUserId ?? null,
+    targetResourceId: params.targetResourceId ?? null,
+    targetType: params.targetType ?? null,
   };
 
   try {

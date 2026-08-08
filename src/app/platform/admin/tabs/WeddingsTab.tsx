@@ -60,6 +60,7 @@ import {
   Pause,
   Play,
   Archive,
+  EyeOff,
 } from 'lucide-react'
 
 import { PLAN_METADATA, type Plan, type WeddingStatus } from '@/lib/types'
@@ -519,6 +520,24 @@ export function WeddingsTab({ fetchWithAuth }: { fetchWithAuth: (url: string, in
                                 <DropdownMenuItem onClick={() => handleStatusChange(w, 'SUSPENDED')}>
                                   <Pause className="w-3.5 h-3.5 mr-2" />
                                   Suspendre
+                                </DropdownMenuItem>
+                                {/* P5.1 — Unpublish: take wedding offline without deleting data */}
+                                <DropdownMenuItem onClick={() => handleStatusChange(w, 'UNPUBLISHED')}>
+                                  <EyeOff className="w-3.5 h-3.5 mr-2" />
+                                  Dépublier
+                                </DropdownMenuItem>
+                              </>
+                            )}
+                            {/* P5.1 — Republish from UNPUBLISHED state */}
+                            {w.status === 'UNPUBLISHED' && (
+                              <>
+                                <DropdownMenuItem onClick={() => handleStatusChange(w, 'PUBLISHED')}>
+                                  <Send className="w-3.5 h-3.5 mr-2" />
+                                  Republier
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => handleStatusChange(w, 'DRAFT')}>
+                                  <Archive className="w-3.5 h-3.5 mr-2" />
+                                  Remettre en brouillon
                                 </DropdownMenuItem>
                               </>
                             )}
