@@ -4,6 +4,7 @@ import { getAuthUser, hasPermission } from '@/lib/auth';
 import { withAdminTenantHandler } from '@/lib/tenant-context';
 import { applyCollection, ApplyError, type PaletteOverride } from '@/lib/collections';
 import type { Plan } from '@/lib/types';
+import { logger } from '@/lib/logger';
 
 /**
  * POST /api/collections/apply — deploy a Collection on the resolved wedding.
@@ -53,7 +54,7 @@ export async function POST(request: NextRequest) {
       }
     })
   } catch (error) {
-    console.error('Apply collection error:', error)
+    logger.error('Apply collection error', { err: error })
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }

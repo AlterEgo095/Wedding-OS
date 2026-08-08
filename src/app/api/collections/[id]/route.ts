@@ -22,7 +22,7 @@ export const GET = withPublicTenant(async (req: NextRequest, ctx) => {
     }
     return NextResponse.json({ collection })
   } catch (error) {
-    console.error('Get collection error:', error)
+    logger.error('Get collection error', { err: error })
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 })

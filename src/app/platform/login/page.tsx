@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Crown, Shield, Mail, Lock, Loader2, ArrowLeft, AlertTriangle, KeyRound } from 'lucide-react'
 import { toast } from 'sonner'
+import TwoFactorLogin from '@/components/auth/TwoFactorLogin'
 
 /**
  * Platform super-admin login.
@@ -45,7 +46,6 @@ export default function PlatformLoginPage() {
   const [challengeToken, setChallengeToken] = useState<string>('')
   const [twoFactorEmail, setTwoFactorEmail] = useState<string>('')
   const [twoFactorName, setTwoFactorName] = useState<string>('')
-  const [totpCode, setTotpCode] = useState('')
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -74,7 +74,6 @@ export default function PlatformLoginPage() {
           setTwoFactorEmail(data.email || email)
           setTwoFactorName(data.name || '')
           setTwoFactorRequired(true)
-          setTotpCode('')
           setLoading(false)
           return
         }
@@ -123,55 +122,24 @@ export default function PlatformLoginPage() {
     }
   }
 
-  // ── 2FA submit handler ────────────────────────────────────────────────────
-  const handleTwoFactorSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setLoading(true)
-    setErrorKind(null)
-    setErrorMessage('')
-
+  // ── 2FA success handler ───────────────────────────────────────────────────
+  // P4.7: called by <TwoFactorLogin> after /api/auth/2fa/login succeeds.
+  // We persist the user in localStorage (UI display only) and redirect to the
+  // platform admin dashboard — same behavior as the regular login success path.
+  const handle2FASuccess = (user: { id: string; name: string; email: string; role: string }) => {
     try {
-      const res = await fetch('/api/platform/2fa/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ challengeToken, token: totpCode }),
-      })
-
-      const data = await res.json().catch(() => ({}))
-
-      if (res.ok) {
-        if (data.user) {
-          try {
-            localStorage.setItem('admin_user', JSON.stringify(data.user))
-          } catch {
-            /* ignore */
-          }
-        }
-        toast.success(`Bienvenue, ${data.user?.name || 'Administrateur'} !`)
-        router.push('/platform/admin')
-        return
-      }
-
-      if (res.status === 429) {
-        setErrorKind('rate')
-        setErrorMessage('Trop de tentatives 2FA. Réessayez plus tard.')
-        toast.error('Trop de tentatives 2FA. Réessayez plus tard.')
-      } else {
-        setErrorKind('generic')
-        setErrorMessage(data.error || 'Code TOTP invalide')
-        toast.error(data.error || 'Code TOTP invalide')
-      }
+      localStorage.setItem('admin_user', JSON.stringify(user))
     } catch {
-      setErrorKind('generic')
-      setErrorMessage('Erreur de connexion au serveur')
-      toast.error('Erreur de connexion au serveur')
-    } finally {
-      setLoading(false)
+      /* ignore — localStorage may be unavailable */
     }
+    toast.success(`Bienvenue, ${user?.name || 'Administrateur'} !`)
+    router.push('/platform/admin')
   }
 
   // ── 2FA step UI ───────────────────────────────────────────────────────────
+  // P4.7: replaced the inline TOTP input with the reusable <TwoFactorLogin>
+  // component, which handles 6-digit TOTP entry, paste, auto-advance, backup
+  // codes, and the /api/auth/2fa/login POST itself.
   if (twoFactorRequired) {
     return (
       <div className="flex items-center justify-center min-h-screen p-4">
@@ -183,7 +151,7 @@ export default function PlatformLoginPage() {
         >
           <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-gold/40 to-transparent" />
 
-          <div className="flex flex-col items-center mb-8">
+          <div className="flex flex-col items-center mb-6">
             <motion.div
               initial={{ scale: 0, rotate: -10 }}
               animate={{ scale: 1, rotate: 0 }}
@@ -207,62 +175,18 @@ export default function PlatformLoginPage() {
             </p>
           </div>
 
-          <form onSubmit={handleTwoFactorSubmit} className="space-y-5">
-            <div className="space-y-2">
-              <Label htmlFor="totp" className="text-sm font-medium">
-                Code TOTP
-              </Label>
-              <Input
-                id="totp"
-                type="text"
-                inputMode="numeric"
-                pattern="[0-9]*"
-                maxLength={6}
-                placeholder="123456"
-                value={totpCode}
-                onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                className="bg-white/5 border-white/10 focus:border-gold/50 text-center text-2xl tracking-[0.5em] font-mono"
-                required
-                disabled={loading}
-                autoComplete="one-time-code"
-                autoFocus
-              />
-            </div>
-
-            {errorKind && (
-              <motion.p
-                initial={{ opacity: 0, y: -5 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="text-sm text-red-400 bg-red-400/10 border border-red-400/30 rounded-md p-2 text-center"
-              >
-                {errorMessage}
-              </motion.p>
-            )}
-
-            <Button
-              type="submit"
-              disabled={loading || totpCode.length !== 6}
-              aria-describedby="platform-2fa-submit-status"
-              className="w-full bg-gradient-gold hover:opacity-90 text-white font-medium h-11 shadow-lg"
-            >
-              {loading ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Vérification...
-                </>
-              ) : (
-                <>
-                  <Shield className="mr-2 h-4 w-4" />
-                  Valider
-                </>
-              )}
-            </Button>
-            <span id="platform-2fa-submit-status" className="sr-only">
-              {loading
-                ? 'Vérification du code en cours.'
-                : 'Bouton de validation disponible.'}
-            </span>
-          </form>
+          <TwoFactorLogin
+            challengeToken={challengeToken}
+            email={twoFactorEmail}
+            name={twoFactorName}
+            onSuccess={handle2FASuccess}
+            onCancel={() => {
+              setTwoFactorRequired(false)
+              setChallengeToken('')
+              setErrorKind(null)
+              setErrorMessage('')
+            }}
+          />
 
           <div className="mt-4 text-center">
             <button
@@ -270,7 +194,6 @@ export default function PlatformLoginPage() {
               onClick={() => {
                 setTwoFactorRequired(false)
                 setChallengeToken('')
-                setTotpCode('')
                 setErrorKind(null)
                 setErrorMessage('')
               }}

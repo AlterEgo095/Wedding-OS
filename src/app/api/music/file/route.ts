@@ -4,6 +4,7 @@ import { db } from '@/lib/db';
 import { withPublicTenant } from '@/lib/tenant-context';
 import { readFile, stat } from 'fs/promises';
 import path from 'path';
+import { logger } from '@/lib/logger';
 
 /**
  * GET — Serve an uploaded music file by filename.
@@ -94,7 +95,7 @@ export const GET = withPublicTenant(async (request, ctx) => {
       },
     });
   } catch (error) {
-    console.error('Serve music file error:', error);
+    logger.error('Serve music file error', { err: error });
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }

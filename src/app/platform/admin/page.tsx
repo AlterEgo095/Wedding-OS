@@ -49,6 +49,10 @@ import {
   QrCode,            // P3.8 QR/Invitations
   Server,            // P3.11 Ops
   HeartPulse,        // P3.7 Platform Health
+  // P4.1 — Guestbook moderation (Livre d'Or)
+  BookOpen,
+  // P4.7 — 2FA setup: re-using ShieldCheck (already imported above for the
+  // Governance tab icon).
 } from 'lucide-react'
 
 import dynamic from 'next/dynamic'
@@ -66,6 +70,9 @@ import { DashboardTab } from './tabs/DashboardTab'
 import { WeddingsTab } from './tabs/WeddingsTab'
 import { UsersTab } from './tabs/UsersTab'
 import { AuditTab } from './tabs/AuditTab'
+import { GuestbookTab } from './tabs/wedding/GuestbookTab'
+// P4.7 — 2FA setup modal (reusable across all admin/staff roles)
+import TwoFactorSetup from '@/components/auth/TwoFactorSetup'
 
 // Production Studio tabs (CONS-3) — lazy-loaded.
 // Mission 6.0 P1.7 — Organizations tab (lazy-loaded).
@@ -120,6 +127,8 @@ const NAV_ITEMS: NavItem[] = [
   { id: 'onboarding', label: 'Onboarding', icon: Rocket },
   // ── EVENT OPERATIONS ──
   { id: 'weddings', label: 'Mariages', icon: Heart },
+  // ── P4.1: Guestbook moderation (Livre d'Or) ──
+  { id: 'guestbook', label: "Livre d'Or", icon: BookOpen },
   // ── ORGANIZATIONS (P1.7 — B2B2C agency layer) ──
   { id: 'organizations', label: 'Organisations', icon: Building2 },
   // ── PRODUCTION STUDIO (CONS-3) ──
@@ -270,6 +279,8 @@ export default function PlatformAdminPage() {
   const [authChecked, setAuthChecked] = useState(false)
   const [activeTab, setActiveTab] = useState<TabId>('dashboard')
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  // P4.7: 2FA setup modal — visible to ALL logged-in platform users.
+  const [twoFactorOpen, setTwoFactorOpen] = useState(false)
 
   // P1-SEC-3: check auth status on mount via /api/me.
   useEffect(() => {
@@ -388,6 +399,8 @@ export default function PlatformAdminPage() {
         return <QRInvitationsPanel csrfToken={getCsrfToken()} />
       case 'ops':
         return <OpsPanel fetchWithAuth={fetchWithAuth} />
+      case 'guestbook':
+        return <GuestbookTab fetchWithAuth={fetchWithAuth} />
       default:
         return <DashboardTab fetchWithAuth={fetchWithAuth} setActiveTab={setActiveTab} />
     }
@@ -473,6 +486,14 @@ export default function PlatformAdminPage() {
           </p>
         </div>
       </div>
+      <Button
+        variant="ghost"
+        className="w-full justify-start text-gold hover:text-gold hover:bg-gold/10 text-sm mb-1"
+        onClick={() => setTwoFactorOpen(true)}
+      >
+        <ShieldCheck className="w-4 h-4 mr-2" />
+        Sécurité 2FA
+      </Button>
       <Button
         variant="ghost"
         className="w-full justify-start text-red-400 hover:text-red-300 hover:bg-red-400/10 text-sm"
@@ -634,6 +655,16 @@ export default function PlatformAdminPage() {
           })}
         </nav>
       </div>
+
+      {/* P4.7 — 2FA setup modal (accessible from the sidebar footer) */}
+      <TwoFactorSetup
+        open={twoFactorOpen}
+        onOpenChange={setTwoFactorOpen}
+        onSuccess={() => {
+          setTwoFactorOpen(false)
+          toast.success('2FA activée avec succès')
+        }}
+      />
     </div>
   )
 }

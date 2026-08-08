@@ -34,6 +34,12 @@ import {
   Mail, QrCode,
   // CONS-5-CLIENT-BACKEND — icons for the 6 new organizer tabs
   Heart, Tag, Gift, CalendarDays, BarChart3,
+  // P4.2 — Dietary preferences tab icon
+  Utensils,
+  // P4.8 — Realtime tab icon
+  Activity,
+  // P4.7 — 2FA setup button (sidebar footer)
+  ShieldCheck,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import dynamic from 'next/dynamic';
@@ -63,6 +69,13 @@ const GiftsManager = dynamic(() => import('@/components/admin/GiftsManager'), { 
 const ProgramManager = dynamic(() => import('@/components/admin/ProgramManager'), { ssr: false })
 const StatisticsPanel = dynamic(() => import('@/components/admin/StatisticsPanel'), { ssr: false })
 const QRCodeManager = dynamic(() => import('@/components/admin/QRCodeManager'), { ssr: false })
+// P4.2 — Dietary preferences admin stats card
+import { DietaryStatsCard } from '@/components/admin/DietaryStatsCard'
+// P4.7 — 2FA setup modal (reusable across all admin/staff roles)
+import TwoFactorSetup from '@/components/auth/TwoFactorSetup'
+// P4.8 — Real-time UI widgets (LiveStatsWidget + LiveCheckInFeed)
+import { LiveStatsWidget } from '@/components/realtime/LiveStatsWidget'
+import { LiveCheckInFeed } from '@/components/realtime/LiveCheckInFeed'
 
 interface AuthUser {
   id: string
@@ -72,7 +85,7 @@ interface AuthUser {
   weddingId?: string | null
 }
 
-type TabId = 'dashboard' | 'designer' | 'guests' | 'families' | 'groups' | 'invitations' | 'qrcodes' | 'check-in' | 'tables' | 'gifts' | 'media' | 'music' | 'timeline' | 'program' | 'story' | 'stats' | 'users' | 'settings' | 'access-logs' | 'appearance' | 'theme'
+type TabId = 'dashboard' | 'designer' | 'guests' | 'families' | 'groups' | 'invitations' | 'qrcodes' | 'check-in' | 'tables' | 'gifts' | 'media' | 'music' | 'timeline' | 'program' | 'dietary' | 'story' | 'stats' | 'users' | 'settings' | 'access-logs' | 'appearance' | 'theme' | 'realtime'
 
 interface NavItem {
   id: TabId
@@ -83,6 +96,8 @@ interface NavItem {
 
 const NAV_ITEMS: NavItem[] = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  // P4.8 — Realtime dashboard (live stats + check-in feed)
+  { id: 'realtime', label: 'Temps réel', icon: Activity },
   { id: 'designer', label: 'Designer', icon: LayoutTemplate },
   { id: 'guests', label: 'Invités', icon: Users },
   // CONS-5-CLIENT-BACKEND — organizer guest-grouping tabs.
@@ -98,6 +113,8 @@ const NAV_ITEMS: NavItem[] = [
   { id: 'music', label: 'Musique', icon: Music },
   { id: 'timeline', label: 'Chronologie', icon: Clock },
   { id: 'program', label: 'Programme du jour', icon: CalendarDays },
+  // P4.2 — Dietary preferences (Préférences alimentaires)
+  { id: 'dietary', label: 'Préférences alimentaires', icon: Utensils },
   { id: 'story', label: 'Histoire', icon: BookOpen },
   { id: 'stats', label: 'Statistiques', icon: BarChart3 },
   { id: 'theme', label: 'Thème', icon: Palette },
@@ -146,6 +163,8 @@ export default function PerWeddingAdminPage() {
 
   const [activeTab, setActiveTab] = useState<TabId>('dashboard')
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  // P4.7: 2FA setup modal — visible to ALL logged-in admin/staff users.
+  const [twoFactorOpen, setTwoFactorOpen] = useState(false)
   const sessionExpiredRef = useRef(false)
 
   // ─── Install global fetch interceptor (useLayoutEffect — runs before any
@@ -301,6 +320,38 @@ export default function PerWeddingAdminPage() {
     router.replace(`/w/${slug}/admin/login`)
   }, [slug, router])
 
+  // ─── fetchWithAuth ─────────────────────────────────────────────────────────
+  // P4.2: DietaryStatsCard (and future P4 components) use the same fetchWithAuth
+  // signature as platform/admin. We wrap fetch() with credentials + auto-401
+  // handling. The global fetch interceptor (installed above) already attaches
+  // X-Wedding-Slug + X-CSRF-Token on /api/* requests, so this wrapper just
+  // adds the auth-state side effects (toast on error, redirect on 401).
+  const fetchWithAuth = useCallback(
+    async (url: string, init?: RequestInit): Promise<Response | null> => {
+      try {
+        const res = await fetch(url, { ...init, credentials: 'include' })
+        if (res.status === 401) {
+          handleSessionExpired()
+          return null
+        }
+        if (res.status === 403) {
+          try {
+            const body = await res.clone().json()
+            toast.error(body?.error || 'Accès refusé')
+          } catch {
+            toast.error('Accès refusé')
+          }
+          return null
+        }
+        return res
+      } catch {
+        toast.error('Erreur de connexion au serveur')
+        return null
+      }
+    },
+    [handleSessionExpired]
+  )
+
   const handleTabChange = useCallback((tabId: TabId) => {
     setActiveTab(tabId)
     setSidebarOpen(false)
@@ -334,7 +385,15 @@ export default function PerWeddingAdminPage() {
       case 'invitations':
         return <InvitationManager weddingId={wedding.id} weddingSlug={slug} csrfToken={getCsrfTokenFromCookie()} />
       case 'check-in':
-        return <CheckInManager weddingSlug={slug} csrfToken={getCsrfTokenFromCookie()} />
+        // P4.8 FIX-P4-REALTIME — LiveCheckInFeed rendered above CheckInManager so
+        // reception staff see live QR-scan arrivals in real time, alongside the
+        // manual check-in interface.
+        return (
+          <div className="space-y-6">
+            <LiveCheckInFeed weddingId={wedding.id} />
+            <CheckInManager weddingSlug={slug} csrfToken={getCsrfTokenFromCookie()} />
+          </div>
+        )
       case 'settings':
         return <SettingsManager token={token} userRole={user?.role || ''} onSessionExpired={handleSessionExpired} />
       case 'theme':
@@ -360,10 +419,23 @@ export default function PerWeddingAdminPage() {
         return <GiftsManager weddingId={wedding.id} />
       case 'program':
         return <ProgramManager weddingId={wedding.id} />
+      // P4.2 — Dietary preferences stats card
+      case 'dietary':
+        return <DietaryStatsCard weddingId={wedding.id} fetchWithAuth={fetchWithAuth} />
       case 'stats':
         return <StatisticsPanel weddingId={wedding.id} />
       case 'qrcodes':
         return <QRCodeManager weddingId={wedding.id} weddingSlug={slug} />
+      // P4.8 FIX-P4-REALTIME — dedicated "Temps réel" tab combining the live
+      // stats widget (top) with the live check-in feed (bottom) so wedding
+      // organizers can monitor arrivals in real time.
+      case 'realtime':
+        return (
+          <div className="space-y-6 p-4">
+            <LiveStatsWidget weddingId={wedding.id} />
+            <LiveCheckInFeed weddingId={wedding.id} maxHeight="520px" />
+          </div>
+        )
       default:
         return <Dashboard token={token} onSessionExpired={handleSessionExpired} />
     }
@@ -470,6 +542,14 @@ export default function PerWeddingAdminPage() {
               <p className="text-xs text-muted-foreground truncate">{user.role}</p>
             </div>
           </div>
+          <Button
+            variant="ghost"
+            className="w-full justify-start text-gold hover:text-gold hover:bg-gold/10 text-sm mb-1"
+            onClick={() => setTwoFactorOpen(true)}
+          >
+            <ShieldCheck className="w-4 h-4 mr-2" />
+            Sécurité 2FA
+          </Button>
           {isPlatformAdmin(user.role) && (
             <Button
               variant="ghost"
@@ -684,6 +764,16 @@ export default function PerWeddingAdminPage() {
           })}
         </nav>
       </div>
+
+      {/* P4.7 — 2FA setup modal (accessible from the sidebar footer) */}
+      <TwoFactorSetup
+        open={twoFactorOpen}
+        onOpenChange={setTwoFactorOpen}
+        onSuccess={() => {
+          setTwoFactorOpen(false)
+          toast.success('2FA activée avec succès')
+        }}
+      />
     </div>
   )
 }

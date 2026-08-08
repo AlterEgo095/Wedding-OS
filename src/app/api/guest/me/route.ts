@@ -8,6 +8,7 @@ import {
   generateInvitationLinkToken,
 } from '@/lib/guest-auth';
 import { resolvePublicTenant, runWithTenant } from '@/lib/tenant-context';
+import { logger } from '@/lib/logger';
 
 export async function GET(request: NextRequest) {
   const { context, error: tenantError } = await resolvePublicTenant(request);
@@ -70,7 +71,7 @@ export async function GET(request: NextRequest) {
         security: { fingerprintVerified: !session.fingerprintMismatch, sessionActive: true },
       });
     } catch (error) {
-      console.error('Guest me error:', error);
+      logger.error('Guest me error', { err: error });
       return NextResponse.json({ error: 'Erreur interne du serveur' }, { status: 500 });
     }
   });

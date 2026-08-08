@@ -15,8 +15,10 @@
 
 import { useMemo, useState, useEffect } from 'react';
 import Link from 'next/link';
-import { Building2, Heart, Users, Mail, Calendar, Plus, ExternalLink, Pencil, Search, Gauge } from 'lucide-react';
+import { Building2, Heart, Users, Mail, Calendar, Plus, ExternalLink, Pencil, Search, Gauge, ShieldCheck } from 'lucide-react';
+import TwoFactorSetup from '@/components/auth/TwoFactorSetup';
 import { Button } from '@/components/ui/button';
+import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import {
@@ -113,6 +115,7 @@ export function OrgDashboard({
   stats,
   recentActivity,
 }: OrgDashboardProps) {
+  const [twoFactorOpen, setTwoFactorOpen] = useState(false)
   const [search, setSearch] = useState('');
   // P2.8 — quota status fetched on mount from /api/org/{slug}/quotas.
   // Falls back gracefully (null = loading/failed) — the StatCards above
@@ -193,6 +196,15 @@ export function OrgDashboard({
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setTwoFactorOpen(true)}
+            className="gap-1.5"
+          >
+            <ShieldCheck className="w-3.5 h-3.5" />
+            Sécurité 2FA
+          </Button>
           <Badge variant="outline" className={`text-[10px] uppercase tracking-wide ${PLAN_BADGE_CLASS[org.plan as Plan] || ''}`}>
             {planLabel}
           </Badge>
@@ -291,6 +303,16 @@ export function OrgDashboard({
           </ul>
         )}
       </section>
+
+      {/* P4.7 — 2FA setup modal (accessible from the header) */}
+      <TwoFactorSetup
+        open={twoFactorOpen}
+        onOpenChange={setTwoFactorOpen}
+        onSuccess={() => {
+          setTwoFactorOpen(false)
+          toast.success('2FA activée avec succès')
+        }}
+      />
     </div>
   );
 }

@@ -17,6 +17,7 @@ import { publishWeddingViaPipeline } from '@/lib/pipeline/publish-helper';
 // published. Idempotent: no-op if not PUBLISHED, or commercialStatus is
 // already LIVE / not in [PAID, READY, IN_PRODUCTION].
 import { autoTransitionToLive } from '@/lib/commercial-status';
+import { logger } from '@/lib/logger';
 
 /**
  * POST /api/onboarding/publish    (PLATFORM_ADMIN)
@@ -147,12 +148,12 @@ export async function POST(request: NextRequest) {
     try {
       await autoTransitionToLive(wedding.id, user!.id);
     } catch (e) {
-      console.error('[publish] autoTransitionToLive failed (non-blocking):', e);
+      logger.error('[publish] autoTransitionToLive failed (non-blocking)', { err: e });
     }
 
     return NextResponse.json({ wedding: updated, deployment: { id: publishResult.deploymentId, version: publishResult.version, mode: publishResult.mode } });
   } catch (error) {
-    console.error('Publish wedding error:', error);
+    logger.error('Publish wedding error', { err: error });
     return NextResponse.json(
       { error: 'Erreur interne du serveur.' },
       { status: 500 },

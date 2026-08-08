@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { tenantDb, db } from '@/lib/db';
 import { getAuthUser, hasPermission } from '@/lib/auth';
 import { resolveAdminTenant, runWithTenant } from '@/lib/tenant-context';
+import { logger } from '@/lib/logger';
 
 export async function GET(request: NextRequest) {
   try {
@@ -115,7 +116,7 @@ export async function GET(request: NextRequest) {
       });
     });
   } catch (error) {
-    console.error('Access logs error:', error);
+    logger.error('Access logs error', { err: error });
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic';
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getAuthUser, requirePlatformAdmin } from '@/lib/auth';
+import { logger } from '@/lib/logger';
 
 /**
  * PATCH /api/onboarding/leads/{id}    (PLATFORM_ADMIN)
@@ -118,7 +119,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 
     return NextResponse.json({ lead });
   } catch (error) {
-    console.error('Update lead error:', error);
+    logger.error('Update lead error', { err: error });
     return NextResponse.json(
       { error: 'Erreur interne du serveur.' },
       { status: 500 },

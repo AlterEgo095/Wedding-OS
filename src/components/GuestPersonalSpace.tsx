@@ -14,6 +14,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { cleanGuestName } from '@/lib/guest-utils'
+import { DietaryPreferences } from '@/components/DietaryPreferences'
 import type { CategoryDisplay } from '@/lib/guest-utils'
 
 interface GuestData {
@@ -815,6 +816,11 @@ export default function GuestPersonalSpace({ guest, settings, onLogout }: GuestP
             </div>
           </motion.div>
         )}
+
+        {/* P4.2 — Dietary preferences (Préférences alimentaires) */}
+        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 1.3, duration: 0.5 }} className="mt-5 w-full max-w-md">
+          <DietaryPreferences />
+        </motion.div>
 
         {/* LOGOUT */}
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 1.5, duration: 0.5 }} className="mt-4 text-center">

@@ -17,7 +17,7 @@ export const GET = withPublicTenant(async (_req, ctx) => {
     const collections = await listCollections(plan)
     return NextResponse.json({ collections })
   } catch (error) {
-    console.error('List collections error:', error)
+    logger.error('List collections error', { err: error })
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 })

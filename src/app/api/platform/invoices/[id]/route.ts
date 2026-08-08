@@ -9,6 +9,7 @@ import type { Plan } from '@/lib/types';
 import { badRequest } from '@/lib/api-errors';
 // P2-CQ-7: writeAuditLog populates ipAddress + userAgent from request.
 import { writeAuditLog } from '@/lib/audit';
+import { logger } from '@/lib/logger';
 
 /**
  * PUT /api/platform/invoices/{id}
@@ -203,7 +204,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
 
     return NextResponse.json({ invoice: updated });
   } catch (error) {
-    console.error('Update invoice error:', error);
+    logger.error('Update invoice error', { err: error });
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 },

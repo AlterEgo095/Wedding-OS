@@ -220,7 +220,7 @@ export async function POST(request: NextRequest) {
         // continue — we don't want to block a legitimate write because of an
         // internal accounting error. The tenant context already validated
         // the weddingId above.
-        console.error('Guest limit check failed:', limitError);
+        logger.error('Guest limit check failed', { err: limitError });
       }
 
       const invitationCode = uuidv4().substring(0, 8).toUpperCase();

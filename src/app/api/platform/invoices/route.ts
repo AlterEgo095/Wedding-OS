@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getAuthUser, requirePlatformAdmin } from '@/lib/auth';
 import { INVOICE_STATUS_LABELS, type InvoiceStatus } from '@/lib/billing';
+import { logger } from '@/lib/logger';
 
 /**
  * GET /api/platform/invoices
@@ -105,7 +106,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ invoices, total, summary });
   } catch (error) {
-    console.error('List platform invoices error:', error);
+    logger.error('List platform invoices error', { err: error });
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 },

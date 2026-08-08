@@ -7,6 +7,7 @@ import { normalizeRole, isPlatformAdmin, type Role } from '@/lib/types';
 import { badRequest } from '@/lib/api-errors';
 // P2-CQ-7: writeAuditLog populates ipAddress + userAgent from request.
 import { writeAuditLog } from '@/lib/audit';
+import { logger } from '@/lib/logger';
 
 /**
  * Per-user operations for the platform admin.
@@ -230,7 +231,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
 
     return NextResponse.json({ user: updated });
   } catch (error) {
-    console.error('Update platform user error:', error);
+    logger.error('Update platform user error', { err: error });
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }
@@ -303,7 +304,7 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
 
     return NextResponse.json({ success: true });
   } catch (error) {
-    console.error('Delete platform user error:', error);
+    logger.error('Delete platform user error', { err: error });
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }

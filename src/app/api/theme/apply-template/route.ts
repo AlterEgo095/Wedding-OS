@@ -8,6 +8,7 @@ import { getTemplate, normalizeHexColor } from '@/lib/themes/templates';
 import { badRequest } from '@/lib/api-errors';
 // P2-CQ-7: writeAuditLog populates ipAddress + userAgent from request.
 import { writeAuditLog } from '@/lib/audit';
+import { logger } from '@/lib/logger';
 
 // POST /api/theme/apply-template — ORGANIZER+, applies a predefined template
 export async function POST(request: NextRequest) {
@@ -73,7 +74,7 @@ export async function POST(request: NextRequest) {
       });
     });
   } catch (error) {
-    console.error('Apply theme template error:', error);
+    logger.error('Apply theme template error', { err: error });
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

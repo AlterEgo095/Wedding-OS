@@ -3,7 +3,7 @@
  *
  * P4.8 — called from Next.js API routes (after a successful mutation) to
  * broadcast an event through the standalone realtime mini-service on port
- * 3003. The helper is FAULT-TOLERANT by design: if the mini-service is down,
+ * 3006. The helper is FAULT-TOLERANT by design: if the mini-service is down,
  * unreachable, or returns an error, this function logs a warning and returns
  * `false` — it never throws, so the main app flow is never broken.
  *
@@ -16,12 +16,12 @@
  *     tableNumber: guest.table?.number ?? null,
  *   });
  *
- * Set `REALTIME_PUSH_TOKEN` and (optionally) `REALTIME_PUSH_URL` in env.
+ * Set `REALTIME_PUSH_TOKEN` and (optionally) `REALTIME_SERVICE_URL` in env.
  */
 
 import { logger } from '@/lib/logger';
 
-const DEFAULT_PUSH_URL = 'http://localhost:3003/internal/push';
+const DEFAULT_PUSH_URL = 'http://127.0.0.1:3006/internal/push';
 
 /**
  * Push a realtime event to all subscribers of the given wedding room.
@@ -35,7 +35,7 @@ export async function pushRealtimeEvent(
   payload: unknown,
 ): Promise<boolean> {
   const token = process.env.REALTIME_PUSH_TOKEN;
-  const url = process.env.REALTIME_PUSH_URL ?? DEFAULT_PUSH_URL;
+  const url = process.env.REALTIME_SERVICE_URL ?? DEFAULT_PUSH_URL;
 
   if (!token) {
     // Token not configured — silently skip. This keeps the helper usable in

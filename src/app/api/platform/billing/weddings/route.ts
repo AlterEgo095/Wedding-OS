@@ -7,6 +7,7 @@ import {
   type SubscriptionStatus,
 } from '@/lib/billing';
 import { PLAN_METADATA } from '@/lib/types';
+import { logger } from '@/lib/logger';
 
 /**
  * GET /api/platform/billing/weddings
@@ -158,7 +159,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ weddings: list, summary });
   } catch (error) {
-    console.error('Billing overview error:', error);
+    logger.error('Billing overview error', { err: error });
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 },

@@ -177,6 +177,7 @@ export type TabId =
   | 'platform-health'  // P3.7 — Platform Health (renamed from old GovernancePanel)
   | 'qr-invitations'   // P3.8 — Cross-tenant QR + Invitations supervision
   | 'ops'              // P3.11 — Ops panel (security events, DB size, audit totals)
+  | "guestbook"
 
 export interface NavItem {
   id: TabId

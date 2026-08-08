@@ -11,6 +11,7 @@ import {
 import type { Plan } from '@/lib/types';
 // P2-CQ-7: writeAuditLog populates ipAddress + userAgent from request.
 import { writeAuditLog } from '@/lib/audit';
+import { logger } from '@/lib/logger';
 
 /**
  * POST /api/platform/weddings/{id}/subscription/whatsapp
@@ -164,7 +165,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       currency,
     });
   } catch (error) {
-    console.error('WhatsApp deeplink error:', error);
+    logger.error('WhatsApp deeplink error', { err: error });
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 },

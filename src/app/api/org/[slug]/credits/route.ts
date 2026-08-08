@@ -25,6 +25,7 @@ import {
 } from '@/lib/constants';
 import { isStripeConfigured } from '@/lib/stripe';
 import { internalError } from '@/lib/api-errors';
+import { logger } from '@/lib/logger';
 
 /**
  * GET /api/org/[slug]/credits
@@ -194,7 +195,7 @@ export async function GET(
       stripeCustomerId: org.stripeCustomerId,
     });
   } catch (error) {
-    console.error('[/api/org/[slug]/credits] error:', error);
+    logger.error('[/api/org/[slug]/credits] error', { err: error });
     return internalError();
   }
 }

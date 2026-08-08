@@ -11,6 +11,7 @@ import {
 import { cleanGuestName } from '@/lib/guest-utils';
 import { resolvePublicTenant, runWithTenant } from '@/lib/tenant-context';
 import { checkRateLimit, getRateLimitKey } from '@/lib/rate-limit';
+import { logger } from '@/lib/logger';
 
 /**
  * Guest Lookup API — Name-based search with lookupToken security
@@ -182,7 +183,7 @@ export async function GET(request: NextRequest) {
 
       return NextResponse.json({ results, total: results.length });
     } catch (error) {
-      console.error('Guest lookup error:', error);
+      logger.error('Guest lookup error', { err: error });
       return NextResponse.json({ error: 'Erreur interne du serveur' }, { status: 500 });
     }
   });

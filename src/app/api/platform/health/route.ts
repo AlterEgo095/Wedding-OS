@@ -6,6 +6,7 @@ import { withSecurityHeaders } from '@/lib/rate-limit';
 import os from 'os';
 import fs from 'fs';
 import path from 'path';
+import { logger } from '@/lib/logger';
 
 /**
  * Platform System Health — read-only snapshot.
@@ -228,7 +229,7 @@ export async function GET(request: NextRequest) {
 
     return withSecurityHeaders(NextResponse.json(health));
   } catch (error) {
-    console.error('Platform health error:', error);
+    logger.error('Platform health error', { err: error });
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 },

@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { tenantDb } from '@/lib/db';
 import { getAuthUser, hasPermission } from '@/lib/auth';
 import { resolveAdminTenant, runWithTenant } from '@/lib/tenant-context';
+import { logger } from '@/lib/logger';
 
 // Admin-only guest search — tenant-scoped
 export async function GET(request: NextRequest) {
@@ -59,7 +60,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ guests });
     });
   } catch (error) {
-    console.error('Guest search error:', error);
+    logger.error('Guest search error', { err: error });
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

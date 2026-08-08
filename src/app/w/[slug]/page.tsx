@@ -22,12 +22,16 @@ import Footer from '@/components/Footer';
 import PWAInstall from '@/components/PWAInstall';
 import { GuestAuthProvider, useGuestAuth } from '@/components/GuestAuthProvider';
 import GuestPersonalSpace from '@/components/GuestPersonalSpace';
+import { GuestbookWidget } from '@/components/GuestbookWidget';
 import AmbientMusicPlayer from '@/components/AmbientMusicPlayer';
 import VisualEffectsLayer from '@/components/effects/VisualEffectsLayer';
 import LuxuryVisualEngine from '@/components/luxury/LuxuryVisualEngine';
 import { ThemeInjector } from '@/components/wedding/ThemeInjector';
 import { SectionRenderer } from '@/components/wedding/SectionRenderer';
 import { useWedding } from './wedding-context';
+
+// P2-PERF-10: ISR — revalidate public wedding page every 60 seconds
+export const revalidate = 60;
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -259,6 +263,9 @@ function WeddingPageContent() {
             extras={sectionExtras}
           />
         )}
+
+        {/* P4.1 — Public Livre d'Or widget (visible to all visitors) */}
+        <GuestbookWidget weddingId={wedding.id} slug={wedding.slug} />
       </main>
 
       <Footer />

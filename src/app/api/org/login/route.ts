@@ -15,6 +15,11 @@ import { logger } from '@/lib/logger';
 import { internalError } from '@/lib/api-errors';
 import { writeAuditLog } from '@/lib/audit';
 import { generateCsrfToken, setCsrfCookie } from '@/lib/csrf';
+// P4.7: 2FA challenge — if the user has 2FA enabled, return a short-lived
+// challenge token instead of setting the auth cookie. The client then POSTs
+// { challengeToken, token } to /api/auth/2fa/login (generic 2FA endpoint
+// that works for ALL admin/staff roles, not just ORG_*).
+import { generateChallengeToken } from '@/lib/two-factor';
 
 /**
  * Mission 6.0 P1.8 — Organization login endpoint.
@@ -99,11 +104,38 @@ export async function POST(request: NextRequest) {
 
     resetLoginRateLimit(normalizedEmail);
 
-    // ─── 2FA bypass for now (P1.8 scope) ───────────────────────────────────
-    // The platform admin login route handles TOTP 2FA. Org login is a NEW
-    // surface — wiring 2FA here is a follow-up. We accept the login and let
-    // the standard auth cookie flow proceed. (Most org users won't have 2FA
-    // enabled yet; only platform admins typically do.)
+    // ─── P4.7: 2FA check (any admin/staff role) ───────────────────────────
+    // If the user has 2FA enabled, do NOT issue the auth cookie yet. Return
+    // a short-lived challenge token that allows ONLY /api/auth/2fa/login.
+    // The client UI prompts for a 6-digit TOTP code (or backup code) and
+    // POSTs it with the challenge token to /api/auth/2fa/login, which
+    // verifies the code and only then sets the auth cookie.
+    if (user.twoFactorEnabled) {
+      await writeAuditLog({
+        weddingId: user.weddingId,
+        userId: user.id,
+        action: 'TWO_FACTOR_LOGIN_CHALLENGE',
+        details: `2FA challenge issued for ${user.email} (role=${user.role}) via org login`,
+        request,
+      });
+
+      const challengeToken = generateChallengeToken(user.id, user.email);
+      const twoFactorResponse = NextResponse.json({
+        requiresTwoFactor: true,
+        challengeToken,
+        // Echo the user's email + name + role so the UI can personalize
+        // the 2FA prompt ("Entrez le code pour {email}"). Never echo the
+        // secret.
+        email: user.email,
+        name: user.name,
+        role: user.role,
+      });
+      // P1-SEC-7: set a fresh CSRF cookie so the subsequent
+      // /api/auth/2fa/login POST has a valid double-submit pair.
+      const csrfToken = generateCsrfToken();
+      setCsrfCookie(twoFactorResponse, csrfToken);
+      return withSecurityHeaders(twoFactorResponse);
+    }
 
     // ─── Issue JWT + cookie ────────────────────────────────────────────────
     const token = generateToken({

@@ -21,8 +21,9 @@ import { motion } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Crown, Mail, Lock, Loader2, ArrowLeft, AlertCircle } from 'lucide-react';
+import { Crown, Mail, Lock, Loader2, ArrowLeft, AlertCircle, KeyRound } from 'lucide-react';
 import { toast } from 'sonner';
+import TwoFactorLogin from '@/components/auth/TwoFactorLogin';
 import { useWedding } from '../../wedding-context';
 
 /** Fallback display label built from the URL slug (e.g. "josue-hornella" → "Josue & Hornella"). */
@@ -55,6 +56,16 @@ export default function PerWeddingLoginPage() {
   const [errorKind, setErrorKind] = useState<ErrorKind | null>(null);
   const [errorMessage, setErrorMessage] = useState('');
 
+  // ── P4.7 2FA flow state ─────────────────────────────────────────────
+  // If /api/admin/login returns requiresTwoFactor, we transition to the
+  // 2FA step and delegate to <TwoFactorLogin> (which POSTs to
+  // /api/auth/2fa/login — the generic 2FA endpoint that works for ALL
+  // admin/staff roles).
+  const [twoFactorRequired, setTwoFactorRequired] = useState(false);
+  const [challengeToken, setChallengeToken] = useState('');
+  const [twoFactorEmail, setTwoFactorEmail] = useState('');
+  const [twoFactorName, setTwoFactorName] = useState('');
+
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setLoading(true);
@@ -73,7 +84,19 @@ export default function PerWeddingLoginPage() {
       });
 
       // Allow empty-body responses to fail gracefully
-      const data = await res.json().catch(() => ({} as { error?: string; token?: string; user?: unknown }));
+      const data = await res.json().catch(() => ({} as { error?: string; token?: string; user?: unknown; requiresTwoFactor?: boolean; challengeToken?: string; email?: string; name?: string }));
+
+      // ── P4.7: 2FA branch — if the user has 2FA enabled, /api/admin/login
+      // returns { requiresTwoFactor: true, challengeToken, email, name }
+      // instead of setting the auth cookie. Transition to the 2FA step.
+      if (res.ok && data.requiresTwoFactor) {
+        setChallengeToken(data.challengeToken || '');
+        setTwoFactorEmail(data.email || email);
+        setTwoFactorName(data.name || '');
+        setTwoFactorRequired(true);
+        setLoading(false);
+        return;
+      }
 
       if (!res.ok) {
         if (res.status === 401) {
@@ -114,6 +137,96 @@ export default function PerWeddingLoginPage() {
     } finally {
       setLoading(false);
     }
+  }
+
+  // ── P4.7: 2FA success handler ───────────────────────────────────────
+  // Called by <TwoFactorLogin> after /api/auth/2fa/login succeeds.
+  // We persist the user in localStorage (UI display only) and redirect to
+  // /w/{slug}/admin — the per-wedding admin dashboard.
+  function handle2FASuccess(user: { id: string; name: string; email: string; role: string }) {
+    try {
+      localStorage.setItem('admin_user', JSON.stringify(user));
+    } catch {
+      /* ignore — localStorage may be unavailable */
+    }
+    toast.success(`Bienvenue, ${user?.name || 'Administrateur'} !`);
+    router.push(`/w/${slug}/admin`);
+  }
+
+  // ── P4.7: 2FA step UI ───────────────────────────────────────────────
+  // Replaces the email/password form when the user has 2FA enabled.
+  if (twoFactorRequired) {
+    return (
+      <div
+        className="min-h-screen flex items-center justify-center p-4 relative overflow-hidden"
+        style={{
+          background:
+            'linear-gradient(135deg, oklch(0.12 0.02 270), oklch(0.16 0.02 270), oklch(0.14 0.02 240))',
+        }}
+      >
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-0"
+          style={{
+            background:
+              'radial-gradient(ellipse 60% 50% at 50% 30%, oklch(0.55 0.10 80 / 0.18), transparent 70%)',
+          }}
+        />
+        <motion.div
+          initial={{ opacity: 0, y: 20, scale: 0.96 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          transition={{ duration: 0.5, ease: 'easeOut' }}
+          className="glass-card gold-border w-full max-w-md p-8 relative z-10"
+        >
+          <div className="flex flex-col items-center mb-6 text-center">
+            <motion.div
+              initial={{ scale: 0, rotate: -20 }}
+              animate={{ scale: 1, rotate: 0 }}
+              transition={{ delay: 0.15, type: 'spring', stiffness: 200, damping: 15 }}
+              className="w-16 h-16 rounded-full bg-gradient-gold flex items-center justify-center mb-4 shadow-lg"
+            >
+              <KeyRound className="w-8 h-8 text-white" />
+            </motion.div>
+            <p className="text-[11px] uppercase tracking-[0.25em] text-muted-foreground mb-1">
+              Vérification 2FA
+            </p>
+            <h1 className="font-serif text-2xl gold-gradient font-display">{coupleLabel}</h1>
+            <p className="text-sm text-muted-foreground mt-2">
+              Saisissez le code à 6 chiffres pour finaliser la connexion
+            </p>
+          </div>
+
+          <TwoFactorLogin
+            challengeToken={challengeToken}
+            email={twoFactorEmail}
+            name={twoFactorName}
+            onSuccess={handle2FASuccess}
+            onCancel={() => {
+              setTwoFactorRequired(false);
+              setChallengeToken('');
+              setErrorKind(null);
+              setErrorMessage('');
+            }}
+          />
+
+          <div className="mt-6 pt-6 border-t border-white/10 text-center">
+            <button
+              type="button"
+              onClick={() => {
+                setTwoFactorRequired(false);
+                setChallengeToken('');
+                setErrorKind(null);
+                setErrorMessage('');
+              }}
+              className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              Revenir à la connexion
+            </button>
+          </div>
+        </motion.div>
+      </div>
+    );
   }
 
   return (

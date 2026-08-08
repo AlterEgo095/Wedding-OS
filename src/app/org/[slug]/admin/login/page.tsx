@@ -30,8 +30,9 @@ import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Building2, Mail, Lock, Loader2, ArrowLeft, AlertTriangle } from 'lucide-react';
+import { Building2, Mail, Lock, Loader2, ArrowLeft, AlertTriangle, KeyRound } from 'lucide-react';
 import { toast } from 'sonner';
+import TwoFactorLogin from '@/components/auth/TwoFactorLogin';
 
 export default function OrgLoginPage() {
   return (
@@ -55,6 +56,15 @@ function OrgLoginForm() {
     | null
   >(null);
   const [errorMessage, setErrorMessage] = useState('');
+
+  // ── P4.7 2FA flow state ─────────────────────────────────────────────
+  // If /api/org/login returns requiresTwoFactor, we transition to the 2FA
+  // step and delegate to <TwoFactorLogin> (which POSTs to /api/auth/2fa/login
+  // — the generic 2FA endpoint that works for ALL admin/staff roles).
+  const [twoFactorRequired, setTwoFactorRequired] = useState(false);
+  const [challengeToken, setChallengeToken] = useState('');
+  const [twoFactorEmail, setTwoFactorEmail] = useState('');
+  const [twoFactorName, setTwoFactorName] = useState('');
 
   // ─── Inline banner from query param (set by layout.tsx redirects) ─────
   const errorCode = searchParams.get('error');
@@ -85,7 +95,19 @@ function OrgLoginForm() {
         body: JSON.stringify({ email, password }),
       });
 
-      const data = await res.json().catch(() => ({}));
+      const data = await res.json().catch(() => ({} as { error?: string; user?: unknown; csrfToken?: string; redirectTo?: string; requiresTwoFactor?: boolean; challengeToken?: string; email?: string; name?: string }));
+
+      // ── P4.7: 2FA branch — if the user has 2FA enabled, /api/org/login
+      // returns { requiresTwoFactor: true, challengeToken, email, name }
+      // instead of setting the auth cookie. Transition to the 2FA step.
+      if (res.ok && data.requiresTwoFactor) {
+        setChallengeToken(data.challengeToken || '');
+        setTwoFactorEmail(data.email || email);
+        setTwoFactorName(data.name || '');
+        setTwoFactorRequired(true);
+        setLoading(false);
+        return;
+      }
 
       if (res.ok) {
         // Persist the user in localStorage for UI display (mirrors the
@@ -126,6 +148,103 @@ function OrgLoginForm() {
       setLoading(false);
     }
   };
+
+  // ── P4.7: 2FA success handler ───────────────────────────────────────
+  // Called by <TwoFactorLogin> after /api/auth/2fa/login succeeds.
+  // We persist the user in localStorage (UI display only) and redirect to
+  // /org/{slug}/admin — the org admin dashboard. If the user isn't an
+  // org member for THIS org, the layout will bounce them to the right
+  // destination (platform admin, their own org, etc.).
+  function handle2FASuccess(user: { id: string; name: string; email: string; role: string }) {
+    try {
+      localStorage.setItem('admin_user', JSON.stringify(user));
+    } catch {
+      /* ignore — localStorage may be unavailable */
+    }
+    toast.success(`Bienvenue, ${user?.name || 'Administrateur'} !`);
+    // Use the URL slug as the redirect target — the org layout will
+    // redirect to /platform/admin or another org if the user doesn't
+    // belong here.
+    const orgSlug = typeof window !== 'undefined'
+      ? window.location.pathname.split('/')[2] || ''
+      : '';
+    router.push(orgSlug ? `/org/${orgSlug}/admin` : '/');
+  }
+
+  // ── P4.7: 2FA step UI ───────────────────────────────────────────────
+  // Replaces the email/password form when the user has 2FA enabled.
+  if (twoFactorRequired) {
+    return (
+      <div
+        className="flex items-center justify-center min-h-screen p-4"
+        style={{
+          background:
+            'linear-gradient(135deg, oklch(0.12 0.02 270), oklch(0.16 0.02 270), oklch(0.14 0.02 240))',
+        }}
+      >
+        <motion.div
+          initial={{ opacity: 0, y: 20, scale: 0.95 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          transition={{ duration: 0.5, ease: 'easeOut' }}
+          className="glass-card gold-border w-full max-w-md p-8 relative overflow-hidden"
+        >
+          <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-gold/40 to-transparent" />
+
+          <div className="flex flex-col items-center mb-6">
+            <motion.div
+              initial={{ scale: 0, rotate: -10 }}
+              animate={{ scale: 1, rotate: 0 }}
+              transition={{ delay: 0.15, type: 'spring', stiffness: 200 }}
+              className="w-16 h-16 rounded-full bg-gradient-gold flex items-center justify-center mb-4 shadow-lg relative"
+            >
+              <KeyRound className="w-8 h-8 text-white" />
+              <div className="absolute -inset-1 rounded-full border border-gold/30 animate-pulse" />
+            </motion.div>
+            <h2 className="text-2xl font-bold gold-gradient font-display tracking-wide">
+              Vérification 2FA
+            </h2>
+            <p className="text-sm text-muted-foreground mt-1.5 text-center">
+              Saisissez le code à 6 chiffres pour finaliser la connexion
+              {twoFactorEmail && (
+                <>
+                  <br />
+                  <span className="text-xs text-muted-foreground/80">pour {twoFactorEmail}</span>
+                </>
+              )}
+            </p>
+          </div>
+
+          <TwoFactorLogin
+            challengeToken={challengeToken}
+            email={twoFactorEmail}
+            name={twoFactorName}
+            onSuccess={handle2FASuccess}
+            onCancel={() => {
+              setTwoFactorRequired(false);
+              setChallengeToken('');
+              setErrorKind(null);
+              setErrorMessage('');
+            }}
+          />
+
+          <div className="mt-4 text-center">
+            <button
+              type="button"
+              onClick={() => {
+                setTwoFactorRequired(false);
+                setChallengeToken('');
+                setErrorKind(null);
+                setErrorMessage('');
+              }}
+              className="text-sm text-muted-foreground hover:text-foreground underline-offset-4 hover:underline transition-colors"
+            >
+              ← Revenir à la connexion
+            </button>
+          </div>
+        </motion.div>
+      </div>
+    );
+  }
 
   return (
     <div

@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic';
 import { NextRequest, NextResponse } from 'next/server';
 import { clearAuthCookie, getAuthUser } from '@/lib/auth';
 import { writeAuditLog } from '@/lib/audit';
+import { logger } from '@/lib/logger';
 
 /**
  * Per-wedding admin logout endpoint.
@@ -34,7 +35,7 @@ export async function POST(request: NextRequest) {
       }
     } catch (auditError) {
       // P2-SEC-1: never log error.stack. Audit-log failure must not block logout.
-      console.error('Admin logout audit log error:', auditError instanceof Error ? auditError.message : String(auditError));
+      logger.error('Admin logout audit log error', { err: auditError instanceof Error ? auditError.message : String(auditError) });
     }
 
     const response = NextResponse.json({ success: true });
@@ -44,7 +45,7 @@ export async function POST(request: NextRequest) {
     return response;
   } catch (error) {
     // P2-SEC-1: never log error.stack.
-    console.error('Admin logout error:', error instanceof Error ? error.message : String(error));
+    logger.error('Admin logout error', { err: error instanceof Error ? error.message : String(error) });
     return NextResponse.json(
       { error: 'Erreur interne du serveur' },
       { status: 500 }
