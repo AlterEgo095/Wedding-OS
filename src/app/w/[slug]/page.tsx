@@ -30,8 +30,6 @@ import { ThemeInjector } from '@/components/wedding/ThemeInjector';
 import { SectionRenderer } from '@/components/wedding/SectionRenderer';
 import { useWedding } from './wedding-context';
 
-// P2-PERF-10: ISR — revalidate public wedding page every 60 seconds
-export const revalidate = 60;
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
