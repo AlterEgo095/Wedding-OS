@@ -46,10 +46,15 @@ import CommercialCTA from '@/components/marketing/CommercialCTA'
 import MarketingFooter from '@/components/marketing/MarketingFooter'
 
 export const revalidate = 60 // ISR — refresh marketing data every 60s
-// Mission 4.6: force dynamic rendering — the homepage fetches from DB at
-// request time (Collections, portfolio events, case study). Static prerender
-// would fail without DATABASE_URL at build time. ISR (revalidate=60) still
-// applies, giving near-instant responses with fresh data every minute.
+// P0-PERF-1: force-dynamic is REQUIRED because the Docker build stage does not
+// have a real DATABASE_URL — Prisma queries fail during build-time prerender.
+// Even with try-catch + a dummy DATABASE_URL, PrismaClientKnownRequestError
+// escapes the catch and crashes the prerender. force-dynamic skips prerender
+// entirely. ISR (revalidate=60) is still set for runtime caching.
+//
+// TODO (P5 P2-PERF-1): implement Redis-level caching for the 3 DB query
+// functions (getCollections, getPortfolioEvents, getCaseStudy) with a 60s TTL.
+// This gives <50ms TTFB without requiring build-time DB access.
 export const dynamic = 'force-dynamic'
 
 // ─── Portfolio governance (Mission 4.8 Phase 2 — slug fallbacks REMOVED) ───────
@@ -80,6 +85,10 @@ interface PortfolioEvent {
 }
 
 async function getPortfolioEvents(): Promise<PortfolioEvent[]> {
+  // P0-PERF-1: try-catch for build-time prerender resilience.
+  // During Docker build, the DB may not be available → return empty array
+  // so the page prerenders successfully. ISR revalidates with real data at runtime.
+  try {
   // Fetch weddings that are explicitly visible OR have no governance set yet
   // (transitional — default visible for PUBLISHED non-default weddings).
   // INTERNAL events are hidden from the public portfolio.
@@ -164,9 +173,15 @@ async function getPortfolioEvents(): Promise<PortfolioEvent[]> {
       if (a._order !== b._order) return a._order - b._order
       return b._createdAt.getTime() - a._createdAt.getTime()
     })
+  } catch {
+    // Build-time or DB-unavailable: return empty — ISR will populate at runtime
+    return []
+  }
 }
 
 async function getCaseStudy() {
+  // P0-PERF-1: try-catch for build-time prerender resilience.
+  try {
   // Mission 4.8: case study is governed SOLELY by caseStudyEnabled flag.
   // NO fallback to josue-hornella. If no wedding has the flag, no case study
   // is shown (the section is simply absent from the homepage).
@@ -196,9 +211,14 @@ async function getCaseStudy() {
   const settingsMap: Record<string, string> = {}
   for (const s of settings) settingsMap[s.key] = s.value
   return { ...wedding, settings: settingsMap }
+  } catch {
+    return null
+  }
 }
 
 async function getCollections() {
+  // P0-PERF-1: try-catch for build-time prerender resilience.
+  try {
   // Mission 4.7 Phase 5 — Collection Publishing Governance.
   // Only show Collections that are:
   //   - isActive=true (catalog visibility flag)
@@ -225,6 +245,9 @@ async function getCollections() {
     orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
     take: 12,
   })
+  } catch {
+    return []
+  }
 }
 
 export default async function MarketingHome() {

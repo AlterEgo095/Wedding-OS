@@ -480,32 +480,55 @@ export async function meterInvitationUsage(weddingId: string, count: number): Pr
   // Recalculate order totals (subtotal, total — discount is left untouched)
   await recalculateOrderTotals(order.id);
 
-  // Auto-create a Payment (AWAITING_VERIFICATION — Stripe webhook will flip
-  // to VERIFIED when the invoice is paid). method='STRIPE' so the dashboard
-  // can distinguish metered payments from manual ones.
-  const payment = await db.payment.create({
-    data: {
-      orderId: order.id,
-      weddingId,
-      amount: total,
-      currency: 'usd',
-      method: 'STRIPE',
-      status: 'AWAITING_VERIFICATION',
-      submittedAt: new Date(),
-      reference: `metered_invitations_${Date.now()}`,
-    },
-  });
+  // P0-COM-1: Only create a Payment when Stripe is configured.
+  // Previously, this always created a Payment(status='AWAITING_VERIFICATION')
+  // even when STRIPE_SECRET_KEY was empty → payments stuck forever (the
+  // Stripe webhook never fires to flip them to VERIFIED). Now we check
+  // isStripeConfigured() first: if Stripe is not set up, we still create
+  // the OrderItem (for usage tracking) but skip Payment creation. When
+  // Stripe is configured later, the admin can generate invoices for the
+  // accumulated OrderItems.
+  let payment: { id: string; amount: number } | null = null;
 
-  logger.info('meterInvitationUsage: OrderItem + Payment created', {
-    weddingId,
-    count,
-    orderItemId: orderItem.id,
-    paymentId: payment.id,
-    total,
-  });
+  try {
+    const { isStripeConfigured } = await import('../stripe');
+    if (isStripeConfigured()) {
+      payment = await db.payment.create({
+        data: {
+          orderId: order.id,
+          weddingId,
+          amount: total,
+          currency: 'usd',
+          method: 'STRIPE',
+          status: 'AWAITING_VERIFICATION',
+          submittedAt: new Date(),
+          reference: `metered_invitations_${Date.now()}`,
+        },
+      });
+      logger.info('meterInvitationUsage: OrderItem + Payment created', {
+        weddingId,
+        count,
+        orderItemId: orderItem.id,
+        paymentId: payment.id,
+        total,
+      });
+    } else {
+      // Stripe not configured — log warning, create OrderItem only.
+      // The OrderItem tracks usage so the admin can invoice later.
+      logger.warn('meterInvitationUsage: Stripe not configured — OrderItem created but Payment skipped', {
+        weddingId,
+        count,
+        orderItemId: orderItem.id,
+        total,
+      });
+    }
+  } catch (err) {
+    // Defensive: if stripe module fails to load, don't block invitation sending
+    logger.error('meterInvitationUsage: stripe check failed, Payment skipped', { error: String(err) });
+  }
 
   return {
     orderItem: { id: orderItem.id, total },
-    payment: { id: payment.id, amount: total },
+    payment,
   };
 }

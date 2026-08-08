@@ -7,7 +7,7 @@
   "display_override": ["standalone", "minimal-ui", "browser"],
   "background_color": "#0a0a0a",
   "theme_color": "#D4AF37",
-  "orientation": "any",
+  "orientation": "portrait",
   "scope": "/",
   "lang": "fr",
   "dir": "ltr",

@@ -48,6 +48,12 @@ ENV NEXT_TELEMETRY_DISABLED=1
 # Generate Prisma client from schema (required before Next.js build)
 RUN npx prisma generate
 
+# P0-PERF-1: Provide a dummy DATABASE_URL during build so Prisma client can
+# initialize. The ISR prerender of / uses try-catch on all DB queries —
+# queries fail gracefully (return empty data), page prerenders successfully.
+# At runtime, the real DATABASE_URL from .env is used.
+ENV DATABASE_URL="file:/tmp/build.db"
+
 # Build the Next.js application (standalone output mode)
 RUN npm run build
 

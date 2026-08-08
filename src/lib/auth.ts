@@ -218,7 +218,11 @@ function roleLevel(role: string): number {
   switch (role) {
     case 'PLATFORM_ADMIN':
     case 'SUPER_ADMIN': return 4;
-    case 'ORGANIZER': return 3;
+    case 'ORG_ADMIN':       // B2B2C org admin — same wedding permissions as ORGANIZER
+    case 'ORGANIZER':       // Per-wedding owner (backward compat)
+    case 'ORG_MEMBER':      // B2B2C org staff — same as ORGANIZER
+      return 3;
+    case 'ORG_VIEWER':      // B2B2C org read-only — same as RECEPTION
     case 'RECEPTION': return 2;
     case 'CONTROLLER': return 1;
     default: return 0;

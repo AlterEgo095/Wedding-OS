@@ -32,6 +32,7 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   maximumScale: 5,
+  viewportFit: "cover", // P0-PWA-2: enables env(safe-area-inset-*) on iOS notch
   themeColor: [
     { media: "(prefers-color-scheme: light)", color: "#D4AF37" },
     { media: "(prefers-color-scheme: dark)", color: "#0a0a0a" },

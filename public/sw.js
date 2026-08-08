@@ -3,7 +3,9 @@
 // Cache intelligent · Offline · Background sync · Update flow
 // ══════════════════════════════════════════════════════════════════════════════
 
-const CACHE_VERSION = 'heureux-mariage-v3';
+// P0-PWA-3: bumped v3→v4 to invalidate stale caches (icons were 404 in v3,
+// breaking cache.addAll atomically). v4 precache succeeds because icons now exist.
+const CACHE_VERSION = 'heureux-mariage-v4';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 const IMAGE_CACHE = `${CACHE_VERSION}-images`;
@@ -59,7 +61,29 @@ self.addEventListener('fetch', (event) => {
   // Skip cross-origin (analytics, fonts Google, etc.)
   if (url.origin !== self.location.origin) return;
 
-  // Skip API calls (toujours frais — données dynamiques)
+  // P0-PWA-3: Cache QR code endpoint offline (stale-while-revalidate).
+  // CRITICAL: guests at the wedding venue may have poor signal. Their
+  // invitation QR must display even offline. The QR is stable per guest
+  // (doesn't change after generation), so SWR is safe.
+  if (url.pathname.startsWith('/api/guests/qrcode/')) {
+    event.respondWith(
+      caches.match(request).then((cached) => {
+        const fetchPromise = fetch(request)
+          .then((response) => {
+            if (response.ok) {
+              const cloned = response.clone();
+              caches.open(RUNTIME_CACHE).then((cache) => cache.put(request, cloned));
+            }
+            return response;
+          })
+          .catch(() => cached);
+        return cached || fetchPromise;
+      })
+    );
+    return;
+  }
+
+  // Skip other API calls (toujours frais — données dynamiques)
   if (url.pathname.startsWith('/api/')) return;
 
   // Skip Next.js HMR/dev internals
