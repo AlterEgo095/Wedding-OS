@@ -340,6 +340,23 @@ export async function resolvePublicTenant(
     };
   }
 
+  // P5.0 H-ARCH-1 — ARCHIVED weddings' public APIs are blocked.
+  // The memorial page (rendered by layout.tsx for non-admin routes) still
+  // shows, but /api/* endpoints (guest data, photos, guestbook, QR) return
+  // 410 Gone. This prevents guests with valid tokens from fetching fresh
+  // data from an archived wedding. Admin routes use resolveAdminTenant
+  // (not this function) so organizers retain full management access.
+  if (wedding.status === 'ARCHIVED') {
+    return {
+      context: null,
+      wedding: null,
+      error: {
+        status: 410,
+        message: `Wedding "${slug}" has been archived.`,
+      },
+    };
+  }
+
   return {
     context: buildTenantContext(wedding),
     wedding,

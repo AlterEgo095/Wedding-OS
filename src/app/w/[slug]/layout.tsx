@@ -135,6 +135,14 @@ export default async function WeddingLayout({
 
   const { wedding, manifest, publishedConfig } = data;
 
+  // P5.0 H-SUSP-1 + H-ARCH-2 — Compute admin-route bypass ONCE for all status
+  // gates. Admin routes (/w/[slug]/admin/*) must remain accessible when the
+  // wedding is DRAFT (configuration), SUSPENDED (recovery), or ARCHIVED
+  // (viewing historical data). Only public routes show holding/memorial pages.
+  const h = await headers();
+  const pathname = h.get('x-invoke-path') || h.get('referer') || '';
+  const isAdminRoute = pathname.includes('/admin');
+
   if (wedding.status === 'DRAFT' && !wedding.isDefault) {
     // Mission 5.3.1: Allow admin routes (/w/[slug]/admin/*) for DRAFT weddings
     // so organizers can log in, configure, and publish their event.
@@ -143,15 +151,12 @@ export default async function WeddingLayout({
     // NOTE: `headers()` is a dynamic API and runs OUTSIDE the cached fetch,
     // so this per-request check is not cached. The cached `wedding.status`
     // is the source of truth for the status value itself.
-    const h = await headers();
-    const pathname = h.get('x-invoke-path') || h.get('referer') || '';
-    const isAdminRoute = pathname.includes('/admin');
     if (!isAdminRoute) {
       notFound();
     }
   }
 
-  if (wedding.status === 'SUSPENDED') {
+  if (wedding.status === 'SUSPENDED' && !isAdminRoute) {
     return (
       <>
         {/* P1.10: org-level branding still applies on custom domains even
@@ -172,7 +177,7 @@ export default async function WeddingLayout({
     );
   }
 
-  if (wedding.status === 'ARCHIVED') {
+  if (wedding.status === 'ARCHIVED' && !isAdminRoute) {
     return (
       <>
         {/* P1.10: org-level branding still applies on custom domains even

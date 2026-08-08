@@ -173,6 +173,31 @@ export async function getAuthUser(request: NextRequest): Promise<AuthUser | null
   // Verify user still exists
   const dbUser = await db.adminUser.findUnique({ where: { id: user.id } });
   if (!dbUser) return null;
+
+  // ─── P5.0 CRITICAL-GAP-1 — Real-time org member revocation ───────────────
+  // For org-scoped roles (ORG_ADMIN / ORG_MEMBER / ORG_VIEWER), verify the
+  // user has an ACTIVE membership in their organization on EVERY request.
+  // A revoked org member (OrganizationMember.status = 'REVOKED') must be
+  // denied access immediately — not just when their AdminUser row is
+  // hard-deleted. This closes the B2B2C revocation gap identified in
+  // PRE-P5.X-AUDIT-C (CRITICAL-GAP-1).
+  if (
+    dbUser.role === 'ORG_ADMIN' ||
+    dbUser.role === 'ORG_MEMBER' ||
+    dbUser.role === 'ORG_VIEWER'
+  ) {
+    if (!dbUser.organizationId) return null; // misconfigured — fail closed
+    const activeMembership = await db.organizationMember.findFirst({
+      where: {
+        userId: dbUser.id,
+        organizationId: dbUser.organizationId,
+        status: 'ACTIVE',
+      },
+      select: { id: true },
+    });
+    if (!activeMembership) return null; // revoked or pending — deny
+  }
+
   // Refresh weddingId + role + organizationId from DB in case they changed
   // since token was issued (e.g. user was demoted, reassigned to a different
   // wedding, or moved to a different org).
