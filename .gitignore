@@ -74,6 +74,9 @@ server.log
 
 # Audit/report screenshots and artifact dumps (not source)
 *.png
+# P0-PWA-1: PWA icons must be tracked (not ignored by *.png rule)
+!public/icons/*.png
+!public/icons/**/*.png
 audit-*.md
 AUDIT_STRATEGIQUE_GLOBAL.md
 p3-screenshots/
