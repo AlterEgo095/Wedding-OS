@@ -30,6 +30,85 @@ import { isCustomDomainRequest } from '@/lib/custom-domains'
 
 const CSRF_PROTECTED_METHODS = new Set(['POST', 'PUT', 'DELETE', 'PATCH']);
 
+// ─── P5.0 CB-1 — Wedding slug validation cache ────────────────────────────────
+// Fixes the soft-404 bug where Next.js 16's layout-level notFound() renders the
+// 404 content with HTTP 200 status. The middleware validates the slug BEFORE
+// the request reaches the layout and returns a real HTTP 404 if the slug
+// doesn't exist or is DRAFT (on non-admin routes).
+interface CachedWeddingStatus {
+  exists: boolean;
+  status: string | null;
+  isDefault: boolean;
+  expires: number;
+}
+const slugCache = new Map<string, CachedWeddingStatus>();
+const SLUG_CACHE_TTL = 30 * 1000; // 30 seconds
+
+async function checkWeddingSlug(
+  slug: string
+): Promise<{ exists: boolean; status: string | null; isDefault: boolean }> {
+  const cached = slugCache.get(slug);
+  if (cached && cached.expires > Date.now()) {
+    return { exists: cached.exists, status: cached.status, isDefault: cached.isDefault };
+  }
+
+  try {
+    const baseUrl = process.env.NEXTAUTH_URL || 'http://localhost:3000';
+    const res = await fetch(
+      `${baseUrl}/api/public/wedding-status?slug=${encodeURIComponent(slug)}`,
+      { cache: 'no-store' }
+    );
+    const data = (await res.json()) as {
+      exists: boolean;
+      status: string | null;
+      isDefault: boolean;
+    };
+    slugCache.set(slug, {
+      exists: data.exists,
+      status: data.status,
+      isDefault: data.isDefault,
+      expires: Date.now() + SLUG_CACHE_TTL,
+    });
+    return data;
+  } catch {
+    // On fetch failure, fail open (let the layout handle it)
+    return { exists: true, status: 'PUBLISHED', isDefault: false };
+  }
+}
+
+const NOT_FOUND_HTML = `<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mariage introuvable — 404</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:Georgia,serif;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#faf7f2;color:#1a1a1a;padding:1.5rem}
+.c{max-width:28rem;text-align:center}
+.n{font-size:6rem;color:rgba(26,26,26,0.12);line-height:1;font-weight:700}
+h1{font-size:1.75rem;margin-top:0.5rem;margin-bottom:0.5rem}
+p{font-size:0.875rem;color:#666;line-height:1.6;margin-bottom:1.5rem}
+a{display:inline-flex;align-items:center;gap:0.5rem;padding:0.625rem 1.25rem;background:#1a1a1a;color:#fff;text-decoration:none;border-radius:0.375rem;font-size:0.875rem;font-family:system-ui,sans-serif;min-height:44px}
+</style>
+</head>
+<body>
+<div class="c">
+<div class="n">404</div>
+<h1>Mariage introuvable</h1>
+<p>Ce mariage n&rsquo;existe pas, n&rsquo;est pas encore publi&eacute;, ou a &eacute;t&eacute; retir&eacute;. Si vous pensez qu&rsquo;il s&rsquo;agit d&rsquo;une erreur, v&eacute;rifiez l&rsquo;adresse ou contactez les organisateurs.</p>
+<a href="/">Retour &agrave; l&rsquo;accueil</a>
+</div>
+</body>
+</html>`;
+
+function notFoundResponse(): NextResponse {
+  return new NextResponse(NOT_FOUND_HTML, {
+    status: 404,
+    headers: { 'content-type': 'text/html; charset=utf-8' },
+  });
+}
+
 // ─── Custom domain cache (Slice 5 + P1.10) ────────────────────────────────────
 // Cached entry now carries the resolver `type` so the middleware can dispatch
 // to /w/[slug] vs /org/[slug] without a second API call.
@@ -149,6 +228,36 @@ export async function middleware(request: NextRequest) {
     // No match — fall through to normal routing (the request will likely 404
     // since the custom domain doesn't resolve to any entity). We do NOT set
     // x-white-label here because there's no white-label context to honour.
+  }
+
+  // ─── P5.0 CB-1 — Wedding slug validation for /w/[slug] routes ────────────
+  // Fixes the soft-404 bug where Next.js 16's layout-level notFound() renders
+  // 404 content with HTTP 200 status. The middleware validates the slug BEFORE
+  // the request reaches the layout and returns a real HTTP 404 if:
+  //   1. The slug doesn't exist (unknown wedding)
+  //   2. The slug is DRAFT and this is a public (non-admin) route
+  // Admin routes (/w/[slug]/admin/*) are allowed through for DRAFT weddings
+  // so organizers can configure before publishing.
+  const wMatch = url.pathname.match(/^\/w\/([^/]+)/);
+  if (wMatch && !url.pathname.startsWith('/api/')) {
+    const slug = decodeURIComponent(wMatch[1]);
+    const isAdminRoute = url.pathname.includes('/admin');
+    const weddingInfo = await checkWeddingSlug(slug);
+
+    if (!weddingInfo.exists) {
+      return notFoundResponse();
+    }
+    if (
+      weddingInfo.status === 'DRAFT' &&
+      !weddingInfo.isDefault &&
+      !isAdminRoute
+    ) {
+      return notFoundResponse();
+    }
+    // SUSPENDED and ARCHIVED are handled by the layout (holding/memorial pages)
+    // — the middleware only blocks non-existent and DRAFT-public. This keeps
+    // the middleware fast (no admin auth check needed) while the layout
+    // handles the richer status-based UX.
   }
 
   // ─── P1-SEC-10: HTTPS redirect in production ──────────────────────────────
