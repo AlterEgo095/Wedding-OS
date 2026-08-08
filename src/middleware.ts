@@ -261,10 +261,17 @@ export async function middleware(request: NextRequest) {
   }
 
   // ─── P1-SEC-10: HTTPS redirect in production ──────────────────────────────
+  // P5.0: Skip for internal requests (localhost / 127.0.0.1 / 0.0.0.0) so the
+  // middleware's own fetch() calls to /api/public/* don't get redirected.
+  const isInternalRequest =
+    url.hostname === 'localhost' ||
+    url.hostname === '127.0.0.1' ||
+    url.hostname === '0.0.0.0';
   if (
     process.env.NODE_ENV === 'production' &&
     url.protocol === 'http:' &&
-    request.headers.get('x-forwarded-proto') !== 'https'
+    request.headers.get('x-forwarded-proto') !== 'https' &&
+    !isInternalRequest
   ) {
     const httpsUrl = new URL(url);
     httpsUrl.protocol = 'https:';
