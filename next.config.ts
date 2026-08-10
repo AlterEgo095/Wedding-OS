@@ -70,6 +70,12 @@ const nextConfig: NextConfig = {
   },
   reactStrictMode: true,
   images: {
+    // Phase 3B (MISSION 5.9.0 §20.5) — Serve AVIF first (better compression,
+    // ~50% smaller than WebP for photos), then WebP as a fallback for
+    // browsers without AVIF support. Next.js automatically generates both
+    // variants per requested size and serves the best format the browser
+    // accepts via the `Accept` header.
+    formats: ['image/avif', 'image/webp'],
     // P1-PROD-9: Restrict remote image hostnames to the known CDN domains
     // (the sandbox preview + the production domain). Previously allowed
     // '**' which is an SSRF/DoS vector (anyone could make the Next.js

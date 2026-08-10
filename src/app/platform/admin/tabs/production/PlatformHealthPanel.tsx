@@ -52,6 +52,8 @@ interface OpsData {
 
 interface DeploymentsData {
   total: number
+  failed?: number
+  succeeded?: number
 }
 
 function formatBytes(bytes: number): string {
@@ -82,7 +84,8 @@ export function PlatformHealthPanel({ fetchWithAuth }: { fetchWithAuth: (url: st
       const [dashRes, opsRes, depRes] = await Promise.all([
         fetchWithAuth('/api/platform/dashboard'),
         fetchWithAuth('/api/platform/ops'),
-        fetchWithAuth('/api/platform/deployments?limit=1'),
+        // MISSION-5.9.0 Phase 0.10: fetch last 100 deployments (was limit=1) to compute real error rate.
+        fetchWithAuth('/api/platform/deployments?limit=100'),
       ])
       if (dashRes) {
         const json = await dashRes.json()
@@ -94,7 +97,12 @@ export function PlatformHealthPanel({ fetchWithAuth }: { fetchWithAuth: (url: st
       }
       if (depRes) {
         const json = await depRes.json()
-        setDeploys({ total: json.total ?? 0 })
+        // MISSION-5.9.0 Phase 0.10: capture deployment status breakdown to compute real error rate.
+        // Previously only json.total was destructured, leaving errorRate stuck at 0.
+        const deployments = Array.isArray(json.deployments) ? json.deployments : []
+        const failed = deployments.filter((d: { status?: string }) => d.status === 'FAILED').length
+        const succeeded = deployments.filter((d: { status?: string }) => d.status === 'SUCCESS').length
+        setDeploys({ total: json.total ?? deployments.length ?? 0, failed, succeeded })
       }
     } catch {
       toast.error('Erreur lors du chargement de la santé de la plateforme')
@@ -112,8 +120,11 @@ export function PlatformHealthPanel({ fetchWithAuth }: { fetchWithAuth: (url: st
   const totalDeploys = deploys?.total ?? 0
   const auditTotal = ops?.auditLogTotal ?? 0
 
-  // Error rate proxy: percentage of FAILED deployments. If no deployments, 0.
-  const errorRate = totalDeploys > 0 ? 0 : 0 // TODO: requires status counts; deployments route doesn't break down by status yet.
+  // MISSION-5.9.0 Phase 0.10: real error rate from deployment status counts.
+  // Previously this was `totalDeploys > 0 ? 0 : 0` — a stuck-at-zero ternary
+  // that always displayed 0% regardless of actual FAILED deployments.
+  const failedDeploys = deploys?.failed ?? 0
+  const errorRate = totalDeploys > 0 ? (failedDeploys / totalDeploys) * 100 : 0
 
   const kpiCards = [
     {

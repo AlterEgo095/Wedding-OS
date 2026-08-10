@@ -13,7 +13,7 @@ import { internalError, badRequest } from '@/lib/api-errors';
  *   - isActive (boolean) — controls catalog visibility
  *   - isPublished (boolean) — controls deployability
  *   - sortOrder (number) — controls marketing display order
- *   - marketingVisible (boolean) — NEW: explicit marketing visibility flag
+ *   - marketingVisible (boolean) — explicit marketing visibility flag
  *     (stored in Collection.isActive for backward compat — when isActive=false,
  *      the Collection is hidden from BOTH catalog AND marketing)
  *   - featured (boolean) — highlight in marketing
@@ -22,7 +22,15 @@ import { internalError, badRequest } from '@/lib/api-errors';
  *
  * Mission 4.7 Phase 5 — Collection Publishing Governance.
  *
- * Lifecycle rules:
+ * MISSION 5.9.2 P3-A — Task 2 (lock enforcement):
+ *   • Fetches the Collection BEFORE applying any update.
+ *   • If `collection.isLocked === true`, returns HTTP 423 Locked with the
+ *     canonical French copy. This is the server-side backstop — no governance
+ *     change can sneak past a locked Collection. The dedicated /lock + /unlock
+ *     endpoints are the only way to flip this flag.
+ *   • No other behavior modified. The lifecycle rules below still hold.
+ *
+ * Lifecycle rules (preserved from Phase 5):
  *   - status BROUILLON / EN_COURS → never visible publicly (isActive ignored)
  *   - status ARCHIVE → never visible, never proposed
  *   - status PUBLIE / COMMERCIALISE → visible if isActive=true
@@ -62,6 +70,33 @@ export async function PATCH(
       return badRequest(`status doit être l'un de: ${validStatuses.join(', ')}`);
     }
 
+    // ─── P3-A — Lock enforcement (Task 2) ──────────────────────────────────
+    // Fetch the Collection BEFORE applying any mutation. If `isLocked` is
+    // true, reject the governance change with 423 Locked. The dedicated
+    // /lock + /unlock endpoints are the only way to flip the lock flag — all
+    // other mutations (governance, lifecycle transitions via the existing
+    // collections/index.ts transitionCollection flow, etc.) are blocked.
+    //
+    // We do this AFTER the status validation so an invalid status still
+    // produces a 400 (more actionable for the client) — the 423 backstop
+    // fires only when the request is otherwise well-formed.
+    const existing = await db.collection.findUnique({
+      where: { id: collectionId },
+      select: { id: true, slug: true, isLocked: true, sortOrder: true },
+    });
+    if (!existing) {
+      return NextResponse.json(
+        { error: 'Collection introuvable' },
+        { status: 404 },
+      );
+    }
+    if (existing.isLocked) {
+      return NextResponse.json(
+        { error: 'Collection verrouillée — déverrouillez-la avant de modifier la gouvernance' },
+        { status: 423 },
+      );
+    }
+
     // Build update data
     const updateData: Record<string, unknown> = {};
     if (isActive !== undefined) updateData.isActive = isActive;
@@ -81,10 +116,9 @@ export async function PATCH(
     // sortOrder convention: featured collections get sortOrder -1, others >= 0.
     // This avoids a migration. The marketing UI sorts by sortOrder asc.
     if (featured !== undefined) {
-      const current = await db.collection.findUnique({ where: { id: collectionId }, select: { sortOrder: true } });
       if (featured) {
         updateData.sortOrder = -1;
-      } else if (current && current.sortOrder < 0) {
+      } else if (existing.sortOrder < 0) {
         updateData.sortOrder = 0;
       }
     }
@@ -101,6 +135,11 @@ export async function PATCH(
         sortOrder: true,
         status: true,
         archivedAt: true,
+        // P3-A — surface the lock state in the response so the UI can render
+        // the lock badge without a separate fetch.
+        isLocked: true,
+        lockedAt: true,
+        lockedBy: true,
       },
     });
 

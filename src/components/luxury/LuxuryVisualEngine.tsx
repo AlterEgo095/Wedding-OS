@@ -20,17 +20,20 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { useLuxuryEngine, LUXURY_THEMES, TIER_CONFIG, type PerformanceTier } from '@/lib/luxury-engine-store'
 import { LuxuryParticleEngine, type EngineConfig } from './particle-engine'
 import { useTheme } from 'next-themes'
+import { useMotionTier } from '@/lib/motion/useMotionTier'
 
 // ─── Luminous Halo Component (DOM-based, very lightweight) ───
-const Halo = memo(function Halo({ 
-  index, 
-  theme, 
-  speedMultiplier 
-}: { 
+const Halo = memo(function Halo({
+  index,
+  theme,
+  speedMultiplier
+}: {
   index: number
   theme: string
   speedMultiplier: number
 }) {
+  const { reduced: prefersReducedMotion, tier } = useMotionTier()
+  const isStatic = prefersReducedMotion || tier === 'none'
   // Stable random values via useMemo
   const props = useMemo(() => ({
     size: 150 + Math.random() * 250,
@@ -49,13 +52,14 @@ const Halo = memo(function Halo({
         top: `${props.startY}%`,
         background: `radial-gradient(circle, ${theme} 0%, transparent 70%)`,
         filter: 'blur(60px)',
+        ...(isStatic ? { opacity: 0.4 } : {}),
       }}
-      animate={{
+      animate={isStatic ? undefined : {
         x: [0, 30, -20, 15, 0],
         y: [0, -25, 15, -30, 0],
         opacity: [0.3, 0.6, 0.4, 0.5, 0.3],
       }}
-      transition={{
+      transition={isStatic ? undefined : {
         duration: props.duration,
         delay: index * 3 + Math.random() * 5,
         repeat: Infinity,
@@ -69,7 +73,9 @@ import { memo } from 'react'
 
 // ─── Global Breathing Effect ───
 function GlobalBreathing({ color, enabled }: { color: string; enabled: boolean }) {
-  if (!enabled) return null
+  const { reduced: prefersReducedMotion, tier } = useMotionTier()
+  const isStatic = prefersReducedMotion || tier === 'none'
+  if (!enabled || isStatic) return null
 
   return (
     <motion.div
@@ -97,6 +103,12 @@ export default function LuxuryVisualEngine() {
   const [mounted, setMounted] = useState(false)
   const [dimensions, setDimensions] = useState({ width: 0, height: 0 })
   const scrollYRef = useRef(0)
+  const { reduced: prefersReducedMotion, tier } = useMotionTier()
+  // Static path: skip the motion-based DOM layers (halos, breathing) when the
+  // user prefers reduced motion or the wedding's tier is 'none'. The Canvas
+  // particle engine continues to run (it's not framer-motion-based) — it has
+  // its own internal performance gating via the luxury engine store.
+  const isStatic = prefersReducedMotion || tier === 'none'
 
   const {
     enabled,
@@ -352,7 +364,7 @@ export default function LuxuryVisualEngine() {
       />
 
       {/* DOM layer: Luminous Halos */}
-      {halos > 0 && Array.from({ length: halos }, (_, i) => (
+      {!isStatic && halos > 0 && Array.from({ length: halos }, (_, i) => (
         <Halo
           key={`halo-${i}`}
           index={i}
@@ -364,7 +376,7 @@ export default function LuxuryVisualEngine() {
       {/* DOM layer: Global Breathing */}
       <GlobalBreathing
         color={themeColors.breath}
-        enabled={globalBreathing && tierConfig.enableBreathing}
+        enabled={globalBreathing && tierConfig.enableBreathing && !isStatic}
       />
     </div>
   )

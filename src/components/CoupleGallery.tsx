@@ -2,9 +2,11 @@
 
 import { useRef } from 'react'
 import { motion, useInView } from 'framer-motion'
+import type { Easing } from 'framer-motion'
 import { Heart, CalendarDays, ChevronLeft, ChevronRight } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
+import { useMotionTier } from '@/lib/motion/useMotionTier'
 
 interface CoupleStory {
   id: string
@@ -27,6 +29,10 @@ export default function CoupleGallery({ stories }: { stories: CoupleStory[] }) {
   const sectionRef = useRef<HTMLDivElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const isInView = useInView(sectionRef, { once: true, margin: '-100px' })
+  const { config: motionCfg, reduced: prefersReducedMotion, tier } = useMotionTier()
+  // Static path: render plain divs (no motion). Layout/className/children are
+  // identical — only the animation layer is removed.
+  const isStatic = prefersReducedMotion || tier === 'none'
 
   const scroll = (direction: 'left' | 'right') => {
     if (scrollRef.current) {
@@ -65,9 +71,9 @@ export default function CoupleGallery({ stories }: { stories: CoupleStory[] }) {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* Section Title */}
         <motion.div
-          initial={{ opacity: 0, y: 30 }}
-          animate={isInView ? { opacity: 1, y: 0 } : {}}
-          transition={{ duration: 0.8 }}
+          initial={isStatic ? false : { opacity: 0, y: 30 }}
+          animate={isStatic ? undefined : (isInView ? { opacity: 1, y: 0 } : {})}
+          transition={isStatic ? { duration: 0 } : { duration: motionCfg.duration, ease: motionCfg.ease as Easing }}
           className="text-center mb-16"
         >
           <h2 className="font-serif text-3xl md:text-5xl font-bold mb-4">
@@ -112,9 +118,9 @@ export default function CoupleGallery({ stories }: { stories: CoupleStory[] }) {
           {stories.map((story, i) => (
             <motion.div
               key={story.id}
-              initial={{ opacity: 0, y: 30 }}
-              animate={isInView ? { opacity: 1, y: 0 } : {}}
-              transition={{ delay: i * 0.12, duration: 0.6 }}
+              initial={isStatic ? false : { opacity: 0, y: 30 }}
+              animate={isStatic ? undefined : (isInView ? { opacity: 1, y: 0 } : {})}
+              transition={isStatic ? { duration: 0 } : { delay: i * 0.12, duration: motionCfg.duration, ease: motionCfg.ease as Easing }}
               className="snap-center shrink-0 w-[320px] sm:w-[360px]"
             >
               <div className="glass-card gold-border rounded-2xl overflow-hidden h-full group hover:shadow-xl hover:shadow-gold/5 transition-all duration-500">

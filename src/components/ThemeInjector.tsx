@@ -90,8 +90,14 @@ function buildBrandCss(brandColor: string): string {
   // Trim once — the regex already validated, but trimming makes the injection
   // safe even if the DB column has trailing whitespace.
   const color = brandColor.trim();
-  return `:root,[data-wl-brand] { --primary: ${color}; --gold: ${color}; --gold-light: ${color}; --gold-dark: ${color}; --ring: ${color}; }
-.dark { --primary: ${color}; --gold: ${color}; --gold-light: ${color}; --gold-dark: ${color}; --ring: ${color}; }`;
+  // MISSION-5.9.0 Phase 1C: set --brand-primary instead of overriding --primary directly.
+  // Previously this set `--primary: ${color}` which broke the 3-layer composition:
+  //   --primary: var(--brand-primary, var(--theme-primary, ...))
+  // By setting only --brand-primary, the wedding's --theme-primary (couple's choice)
+  // still applies when no org brand is set, AND the org brand wins when it IS set
+  // (correct white-label behavior). Both layers now coexist.
+  return `:root,[data-wl-brand] { --brand-primary: ${color}; }
+.dark { --brand-primary: ${color}; }`;
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────

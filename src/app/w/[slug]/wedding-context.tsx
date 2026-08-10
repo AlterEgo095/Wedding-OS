@@ -28,6 +28,13 @@ export interface PublishedThemeSnapshot {
   fontDisplay: string;
   fontBody: string;
   layout: string;
+  // MISSION 5.9.2 P0 (QW5) — extended theme tokens for identity presets.
+  // When a wedding has an identity preset applied (via the apply endpoint QW6),
+  // the customizations blob contains the full theme config (surface, surfaceDeep,
+  // text, textMuted, pattern, ambiance, primaryLight, primaryDark, accentLight,
+  // motionTier) so ThemeInjector (QW2) can set ALL 13 --theme-* CSS variables.
+  // Optional for backward compat — older published configs won't have it.
+  customizations?: Record<string, unknown> | null;
 }
 
 export interface PublishedConfigSnapshot {

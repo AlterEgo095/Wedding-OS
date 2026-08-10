@@ -5,8 +5,8 @@ import { db } from '@/lib/db';
 import {
   generateToken,
   setAuthCookie,
-  checkLoginRateLimit,
-  resetLoginRateLimit,
+  checkLoginRateLimitAsync,
+  resetLoginRateLimitAsync,
 } from '@/lib/auth';
 import { getRateLimitKey, checkRateLimit, withSecurityHeaders } from '@/lib/rate-limit';
 import {
@@ -90,8 +90,10 @@ export const POST = withRateLimit(10, 60_000)(
 
       // 2. Per-user rate limit (5 attempts / 15 min) — defends against brute
       //    force on the 6-digit TOTP code or the 8 backup codes.
-      if (!checkLoginRateLimit(`2fa-${challenge.email.toLowerCase()}`)) {
-        return apiError('Trop de tentatives 2FA. Veuillez réessayer plus tard.', 429);
+      // P5.3-6 (audit-F H-3): Redis-backed login rate limit (with in-memory fallback).
+      const { allowed: loginAllowed, retryAfterSeconds } = await checkLoginRateLimitAsync(`2fa-${challenge.email.toLowerCase()}`);
+      if (!loginAllowed) {
+        return apiError('Trop de tentatives 2FA. Veuillez réessayer plus tard.', 429, retryAfterSeconds ? { 'Retry-After': String(retryAfterSeconds) } : undefined);
       }
 
       // 3. Re-fetch user + decrypt secret + load backup codes.
@@ -177,7 +179,7 @@ export const POST = withRateLimit(10, 60_000)(
       }
 
       // 5. Success — reset per-user rate limit, issue real auth cookie.
-      resetLoginRateLimit(`2fa-${challenge.email.toLowerCase()}`);
+      await resetLoginRateLimitAsync(`2fa-${challenge.email.toLowerCase()}`);
 
       const authToken = generateToken({
         id: user.id,

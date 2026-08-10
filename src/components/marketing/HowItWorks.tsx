@@ -1,12 +1,12 @@
-'use client'
-
-import { motion } from 'framer-motion'
 import { Rocket, Palette, SlidersHorizontal, Users, CalendarCheck, ShieldCheck } from 'lucide-react'
 
 /**
  * HowItWorks — SECTION 7
  *
  * 6 steps, each backed by a real feature.
+ *
+ * Server Component (Phase 2B): scroll-triggered motion removed — content
+ * renders identically. Animation can be re-added via CSS in Phase 3A.
  */
 
 const STEPS = [
@@ -52,13 +52,7 @@ export default function HowItWorks() {
   return (
     <section id="comment" className="relative py-20 md:py-32 px-4 sm:px-6 lg:px-8">
       <div className="max-w-6xl mx-auto">
-        <motion.div
-          initial={{ opacity: 0, y: 30 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true, amount: 0.3 }}
-          transition={{ duration: 0.7 }}
-          className="text-center mb-16"
-        >
+        <div className="text-center mb-16">
           <span className="font-display text-xs tracking-[0.3em] uppercase text-gold/70 font-semibold mb-4 block">
             Comment ça marche
           </span>
@@ -66,19 +60,15 @@ export default function HowItWorks() {
             <span className="text-foreground">Six étapes,</span>{' '}
             <span className="gold-gradient">de zéro à l'événement</span>
           </h2>
-        </motion.div>
+        </div>
 
         <div className="space-y-4 md:space-y-6">
           {STEPS.map((step, i) => {
             const Icon = step.icon
             const isEven = i % 2 === 0
             return (
-              <motion.div
+              <div
                 key={step.n}
-                initial={{ opacity: 0, x: isEven ? -30 : 30 }}
-                whileInView={{ opacity: 1, x: 0 }}
-                viewport={{ once: true, amount: 0.3 }}
-                transition={{ duration: 0.6, delay: i * 0.1 }}
                 className={`flex flex-col md:flex-row items-start gap-4 md:gap-6 p-6 md:p-8 rounded-2xl glass-card border border-gold/10 hover:border-gold/25 transition-all duration-300 ${
                   isEven ? '' : 'md:flex-row-reverse'
                 }`}
@@ -99,7 +89,7 @@ export default function HowItWorks() {
                     {step.desc}
                   </p>
                 </div>
-              </motion.div>
+              </div>
             )
           })}
         </div>

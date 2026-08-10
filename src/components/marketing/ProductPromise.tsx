@@ -1,6 +1,3 @@
-'use client'
-
-import { motion } from 'framer-motion'
 import { Calendar, Palette, SlidersHorizontal, Users, LayoutGrid, Rocket, Activity } from 'lucide-react'
 
 /**
@@ -14,6 +11,9 @@ import { Calendar, Palette, SlidersHorizontal, Users, LayoutGrid, Rocket, Activi
  *   ORGANISER  → /api/tables + /api/timeline + /api/media
  *   PUBLIER    → POST /api/weddings/[id]/design (publish)
  *   EXPLOITER  → /api/check-in + /platform/ops
+ *
+ * Server Component (Phase 2B): scroll-triggered motion removed — content
+ * renders identically. Animation can be re-added via CSS in Phase 3A.
  */
 const STEPS = [
   { icon: Calendar, title: 'Créer', desc: 'Lancez un événement en quelques secondes', color: 'from-amber-500/20 to-amber-600/10' },
@@ -32,13 +32,7 @@ export default function ProductPromise() {
 
       <div className="max-w-7xl mx-auto">
         {/* Header */}
-        <motion.div
-          initial={{ opacity: 0, y: 30 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true, amount: 0.3 }}
-          transition={{ duration: 0.7 }}
-          className="text-center mb-16 md:mb-24"
-        >
+        <div className="text-center mb-16 md:mb-24">
           <span className="font-display text-xs tracking-[0.3em] uppercase text-gold/70 font-semibold mb-4 block">
             Le cycle complet
           </span>
@@ -49,19 +43,15 @@ export default function ProductPromise() {
           <p className="font-display text-base sm:text-lg text-muted-foreground max-w-2xl mx-auto leading-relaxed">
             Sept étapes, un seul produit. Chaque phase est soutenue par une fonction réelle de la plateforme.
           </p>
-        </motion.div>
+        </div>
 
         {/* Steps — horizontal scroll on mobile, grid on desktop */}
         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3 md:gap-4">
           {STEPS.map((step, i) => {
             const Icon = step.icon
             return (
-              <motion.div
+              <div
                 key={step.title}
-                initial={{ opacity: 0, y: 25 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true }}
-                transition={{ duration: 0.5, delay: i * 0.08 }}
                 className="relative group"
               >
                 <div className={`relative h-full p-5 md:p-6 rounded-2xl glass-card border border-gold/10 hover:border-gold/30 transition-all duration-300 overflow-hidden`}>
@@ -85,7 +75,7 @@ export default function ProductPromise() {
                     </div>
                   </div>
                 </div>
-              </motion.div>
+              </div>
             )
           })}
         </div>

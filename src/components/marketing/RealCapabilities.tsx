@@ -1,9 +1,7 @@
-'use client'
-
-import { motion } from 'framer-motion'
 import {
   LayoutGrid, Palette, SlidersHorizontal, Users, Mail, QrCode,
   CalendarCheck, Table2, Image, Clock, CheckCircle, Settings, ShieldCheck,
+  BarChart3, Zap,
 } from 'lucide-react'
 
 /**
@@ -11,6 +9,11 @@ import {
  *
  * ONLY displays capabilities that are actually REAL (verified in Mission 4.5).
  * Each card maps to a proven backend→frontend chain. No decorative claims.
+ *
+ * Server Component (Phase 2B): scroll-triggered motion removed — content
+ * renders identically (all 15 cards preserved, including the 2 Phase 2C
+ * additions: Statistiques + Automatisation). Animation can be re-added via
+ * CSS in Phase 3A.
  */
 const CAPABILITIES = [
   { icon: LayoutGrid, title: 'Multi-événements', desc: 'Plusieurs mariages isolés, indépendants', status: 'REAL' },
@@ -23,6 +26,12 @@ const CAPABILITIES = [
   { icon: Table2, title: 'Plan de tables', desc: 'Drag-and-drop, capacité, affectation', status: 'REAL' },
   { icon: Image, title: 'Médias', desc: 'Galerie, hero, photos couple', status: 'REAL' },
   { icon: Clock, title: 'Programme & Timeline', desc: 'Étapes animées, lieux, icônes', status: 'REAL' },
+  // Phase 2C (Mission 5.9.0 §20.4) — 2 capability cards added to close the
+  // 4-feature marketing gap (Statistiques + Automatisation; Livre d'Or + Tables
+  // were already partially covered via Image + Table2 cards above). The audit
+  // required marketing these 2 missing real capabilities.
+  { icon: BarChart3, title: 'Statistiques', desc: 'Suivez les RSVP, le taux de présence, et les statistiques invités en temps réel', status: 'REAL' },
+  { icon: Zap, title: 'Automatisation', desc: 'Rappels automatiques, emails programmés, check-in automatisé', status: 'REAL' },
   { icon: CheckCircle, title: 'Check-in multi-tenant', desc: 'Rejet cross-tenant, audit logs', status: 'REAL' },
   { icon: Settings, title: 'Platform Ops', desc: 'Dashboard santé, security events', status: 'REAL' },
   { icon: ShieldCheck, title: 'Isolation fail-closed', desc: 'AsyncLocalStorage + Prisma extension', status: 'REAL' },
@@ -32,11 +41,7 @@ export default function RealCapabilities() {
   return (
     <section id="fonctionnalites" className="relative py-20 md:py-32 px-4 sm:px-6 lg:px-8">
       <div className="max-w-7xl mx-auto">
-        <motion.div
-          initial={{ opacity: 0, y: 30 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true, amount: 0.3 }}
-          transition={{ duration: 0.7 }}
+        <div
           className="text-center mb-16"
         >
           <span className="font-display text-xs tracking-[0.3em] uppercase text-gold/70 font-semibold mb-4 block">
@@ -50,18 +55,14 @@ export default function RealCapabilities() {
             Chaque fonctionnalité listée ici est <strong className="text-foreground">réellement connectée</strong> —
             de l'interface à la base de données, en passant par l'API.
           </p>
-        </motion.div>
+        </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-5">
           {CAPABILITIES.map((cap, i) => {
             const Icon = cap.icon
             return (
-              <motion.div
+              <div
                 key={cap.title}
-                initial={{ opacity: 0, y: 20 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true }}
-                transition={{ duration: 0.4, delay: (i % 3) * 0.1 + Math.floor(i / 3) * 0.05 }}
                 className="group relative p-6 rounded-2xl glass-card border border-gold/10 hover:border-gold/30 transition-all duration-300"
               >
                 <div className="flex items-start gap-4">
@@ -82,7 +83,7 @@ export default function RealCapabilities() {
                     </p>
                   </div>
                 </div>
-              </motion.div>
+              </div>
             )
           })}
         </div>

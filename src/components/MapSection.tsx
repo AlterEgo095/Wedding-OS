@@ -5,6 +5,7 @@ import { motion, useInView } from 'framer-motion'
 import { MapPin, Navigation, Car, Clock, ExternalLink } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
+import { MotionReveal } from '@/components/premium/MotionReveal'
 
 interface VenueSettings {
   venue_name?: string
@@ -39,7 +40,7 @@ export default function MapSection({ settings }: { settings: VenueSettings | nul
     <section id="lieu" ref={sectionRef} className="py-20 md:py-32 bg-gradient-warm relative">
       <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-gold/20 to-transparent" />
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <MotionReveal preset="fade-up" className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* Section Title */}
         <motion.div
           initial={{ opacity: 0, y: 30 }}
@@ -143,7 +144,7 @@ export default function MapSection({ settings }: { settings: VenueSettings | nul
             </div>
           </motion.div>
         </div>
-      </div>
+      </MotionReveal>
     </section>
   )
 }

@@ -136,6 +136,12 @@ async function uploadMediaHandler(request: NextRequest): Promise<NextResponse> {
       }
 
       const uniqueName = `${Date.now()}-${Math.random().toString(36).substring(2, 8)}${ext}`;
+      // MISSION-5.9.0 Phase 0.11: slug allow-list regex — defense-in-depth against path traversal.
+      // ctx.slug comes from the resolved CachedWedding (not user input), but if a future code path
+      // ever passes a user-controlled slug (e.g. "../../etc"), this regex blocks it.
+      if (!/^[a-z0-9-]+$/.test(ctx.slug)) {
+        return NextResponse.json({ error: 'Invalid wedding slug' }, { status: 400 });
+      }
       // Per-wedding subdirectory to keep uploads organized (Phase 9 will move to R2)
       const uploadDir = path.join(process.cwd(), 'public', 'uploads', ctx.slug);
       await mkdir(uploadDir, { recursive: true });

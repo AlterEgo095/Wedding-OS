@@ -58,7 +58,7 @@ export const THEME_PACKAGES: ThemePackage[] = [
     groomInitial: 'A', brideInitial: 'C',
     weddingDate: 'Samedi 12 Septembre 2026', weddingDateShort: '12.09.2026',
     venue: 'Château de Lumière', venueCity: 'Versailles, France', venueAddress: '1 Avenue du Crépuscule, 78000',
-    hashtag: '#AlexandreEtCéleste', heroImage: '/aenws/themes/royal-gold.png',
+    hashtag: '#AlexandreEtCéleste', heroImage: '/aenws/themes/royal-gold.svg',
     story: [
       { id: 's1', title: 'La Première Rencontre', date: 'Printemps 2022', description: 'Un café partagé à Versailles. Deux inconnus, une conversation sans fin.', side: 'left' },
       { id: 's2', title: 'La Demande', date: 'Été 2025', description: 'Au coucher du soleil, dans un champ de blé doré. Le temps s\'est arrêté.', side: 'right' },
@@ -112,7 +112,7 @@ export const THEME_PACKAGES: ThemePackage[] = [
     groomInitial: 'J', brideInitial: 'V',
     weddingDate: 'Samedi 24 Octobre 2026', weddingDateShort: '24.10.2026',
     venue: 'Palais Vendôme', venueCity: 'Paris, France', venueAddress: '17 Place Vendôme, 75001',
-    hashtag: '#JamesEtVictoria', heroImage: '/aenws/themes/royal-black.png',
+    hashtag: '#JamesEtVictoria', heroImage: '/aenws/themes/royal-black.svg',
     story: [
       { id: 's1', title: 'Une Rencontre Inattendue', date: 'Hiver 2023', description: 'Lors d\'une soirée de gala à Paris. Un regard à travers la salle.', side: 'left' },
       { id: 's2', title: 'La Promesse', date: 'Noël 2025', description: 'Sous les lumières de Paris, près de la Tour Eiffel scintillante.', side: 'right' },
@@ -166,7 +166,7 @@ export const THEME_PACKAGES: ThemePackage[] = [
     groomInitial: 'É', brideInitial: 'I',
     weddingDate: 'Vendredi 18 Décembre 2026', weddingDateShort: '18.12.2026',
     venue: 'Hôtel Sapphire', venueCity: 'Monaco', venueAddress: '2 Avenue de la Costa, 98000',
-    hashtag: '#ÉdouardEtIsabella', heroImage: '/aenws/themes/sapphire-noir.png',
+    hashtag: '#ÉdouardEtIsabella', heroImage: '/aenws/themes/sapphire-noir.svg',
     story: [
       { id: 's1', title: 'Monte Carlo', date: 'Été 2023', description: 'Une rencontre sur la Côte d\'Azur, lors d\'une soirée privée.', side: 'left' },
       { id: 's2', title: 'Le Saphir', date: 'Janvier 2026', description: 'Une bague saphir, un yacht au large de Monaco.', side: 'right' },
@@ -220,7 +220,7 @@ export const THEME_PACKAGES: ThemePackage[] = [
     groomInitial: 'D', brideInitial: 'G',
     weddingDate: 'Samedi 5 Décembre 2026', weddingDateShort: '05.12.2026',
     venue: 'Palais de la Nation', venueCity: 'Kinshasa, RDC', venueAddress: 'Boulevard du 30 Juin, Gombe',
-    hashtag: '#DavidEtGrâce', heroImage: '/aenws/themes/congo-prestige.png',
+    hashtag: '#DavidEtGrâce', heroImage: '/aenws/themes/congo-prestige.svg',
     story: [
       { id: 's1', title: 'Kinshasa la Belle', date: 'Été 2022', description: 'Une rencontre à Kinshasa lors d\'un événement familial. Le destin a parlé.', side: 'left' },
       { id: 's2', title: 'La Demande', date: 'Décembre 2025', description: 'Sous les lumières de Noël, entouré des deux familles. Une cérémonie tradition.', side: 'right' },
@@ -274,7 +274,7 @@ export const THEME_PACKAGES: ThemePackage[] = [
     groomInitial: 'K', brideInitial: 'A',
     weddingDate: 'Samedi 28 Novembre 2026', weddingDateShort: '28.11.2026',
     venue: 'Manhyia Palace', venueCity: 'Kumasi, Ghana', venueAddress: 'Manhyia Palace Road',
-    hashtag: '#KwameEtAma', heroImage: '/aenws/themes/kente.png',
+    hashtag: '#KwameEtAma', heroImage: '/aenws/themes/kente.svg',
     story: [
       { id: 's1', title: 'Accra', date: 'Printemps 2022', description: 'Une rencontre à Accra lors d\'un festival culturel Ashanti.', side: 'left' },
       { id: 's2', title: 'La Tradition', date: 'Été 2025', description: 'Cérémonie de demande traditionnelle avec les deux familles.', side: 'right' },
@@ -327,7 +327,7 @@ export const THEME_PACKAGES: ThemePackage[] = [
     groomInitial: 'T', brideInitial: 'M',
     weddingDate: 'Dimanche 7 Juin 2026', weddingDateShort: '07.06.2026',
     venue: 'Domaine de la Rose', venueCity: 'Grasse, France', venueAddress: 'Chemin des Roses, 06130',
-    hashtag: '#ThomasEtMarguerite', heroImage: '/aenws/themes/white-romance.png',
+    hashtag: '#ThomasEtMarguerite', heroImage: '/aenws/themes/white-romance.svg',
     story: [
       { id: 's1', title: 'Provence', date: 'Été 2022', description: 'Une rencontre dans les champs de lavande de Provence.', side: 'left' },
       { id: 's2', title: 'La Demande', date: 'Printemps 2025', description: 'Sous un rosier en fleurs au Domaine de la Rose.', side: 'right' },
@@ -380,7 +380,7 @@ export const THEME_PACKAGES: ThemePackage[] = [
     groomInitial: 'H', brideInitial: 'C',
     weddingDate: 'Samedi 20 Juin 2026', weddingDateShort: '20.06.2026',
     venue: 'Maison de Campagne', venueCity: 'Bourgogne, France', venueAddress: 'Le Hameau, 21200',
-    hashtag: '#HenriEtCamille', heroImage: '/aenws/themes/elegant-beige.png',
+    hashtag: '#HenriEtCamille', heroImage: '/aenws/themes/elegant-beige.svg',
     story: [
       { id: 's1', title: 'Bourgogne', date: 'Automne 2022', description: 'Une rencontre lors d\'une dégustation en Bourgogne.', side: 'left' },
       { id: 's2', title: 'La Demande', date: 'Été 2025', description: 'Dans les vignes au coucher du soleil.', side: 'right' },
@@ -432,7 +432,7 @@ export const THEME_PACKAGES: ThemePackage[] = [
     groomInitial: 'L', brideInitial: 'S',
     weddingDate: 'Samedi 11 Juillet 2026', weddingDateShort: '11.07.2026',
     venue: 'Loft Minimal', venueCity: 'Copenhague, Danemark', venueAddress: 'Strandgade 27, 1401',
-    hashtag: '#LiamEtSophia', heroImage: '/aenws/themes/pure-white.png',
+    hashtag: '#LiamEtSophia', heroImage: '/aenws/themes/pure-white.svg',
     story: [
       { id: 's1', title: 'Copenhague', date: 'Hiver 2023', description: 'Une rencontre dans un café minimaliste de Copenhague.', side: 'left' },
       { id: 's2', title: 'La Promesse', date: 'Printemps 2026', description: 'Une promenade au bord du canal, un anneau simple.', side: 'right' },
@@ -483,7 +483,7 @@ export const THEME_PACKAGES: ThemePackage[] = [
     groomInitial: 'L', brideInitial: 'A',
     weddingDate: 'Samedi 27 Juin 2026', weddingDateShort: '27.06.2026',
     venue: 'Fjord House', venueCity: 'Bergen, Norvège', venueAddress: 'Bryggen 14, 5003',
-    hashtag: '#LarsEtAstrid', heroImage: '/aenws/themes/nordic.png',
+    hashtag: '#LarsEtAstrid', heroImage: '/aenws/themes/nordic.svg',
     story: [
       { id: 's1', title: 'Bergen', date: 'Été 2023', description: 'Une rencontre sur les quais de Bergen, sous le soleil de minuit.', side: 'left' },
       { id: 's2', title: 'Le Fjord', date: 'Été 2025', description: 'Une promenade en bateau sur le Sognefjord, une bague.', side: 'right' },
@@ -536,7 +536,7 @@ export const THEME_PACKAGES: ThemePackage[] = [
     groomInitial: 'T', brideInitial: 'S',
     weddingDate: 'Samedi 15 Août 2026', weddingDateShort: '15.08.2026',
     venue: 'Tropical Bay Resort', venueCity: 'Zanzibar, Tanzanie', venueAddress: 'Kendwa Beach',
-    hashtag: '#TomEtSarah', heroImage: '/aenws/themes/beach.png',
+    hashtag: '#TomEtSarah', heroImage: '/aenws/themes/beach.svg',
     story: [
       { id: 's1', title: 'Zanzibar', date: 'Hiver 2023', description: 'Une rencontre sur la plage de Kendwa, pieds nus dans le sable.', side: 'left' },
       { id: 's2', title: 'Le Coucher de Soleil', date: 'Été 2025', description: 'Une demande en mariage au coucher du soleil sur l\'océan Indien.', side: 'right' },
@@ -590,7 +590,7 @@ export const THEME_PACKAGES: ThemePackage[] = [
     groomInitial: 'O', brideInitial: 'H',
     weddingDate: 'Samedi 30 Mai 2026', weddingDateShort: '30.05.2026',
     venue: 'Jardin Botanique', venueCity: 'Cotswolds, UK', venueAddress: 'Bourton-on-the-Water',
-    hashtag: '#OliverEtHazel', heroImage: '/aenws/themes/garden.png',
+    hashtag: '#OliverEtHazel', heroImage: '/aenws/themes/garden.svg',
     story: [
       { id: 's1', title: 'Cotswolds', date: 'Printemps 2022', description: 'Une rencontre dans les jardins de Cotswolds en fleurs.', side: 'left' },
       { id: 's2', title: 'La Promesse', date: 'Été 2025', description: 'Une promesse échangée au milieu des roses anglaises.', side: 'right' },
@@ -644,7 +644,7 @@ export const THEME_PACKAGES: ThemePackage[] = [
     groomInitial: 'M', brideInitial: 'E',
     weddingDate: 'Samedi 22 Août 2026', weddingDateShort: '22.08.2026',
     venue: 'Villa del Sole', venueCity: 'Amalfi, Italie', venueAddress: 'Via Costiera Amalfitana',
-    hashtag: '#MarcoEtElena', heroImage: '/aenws/themes/sunset.png',
+    hashtag: '#MarcoEtElena', heroImage: '/aenws/themes/sunset.svg',
     story: [
       { id: 's1', title: 'Amalfi', date: 'Été 2023', description: 'Une rencontre sur la Costa Amalfitana, sous le soleil italien.', side: 'left' },
       { id: 's2', title: 'Le Coucher de Soleil', date: 'Été 2025', description: 'Une demande à Positano, face au coucher de soleil doré.', side: 'right' },

@@ -11,6 +11,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet'
+import { NavUnderline } from '@/components/ui/nav-underline'
 
 const navLinks = [
   { href: '#accueil', label: 'Accueil' },
@@ -110,17 +111,23 @@ export default function Navigation() {
             {/* Desktop Navigation */}
             <div className="hidden md:flex items-center gap-1">
               {navLinks.map((link) => (
-                <a
+                // Phase 3D #8 — NavUnderline replaces the inline `link-elegant`
+                // <a> tag. The component renders a Next.js <Link> with an
+                // animated ::after underline that grows from left→right on
+                // hover (and is locked at 100% width when `active`). It also
+                // handles prefers-reduced-motion internally (instant width
+                // change, no transition). The onClick is forwarded so the
+                // existing smooth-scroll behaviour is preserved.
+                <NavUnderline
                   key={link.href}
                   href={link.href}
                   onClick={(e) => {
                     e.preventDefault()
                     handleNavClick(link.href)
                   }}
-                  className="link-elegant px-4 py-2 text-sm font-medium text-foreground/80 hover:text-foreground transition-colors font-display tracking-wide"
                 >
                   {link.label}
-                </a>
+                </NavUnderline>
               ))}
 
               {/* Theme Toggle */}

@@ -27,10 +27,9 @@ import Link from 'next/link';
 import { AnimatePresence, motion } from 'framer-motion';
 import Image from 'next/image';
 import { Button } from '@/components/ui/button';
-import { Separator } from '@/components/ui/separator';
 import {
   LayoutDashboard, Users, Grid3X3, Image as ImageIcon, Clock, Shield, Settings, LogOut,
-  X, Menu, FileSearch, Music, Sparkles, Crown, Loader2, Palette, LayoutTemplate, BookOpen,
+  X, FileSearch, Music, Sparkles, Crown, Loader2, Palette, LayoutTemplate, BookOpen,
   Mail, QrCode,
   // CONS-5-CLIENT-BACKEND — icons for the 6 new organizer tabs
   Heart, Tag, Gift, CalendarDays, BarChart3,
@@ -40,11 +39,28 @@ import {
   Activity,
   // P4.7 — 2FA setup button (sidebar footer)
   ShieldCheck,
+  // Phase 2F — context banner icons (Users already imported above; Calendar /
+  // CircleCheck / MapPin cover the 4 wedding-admin context badges). ExternalLink
+  // is used by the Statistics tab's NextActionCta (links to the public site).
+  Calendar, CircleCheck, MapPin, ExternalLink,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import dynamic from 'next/dynamic';
 import { isPlatformAdmin } from '@/lib/types';
 import { useWedding } from '../wedding-context';
+// Phase 4D — WhatsApp share button (used in the admin sidebar footer so the
+// organizer can share the public wedding URL directly from the admin).
+import { WhatsAppShare } from '@/components/wedding/WhatsAppShare';
+import {
+  AdminShell,
+  type AdminShellSection,
+  type AdminShellUser,
+  type AdminShellBreadcrumb,
+} from '@/components/admin/AdminShell';
+import { NextActionCta } from '@/components/admin/NextActionCta';
+// Phase 4C — Impersonation banner (shown when a PLATFORM_ADMIN is
+// impersonating the wedding admin via /api/platform/impersonate).
+import { ImpersonationBanner } from '@/components/admin/ImpersonationBanner';
 
 import Dashboard from '@/components/admin/Dashboard';
 import GuestManager from '@/components/admin/GuestManager';
@@ -123,6 +139,42 @@ const NAV_ITEMS: NavItem[] = [
   { id: 'settings', label: 'Paramètres', icon: Settings, superAdminOnly: true },
 ]
 
+// ════════════════════════════════════════════════════════════════════════════
+// Phase 2F — 6-section IA grouping (audit §17.3).
+// ════════════════════════════════════════════════════════════════════════════
+// The 23 wedding-admin nav items are grouped into 6 sections per the audit's
+// IA proposal. Each section has a distinct color stripe for visual scanning:
+//
+//   TABLEAU DE BORD (gold)     — Dashboard, Temps réel, Statistiques
+//   INVITÉS       (emerald)    — Invités, Familles, Groupes, Tables, Préf. alimentaires
+//   ÉVÉNEMENT     (rose)       — Chronologie, Programme, Musique, Histoire, Cadeaux, Médias
+//   INVITATIONS   (violet)     — Invitations, QR Codes, Réception
+//   DESIGN        (gold)       — Designer, Thème, Apparence
+//   SYSTÈME       (slate)      — Utilisateurs, Paramètres, Accès
+//
+// All 23 items are preserved — none removed, none renamed, no tab id changed.
+// The superAdminOnly filter (users + settings) still applies for non-platform
+// admins (the SYSTÈME section collapses to just the access-logs entry for
+// ORGANIZER users).
+
+type SectionStripeColor = 'gold' | 'emerald' | 'rose' | 'violet' | 'slate';
+
+interface NavSectionDef {
+  id: string;
+  label: string;
+  stripeColor: SectionStripeColor;
+  itemIds: TabId[];
+}
+
+const NAV_SECTION_DEFS: NavSectionDef[] = [
+  { id: 'tb', label: 'TABLEAU DE BORD', stripeColor: 'gold', itemIds: ['dashboard', 'realtime', 'stats'] },
+  { id: 'inv', label: 'INVITÉS', stripeColor: 'emerald', itemIds: ['guests', 'families', 'groups', 'tables', 'dietary'] },
+  { id: 'evt', label: 'ÉVÉNEMENT', stripeColor: 'rose', itemIds: ['timeline', 'program', 'music', 'story', 'gifts', 'media'] },
+  { id: 'invts', label: 'INVITATIONS', stripeColor: 'violet', itemIds: ['invitations', 'qrcodes', 'check-in'] },
+  { id: 'dsg', label: 'DESIGN', stripeColor: 'gold', itemIds: ['designer', 'theme', 'appearance'] },
+  { id: 'sys', label: 'SYSTÈME', stripeColor: 'slate', itemIds: ['users', 'settings', 'access-logs'] },
+]
+
 // Generic couple-photo fallback (exists in /public for every deployment).
 // Avoids assuming the current wedding owns `/uploads/couple-photo-1.jpeg`
 // (which is the default wedding's asset). The couple label is already
@@ -162,10 +214,27 @@ export default function PerWeddingAdminPage() {
   const [authChecked, setAuthChecked] = useState(false)
 
   const [activeTab, setActiveTab] = useState<TabId>('dashboard')
-  const [sidebarOpen, setSidebarOpen] = useState(false)
   // P4.7: 2FA setup modal — visible to ALL logged-in admin/staff users.
   const [twoFactorOpen, setTwoFactorOpen] = useState(false)
   const sessionExpiredRef = useRef(false)
+
+  // ─── Phase 4C — Impersonation state ──────────────────────────────────────
+  // When a PLATFORM_ADMIN is impersonating a wedding admin, the
+  // impersonation_session cookie is set by /api/platform/impersonate. We
+  // poll /api/platform/impersonate/status on mount + on each focus to
+  // decide whether to render the <ImpersonationBanner> (fixed-top amber
+  // warning with a live countdown + an "Arrêter" button).
+  //
+  // The status response (200) carries:
+  //   { impersonating, targetUser, adminUser, expiresAt, expiresAtIso, remainingMs }
+  // We only render the banner when impersonating === true.
+  interface ImpersonationStatus {
+    impersonating: boolean
+    targetUser?: { id: string; name: string; email: string; role: string }
+    expiresAt?: number
+    expired?: boolean
+  }
+  const [impersonation, setImpersonation] = useState<ImpersonationStatus | null>(null)
 
   // ─── Install global fetch interceptor (useLayoutEffect — runs before any
   // child useEffect, so the X-Wedding-Slug header is in place by the time
@@ -282,6 +351,62 @@ export default function PerWeddingAdminPage() {
     }
   }, [authChecked, user, slug, router, wedding.id])
 
+  // ─── Phase 4C — Check impersonation status on mount ───────────────────────
+  // Fires once after auth check completes. If impersonating, the banner
+  // renders fixed-top with a countdown; the rest of the admin shell is
+  // pushed down by ~banner height via padding-top on the outer wrapper.
+  //
+  // We also re-check on window focus so a banner that was started in
+  // another tab is picked up when the admin returns to this tab.
+  useEffect(() => {
+    if (!authChecked || !user) return
+    let cancelled = false
+
+    const checkImpersonation = async () => {
+      try {
+        const res = await fetch('/api/platform/impersonate/status', {
+          credentials: 'include',
+        })
+        if (cancelled) return
+        if (res.ok) {
+          const data = (await res.json()) as ImpersonationStatus
+          setImpersonation(data)
+        } else {
+          setImpersonation({ impersonating: false })
+        }
+      } catch {
+        if (!cancelled) setImpersonation({ impersonating: false })
+      }
+    }
+
+    checkImpersonation()
+    window.addEventListener('focus', checkImpersonation)
+    return () => {
+      cancelled = true
+      window.removeEventListener('focus', checkImpersonation)
+    }
+  }, [authChecked, user])
+
+  // Phase 4C — Stop impersonation handler (called by the banner's "Arrêter"
+  // button + by the countdown auto-expiry). POSTs to /stop, then redirects
+  // to /platform/admin. The server restores the admin's auth_token cookie
+  // from the impersonation_session's embedded originalToken + clears the
+  // impersonation cookie. On failure, we still redirect to /platform/admin
+  // (the middleware's auto-expiry will clean up the cookies on the next
+  // request — the admin's session is never lost).
+  const handleStopImpersonation = useCallback(async () => {
+    try {
+      await fetch('/api/platform/impersonate/stop', {
+        method: 'POST',
+        credentials: 'include',
+      })
+    } catch {
+      /* ignore — redirect anyway, middleware will clean up */
+    }
+    toast.success("Session d'impersonation terminée")
+    router.replace('/platform/admin')
+  }, [router])
+
   // ─── Handlers ──────────────────────────────────────────────────────────────
   const handleLogout = useCallback(
     async (showMessage = true) => {
@@ -354,7 +479,6 @@ export default function PerWeddingAdminPage() {
 
   const handleTabChange = useCallback((tabId: TabId) => {
     setActiveTab(tabId)
-    setSidebarOpen(false)
   }, [])
 
   // PLATFORM_ADMIN and SUPER_ADMIN both see the superAdminOnly tabs.
@@ -369,7 +493,17 @@ export default function PerWeddingAdminPage() {
       case 'dashboard':
         return <Dashboard token={token} onSessionExpired={handleSessionExpired} />
       case 'guests':
-        return <GuestManager token={token} onSessionExpired={handleSessionExpired} />
+        return (
+          <div className="space-y-6">
+            <GuestManager token={token} onSessionExpired={handleSessionExpired} />
+            <NextActionCta
+              label="Prochaine étape: Créer des invitations"
+              href="#invitations"
+              icon={<Mail className="w-4 h-4" />}
+              onClick={() => handleTabChange('invitations')}
+            />
+          </div>
+        )
       case 'tables':
         return <TableManager token={token} onSessionExpired={handleSessionExpired} />
       case 'media':
@@ -383,7 +517,17 @@ export default function PerWeddingAdminPage() {
       case 'access-logs':
         return <AccessLogManager token={token} onSessionExpired={handleSessionExpired} />
       case 'invitations':
-        return <InvitationManager weddingId={wedding.id} weddingSlug={slug} csrfToken={getCsrfTokenFromCookie()} />
+        return (
+          <div className="space-y-6">
+            <InvitationManager weddingId={wedding.id} weddingSlug={slug} csrfToken={getCsrfTokenFromCookie()} />
+            <NextActionCta
+              label="Prochaine étape: Générer les QR codes"
+              href="#qrcodes"
+              icon={<QrCode className="w-4 h-4" />}
+              onClick={() => handleTabChange('qrcodes')}
+            />
+          </div>
+        )
       case 'check-in':
         // P4.8 FIX-P4-REALTIME — LiveCheckInFeed rendered above CheckInManager so
         // reception staff see live QR-scan arrivals in real time, alongside the
@@ -392,6 +536,12 @@ export default function PerWeddingAdminPage() {
           <div className="space-y-6">
             <LiveCheckInFeed weddingId={wedding.id} />
             <CheckInManager weddingSlug={slug} csrfToken={getCsrfTokenFromCookie()} />
+            <NextActionCta
+              label="Prochaine étape: Voir les statistiques"
+              href="#stats"
+              icon={<BarChart3 className="w-4 h-4" />}
+              onClick={() => handleTabChange('stats')}
+            />
           </div>
         )
       case 'settings':
@@ -403,8 +553,19 @@ export default function PerWeddingAdminPage() {
         // calls to this wedding via the fetch interceptor installed above.
         return <ThemeCustomizer slug={slug} />
       case 'designer':
-        // Slice 2: Real Experience Builder — controls sections, theme, collection
-        return <DesignerTab weddingId={wedding.id} weddingSlug={slug} />
+        // Slice 2: Real Experience Builder — controls sections, theme, collection.
+        // Phase 4B: pass userRole (for the quality gate override button) +
+        // onNavigateToTab (so the scorecard's "Corriger" buttons can deep-link
+        // into the relevant admin tab — e.g. 'media' to upload more gallery
+        // images, 'theme' to customize the brand, etc.).
+        return (
+          <DesignerTab
+            weddingId={wedding.id}
+            weddingSlug={slug}
+            userRole={user?.role || ''}
+            onNavigateToTab={(tabId) => handleTabChange(tabId as TabId)}
+          />
+        )
       case 'story':
         // Slice 4: Couple Story admin CRUD — API already existed, UI was missing
         return <CoupleStoryManager weddingSlug={slug} />
@@ -423,9 +584,28 @@ export default function PerWeddingAdminPage() {
       case 'dietary':
         return <DietaryStatsCard weddingId={wedding.id} fetchWithAuth={fetchWithAuth} />
       case 'stats':
-        return <StatisticsPanel weddingId={wedding.id} />
+        return (
+          <div className="space-y-6">
+            <StatisticsPanel weddingId={wedding.id} />
+            <NextActionCta
+              label="Prochaine étape: Partager le site"
+              href={`/w/${slug}`}
+              icon={<ExternalLink className="w-4 h-4" />}
+            />
+          </div>
+        )
       case 'qrcodes':
-        return <QRCodeManager weddingId={wedding.id} weddingSlug={slug} />
+        return (
+          <div className="space-y-6">
+            <QRCodeManager weddingId={wedding.id} weddingSlug={slug} />
+            <NextActionCta
+              label="Prochaine étape: Activer le check-in"
+              href="#check-in"
+              icon={<QrCode className="w-4 h-4" />}
+              onClick={() => handleTabChange('check-in')}
+            />
+          </div>
+        )
       // P4.8 FIX-P4-REALTIME — dedicated "Temps réel" tab combining the live
       // stats widget (top) with the live check-in feed (bottom) so wedding
       // organizers can monitor arrivals in real time.
@@ -471,266 +651,277 @@ export default function PerWeddingAdminPage() {
     )
   }
 
-  return (
-    <div className="h-screen flex" style={{
-      background: 'linear-gradient(135deg, oklch(0.12 0.02 270), oklch(0.16 0.02 270), oklch(0.14 0.02 240))',
-    }}>
-      {/* Desktop Sidebar */}
-      <aside className="hidden md:flex flex-col w-64 shrink-0 border-r border-white/10 bg-white/[0.02]">
-        {/* Sidebar Header */}
-        <div className="p-4 flex items-center gap-3">
-          <div className="relative shrink-0">
-            <div className="w-10 h-10 rounded-full gold-border p-[2px] overflow-hidden">
-              <Image
-                src={COUPLE_PHOTO_FALLBACK}
-                alt={coupleLabel}
-                width={40}
-                height={40}
-                className="w-full h-full rounded-full object-cover"
-              />
-            </div>
-          </div>
-          <div className="flex-1 min-w-0">
-            <h2 className="font-bold text-sm gold-gradient font-display truncate" title={coupleLabel}>
-              {coupleLabel}
-            </h2>
-            <p className="text-xs text-muted-foreground truncate">
-              {user?.name || 'Non connecté'}
-            </p>
-          </div>
+  // ─── Build <AdminShell> props ──────────────────────────────────────────────
+  // Phase 1D: chrome extracted into the reusable <AdminShell> primitive.
+  // Phase 2F: 23 NAV_ITEMS grouped into 6 sections (TABLEAU DE BORD / INVITÉS /
+  // ÉVÉNEMENT / INVITATIONS / DESIGN / SYSTÈME) per audit §17.3. Each section
+  // has a distinct color stripe for visual scanning. The visibleNavItems
+  // filter (superAdminOnly gating for non-platform-admins) is preserved —
+  // sections that would be empty after filtering are skipped.
+
+  const sections: AdminShellSection[] = NAV_SECTION_DEFS.map((sectionDef) => {
+    const sectionItems = sectionDef.itemIds
+      .map((id) => visibleNavItems.find((item) => item.id === id))
+      .filter((item): item is NavItem => item !== undefined)
+    return {
+      id: sectionDef.id,
+      label: sectionDef.label,
+      stripeColor: sectionDef.stripeColor,
+      items: sectionItems.map((item) => ({
+        href: `#${item.id}`,
+        label: item.label,
+        icon: <item.icon className="w-4 h-4 shrink-0" />,
+        active: activeTab === item.id,
+        onNavigate: () => handleTabChange(item.id),
+        superAdminOnly: item.superAdminOnly,
+      })),
+    }
+  }).filter((section) => section.items.length > 0)
+
+  const brand = (
+    <div className="p-4 flex items-center gap-3">
+      <div className="relative shrink-0">
+        <div className="w-10 h-10 rounded-full gold-border p-[2px] overflow-hidden">
+          <Image
+            src={COUPLE_PHOTO_FALLBACK}
+            alt={coupleLabel}
+            width={40}
+            height={40}
+            className="w-full h-full rounded-full object-cover"
+          />
         </div>
+      </div>
+      <div className="flex-1 min-w-0">
+        <h2 className="font-bold text-sm gold-gradient font-display truncate" title={coupleLabel}>
+          {coupleLabel}
+        </h2>
+        <p className="text-xs text-muted-foreground truncate">
+          {user?.name || 'Non connecté'}
+        </p>
+      </div>
+    </div>
+  )
 
-        <Separator className="bg-white/10" />
+  // ─── Context banner (Phase 2F — prominent 4-badge row) ──────────────────
+  // Renders above the nav with a gold-tinted background. 4 badges:
+  //   👤 CoupleLabel  📅 Wedding date  ✅ Status  📍 VenueCity
+  // Status badge color: emerald (PUBLISHED) / amber (DRAFT) / rose (ARCHIVED).
+  // Date + VenueCity badges are conditionally rendered (skipped when null).
+  const statusUpper = (wedding.status || '').toUpperCase()
+  const statusColorClass =
+    statusUpper === 'PUBLISHED' ? 'text-emerald-400'
+    : statusUpper === 'DRAFT' ? 'text-amber-400'
+    : statusUpper === 'ARCHIVED' ? 'text-rose-400'
+    : 'text-gold'
+  const statusLabel =
+    statusUpper === 'PUBLISHED' ? 'Publié'
+    : statusUpper === 'DRAFT' ? 'Brouillon'
+    : statusUpper === 'ARCHIVED' ? 'Archivé'
+    : (wedding.status || '—')
 
-        {/* Nav Items */}
-        <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar py-2">
-          <nav className="px-2 space-y-1">
-            {visibleNavItems.map((item) => {
-              const isActive = activeTab === item.id
-              return (
-                <button
-                  key={item.id}
-                  onClick={() => handleTabChange(item.id)}
-                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all ${
-                    isActive
-                      ? 'bg-gold/15 text-gold font-medium'
-                      : 'text-muted-foreground hover:text-foreground hover:bg-white/5'
-                  }`}
-                >
-                  <item.icon className="w-4 h-4 shrink-0" />
-                  <span>{item.label}</span>
-                  {isActive && (
-                    <motion.div
-                      layoutId="sidebar-indicator"
-                      className="ml-auto w-1.5 h-1.5 rounded-full bg-gold"
-                    />
-                  )}
-                </button>
-              )
+  const contextBanner = (
+    <div className="px-4 py-3 bg-gold/5 border-b border-gold/20 grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
+      <div className="flex items-center gap-1.5 min-w-0" title={`Couple: ${coupleLabel}`}>
+        <Users className="w-3.5 h-3.5 text-gold shrink-0" />
+        <span className="truncate font-medium">{coupleLabel}</span>
+      </div>
+      {wedding.weddingDate && (
+        <div className="flex items-center gap-1.5 min-w-0" title="Date du mariage">
+          <Calendar className="w-3.5 h-3.5 text-gold shrink-0" />
+          <span className="truncate">
+            {new Date(wedding.weddingDate).toLocaleDateString('fr-FR', {
+              day: '2-digit',
+              month: 'short',
+              year: 'numeric',
             })}
-          </nav>
+          </span>
         </div>
-
-        <Separator className="bg-white/10" />
-        <div className="p-3">
-          <div className="flex items-center gap-2 mb-3 px-2">
-            <div className="w-8 h-8 rounded-full bg-gradient-gold flex items-center justify-center text-white text-xs font-bold shrink-0">
-              {user.name.charAt(0).toUpperCase()}
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-xs font-medium truncate">{user.name}</p>
-              <p className="text-xs text-muted-foreground truncate">{user.role}</p>
-            </div>
-          </div>
-          <Button
-            variant="ghost"
-            className="w-full justify-start text-gold hover:text-gold hover:bg-gold/10 text-sm mb-1"
-            onClick={() => setTwoFactorOpen(true)}
-          >
-            <ShieldCheck className="w-4 h-4 mr-2" />
-            Sécurité 2FA
-          </Button>
-          {isPlatformAdmin(user.role) && (
-            <Button
-              variant="ghost"
-              asChild
-              className="w-full justify-start text-gold hover:text-gold hover:bg-gold/10 text-sm mb-1"
-            >
-              <Link href="/platform/admin">
-                <Crown className="w-4 h-4 mr-2" />
-                Plateforme
-              </Link>
-            </Button>
-          )}
-          <Button
-            variant="ghost"
-            className="w-full justify-start text-red-400 hover:text-red-300 hover:bg-red-400/10 text-sm"
-            onClick={() => handleLogout()}
-          >
-            <LogOut className="w-4 h-4 mr-2" />
-            Déconnexion
-          </Button>
-          <Button
-            variant="ghost"
-            asChild
-            className="w-full justify-start text-muted-foreground hover:text-foreground text-sm mt-1"
-          >
-            <Link href={`/w/${slug}`}>
-              <X className="w-4 h-4 mr-2" />
-              Retour au site
-            </Link>
-          </Button>
+      )}
+      <div className="flex items-center gap-1.5 min-w-0" title={`Statut: ${statusLabel}`}>
+        <CircleCheck className={`w-3.5 h-3.5 shrink-0 ${statusColorClass}`} />
+        <span className={`truncate ${statusColorClass}`}>{statusLabel}</span>
+      </div>
+      {wedding.venueCity && (
+        <div className="flex items-center gap-1.5 min-w-0" title={`Lieu: ${wedding.venueCity}`}>
+          <MapPin className="w-3.5 h-3.5 text-gold shrink-0" />
+          <span className="truncate">{wedding.venueCity}</span>
         </div>
-      </aside>
+      )}
+    </div>
+  )
 
-      {/* Mobile Sidebar Overlay */}
-      <AnimatePresence>
-        {sidebarOpen && (
-          <>
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="absolute inset-0 bg-black/50 z-40 md:hidden"
-              onClick={() => setSidebarOpen(false)}
-            />
-            <motion.aside
-              initial={{ x: -280 }}
-              animate={{ x: 0 }}
-              exit={{ x: -280 }}
-              transition={{ type: 'spring', damping: 30, stiffness: 300 }}
-              className="absolute left-0 top-0 bottom-0 w-70 z-50 md:hidden flex flex-col border-r border-white/10"
-              style={{
-                background: 'linear-gradient(135deg, oklch(0.12 0.02 270), oklch(0.16 0.02 270))',
-              }}
-            >
-              <div className="p-4 flex items-center justify-between">
-                <div className="flex items-center gap-3 min-w-0">
-                  <div className="w-10 h-10 rounded-full gold-border p-[2px] overflow-hidden shrink-0">
-                    <Image
-                      src={COUPLE_PHOTO_FALLBACK}
-                      alt={coupleLabel}
-                      width={40}
-                      height={40}
-                      className="w-full h-full rounded-full object-cover"
-                    />
-                  </div>
-                  <h2 className="font-bold text-sm gold-gradient font-display truncate" title={coupleLabel}>
-                    {coupleLabel}
-                  </h2>
-                </div>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-11 w-11 text-muted-foreground shrink-0"
-                  onClick={() => setSidebarOpen(false)}
-                >
-                  <X className="w-4 h-4" />
-                </Button>
-              </div>
+  // ─── Breadcrumbs (Phase 2F) ─────────────────────────────────────────────
+  // CoupleLabel (link) > Section label (intermediate) > Page label (current).
+  // The last item is the current page — rendered with text-gold (no link).
+  const activeSectionDef = NAV_SECTION_DEFS.find((s) => s.itemIds.includes(activeTab))
+  const breadcrumbs: AdminShellBreadcrumb[] = [
+    { label: coupleLabel, href: `/w/${slug}/admin` },
+    ...(activeSectionDef ? [{ label: activeSectionDef.label }] : []),
+    { label: activeNavItem?.label || '' },
+  ]
 
-              <Separator className="bg-white/10" />
+  // Phase 4D — Pre-format the wedding date + venue for the WhatsAppShare
+  // button in the sidebar footer. The wedding context exposes weddingDate as
+  // an ISO string (or null), so we format it client-side to "26 juin 2026"
+  // (fr-FR long-month format). Venue is composed from venueName + venueCity
+  // like the InvitationSection does on the public page. We compute these once
+  // per render — cheap (no DB call, just a Date parse + locale format).
+  const adminShareDate = wedding.weddingDate
+    ? new Date(wedding.weddingDate).toLocaleDateString('fr-FR', {
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric',
+      })
+    : undefined;
+  const adminShareVenue = [wedding.venueName, wedding.venueCity]
+    .filter(Boolean)
+    .join(' • ') || undefined;
 
-              <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar py-2">
-                <nav className="px-2 space-y-1">
-                  {visibleNavItems.map((item) => {
-                    const isActive = activeTab === item.id
-                    return (
-                      <button
-                        key={item.id}
-                        onClick={() => handleTabChange(item.id)}
-                        className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all ${
-                          isActive
-                            ? 'bg-gold/15 text-gold font-medium'
-                            : 'text-muted-foreground hover:text-foreground hover:bg-white/5'
-                        }`}
-                      >
-                        <item.icon className="w-4 h-4" />
-                        <span>{item.label}</span>
-                      </button>
-                    )
-                  })}
-                </nav>
-              </div>
+  const sidebarFooter = (
+    <>
+      <Button
+        variant="ghost"
+        className="w-full justify-start text-gold hover:text-gold hover:bg-gold/10 text-sm mb-1"
+        onClick={() => setTwoFactorOpen(true)}
+      >
+        <ShieldCheck className="w-4 h-4 mr-2" />
+        Sécurité 2FA
+      </Button>
+      {isPlatformAdmin(user.role) && (
+        <Button
+          variant="ghost"
+          asChild
+          className="w-full justify-start text-gold hover:text-gold hover:bg-gold/10 text-sm mb-1"
+        >
+          <Link href="/platform/admin">
+            <Crown className="w-4 h-4 mr-2" />
+            Plateforme
+          </Link>
+        </Button>
+      )}
+      {/* Phase 4D — "Partager l'invitation" quick action. Renders the same
+          <WhatsAppShare> component used on the public wedding page (Invitation
+          Section + CtaSection), so the organizer can share the PUBLIC wedding
+          URL (no invite token — they're sharing the bare site link, not a
+          personalized invitation). The button fires the same
+          /api/w/share-event audit-log POST, so shares from the admin are
+          tracked in the same audit trail as shares from guests. */}
+      <WhatsAppShare
+        weddingSlug={slug}
+        weddingNames={coupleLabel}
+        weddingDate={adminShareDate}
+        venue={adminShareVenue}
+        variant="ghost"
+        size="sm"
+        label="Partager l'invitation"
+        className="w-full justify-start text-sm mb-1"
+      />
+      <Button
+        variant="ghost"
+        className="w-full justify-start text-red-400 hover:text-red-300 hover:bg-red-400/10 text-sm"
+        onClick={() => handleLogout()}
+      >
+        <LogOut className="w-4 h-4 mr-2" />
+        Déconnexion
+      </Button>
+      <Button
+        variant="ghost"
+        asChild
+        className="w-full justify-start text-muted-foreground hover:text-foreground text-sm mt-1"
+      >
+        <Link href={`/w/${slug}`}>
+          <X className="w-4 h-4 mr-2" />
+          Retour au site
+        </Link>
+      </Button>
+    </>
+  )
 
-              <Separator className="bg-white/10" />
-
-              <div className="p-3 space-y-1">
-                {isPlatformAdmin(user.role) && (
-                  <Button
-                    variant="ghost"
-                    asChild
-                    className="w-full justify-start text-gold hover:text-gold hover:bg-gold/10 text-sm"
-                  >
-                    <Link href="/platform/admin">
-                      <Crown className="w-4 h-4 mr-2" />
-                      Plateforme
-                    </Link>
-                  </Button>
-                )}
-                <Button
-                  variant="ghost"
-                  className="w-full justify-start text-red-400 hover:text-red-300 hover:bg-red-400/10 text-sm"
-                  onClick={() => handleLogout()}
-                >
-                  <LogOut className="w-4 h-4 mr-2" />
-                  Déconnexion
-                </Button>
-                <Button
-                  variant="ghost"
-                  asChild
-                  className="w-full justify-start text-muted-foreground hover:text-foreground text-sm"
-                >
-                  <Link href={`/w/${slug}`}>
-                    <X className="w-4 h-4 mr-2" />
-                    Retour au site
-                  </Link>
-                </Button>
-              </div>
-            </motion.aside>
-          </>
-        )}
-      </AnimatePresence>
-
-      {/* Main Content Area */}
-      <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
-        {/* Top Bar */}
-        <header className="h-14 shrink-0 flex items-center gap-3 px-4 border-b border-white/10 bg-white/[0.02]">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-9 w-9 md:hidden"
-            onClick={() => setSidebarOpen(true)}
+  const mobileBottomBar = (
+    <nav className="md:hidden shrink-0 flex items-center border-t border-white/10 bg-white/[0.02] safe-area-pb">
+      {visibleNavItems.slice(0, 5).map((item) => {
+        const isActive = activeTab === item.id
+        return (
+          <button
+            key={item.id}
+            onClick={() => handleTabChange(item.id)}
+            className={`flex-1 flex flex-col items-center gap-1 py-2 text-xs transition-colors ${
+              isActive ? 'text-gold' : 'text-muted-foreground'
+            }`}
           >
-            <Menu className="w-5 h-5" />
-          </Button>
+            <item.icon className="w-5 h-5" />
+            <span className="truncate text-[10px]">{item.label}</span>
+          </button>
+        )
+      })}
+    </nav>
+  )
 
-          <div className="flex items-center gap-2 min-w-0">
-            {activeNavItem && (
-              <>
-                <activeNavItem.icon className="w-4 h-4 text-gold shrink-0" />
-                <h1 className="font-semibold text-sm truncate">{activeNavItem.label}</h1>
-              </>
-            )}
-          </div>
+  const topBarRight = (
+    <Button
+      variant="ghost"
+      asChild
+      size="sm"
+      className="text-muted-foreground hover:text-foreground text-xs"
+    >
+      <Link href={`/w/${slug}`}>
+        <X className="w-4 h-4 mr-1" />
+        Retour au site
+      </Link>
+    </Button>
+  )
 
-          <div className="ml-auto flex items-center gap-2">
-            <Button
-              variant="ghost"
-              asChild
-              size="sm"
-              className="text-muted-foreground hover:text-foreground text-xs"
-            >
-              <Link href={`/w/${slug}`}>
-                <X className="w-4 h-4 mr-1" />
-                Retour au site
-              </Link>
-            </Button>
-          </div>
-        </header>
+  const pageTitle = activeNavItem && (
+    <>
+      <activeNavItem.icon className="w-4 h-4 text-gold shrink-0" />
+      <h1 className="font-semibold text-sm truncate">{activeNavItem.label}</h1>
+    </>
+  )
 
-        {/* Content — Scrollable area */}
-        <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar">
+  const shellUser: AdminShellUser = {
+    name: user.name,
+    email: user.email,
+    // Wedding admin shows the raw role string (preserves existing visual).
+    roleLabel: user.role,
+    avatarInitial: user.name.charAt(0).toUpperCase(),
+  }
+
+  // ─── Phase 4C — Impersonation banner rendering ──────────────────────────
+  // The banner is `position: fixed; top: 0` and overlays the AdminShell.
+  // We add top padding to the outer wrapper when impersonating so the
+  // banner doesn't cover the top bar / sidebar brand. The banner's height
+  // is ~48px on desktop (single row) — we use a slightly larger padding
+  // (52px) to add a small visual gap. On mobile the banner wraps to 2
+  // rows; the padding is also fine (the content scrolls underneath).
+  const isImpersonating =
+    !!impersonation &&
+    impersonation.impersonating === true &&
+    !!impersonation.targetUser &&
+    typeof impersonation.expiresAt === 'number'
+
+  return (
+    <>
+      {isImpersonating && impersonation?.targetUser && impersonation.expiresAt && (
+        <ImpersonationBanner
+          targetName={impersonation.targetUser.name}
+          targetRole={impersonation.targetUser.role}
+          expiresAt={impersonation.expiresAt}
+          onStop={handleStopImpersonation}
+        />
+      )}
+      <div className={isImpersonating ? 'pt-[52px]' : ''}>
+        <AdminShell
+          sections={sections}
+          user={shellUser}
+          contextBanner={contextBanner}
+          brand={brand}
+          sidebarFooter={sidebarFooter}
+          sidebarWidth="w-64"
+          pageTitle={pageTitle}
+          breadcrumbs={breadcrumbs}
+          topBarRight={topBarRight}
+          mobileBottomBar={mobileBottomBar}
+        >
           <AnimatePresence mode="wait">
             <motion.div
               key={activeTab}
@@ -743,26 +934,7 @@ export default function PerWeddingAdminPage() {
               {renderContent()}
             </motion.div>
           </AnimatePresence>
-        </div>
-
-        {/* Mobile Bottom Tab Bar */}
-        <nav className="md:hidden shrink-0 flex items-center border-t border-white/10 bg-white/[0.02] safe-area-pb">
-          {visibleNavItems.slice(0, 5).map((item) => {
-            const isActive = activeTab === item.id
-            return (
-              <button
-                key={item.id}
-                onClick={() => handleTabChange(item.id)}
-                className={`flex-1 flex flex-col items-center gap-1 py-2 text-xs transition-colors ${
-                  isActive ? 'text-gold' : 'text-muted-foreground'
-                }`}
-              >
-                <item.icon className="w-5 h-5" />
-                <span className="truncate text-[10px]">{item.label}</span>
-              </button>
-            )
-          })}
-        </nav>
+        </AdminShell>
       </div>
 
       {/* P4.7 — 2FA setup modal (accessible from the sidebar footer) */}
@@ -774,6 +946,6 @@ export default function PerWeddingAdminPage() {
           toast.success('2FA activée avec succès')
         }}
       />
-    </div>
+    </>
   )
 }

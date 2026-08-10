@@ -1,6 +1,3 @@
-'use client'
-
-import { motion } from 'framer-motion'
 import Link from 'next/link'
 import { ArrowRight } from 'lucide-react'
 
@@ -16,6 +13,9 @@ import { ArrowRight } from 'lucide-react'
  *   - World C (Immersive): 6 sections — gallery BEFORE story (different order)
  *
  * This proves the manifest-driven renderer is REAL.
+ *
+ * Server Component (Phase 2B): scroll-triggered motion removed — content
+ * renders identically. Animation can be re-added via CSS in Phase 3A.
  */
 
 const WORLDS = [
@@ -61,13 +61,7 @@ export default function ThreeWorldsSection() {
       </div>
 
       <div className="max-w-7xl mx-auto">
-        <motion.div
-          initial={{ opacity: 0, y: 30 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true, amount: 0.3 }}
-          transition={{ duration: 0.7 }}
-          className="text-center mb-16"
-        >
+        <div className="text-center mb-16">
           <span className="font-display text-xs tracking-[0.3em] uppercase text-gold/70 font-semibold mb-4 block">
             Preuve du moteur
           </span>
@@ -80,16 +74,12 @@ export default function ThreeWorldsSection() {
             <strong className="text-foreground">quelles sections existent</strong> et{' '}
             <strong className="text-foreground">dans quel ordre</strong>. Même code, trois expériences structurellement différentes.
           </p>
-        </motion.div>
+        </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 md:gap-8">
           {WORLDS.map((world, i) => (
-            <motion.div
+            <div
               key={world.slug}
-              initial={{ opacity: 0, y: 30 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true }}
-              transition={{ duration: 0.6, delay: i * 0.15 }}
               className="group relative rounded-2xl overflow-hidden glass-card border border-gold/15 hover:border-gold/40 transition-all duration-500"
             >
               {/* Color header */}
@@ -156,7 +146,7 @@ export default function ThreeWorldsSection() {
                   <ArrowRight className="size-3.5" />
                 </Link>
               </div>
-            </motion.div>
+            </div>
           ))}
         </div>
       </div>

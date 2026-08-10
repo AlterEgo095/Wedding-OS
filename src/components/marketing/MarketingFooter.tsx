@@ -1,5 +1,3 @@
-'use client'
-
 import Link from 'next/link'
 import { Heart } from 'lucide-react'
 
@@ -8,6 +6,9 @@ import { Heart } from 'lucide-react'
  *
  * Brand-neutral (no couple identity). Links to real routes only.
  * Sticky to bottom (mt-auto pushes it down on short content).
+ *
+ * Server Component (Phase 2B): no client interactivity — `new Date()` is
+ * computed at request time (ISR-safe with `revalidate = 60` on the homepage).
  */
 
 export default function MarketingFooter() {

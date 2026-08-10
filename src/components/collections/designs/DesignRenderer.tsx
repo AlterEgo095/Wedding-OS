@@ -1,11 +1,13 @@
 'use client'
 
 import { motion } from 'framer-motion'
+import type { Easing } from 'framer-motion'
 import {
   Crown, Gem, Heart, Sparkles, MapPin, Clock, Calendar, QrCode,
   Ticket, Hash, Users, Mail, Facebook, Instagram, MessageCircle,
 } from 'lucide-react'
 import type { DesignSystem } from '@/lib/collections/types'
+import { useMotionTier } from '@/lib/motion/useMotionTier'
 
 // ══════════════════════════════════════════════════════════════════════════════
 // DESIGN RENDERER — renders a REAL visual design for any (collection, module, variant)
@@ -65,6 +67,8 @@ function CornerOrnament({ color, className = '' }: { color: string; className?: 
 // ══════════════════════════════════════════════════════════════════════════════
 
 function HeroA({ ds, couple }: { ds: DesignSystem; couple: NonNullable<DesignRendererProps['couple']> }) {
+  const { config: motionCfg, reduced: prefersReducedMotion, tier } = useMotionTier()
+  const isStatic = prefersReducedMotion || tier === 'none'
   return (
     <div
       className="relative w-full aspect-[16/9] rounded-xl overflow-hidden flex flex-col items-center justify-center text-center p-8"
@@ -74,7 +78,12 @@ function HeroA({ ds, couple }: { ds: DesignSystem; couple: NonNullable<DesignRen
       <div className="absolute inset-0 opacity-20" style={{
         backgroundImage: `radial-gradient(circle at 20% 20%, ${ds.primary}30 0%, transparent 50%), radial-gradient(circle at 80% 80%, ${ds.secondary}30 0%, transparent 50%)`,
       }} />
-      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.8 }} className="relative z-10">
+      <motion.div
+        initial={isStatic ? false : { opacity: 0, y: 20 }}
+        animate={isStatic ? undefined : { opacity: 1, y: 0 }}
+        transition={isStatic ? { duration: 0 } : { duration: motionCfg.duration, ease: motionCfg.ease as Easing }}
+        className="relative z-10"
+      >
         <Crown className="mx-auto mb-3" style={{ color: ds.primary }} size={28} />
         <p style={{ color: ds.textMuted }} className="text-xs tracking-[0.4em] uppercase mb-3">Nous nous marions</p>
         <h1 className="font-serif text-4xl md:text-6xl font-bold mb-2" style={{ color: ds.text, fontFamily: ds.fontDisplay }}>
@@ -113,12 +122,19 @@ function HeroB({ ds, couple }: { ds: DesignSystem; couple: NonNullable<DesignRen
 }
 
 function HeroC({ ds, couple }: { ds: DesignSystem; couple: NonNullable<DesignRendererProps['couple']> }) {
+  const { config: motionCfg, reduced: prefersReducedMotion, tier } = useMotionTier()
+  const isStatic = prefersReducedMotion || tier === 'none'
   return (
     <div className="relative w-full aspect-[16/9] rounded-xl overflow-hidden flex items-end" style={{ background: `linear-gradient(180deg, ${ds.background}40, ${ds.background})` }}>
       {/* Veil overlay */}
       <div className="absolute inset-0" style={{ background: `linear-gradient(180deg, ${ds.primary}20 0%, transparent 40%, ${ds.background}cc 100%)` }} />
       {/* Giant typography */}
-      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 1, delay: 0.3 }} className="relative z-10 p-8 w-full">
+      <motion.div
+        initial={isStatic ? false : { opacity: 0 }}
+        animate={isStatic ? undefined : { opacity: 1 }}
+        transition={isStatic ? { duration: 0 } : { duration: motionCfg.duration, ease: motionCfg.ease as Easing, delay: 0.3 }}
+        className="relative z-10 p-8 w-full"
+      >
         <h1 className="font-serif text-5xl md:text-7xl lg:text-8xl font-black leading-none tracking-tight" style={{ color: ds.text, fontFamily: ds.fontDisplay }}>
           {couple.groom.toUpperCase()}
         </h1>
@@ -271,10 +287,16 @@ function FooterA({ ds, couple }: { ds: DesignSystem; couple: NonNullable<DesignR
 }
 
 function LoaderA({ ds }: { ds: DesignSystem }) {
+  const { reduced: prefersReducedMotion, tier } = useMotionTier()
+  const isStatic = prefersReducedMotion || tier === 'none'
   return (
     <div className="w-full aspect-[16/9] rounded-xl flex items-center justify-center" style={{ background: ds.background }}>
       <div className="text-center">
-        <motion.div animate={{ rotate: 360 }} transition={{ duration: 2, repeat: Infinity, ease: 'linear' }} className="mx-auto mb-3">
+        <motion.div
+          animate={isStatic ? undefined : { rotate: 360 }}
+          transition={isStatic ? undefined : { duration: 2, repeat: Infinity, ease: 'linear' }}
+          className="mx-auto mb-3"
+        >
           <Crown size={32} style={{ color: ds.primary }} />
         </motion.div>
         <p className="text-xs tracking-[0.3em] uppercase" style={{ color: ds.textMuted }}>Chargement…</p>
@@ -284,9 +306,16 @@ function LoaderA({ ds }: { ds: DesignSystem }) {
 }
 
 function SplashA({ ds, couple }: { ds: DesignSystem; couple: NonNullable<DesignRendererProps['couple']> }) {
+  const { config: motionCfg, reduced: prefersReducedMotion, tier } = useMotionTier()
+  const isStatic = prefersReducedMotion || tier === 'none'
   return (
     <div className="w-full aspect-[16/9] rounded-xl flex items-center justify-center relative overflow-hidden" style={{ background: ds.background }}>
-      <motion.div initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ duration: 0.8 }} className="text-center">
+      <motion.div
+        initial={isStatic ? false : { scale: 0.8, opacity: 0 }}
+        animate={isStatic ? undefined : { scale: 1, opacity: 1 }}
+        transition={isStatic ? { duration: 0 } : { duration: motionCfg.duration, ease: motionCfg.ease as Easing }}
+        className="text-center"
+      >
         <div className="inline-block p-4 rounded border" style={{ borderColor: `${ds.primary}60`, background: `${ds.surface}80` }}>
           <Mail size={20} style={{ color: ds.primary }} className="mx-auto mb-2" />
           <p className="font-serif text-lg" style={{ color: ds.text, fontFamily: ds.fontDisplay }}>{couple.label}</p>
@@ -651,6 +680,8 @@ function TypographyA({ ds }: { ds: DesignSystem }) {
 }
 
 function AnimationsA({ ds }: { ds: DesignSystem }) {
+  const { reduced: prefersReducedMotion, tier } = useMotionTier()
+  const isStatic = prefersReducedMotion || tier === 'none'
   return (
     <div className="w-full rounded-xl p-4 grid grid-cols-3 gap-3" style={{ background: ds.surface }}>
       {[
@@ -659,7 +690,12 @@ function AnimationsA({ ds }: { ds: DesignSystem }) {
         { label: 'Glitter', anim: { rotate: [0, 360] }, dur: 3 },
       ].map((a, i) => (
         <div key={i} className="flex flex-col items-center">
-          <motion.div animate={a.anim} transition={{ duration: a.dur, repeat: Infinity, ease: 'easeInOut' }} className="w-10 h-10 rounded-full flex items-center justify-center" style={{ background: `${ds.primary}20`, border: `1px solid ${ds.primary}` }}>
+          <motion.div
+            animate={isStatic ? undefined : a.anim}
+            transition={isStatic ? undefined : { duration: a.dur, repeat: Infinity, ease: 'easeInOut' }}
+            className="w-10 h-10 rounded-full flex items-center justify-center"
+            style={{ background: `${ds.primary}20`, border: `1px solid ${ds.primary}` }}
+          >
             <Sparkles size={14} style={{ color: ds.primary }} />
           </motion.div>
           <p className="text-[8px] mt-1" style={{ color: ds.textMuted }}>{a.label}</p>
@@ -670,10 +706,17 @@ function AnimationsA({ ds }: { ds: DesignSystem }) {
 }
 
 function TransitionsA({ ds }: { ds: DesignSystem }) {
+  const { reduced: prefersReducedMotion, tier } = useMotionTier()
+  const isStatic = prefersReducedMotion || tier === 'none'
   return (
     <div className="w-full rounded-xl p-4" style={{ background: ds.surface }}>
       <div className="h-16 rounded relative overflow-hidden" style={{ background: ds.background }}>
-        <motion.div animate={{ x: ['0%', '100%'] }} transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }} className="absolute top-0 bottom-0 w-1/3 flex items-center justify-center" style={{ background: `linear-gradient(90deg, transparent, ${ds.primary}40, transparent)` }}>
+        <motion.div
+          animate={isStatic ? undefined : { x: ['0%', '100%'] }}
+          transition={isStatic ? undefined : { duration: 3, repeat: Infinity, ease: 'easeInOut' }}
+          className="absolute top-0 bottom-0 w-1/3 flex items-center justify-center"
+          style={{ background: `linear-gradient(90deg, transparent, ${ds.primary}40, transparent)` }}
+        >
           <Sparkles size={14} style={{ color: ds.primary }} />
         </motion.div>
       </div>
@@ -683,10 +726,18 @@ function TransitionsA({ ds }: { ds: DesignSystem }) {
 }
 
 function EffectsA({ ds }: { ds: DesignSystem }) {
+  const { reduced: prefersReducedMotion, tier } = useMotionTier()
+  const isStatic = prefersReducedMotion || tier === 'none'
   return (
     <div className="w-full rounded-xl p-4 relative overflow-hidden" style={{ background: ds.surface, minHeight: '100px' }}>
       {Array.from({ length: 12 }).map((_, i) => (
-        <motion.div key={i} animate={{ y: [0, -20, 0], opacity: [0, 1, 0] }} transition={{ duration: 2 + (i % 3), repeat: Infinity, delay: i * 0.3, ease: 'easeInOut' }} className="absolute w-1 h-1 rounded-full" style={{ left: `${(i * 8) % 100}%`, top: `${(i * 13) % 80}%`, background: ds.primary, boxShadow: `0 0 6px ${ds.primary}` }} />
+        <motion.div
+          key={i}
+          animate={isStatic ? undefined : { y: [0, -20, 0], opacity: [0, 1, 0] }}
+          transition={isStatic ? undefined : { duration: 2 + (i % 3), repeat: Infinity, delay: i * 0.3, ease: 'easeInOut' }}
+          className="absolute w-1 h-1 rounded-full"
+          style={{ left: `${(i * 8) % 100}%`, top: `${(i * 13) % 80}%`, background: ds.primary, boxShadow: `0 0 6px ${ds.primary}` }}
+        />
       ))}
       <p className="text-[9px] text-center relative z-10 pt-8" style={{ color: ds.textMuted }}>Particules dorées flottantes</p>
     </div>

@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { Playfair_Display, Cormorant_Garamond } from "next/font/google";
+import { MotionConfig } from "framer-motion";
 import { ThemeProvider } from "@/components/providers/theme-provider";
 import { Toaster } from "@/components/ui/sonner";
 import "./globals.css";
@@ -115,15 +116,25 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} ${playfair.variable} ${cormorant.variable} antialiased bg-background text-foreground min-h-screen flex flex-col`}
       >
-        <ThemeProvider
-          attribute="class"
-          defaultTheme="light"
-          enableSystem
-          disableTransitionOnChange={false}
-        >
-          {children}
-          <Toaster />
-        </ThemeProvider>
+        {/* MISSION-5.9.0 Phase 0.3: MotionConfig reducedMotion="user" — respects OS-level prefers-reduced-motion across ALL framer-motion animations (85 files, 1023 motion.* patterns). Single highest-impact a11y fix. */}
+        <MotionConfig reducedMotion="user">
+          <ThemeProvider
+            attribute="class"
+            defaultTheme="light"
+            enableSystem
+            disableTransitionOnChange={false}
+          >
+            {/* MISSION-5.9.0 Phase 0.4: skip-to-content link — WCAG 2.1 SC 2.4.1 "Bypass Blocks". First focusable element on every page. */}
+            <a
+              href="#main"
+              className="sr-only focus:not-sr-only focus:fixed focus:top-4 focus:left-4 focus:z-[100] focus:px-4 focus:py-2 focus:rounded-md focus:bg-primary focus:text-primary-foreground focus:shadow-lg focus:outline-none focus:ring-2 focus:ring-ring"
+            >
+              Aller au contenu
+            </a>
+            {children}
+            <Toaster />
+          </ThemeProvider>
+        </MotionConfig>
       </body>
     </html>
   );

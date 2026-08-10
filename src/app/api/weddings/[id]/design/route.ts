@@ -7,6 +7,16 @@ import { logger } from '@/lib/logger';
 import { badRequest, internalError } from '@/lib/api-errors';
 import { generateManifest, validateManifest, parseManifest, type WeddingManifest, type ManifestSection } from '@/lib/wedding/manifest';
 import { safeJsonParse } from '@/lib/safe-json';
+// Mission 5.9.1 P4-3 — route the Designer publish (POST) through the canonical
+// deployment pipeline so it no longer bypasses:
+//   • Deployment row creation (Production Studio visibility for design republish)
+//   • publishedConfigJson snapshot on the Wedding row (rollback + cache key)
+//   • invalidateWeddingCache(slug) (no 5-min ISR staleness window)
+// The onboarding/publish + platform/weddings/[id] routes already use this
+// helper — this closes the last bypass. PUT (save draft) also invalidates the
+// cache so the preview (?preview=draft) picks up edits without waiting on ISR.
+import { publishWeddingViaPipeline } from '@/lib/pipeline/publish-helper';
+import { invalidateWeddingCache } from '@/lib/wedding/cache';
 
 // ══════════════════════════════════════════════════════════════════════════════
 // /api/weddings/[id]/design — Designer API (Slice 2)
@@ -17,6 +27,12 @@ import { safeJsonParse } from '@/lib/safe-json';
 // DELETE: discards the draft (sets draftManifest = null)
 //
 // Authorization: ORGANIZER+ only. Tenant-scoped via weddingId in the URL.
+//
+// Mission 5.9.1 P4-3 (Designer publish path):
+//   POST now routes through publishWeddingViaPipeline() so the Designer's
+//   "Publier" button produces a Deployment row + publishedConfigJson snapshot
+//   + invalidates the per-wedding ISR cache (no bypass). PUT (save draft)
+//   invalidates the cache too so the preview reflects edits immediately.
 // ══════════════════════════════════════════════════════════════════════════════
 
 async function checkAuth(request: NextRequest, weddingId: string) {
@@ -197,6 +213,29 @@ export async function PUT(
       request,
     });
 
+    // Mission 5.9.1 P4-3 — best-effort cache invalidation so the preview
+    // (?preview=draft) and any caller that reads the cached layer picks up
+    // the new draft. Non-fatal: a miss here falls back to the 5-min ISR
+    // revalidate window, which is acceptable for a save (not a publish).
+    // The CREATE branch (initial deploy) also sets `manifest` (effectively a
+    // publish) — this invalidation covers that path too.
+    try {
+      const slug = request.headers.get('X-Wedding-Slug')
+        ?? (await db.wedding.findUnique({
+            where: { id: weddingId },
+            select: { slug: true },
+          }))?.slug
+        ?? null;
+      if (slug) {
+        await invalidateWeddingCache(slug);
+      }
+    } catch (cacheErr) {
+      logger.warn('Design PUT: cache invalidation failed (non-fatal)', {
+        weddingId,
+        errMessage: cacheErr instanceof Error ? cacheErr.message : String(cacheErr),
+      });
+    }
+
     return NextResponse.json({ success: true, draft });
   } catch (error) {
     logger.error('Design PUT error', {
@@ -272,11 +311,70 @@ export async function POST(
       }),
     ]);
 
+    // ─── Mission 5.9.1 P4-3: route the design republish through the deployment
+    // pipeline so the Designer publish path no longer bypasses:
+    //   • Deployment row creation (PIPELINE → status='DEPLOYED' OR
+    //     LEGACY_FALLBACK → status='LEGACY'; both surface in Production Studio)
+    //   • publishedConfigJson snapshot on the Wedding row (PIPELINE mode only;
+    //     LEGACY falls back to binding-based manifest in the cached resolver —
+    //     still correct because the binding was just updated above)
+    //   • invalidateWeddingCache(slug) (always called by the helper — guaranteed
+    //     L1 + L2 cache bust so the next /w/[slug] request shows the new design
+    //     immediately, no 5-min ISR staleness window)
+    //
+    // The pipeline reads the FRESHLY-UPDATED WeddingCollectionBinding.manifest
+    // (written in the transaction above) so the snapshot it produces matches
+    // what the public renderer will serve. The pipeline also re-resolves
+    // templateId + themeId (from the manifest's templateId/themeId fields OR
+    // from the first PUBLISHED defaults) — same resolution as the
+    // onboarding/publish path.
+    //
+    // Non-fatal: if the pipeline throws (e.g. transient DB issue), the manifest
+    // is already persisted in the transaction above — we still invalidate the
+    // cache via the awaited helper so the public page reflects the new design
+    // (worst case: 5-min ISR fallback window if even this fails). The user
+    // never sees a 500 — the publish succeeds, just without a Deployment row.
+    let pipelineMode: 'PIPELINE' | 'LEGACY_FALLBACK' | 'SKIPPED' = 'SKIPPED';
+    let deploymentId: string | null = null;
+    try {
+      const publishResult = await publishWeddingViaPipeline(weddingId, user.id);
+      pipelineMode = publishResult.mode;
+      deploymentId = publishResult.deploymentId;
+    } catch (pipelineErr) {
+      // Pipeline threw — best-effort cache invalidation so the public page
+      // still reflects the new manifest snapshot (read from
+      // WeddingCollectionBinding.manifest by the cached resolver).
+      logger.error('Design POST: publishWeddingViaPipeline failed (non-fatal)', {
+        weddingId,
+        errMessage: pipelineErr instanceof Error ? pipelineErr.message : String(pipelineErr),
+      });
+      // Resolve the slug for the cache invalidation. Prefer the X-Wedding-Slug
+      // header (always sent by DesignerTab) and fall back to a DB lookup so
+      // other callers without the header still get the cache busted.
+      const slug = request.headers.get('X-Wedding-Slug')
+        ?? (await db.wedding.findUnique({
+            where: { id: weddingId },
+            select: { slug: true },
+          }))?.slug
+        ?? null;
+      if (slug) {
+        try {
+          await invalidateWeddingCache(slug);
+        } catch (cacheErr) {
+          logger.warn('Design POST: fallback cache invalidation failed', {
+            weddingId,
+            slug,
+            errMessage: cacheErr instanceof Error ? cacheErr.message : String(cacheErr),
+          });
+        }
+      }
+    }
+
     await writeAuditLog({
       weddingId,
       userId: user.id,
       action: 'PUBLISH_DESIGN',
-      details: `Published design: ${draft.sections.filter(s => s.enabled).length} sections, collection ${draft.collectionSlug}`,
+      details: `Published design: ${draft.sections.filter(s => s.enabled).length} sections, collection ${draft.collectionSlug}${deploymentId ? `, deployment=${deploymentId} (${pipelineMode})` : ' (pipeline skipped)'}`,
       request,
     });
 

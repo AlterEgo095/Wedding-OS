@@ -33,10 +33,16 @@
 //   client-side page.tsx + fetch interceptor (cache: 'no-store' on /api/*).
 
 import { unstable_cache } from 'next/cache';
-import { resolveWeddingBySlug, invalidateWeddingCache as invalidateInMemoryWeddingCache } from '@/lib/tenant-context';
+import path from 'node:path';
+import {
+  resolveWeddingBySlug,
+  buildTenantContext,
+  runWithTenant,
+  invalidateWeddingCache as invalidateInMemoryWeddingCache,
+} from '@/lib/tenant-context';
 import { resolveWeddingManifest } from '@/lib/wedding/manifest';
 import type { WeddingManifest } from '@/lib/wedding/manifest';
-import { db } from '@/lib/db';
+import { db, tenantDb } from '@/lib/db';
 import { safeJsonParse } from '@/lib/safe-json';
 import { logger } from '@/lib/logger';
 
@@ -264,4 +270,280 @@ export async function invalidateWeddingCache(slug: string): Promise<void> {
       errMessage: error instanceof Error ? error.message : String(error),
     });
   }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Phase 2A (MISSION 5.9.0 audit §20.4) — Public wedding PAGE data
+// ══════════════════════════════════════════════════════════════════════════════
+//
+// The public wedding page (`/w/[slug]`) used to be a `'use client'` component
+// that issued a 4-call API waterfall on the client (`/api/couple-story`,
+// `/api/timeline`, `/api/settings`, `/api/music`). Phase 2A moves these 4
+// fetches server-side so the page becomes an async Server Component that
+// hydrates only interactive islands (GuestAuthForm, RSVP form, MusicPlayer,
+// VisualEffectsLayer). Expected benefit: -200ms TTI, -50KB JS gzip.
+//
+// This function returns ALL FOUR datasets in a single cached round-trip,
+// using the same per-wedding cache tag (`wedding-${slug}`) as
+// `getCachedWeddingData` so on-demand invalidation (publish pipeline) busts
+// both caches atomically.
+//
+// TENANT ISOLATION (§11 leak fix preserved):
+//   - The cache key is the slug itself (`['wedding-page-data', slug]`), so
+//     wedding A's cache entry is 100% isolated from wedding B's.
+//   - The cached callback resolves the wedding by slug, then runs all 4
+//     Prisma queries inside `runWithTenant(ctx, ...)`. This activates the
+//     tenant-scoped Prisma extension (auto-injects `weddingId` into
+//     `findMany` against CoupleStory / Settings). For EventTimeline we ALSO
+//     pass an explicit `where: { weddingId }` filter — defence-in-depth
+//     matching the existing `/api/timeline` route.
+//   - The cached callback never returns data scoped to a different wedding,
+//     even if the in-memory L1 cache were to leak between requests (it
+//     can't — `unstable_cache` keys by the slug argument).
+//
+// NON-FATAL FAILURE:
+//   If any individual dataset fails to fetch (transient DB error), the
+//   function returns an empty array / null for THAT dataset rather than
+//   crashing the whole page. The caller renders graceful fallbacks (the
+//   SectionRenderer already handles empty stories / empty timeline / null
+//   settings). The successful datasets are still cached and served.
+//
+// SERIALIZATION:
+//   `unstable_cache` JSON-serializes the return value. All fields are
+//   primitives (string | number | boolean | array | plain object) — no Date
+//   objects — so the round-trip is lossless. The shape mirrors what the
+//   original client-side `useEffect` produced, so the SectionRenderer's
+//   `SectionRendererData` prop type is satisfied unchanged.
+
+// ─── Phase 2A types ───────────────────────────────────────────────────────────
+
+/** One couple-story chapter (mirrors `CoupleStory` Prisma row, all fields serializable). */
+export interface CachedCoupleStory {
+  id: string;
+  title: string;
+  description: string;
+  date: string | null;
+  imageUrl: string | null;
+  order: number;
+}
+
+/** One timeline event (mirrors `EventTimeline` Prisma row, all fields serializable). */
+export interface CachedTimelineEvent {
+  id: string;
+  time: string;
+  activity: string;
+  location: string | null;
+  description: string | null;
+  icon: string | null;
+  order: number;
+}
+
+/**
+ * Settings map (key → value). Built from the `Settings` Prisma table where
+ * each row is a `(weddingId, key, value)` tuple. Mirrors the shape produced
+ * by the original `/api/settings` GET handler.
+ */
+export type CachedSettings = Record<string, string>;
+
+/** Ambient music settings (built from the 4 `music_*` settings rows). */
+export interface CachedMusicSettings {
+  /** Raw uploaded file path (e.g. `/uploads/slug/music/ambient-…mp3`) — empty when no track. */
+  file: string;
+  /** Volume 0..1 (parsed from the `music_volume` settings row, defaults to 0.25). */
+  volume: number;
+  /** Whether the organizer has enabled ambient music (parsed from `music_enabled`). */
+  enabled: boolean;
+  /** Playable URL passed to <AmbientMusicPlayer musicFile=…> (uses /api/music/file streaming endpoint). */
+  url: string;
+}
+
+/** Bundle returned by `getCachedWeddingPageData` — all 4 datasets in one payload. */
+export interface CachedWeddingPageData {
+  stories: CachedCoupleStory[];
+  timeline: CachedTimelineEvent[];
+  settings: CachedSettings;
+  music: CachedMusicSettings;
+}
+
+// ─── Defaults (mirror /api/music route's DEFAULT_SETTINGS) ─────────────────────
+
+const DEFAULT_MUSIC_SETTINGS: CachedMusicSettings = {
+  file: '',
+  volume: 0.25,
+  enabled: false,
+  url: '',
+};
+
+// ─── Cached fetch ─────────────────────────────────────────────────────────────
+
+/**
+ * Resolve the public wedding page's 4 datasets (couple stories, timeline,
+ * settings, music) with ISR caching, keyed by slug, tagged `wedding-{slug}`.
+ *
+ * Returns null ONLY if the wedding itself doesn't exist (caller should
+ * `notFound()`). If the wedding exists but individual dataset fetches fail,
+ * those datasets come back as empty arrays / empty objects / defaults — the
+ * page still renders.
+ *
+ * The returned shape is JSON-serializable (no Date objects) so it can be
+ * passed from the async Server Component page directly to a client
+ * component as serializable props.
+ *
+ * @example
+ *   // in an async Server Component page:
+ *   const pageData = await getCachedWeddingPageData(slug);
+ *   if (!pageData) notFound();
+ *   return <WeddingPageClient stories={pageData.stories} … />;
+ */
+export async function getCachedWeddingPageData(
+  slug: string
+): Promise<CachedWeddingPageData | null> {
+  const cachedFn = unstable_cache(
+    async (s: string): Promise<CachedWeddingPageData | null> => {
+      const wedding = await resolveWeddingBySlug(s);
+      if (!wedding) {
+        return null;
+      }
+
+      // Build the tenant context so tenantDb.* queries auto-scope by
+      // weddingId. We use the same `buildTenantContext` helper as
+      // `resolvePublicTenant` (default 'wedding' scope). The wedding is
+      // already PUBLISHED by the time we get here — the layout gates status.
+      const tenantCtx = buildTenantContext(wedding, 'wedding');
+
+      // Run all 4 fetches inside the tenant scope. Each fetch is wrapped in
+      // its own try/catch so a single failure doesn't lose the other 3
+      // datasets (graceful degradation). The Promise.all runs them in
+      // parallel for minimal latency.
+      const [stories, timeline, settingsMap, musicSettings] = await runWithTenant(
+        tenantCtx,
+        async () => {
+          return Promise.all([
+            // 1. CoupleStory (tenantDb auto-scopes by weddingId)
+            (async (): Promise<CachedCoupleStory[]> => {
+              try {
+                const rows = await tenantDb.coupleStory.findMany({
+                  orderBy: { order: 'asc' },
+                  take: 50, // P2-PERF-4: bound to match /api/couple-story
+                });
+                return rows.map((r) => ({
+                  id: r.id,
+                  title: r.title,
+                  description: r.description,
+                  date: r.date ?? null,
+                  imageUrl: r.imageUrl ?? null,
+                  order: r.order,
+                }));
+              } catch (error) {
+                logger.warn('wedding-page-data.stories-failed', {
+                  slug: s,
+                  weddingId: wedding.id,
+                  errMessage: error instanceof Error ? error.message : String(error),
+                });
+                return [];
+              }
+            })(),
+
+            // 2. EventTimeline (explicit weddingId filter — defence-in-depth,
+            //    matches /api/timeline route's pattern post-P4.3)
+            (async (): Promise<CachedTimelineEvent[]> => {
+              try {
+                const rows = await db.eventTimeline.findMany({
+                  where: { weddingId: wedding.id },
+                  orderBy: { order: 'asc' },
+                  take: 200, // P2-PERF-4: bound to match /api/timeline
+                });
+                return rows.map((r) => ({
+                  id: r.id,
+                  time: r.time,
+                  activity: r.activity,
+                  location: r.location ?? null,
+                  description: r.description ?? null,
+                  icon: r.icon ?? null,
+                  order: r.order,
+                }));
+              } catch (error) {
+                logger.warn('wedding-page-data.timeline-failed', {
+                  slug: s,
+                  weddingId: wedding.id,
+                  errMessage: error instanceof Error ? error.message : String(error),
+                });
+                return [];
+              }
+            })(),
+
+            // 3. Settings (tenantDb auto-scopes by weddingId)
+            (async (): Promise<CachedSettings> => {
+              try {
+                const rows = await tenantDb.settings.findMany({
+                  orderBy: { key: 'asc' },
+                });
+                const map: CachedSettings = {};
+                for (const row of rows) {
+                  map[row.key] = row.value;
+                }
+                return map;
+              } catch (error) {
+                logger.warn('wedding-page-data.settings-failed', {
+                  slug: s,
+                  weddingId: wedding.id,
+                  errMessage: error instanceof Error ? error.message : String(error),
+                });
+                return {};
+              }
+            })(),
+
+            // 4. Music settings (built from the 4 `music_*` Settings rows,
+            //    mirrors /api/music GET handler's logic exactly)
+            (async (): Promise<CachedMusicSettings> => {
+              try {
+                const musicKeys = [
+                  'music_enabled',
+                  'music_volume',
+                  'music_file',
+                  'music_original_name',
+                ];
+                const rows = await tenantDb.settings.findMany({
+                  where: { key: { in: musicKeys } },
+                });
+                const map: CachedSettings = {};
+                for (const row of rows) {
+                  map[row.key] = row.value;
+                }
+                const musicFile = map.music_file ?? '';
+                const enabled = map.music_enabled === 'true';
+                const volumeRaw = Number(map.music_volume);
+                const volume =
+                  Number.isFinite(volumeRaw) && volumeRaw > 0 ? volumeRaw : 0.25;
+                const url = musicFile
+                  ? `/api/music/file?f=${encodeURIComponent(path.basename(musicFile))}`
+                  : '';
+                return { file: musicFile, volume, enabled, url };
+              } catch (error) {
+                logger.warn('wedding-page-data.music-failed', {
+                  slug: s,
+                  weddingId: wedding.id,
+                  errMessage: error instanceof Error ? error.message : String(error),
+                });
+                return { ...DEFAULT_MUSIC_SETTINGS };
+              }
+            })(),
+          ]);
+        },
+      );
+
+      return { stories, timeline, settings: settingsMap, music: musicSettings };
+    },
+    // Cache key parts: ['wedding-page-data', slug] → per-tenant isolation.
+    [`wedding-page-data`, slug],
+    {
+      // Same per-wedding tag as getCachedWeddingData → on-demand invalidation
+      // via revalidateTag('wedding-{slug}') busts BOTH caches atomically.
+      tags: [weddingCacheTag(slug)],
+      // Fallback revalidate: 5 minutes (matches getCachedWeddingData).
+      revalidate: 300,
+    },
+  );
+
+  return cachedFn(slug);
 }

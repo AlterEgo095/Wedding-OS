@@ -21,7 +21,7 @@ services:
     environment:
       DEPLOY_SHA: ${DEPLOY_SHA:-unknown}
       BUILD_TIME: ${BUILD_TIME:-unknown}
-      REALTIME_PUSH_TOKEN: wedding-realtime-push-token-2026
+      REALTIME_PUSH_TOKEN: 91dbaf2dd4197e9274e258ef2a9933a45bbe309c06ed587bb11c2cd360118eea
       REALTIME_SERVICE_URL: http://host.docker.internal:3006/internal/push
     ports:
       - "127.0.0.1:3080:3000"

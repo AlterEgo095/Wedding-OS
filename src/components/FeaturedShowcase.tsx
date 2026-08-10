@@ -1,9 +1,11 @@
 'use client'
 
 import { motion } from 'framer-motion'
+import type { Easing } from 'framer-motion'
 import Image from 'next/image'
 import Link from 'next/link'
 import { ArrowRight, Heart, Sparkles, Check } from 'lucide-react'
+import { useMotionTier } from '@/lib/motion/useMotionTier'
 
 /**
  * FeaturedShowcase — Platform proof-of-concept section.
@@ -64,12 +66,14 @@ function StatCard({
   label: string
   delay: number
 }) {
+  const { config: motionCfg, reduced: prefersReducedMotion, tier } = useMotionTier()
+  const isStatic = prefersReducedMotion || tier === 'none'
   return (
     <motion.div
-      initial={{ opacity: 0, y: 20 }}
-      whileInView={{ opacity: 1, y: 0 }}
-      viewport={{ once: true, amount: 0.5 }}
-      transition={{ duration: 0.5, delay }}
+      initial={isStatic ? false : { opacity: 0, y: 20 }}
+      whileInView={isStatic ? undefined : { opacity: 1, y: 0 }}
+      viewport={isStatic ? undefined : { once: true, amount: 0.5 }}
+      transition={isStatic ? { duration: 0 } : { duration: motionCfg.duration, ease: motionCfg.ease as Easing, delay }}
       className="text-center"
     >
       <div className="font-serif text-3xl sm:text-4xl md:text-5xl font-bold gold-gradient mb-1">
@@ -84,6 +88,10 @@ function StatCard({
 
 export default function FeaturedShowcase({ stats }: Props) {
   const s = stats ?? DEFAULT_STATS
+  const { config: motionCfg, reduced: prefersReducedMotion, tier } = useMotionTier()
+  // Static path: render plain divs (no motion). Layout/className/children are
+  // identical — only the animation layer is removed.
+  const isStatic = prefersReducedMotion || tier === 'none'
 
   return (
     <section
@@ -105,10 +113,10 @@ export default function FeaturedShowcase({ stats }: Props) {
       <div className="max-w-7xl mx-auto">
         {/* ═══ Eyebrow ═══ */}
         <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true }}
-          transition={{ duration: 0.6 }}
+          initial={isStatic ? false : { opacity: 0, y: 20 }}
+          whileInView={isStatic ? undefined : { opacity: 1, y: 0 }}
+          viewport={isStatic ? undefined : { once: true }}
+          transition={isStatic ? { duration: 0 } : { duration: motionCfg.duration, ease: motionCfg.ease as Easing }}
           className="flex items-center justify-center gap-3 mb-6"
         >
           <div className="w-12 sm:w-20 h-px bg-gradient-to-r from-transparent to-gold/60" />
@@ -121,10 +129,10 @@ export default function FeaturedShowcase({ stats }: Props) {
         <div className="grid lg:grid-cols-2 gap-10 lg:gap-16 items-center">
           {/* ═══ Left: Cinematic couple photo ═══ */}
           <motion.div
-            initial={{ opacity: 0, scale: 0.9 }}
-            whileInView={{ opacity: 1, scale: 1 }}
-            viewport={{ once: true, amount: 0.3 }}
-            transition={{ duration: 1, ease: [0.25, 0.46, 0.45, 0.94] }}
+            initial={isStatic ? false : { opacity: 0, scale: 0.9 }}
+            whileInView={isStatic ? undefined : { opacity: 1, scale: 1 }}
+            viewport={isStatic ? undefined : { once: true, amount: 0.3 }}
+            transition={isStatic ? { duration: 0 } : { duration: motionCfg.duration, ease: motionCfg.ease as Easing }}
             className="relative order-2 lg:order-1"
           >
             {/* Gold frame with glow */}
@@ -148,10 +156,10 @@ export default function FeaturedShowcase({ stats }: Props) {
                 {/* Bottom overlay with couple info */}
                 <div className="absolute bottom-0 left-0 right-0 p-6 sm:p-8">
                   <motion.div
-                    initial={{ opacity: 0, y: 20 }}
-                    whileInView={{ opacity: 1, y: 0 }}
-                    viewport={{ once: true }}
-                    transition={{ duration: 0.6, delay: 0.4 }}
+                    initial={isStatic ? false : { opacity: 0, y: 20 }}
+                    whileInView={isStatic ? undefined : { opacity: 1, y: 0 }}
+                    viewport={isStatic ? undefined : { once: true }}
+                    transition={isStatic ? { duration: 0 } : { duration: motionCfg.duration, ease: motionCfg.ease as Easing, delay: 0.4 }}
                   >
                     <div className="flex items-center gap-2 mb-2">
                       <Heart className="size-4 text-gold-light fill-gold-light/50" />
@@ -171,10 +179,10 @@ export default function FeaturedShowcase({ stats }: Props) {
 
               {/* Floating hashtag badge */}
               <motion.div
-                initial={{ opacity: 0, scale: 0.8, rotate: -5 }}
-                whileInView={{ opacity: 1, scale: 1, rotate: -3 }}
-                viewport={{ once: true }}
-                transition={{ duration: 0.6, delay: 0.6, type: 'spring' }}
+                initial={isStatic ? false : { opacity: 0, scale: 0.8, rotate: -5 }}
+                whileInView={isStatic ? undefined : { opacity: 1, scale: 1, rotate: -3 }}
+                viewport={isStatic ? undefined : { once: true }}
+                transition={isStatic ? { duration: 0 } : { duration: motionCfg.duration, ease: motionCfg.ease as Easing, delay: 0.6 }}
                 className="absolute -top-4 -right-4 sm:-top-6 sm:-right-6 z-10"
               >
                 <div className="bg-gradient-to-br from-gold to-gold-dark text-white px-4 py-2 rounded-full shadow-2xl shadow-gold/30">
@@ -193,10 +201,10 @@ export default function FeaturedShowcase({ stats }: Props) {
           {/* ═══ Right: Narrative + stats ═══ */}
           <div className="order-1 lg:order-2 space-y-8">
             <motion.div
-              initial={{ opacity: 0, y: 30 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true, amount: 0.3 }}
-              transition={{ duration: 0.7 }}
+              initial={isStatic ? false : { opacity: 0, y: 30 }}
+              whileInView={isStatic ? undefined : { opacity: 1, y: 0 }}
+              viewport={isStatic ? undefined : { once: true, amount: 0.3 }}
+              transition={isStatic ? { duration: 0 } : { duration: motionCfg.duration, ease: motionCfg.ease as Easing }}
             >
               <h2 className="font-serif text-3xl sm:text-4xl md:text-5xl font-bold leading-tight mb-6">
                 <span className="text-foreground">Ce mariage est </span>
@@ -225,10 +233,10 @@ export default function FeaturedShowcase({ stats }: Props) {
                 ].map((feature, i) => (
                   <motion.div
                     key={feature}
-                    initial={{ opacity: 0, x: -15 }}
-                    whileInView={{ opacity: 1, x: 0 }}
-                    viewport={{ once: true }}
-                    transition={{ duration: 0.4, delay: 0.3 + i * 0.08 }}
+                    initial={isStatic ? false : { opacity: 0, x: -15 }}
+                    whileInView={isStatic ? undefined : { opacity: 1, x: 0 }}
+                    viewport={isStatic ? undefined : { once: true }}
+                    transition={isStatic ? { duration: 0 } : { duration: motionCfg.duration, ease: motionCfg.ease as Easing, delay: 0.3 + i * 0.08 }}
                     className="flex items-center gap-2"
                   >
                     <div className="flex-shrink-0 w-5 h-5 rounded-full bg-gold/15 border border-gold/30 flex items-center justify-center">
@@ -244,10 +252,10 @@ export default function FeaturedShowcase({ stats }: Props) {
 
             {/* ═══ Stats grid ═══ */}
             <motion.div
-              initial={{ opacity: 0, y: 30 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true, amount: 0.3 }}
-              transition={{ duration: 0.7, delay: 0.3 }}
+              initial={isStatic ? false : { opacity: 0, y: 30 }}
+              whileInView={isStatic ? undefined : { opacity: 1, y: 0 }}
+              viewport={isStatic ? undefined : { once: true, amount: 0.3 }}
+              transition={isStatic ? { duration: 0 } : { duration: motionCfg.duration, ease: motionCfg.ease as Easing, delay: 0.3 }}
               className="grid grid-cols-4 gap-4 p-6 rounded-2xl glass-card gold-border"
             >
               <StatCard value={s.guestCount} label="Invités" delay={0.4} />
@@ -258,10 +266,10 @@ export default function FeaturedShowcase({ stats }: Props) {
 
             {/* ═══ CTA ═══ */}
             <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true }}
-              transition={{ duration: 0.6, delay: 0.5 }}
+              initial={isStatic ? false : { opacity: 0, y: 20 }}
+              whileInView={isStatic ? undefined : { opacity: 1, y: 0 }}
+              viewport={isStatic ? undefined : { once: true }}
+              transition={isStatic ? { duration: 0 } : { duration: motionCfg.duration, ease: motionCfg.ease as Easing, delay: 0.5 }}
               className="flex flex-col sm:flex-row gap-4"
             >
               <Link

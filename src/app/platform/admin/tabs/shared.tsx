@@ -168,6 +168,7 @@ export type TabId =
   | 'commercial'
   | 'templates'
   | 'themes'
+  | 'identities'         // Phase 2E (MISSION 5.9.0 §20.4) — Identity presets catalog
   | 'components-registry'
   | 'assets'
   | 'deployments'

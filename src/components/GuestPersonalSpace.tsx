@@ -146,11 +146,11 @@ export default function GuestPersonalSpace({ guest, settings, onLogout }: GuestP
       : brideName
         ? brideName.charAt(0).toUpperCase()
         : '')
-  const dateDisplay = settings.site_subtitle || 'Vendredi 26 Juin 2026'
-  const venueName = settings.venue_name || 'Salle Polyvalente – Grand Palais Kinshasa'
-  const venueAddress = settings.venue_address || '21 / 22 Avenue Bobozo'
-  const venueReference = settings.venue_reference || 'Réf. Hôpital AKRAM, à la diagonale du Centre TELEMA'
-  const venueTime = settings.venue_time || '21H30'
+  const dateDisplay = settings.site_subtitle || ''
+  const venueName = settings.venue_name || ''
+  const venueAddress = settings.venue_address || ''
+  const venueReference = settings.venue_reference || ''
+  const venueTime = settings.venue_time || ''
   const hashtag = settings.hashtag || ''
   const closingMessage = settings.invitation_message || 'Votre présence rendra cette célébration encore plus mémorable.'
   // Couple photo paths — settings-driven, empty fallback. The previous
@@ -356,8 +356,13 @@ export default function GuestPersonalSpace({ guest, settings, onLogout }: GuestP
     finally { setDownloading(false) }
   }, [cleanedName.displayName])
 
+  // P0-QW3: when dateDisplay is empty (no site_subtitle setting),
+  // simplify the share text instead of leaking the default wedding's
+  // "Vendredi 26 Juin 2026" into the share message.
   const shareUrl = typeof window !== 'undefined' ? window.location.href : ''
-  const shareText = `${cleanedName.shortGreeting} — Mariage de ${coupleLabel}, ${dateDisplay}`
+  const shareText = dateDisplay
+    ? `${cleanedName.shortGreeting} — Mariage de ${coupleLabel}, ${dateDisplay}`
+    : `${cleanedName.shortGreeting} — Mariage de ${coupleLabel}`
 
   const handleShare = useCallback(async (channel: 'whatsapp' | 'messenger' | 'telegram' | 'email') => {
     const encodedUrl = encodeURIComponent(shareUrl)
@@ -409,12 +414,12 @@ export default function GuestPersonalSpace({ guest, settings, onLogout }: GuestP
                   from the Settings API). next/image handles data URLs natively. */}
               {photo1Base64 && (
                 <div style={{ width: '50%', height: '100%', position: 'relative' }}>
-                  <Image src={photo1Base64} alt={groomName} fill sizes="27%vw" style={{ objectFit: 'cover', objectPosition: 'top' }} />
+                  <Image src={photo1Base64} alt={groomName} fill sizes="(max-width: 768px) 54vw, 27vw" style={{ objectFit: 'cover', objectPosition: 'top' }} />
                 </div>
               )}
               {photo2Base64 && (
                 <div style={{ width: '50%', height: '100%', position: 'relative' }}>
-                  <Image src={photo2Base64} alt={brideName} fill sizes="27%vw" style={{ objectFit: 'cover', objectPosition: 'top' }} />
+                  <Image src={photo2Base64} alt={brideName} fill sizes="(max-width: 768px) 54vw, 27vw" style={{ objectFit: 'cover', objectPosition: 'top' }} />
                 </div>
               )}
             </div>
@@ -431,7 +436,10 @@ export default function GuestPersonalSpace({ guest, settings, onLogout }: GuestP
                 {coupleLabel}
               </h1>
               <p style={{ fontSize: '10px', letterSpacing: '0.25em', textTransform: 'uppercase', color: 'rgba(166,124,61,0.65)', fontWeight: 600, marginTop: '4px', fontFamily: 'Cormorant Garamond, sans-serif' }}>
-                {dateDisplay}
+                {/* P0-QW3: conditional render — hide the date line when no
+                    site_subtitle is configured instead of leaking the default
+                    wedding's "Vendredi 26 Juin 2026". */}
+                {dateDisplay || '\u00A0'}
               </p>
             </div>
           </div>
@@ -478,31 +486,40 @@ export default function GuestPersonalSpace({ guest, settings, onLogout }: GuestP
 
             {/* ZONE 3: WEDDING INFO */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px 12px', padding: '0 2px' }}>
-              <div style={{ display: 'flex', alignItems: 'start', gap: '6px' }}>
-                <span style={{ fontSize: '14px', marginTop: '1px' }}>&#128197;</span>
-                <div>
-                  <p style={{ fontSize: '7px', letterSpacing: '0.2em', textTransform: 'uppercase', color: 'rgba(166,124,61,0.5)', fontWeight: 600, margin: 0, fontFamily: 'Cormorant Garamond, sans-serif' }}>Date</p>
-                  <p style={{ fontSize: '11px', fontWeight: 600, color: '#5C4A1E', lineHeight: 1.3, margin: 0, fontFamily: 'Playfair Display, Georgia, serif' }}>{dateDisplay}</p>
+              {/* P0-QW3: each row is conditionally rendered when its value is
+                  non-empty so we don't leak the default wedding's date/time/
+                  venue into another tenant's download card. */}
+              {dateDisplay && (
+                <div style={{ display: 'flex', alignItems: 'start', gap: '6px' }}>
+                  <span style={{ fontSize: '14px', marginTop: '1px' }}>&#128197;</span>
+                  <div>
+                    <p style={{ fontSize: '7px', letterSpacing: '0.2em', textTransform: 'uppercase', color: 'rgba(166,124,61,0.5)', fontWeight: 600, margin: 0, fontFamily: 'Cormorant Garamond, sans-serif' }}>Date</p>
+                    <p style={{ fontSize: '11px', fontWeight: 600, color: '#5C4A1E', lineHeight: 1.3, margin: 0, fontFamily: 'Playfair Display, Georgia, serif' }}>{dateDisplay}</p>
+                  </div>
                 </div>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'start', gap: '6px' }}>
-                <span style={{ fontSize: '14px', marginTop: '1px' }}>&#128336;</span>
-                <div>
-                  <p style={{ fontSize: '7px', letterSpacing: '0.2em', textTransform: 'uppercase', color: 'rgba(166,124,61,0.5)', fontWeight: 600, margin: 0, fontFamily: 'Cormorant Garamond, sans-serif' }}>Heure</p>
-                  <p style={{ fontSize: '11px', fontWeight: 600, color: '#5C4A1E', lineHeight: 1.3, margin: 0, fontFamily: 'Playfair Display, Georgia, serif' }}>{venueTime}</p>
+              )}
+              {venueTime && (
+                <div style={{ display: 'flex', alignItems: 'start', gap: '6px' }}>
+                  <span style={{ fontSize: '14px', marginTop: '1px' }}>&#128336;</span>
+                  <div>
+                    <p style={{ fontSize: '7px', letterSpacing: '0.2em', textTransform: 'uppercase', color: 'rgba(166,124,61,0.5)', fontWeight: 600, margin: 0, fontFamily: 'Cormorant Garamond, sans-serif' }}>Heure</p>
+                    <p style={{ fontSize: '11px', fontWeight: 600, color: '#5C4A1E', lineHeight: 1.3, margin: 0, fontFamily: 'Playfair Display, Georgia, serif' }}>{venueTime}</p>
+                  </div>
                 </div>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'start', gap: '6px', gridColumn: '1 / -1' }}>
-                <span style={{ fontSize: '14px', marginTop: '1px' }}>&#128205;</span>
-                <div>
-                  <p style={{ fontSize: '7px', letterSpacing: '0.2em', textTransform: 'uppercase', color: 'rgba(166,124,61,0.5)', fontWeight: 600, margin: 0, fontFamily: 'Cormorant Garamond, sans-serif' }}>Lieu</p>
-                  <p style={{ fontSize: '11px', fontWeight: 600, color: '#5C4A1E', lineHeight: 1.3, margin: 0, fontFamily: 'Playfair Display, Georgia, serif' }}>{venueName}</p>
-                  <p style={{ fontSize: '9px', color: 'rgba(122,106,74,0.55)', lineHeight: 1.3, margin: 0, fontFamily: 'Cormorant Garamond, sans-serif' }}>{venueAddress}</p>
-                  {venueReference && (
-                    <p style={{ fontSize: '8px', color: 'rgba(122,106,74,0.4)', fontStyle: 'italic', lineHeight: 1.3, margin: 0, marginTop: '2px', fontFamily: 'Cormorant Garamond, sans-serif' }}>{venueReference}</p>
-                  )}
+              )}
+              {(venueName || venueAddress || venueReference) && (
+                <div style={{ display: 'flex', alignItems: 'start', gap: '6px', gridColumn: '1 / -1' }}>
+                  <span style={{ fontSize: '14px', marginTop: '1px' }}>&#128205;</span>
+                  <div>
+                    <p style={{ fontSize: '7px', letterSpacing: '0.2em', textTransform: 'uppercase', color: 'rgba(166,124,61,0.5)', fontWeight: 600, margin: 0, fontFamily: 'Cormorant Garamond, sans-serif' }}>Lieu</p>
+                    {venueName && <p style={{ fontSize: '11px', fontWeight: 600, color: '#5C4A1E', lineHeight: 1.3, margin: 0, fontFamily: 'Playfair Display, Georgia, serif' }}>{venueName}</p>}
+                    {venueAddress && <p style={{ fontSize: '9px', color: 'rgba(122,106,74,0.55)', lineHeight: 1.3, margin: 0, fontFamily: 'Cormorant Garamond, sans-serif' }}>{venueAddress}</p>}
+                    {venueReference && (
+                      <p style={{ fontSize: '8px', color: 'rgba(122,106,74,0.4)', fontStyle: 'italic', lineHeight: 1.3, margin: 0, marginTop: '2px', fontFamily: 'Cormorant Garamond, sans-serif' }}>{venueReference}</p>
+                    )}
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
 
             {/* Gold divider */}
@@ -566,7 +583,12 @@ export default function GuestPersonalSpace({ guest, settings, onLogout }: GuestP
                 </motion.div>
                 <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.8, duration: 0.6 }} className="font-display text-[10px] tracking-[0.3em] uppercase mt-4 mb-3" style={{ color: 'rgba(139,105,20,0.5)' }}>Vous &#234;tes invit&#233;(e)</motion.p>
                 <motion.h2 initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 1.0, duration: 0.8 }} className="font-serif text-3xl sm:text-4xl font-bold mb-2" style={goldText}>{coupleLabel}</motion.h2>
-                <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 1.2, duration: 0.6 }} className="font-display text-[10px] tracking-[0.2em] uppercase mb-6" style={{ color: 'rgba(139,105,20,0.6)' }}>{dateDisplay}</motion.p>
+                {/* P0-QW3: only show the date line when dateDisplay is set
+                    (no site_subtitle) — previously leaked "Vendredi 26 Juin
+                    2026" into every tenant's envelope reveal. */}
+                {dateDisplay && (
+                  <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 1.2, duration: 0.6 }} className="font-display text-[10px] tracking-[0.2em] uppercase mb-6" style={{ color: 'rgba(139,105,20,0.6)' }}>{dateDisplay}</motion.p>
+                )}
                 {revealPhase === 'opening' && (
                   <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex items-center justify-center gap-2">
                     <motion.div animate={{ rotate: 360 }} transition={{ duration: 1.5, repeat: Infinity, ease: 'linear' }} className="w-5 h-5 border-2 rounded-full" style={{ borderColor: 'rgba(196,162,101,0.2)', borderTopColor: '#C4A265' }} />
@@ -609,12 +631,12 @@ export default function GuestPersonalSpace({ guest, settings, onLogout }: GuestP
                 <div className="absolute inset-0 flex">
                   <div className="w-1/2 h-full relative overflow-hidden">
                     {(photo1Base64 || couplePhoto1Path) ? (
-                      <Image src={(photo1Base64 || couplePhoto1Path) as string} alt={groomName} fill sizes="27%vw" className="object-cover object-top" />
+                      <Image src={(photo1Base64 || couplePhoto1Path) as string} alt={groomName} fill sizes="(max-width: 768px) 54vw, 27vw" className="object-cover object-top" />
                     ) : null}
                   </div>
                   <div className="w-1/2 h-full relative overflow-hidden">
                     {(photo2Base64 || couplePhoto2Path) ? (
-                      <Image src={(photo2Base64 || couplePhoto2Path) as string} alt={brideName} fill sizes="27%vw" className="object-cover object-top" />
+                      <Image src={(photo2Base64 || couplePhoto2Path) as string} alt={brideName} fill sizes="(max-width: 768px) 54vw, 27vw" className="object-cover object-top" />
                     ) : null}
                   </div>
                 </div>
@@ -626,7 +648,12 @@ export default function GuestPersonalSpace({ guest, settings, onLogout }: GuestP
                     <div className="h-px flex-1" style={{ background: 'linear-gradient(to right, rgba(196,162,101,0.45), transparent)' }} />
                   </div>
                   <h1 className="font-serif text-2xl sm:text-3xl md:text-[32px] font-bold leading-tight" style={goldText}>{coupleLabel}</h1>
-                  <p className="font-display text-[8px] sm:text-[10px] tracking-[0.25em] uppercase text-[#A67C3D]/65 font-semibold mt-1">{dateDisplay}</p>
+                  {/* P0-QW3: only show the date line when dateDisplay is set
+                      — previously leaked "Vendredi 26 Juin 2026" into every
+                      tenant's invitation card. */}
+                  {dateDisplay && (
+                    <p className="font-display text-[8px] sm:text-[10px] tracking-[0.25em] uppercase text-[#A67C3D]/65 font-semibold mt-1">{dateDisplay}</p>
+                  )}
                 </div>
               </div>
 
@@ -658,29 +685,38 @@ export default function GuestPersonalSpace({ guest, settings, onLogout }: GuestP
 
                 {/* ZONE 3: WEDDING INFO */}
                 <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.5, duration: 0.6 }} className="grid grid-cols-2 gap-x-3 gap-y-1.5 px-0.5">
-                  <div className="flex items-start gap-2">
-                    <Calendar className="size-3.5 text-[#C4A265]/65 shrink-0 mt-0.5" />
-                    <div>
-                      <p className="font-display text-[7px] tracking-[0.2em] uppercase text-[#A67C3D]/50 font-semibold">Date</p>
-                      <p className="font-serif text-[10px] sm:text-[11px] font-semibold text-[#5C4A1E] leading-tight">{dateDisplay}</p>
+                  {/* P0-QW3: each row is conditionally rendered when its value
+                      is non-empty so we don't leak the default wedding's
+                      date/time/venue into another tenant's invitation card. */}
+                  {dateDisplay && (
+                    <div className="flex items-start gap-2">
+                      <Calendar className="size-3.5 text-[#C4A265]/65 shrink-0 mt-0.5" />
+                      <div>
+                        <p className="font-display text-[7px] tracking-[0.2em] uppercase text-[#A67C3D]/50 font-semibold">Date</p>
+                        <p className="font-serif text-[10px] sm:text-[11px] font-semibold text-[#5C4A1E] leading-tight">{dateDisplay}</p>
+                      </div>
                     </div>
-                  </div>
-                  <div className="flex items-start gap-2">
-                    <Clock className="size-3.5 text-[#C4A265]/65 shrink-0 mt-0.5" />
-                    <div>
-                      <p className="font-display text-[7px] tracking-[0.2em] uppercase text-[#A67C3D]/50 font-semibold">Heure</p>
-                      <p className="font-serif text-[10px] sm:text-[11px] font-semibold text-[#5C4A1E] leading-tight">{venueTime}</p>
+                  )}
+                  {venueTime && (
+                    <div className="flex items-start gap-2">
+                      <Clock className="size-3.5 text-[#C4A265]/65 shrink-0 mt-0.5" />
+                      <div>
+                        <p className="font-display text-[7px] tracking-[0.2em] uppercase text-[#A67C3D]/50 font-semibold">Heure</p>
+                        <p className="font-serif text-[10px] sm:text-[11px] font-semibold text-[#5C4A1E] leading-tight">{venueTime}</p>
+                      </div>
                     </div>
-                  </div>
-                  <div className="flex items-start gap-2 col-span-2">
-                    <MapPin className="size-3.5 text-[#C4A265]/65 shrink-0 mt-0.5" />
-                    <div>
-                      <p className="font-display text-[7px] tracking-[0.2em] uppercase text-[#A67C3D]/50 font-semibold">Lieu</p>
-                      <p className="font-serif text-[10px] sm:text-[11px] font-semibold text-[#5C4A1E] leading-tight">{venueName}</p>
-                      <p className="font-display text-[8px] sm:text-[9px] text-[#7A6A4A]/55 leading-tight">{venueAddress}</p>
-                      {venueReference && <p className="font-display text-[7px] sm:text-[8px] text-[#7A6A4A]/40 italic leading-tight mt-0.5">{venueReference}</p>}
+                  )}
+                  {(venueName || venueAddress || venueReference) && (
+                    <div className="flex items-start gap-2 col-span-2">
+                      <MapPin className="size-3.5 text-[#C4A265]/65 shrink-0 mt-0.5" />
+                      <div>
+                        <p className="font-display text-[7px] tracking-[0.2em] uppercase text-[#A67C3D]/50 font-semibold">Lieu</p>
+                        {venueName && <p className="font-serif text-[10px] sm:text-[11px] font-semibold text-[#5C4A1E] leading-tight">{venueName}</p>}
+                        {venueAddress && <p className="font-display text-[8px] sm:text-[9px] text-[#7A6A4A]/55 leading-tight">{venueAddress}</p>}
+                        {venueReference && <p className="font-display text-[7px] sm:text-[8px] text-[#7A6A4A]/40 italic leading-tight mt-0.5">{venueReference}</p>}
+                      </div>
                     </div>
-                  </div>
+                  )}
                 </motion.div>
 
                 <div className="h-px w-full" style={{ background: 'linear-gradient(to right, transparent, rgba(196,162,101,0.25) 30%, rgba(196,162,101,0.25) 70%, transparent)' }} />

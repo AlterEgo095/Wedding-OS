@@ -81,6 +81,13 @@ const TENANT_SCOPED_MODELS = new Set<string>([
   'GuestGroup',
   'Gift',
   'ProgramItem',
+  // P5.3-3 (audit-A P1-ISO-3): GuestbookEntry is wedding-scoped (weddingId is
+  // non-null on the model). Previously omitted from this set as a latent risk —
+  // no production route used `tenantDb.guestbookEntry.*` outside a tenant
+  // context, so the omission was safe in practice. Adding it now closes the
+  // latent gap: any future route that forgets runWithTenant() will fail-closed
+  // instead of silently querying across all weddings.
+  'GuestbookEntry',
 ]);
 
 // Operations that accept a `where` clause for filtering (read + bulk write).

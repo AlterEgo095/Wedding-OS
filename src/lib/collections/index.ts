@@ -105,6 +105,11 @@ export interface CollectionModulePublic {
   sortOrder: number
 }
 
+// Adds an optional `reason` field on missingSlots items so the admin UI / error
+// message can surface actionable feedback per missing slot (e.g. "Aucune liaison
+// de données ni frame Penpot" vs "Liaison de données invalide (JSON vide ou mal
+// formé)"). Optional → backward compatible (existing callers that don't read
+// `reason` are unaffected).
 export interface CompletenessReport {
   collectionId: string
   collectionSlug: string
@@ -113,8 +118,17 @@ export interface CompletenessReport {
   filled: number
   missing: number
   complete: boolean
-  byPack: Record<ModulePack, { total: number; filled: number; missing: number; complete: boolean }>
-  missingSlots: Array<{ pack: ModulePack; slot: string; label: string }>
+  byPack: Record<
+    ModulePack,
+    { total: number; filled: number; missing: number; complete: boolean }
+  >
+  missingSlots: Array<{
+    pack: ModulePack
+    slot: string
+    label: string
+    /** P3-B: human-readable explanation of WHY the slot is missing. */
+    reason?: string
+  }>
 }
 
 /**
@@ -693,10 +707,26 @@ export async function ensureCollectionsSeeded(): Promise<void> {
   for (const seed of COLLECTION_SEEDS) {
     const existing = await db.collection.findUnique({
       where: { slug: seed.slug },
-      select: { id: true },
+      select: { id: true, themeId: true },
     })
 
     if (existing) {
+      // ─── MISSION 5.9.2 P1 — backfill themeId on existing Collections ─────────
+      // Resolves the PlatformTheme by slug and links it. Idempotent — only sets
+      // themeId if currently null. Legacy Collections with no matching theme
+      // slug stay null (zero regression — they keep using their themeSeed JSON).
+      if (!existing.themeId) {
+        const matchingTheme = await db.platformTheme.findUnique({
+          where: { slug: seed.slug },
+          select: { id: true },
+        })
+        if (matchingTheme) {
+          await db.collection.update({
+            where: { id: existing.id },
+            data: { themeId: matchingTheme.id },
+          })
+        }
+      }
       // Phase 2 backfill: ensure the 34 module slots exist for Collections seeded
       // before Phase 2 (e.g. Royal Gold from Phase 1, 11 others from Phase 3).
       // Idempotent — only creates slots that are missing.
@@ -732,9 +762,19 @@ export async function ensureCollectionsSeeded(): Promise<void> {
 
     const { fileId, pageId } = { fileId: null, pageId: null }
 
+    // ─── MISSION 5.9.2 P1 — link new Collection to its PlatformTheme ────────
+    // Resolves the PlatformTheme by slug. When the migration seed has been run,
+    // every Collection seed slug matches a PlatformTheme slug, so themeId is
+    // always set on new Collections. Falls back to null (legacy) if no match.
+    const matchingThemeForCreate = await db.platformTheme.findUnique({
+      where: { slug: seed.slug },
+      select: { id: true },
+    })
+
     await db.collection.create({
       data: {
         slug: seed.slug,
+        themeId: matchingThemeForCreate?.id ?? null,
         name: seed.name,
         description: seed.description,
         thumbnailUrl: seed.thumbnailUrl,
@@ -1211,6 +1251,27 @@ export async function updateModule(params: {
  * Note: Pack 5 (LUXURY) is data-only and validated separately via the
  * Collection.luxuryPreset field — not included in this report's `total`.
  */
+/**
+ * Completeness validation per §4.8 of the spec.
+ *
+ * P3-B SEMANTIC SHIFT: A Collection is "complete" when every module slot has
+ * SOMETHING to render — not necessarily a Penpot frame. Since Penpot was
+ * removed from the platform (P4-penpot), the gate now accepts ANY of:
+ *
+ *   1. dataBindings JSON is non-empty AND valid (semantic data binding, Mission
+ *      5.7.1) — accepts a non-empty array OR a non-empty object after JSON.parse.
+ *   2. OR frameId is still set (backward compat — legacy Collections with
+ *      Penpot frames still pass).
+ *   3. OR componentId is set (future-proof — picked up automatically if a
+ *      future migration adds the field to CollectionModule).
+ *
+ * Returns a detailed report: total/filled/missing counts, per-pack breakdown,
+ * and the list of missing slots (with a `reason` explaining WHY each is missing
+ * so the admin UI / error message can give actionable feedback).
+ *
+ * Note: Pack 5 (LUXURY) is data-only and validated separately via the
+ * Collection.luxuryPreset field — not included in this report's `total`.
+ */
 export async function validateCompleteness(
   collectionId: string
 ): Promise<CompletenessReport> {
@@ -1229,15 +1290,15 @@ export async function validateCompleteness(
     orderBy: { sortOrder: 'asc' },
   })
 
-  // Build per-pack breakdown
+  // Build per-pack breakdown — uses the new component-presence check.
   const packs: ModulePack[] = ['WEBSITE', 'INVITATIONS', 'PRINT', 'COMMUNICATION']
   const byPack = {} as CompletenessReport['byPack']
   const missingSlots: CompletenessReport['missingSlots'] = []
 
   for (const pack of packs) {
     const packModules = modules.filter((m) => m.pack === pack)
-    const filled = packModules.filter((m) => m.frameId !== null && m.frameId !== '')
-    const missing = packModules.filter((m) => !m.frameId || m.frameId === '')
+    const filled = packModules.filter((m) => isModuleComplete(m))
+    const missing = packModules.filter((m) => !isModuleComplete(m))
     byPack[pack] = {
       total: packModules.length,
       filled: filled.length,
@@ -1245,12 +1306,17 @@ export async function validateCompleteness(
       complete: missing.length === 0 && packModules.length > 0,
     }
     for (const m of missing) {
-      missingSlots.push({ pack: m.pack as ModulePack, slot: m.slot, label: m.label })
+      missingSlots.push({
+        pack: m.pack as ModulePack,
+        slot: m.slot,
+        label: m.label,
+        reason: describeMissingReason(m),
+      })
     }
   }
 
   const total = modules.length
-  const filled = modules.filter((m) => m.frameId !== null && m.frameId !== '').length
+  const filled = modules.filter((m) => isModuleComplete(m)).length
 
   return {
     collectionId: collection.id,
@@ -1263,6 +1329,119 @@ export async function validateCompleteness(
     byPack,
     missingSlots,
   }
+}
+
+/**
+ * Returns a human-readable summary of what's missing in the Collection's
+ * completeness report. Designed to be embedded in the 422 error message thrown
+ * by `transitionCollection` so the admin gets actionable feedback instead of a
+ * generic "Tous les 34 slots doivent être associés à un frame Penpot".
+ *
+ * Examples:
+ *   • "3 slots manquants: WEBSITE/hero (aucune liaison de données ni frame
+ *      Penpot), INVITATIONS/vip (aucune liaison de données ni frame Penpot),
+ *      PRINT/badge (aucune liaison de données ni frame Penpot)"
+ *   • "1 slot manquant: COMMUNICATION/email (liaison de données invalide
+ *      (JSON vide ou mal formé))"
+ *   • "Aucun slot manquant"  (when report.complete === true)
+ *   • ""                    (when report.total === 0 — empty Collection)
+ *
+ * Caps the inline listing at 10 slots to keep the error message short; further
+ * missing slots are summarized as "+N autres".
+ */
+
+/**
+ * Component-presence check. A module slot is "complete" when it has ANY way to
+ * render something — either a Penpot frame (legacy), a semantic data binding
+ * (Mission 5.7.1), or a future componentId. See the header comment of
+ * validateCompleteness for the full rationale.
+ *
+ * Gracefully handles null/undefined/empty-string/`{}`/`[]`/`null`/invalid-JSON
+ * inputs (any of these → returns false, the slot is considered missing).
+ *
+ * The `componentId` field is optional on the parameter type so this function is
+ * future-proof: if a future migration adds a `componentId` column to
+ * CollectionModule, this branch picks it up automatically with no code change.
+ */
+function isModuleComplete(m: {
+  frameId?: string | null
+  dataBindings?: string | null
+  componentId?: string | null
+}): boolean {
+  // 1. frameId set (backward compat — legacy Penpot frames).
+  if (typeof m.frameId === "string" && m.frameId.trim() !== "") return true
+
+  // 2. componentId set (future-proof — if the field exists on the row).
+  if (typeof m.componentId === "string" && m.componentId.trim() !== "") return true
+
+  // 3. dataBindings JSON is non-empty AND valid (semantic data binding).
+  if (typeof m.dataBindings === "string" && m.dataBindings.trim() !== "") {
+    const raw = m.dataBindings.trim()
+    // Reject the obvious empty JSON values up-front (cheap string compare).
+    if (raw !== "{}" && raw !== "[]" && raw !== "null") {
+      try {
+        const parsed: unknown = JSON.parse(raw)
+        // Non-empty array.
+        if (Array.isArray(parsed) && parsed.length > 0) return true
+        // Non-empty object (typeof null === object → guard with !== null).
+        if (
+          typeof parsed === "object" &&
+          parsed !== null &&
+          Object.keys(parsed).length > 0
+        ) {
+          return true
+        }
+        // parsed is a valid JSON scalar (string/number/boolean) → treat as
+        // incomplete. A bare scalar is not a meaningful data binding.
+      } catch {
+        // Invalid JSON → fall through (treat as incomplete).
+      }
+    }
+  }
+
+  return false
+}
+
+/**
+ * Returns a French-language reason string explaining WHY a given module slot
+ * ended up in the missing list. Called only on slots for which `isModuleComplete`
+ * returned false, so by definition:
+ *   • frameId is empty/missing (otherwise isModuleComplete would have returned
+ *     true via the frameId branch).
+ *   • componentId (if present) is empty/missing.
+ *
+ * The remaining diagnostic question is: was a dataBindings value provided?
+ *   • No  → "aucune liaison de données ni frame Penpot"
+ *   • Yes → "liaison de données invalide (JSON vide ou mal formé)"
+ */
+function describeMissingReason(m: {
+  frameId?: string | null
+  dataBindings?: string | null
+}): string {
+  const hasBindings =
+    typeof m.dataBindings === "string" && m.dataBindings.trim() !== ""
+
+  if (!hasBindings) {
+    return "aucune liaison de données ni frame Penpot"
+  }
+  // dataBindings was provided but isModuleComplete still returned false →
+  // the JSON failed to parse, or was {}/[]/null/a bare scalar.
+  return "liaison de données invalide (JSON vide ou mal formé)"
+}
+
+export function describeCompletenessGap(report: CompletenessReport): string {
+  if (report.total === 0) return ''
+  if (report.missingSlots.length === 0) return 'Aucun slot manquant'
+
+  const n = report.missingSlots.length
+  const head = `${n} slot${n > 1 ? 's' : ''} manquant${n > 1 ? 's' : ''}`
+  const shown = report.missingSlots.slice(0, 10)
+  const tail = shown
+    .map((s) => `${s.pack}/${s.slot} (${s.reason ?? 'configuration manquante'})`)
+    .join(', ')
+  const more =
+    n > 10 ? `, +${n - 10} autre${n - 10 > 1 ? 's' : ''}` : ''
+  return `${head}: ${tail}${more}`
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -1417,8 +1596,8 @@ export async function transitionCollection(params: {
     const report = await validateCompleteness(collectionId)
     if (!report.complete) {
       throw new ApplyError(
-        `Complétude insuffisante: ${report.filled}/${report.total} slots mappés. ` +
-          `Tous les 34 slots doivent être associés à un frame Penpot avant ${to === 'VALIDATION' ? 'soumission' : 'publication'}.`,
+        `Complétude insuffisante: ${report.filled}/${report.total} slots prêts. ` +
+          describeCompletenessGap(report),
         422
       )
     }
@@ -1711,3 +1890,4 @@ export async function autoMapModules(
 // penpotFileId, penpotTokenId) remain on the Collection model for backward
 // compatibility with existing rows, but are no longer populated or read by
 // the application code.
+

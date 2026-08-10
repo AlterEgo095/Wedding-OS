@@ -2,9 +2,11 @@
 
 import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
+import type { Easing } from 'framer-motion'
 import { X, Heart, Gem, Users, Hash, Ticket, Quote } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import Image from 'next/image'
+import { useMotionTier } from '@/lib/motion/useMotionTier'
 
 interface InvitationCardProps {
   guestName: string
@@ -114,6 +116,10 @@ export default function InvitationCard({
 }: InvitationCardProps) {
   const catConfig = categoryConfig[category] || categoryConfig.AMIS
   const [settings, setSettings] = useState<Record<string, string>>({})
+  const { config: motionCfg, reduced: prefersReducedMotion, tier } = useMotionTier()
+  // Static path: render plain divs (no motion). Layout/className/children are
+  // identical — only the animation layer is removed.
+  const isStatic = prefersReducedMotion || tier === 'none'
 
   useEffect(() => {
     fetch('/api/settings')
@@ -148,18 +154,18 @@ export default function InvitationCard({
 
   return (
     <motion.div
-      initial={{ opacity: 0, scale: 0.92, y: 20 }}
-      animate={{ opacity: 1, scale: 1, y: 0 }}
-      exit={{ opacity: 0, scale: 0.95, y: 10 }}
-      transition={{ duration: 0.7, ease: "easeOut" }}
+      initial={isStatic ? false : { opacity: 0, scale: 0.92, y: 20 }}
+      animate={isStatic ? undefined : { opacity: 1, scale: 1, y: 0 }}
+      exit={isStatic ? undefined : { opacity: 0, scale: 0.95, y: 10 }}
+      transition={isStatic ? { duration: 0 } : { duration: motionCfg.duration, ease: motionCfg.ease as Easing }}
       className="relative flex items-center justify-center p-4 md:p-6"
     >
       {/* Close button */}
       {onClose && (
         <motion.button
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.5 }}
+          initial={isStatic ? false : { opacity: 0 }}
+          animate={isStatic ? undefined : { opacity: 1 }}
+          transition={isStatic ? { duration: 0 } : { delay: 0.5, duration: motionCfg.duration, ease: motionCfg.ease as Easing }}
           onClick={onClose}
           className="absolute -top-2 -right-2 md:top-2 md:right-2 z-20 w-9 h-9 rounded-full bg-background/80 dark:bg-background/60 backdrop-blur-sm border border-gold/20 flex items-center justify-center text-muted-foreground hover:text-foreground hover:border-gold/40 transition-all shadow-md"
           aria-label="Fermer l'invitation"
@@ -251,10 +257,10 @@ export default function InvitationCard({
               'linear-gradient(105deg, transparent 40%, oklch(0.82 0.08 85 / 12%) 45%, oklch(0.82 0.08 85 / 6%) 50%, transparent 55%)',
             backgroundSize: '200% 100%',
           }}
-          animate={{
+          animate={isStatic ? undefined : {
             backgroundPosition: ['200% 0', '-200% 0'],
           }}
-          transition={{
+          transition={isStatic ? undefined : {
             duration: 4,
             repeat: Infinity,
             ease: 'linear',
@@ -267,9 +273,9 @@ export default function InvitationCard({
 
           {/* ─── TOP: ORNAMENTAL FLOURISH ─── */}
           <motion.div
-            initial={{ opacity: 0, y: -10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.3, duration: 0.8 }}
+            initial={isStatic ? false : { opacity: 0, y: -10 }}
+            animate={isStatic ? undefined : { opacity: 1, y: 0 }}
+            transition={isStatic ? { duration: 0 } : { delay: 0.3, duration: motionCfg.duration, ease: motionCfg.ease as Easing }}
             className="flourish"
           >
             <OrnamentalFlourish />
@@ -277,17 +283,17 @@ export default function InvitationCard({
 
           {/* ─── "VOUS ÊTES INVITÉ(E)" ─── */}
           <motion.p
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.5, duration: 0.8 }}
+            initial={isStatic ? false : { opacity: 0, y: 10 }}
+            animate={isStatic ? undefined : { opacity: 1, y: 0 }}
+            transition={isStatic ? { duration: 0 } : { delay: 0.5, duration: motionCfg.duration, ease: motionCfg.ease as Easing }}
             className="font-display text-sm md:text-base tracking-[0.25em] uppercase text-muted-foreground mt-3"
           >
             {coupleLabel} ont l&apos;honneur
           </motion.p>
           <motion.p
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.6, duration: 0.8 }}
+            initial={isStatic ? false : { opacity: 0, y: 10 }}
+            animate={isStatic ? undefined : { opacity: 1, y: 0 }}
+            transition={isStatic ? { duration: 0 } : { delay: 0.6, duration: motionCfg.duration, ease: motionCfg.ease as Easing }}
             className="font-display text-xs md:text-sm tracking-[0.15em] text-muted-foreground/70"
           >
             de vous inviter à leur célébration de mariage
@@ -295,15 +301,15 @@ export default function InvitationCard({
 
           {/* ─── COUPLE PHOTOS (overlapping circles) ─── */}
           <motion.div
-            initial={{ opacity: 0, scale: 0.8 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ delay: 0.7, duration: 0.6, ease: "easeOut" }}
+            initial={isStatic ? false : { opacity: 0, scale: 0.8 }}
+            animate={isStatic ? undefined : { opacity: 1, scale: 1 }}
+            transition={isStatic ? { duration: 0 } : { delay: 0.7, duration: motionCfg.duration, ease: motionCfg.ease as Easing }}
             className="relative flex items-center mt-5 mb-4"
           >
             {/* Photo 1 (left, slightly behind) */}
             <motion.div
-              animate={{ y: [0, -3, 0] }}
-              transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut', delay: 0 }}
+              animate={isStatic ? undefined : { y: [0, -3, 0] }}
+              transition={isStatic ? undefined : { duration: 4, repeat: Infinity, ease: 'easeInOut', delay: 0 }}
               className="relative z-[1] -mr-5"
             >
               <div className="w-16 h-16 md:w-20 md:h-20 rounded-full overflow-hidden ring-2 ring-gold/40 shadow-lg shadow-gold/10">
@@ -320,8 +326,8 @@ export default function InvitationCard({
             </motion.div>
             {/* Photo 2 (right, slightly in front) */}
             <motion.div
-              animate={{ y: [0, -3, 0] }}
-              transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut', delay: 1 }}
+              animate={isStatic ? undefined : { y: [0, -3, 0] }}
+              transition={isStatic ? undefined : { duration: 4, repeat: Infinity, ease: 'easeInOut', delay: 1 }}
               className="relative z-[2]"
             >
               <div className="w-16 h-16 md:w-20 md:h-20 rounded-full overflow-hidden ring-2 ring-rose-gold/40 shadow-lg shadow-rose-gold/10">
@@ -340,9 +346,9 @@ export default function InvitationCard({
 
           {/* ─── COUPLE NAMES ─── */}
           <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.9, duration: 0.8 }}
+            initial={isStatic ? false : { opacity: 0, y: 10 }}
+            animate={isStatic ? undefined : { opacity: 1, y: 0 }}
+            transition={isStatic ? { duration: 0 } : { delay: 0.9, duration: motionCfg.duration, ease: motionCfg.ease as Easing }}
           >
             {groomName && brideName ? (
               <h2 className="font-serif text-2xl md:text-3xl font-bold">
@@ -361,9 +367,9 @@ export default function InvitationCard({
 
           {/* ─── ORNAMENTAL DIVIDER ─── */}
           <motion.div
-            initial={{ opacity: 0, scaleX: 0 }}
-            animate={{ opacity: 1, scaleX: 1 }}
-            transition={{ delay: 1.1, duration: 0.6 }}
+            initial={isStatic ? false : { opacity: 0, scaleX: 0 }}
+            animate={isStatic ? undefined : { opacity: 1, scaleX: 1 }}
+            transition={isStatic ? { duration: 0 } : { delay: 1.1, duration: motionCfg.duration, ease: motionCfg.ease as Easing }}
             className="w-full mt-4 mb-3"
           >
             <SmallDivider />
@@ -371,9 +377,9 @@ export default function InvitationCard({
 
           {/* ─── GUEST NAME ─── */}
           <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 1.2, duration: 0.6 }}
+            initial={isStatic ? false : { opacity: 0, y: 10 }}
+            animate={isStatic ? undefined : { opacity: 1, y: 0 }}
+            transition={isStatic ? { duration: 0 } : { delay: 1.2, duration: motionCfg.duration, ease: motionCfg.ease as Easing }}
             className="mb-2"
           >
             <p className="font-display text-xs tracking-[0.2em] uppercase text-muted-foreground/70 mb-1">
@@ -386,9 +392,9 @@ export default function InvitationCard({
 
           {/* ─── TABLE & SEATS INFO ─── */}
           <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 1.35, duration: 0.6 }}
+            initial={isStatic ? false : { opacity: 0, y: 10 }}
+            animate={isStatic ? undefined : { opacity: 1, y: 0 }}
+            transition={isStatic ? { duration: 0 } : { delay: 1.35, duration: motionCfg.duration, ease: motionCfg.ease as Easing }}
             className="flex flex-col items-center gap-1.5 mb-3"
           >
             <div className="flex items-center gap-1.5 text-sm font-display text-foreground/80">
@@ -406,9 +412,9 @@ export default function InvitationCard({
 
           {/* ─── CATEGORY BADGE & INVITATION CODE ─── */}
           <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 1.5, duration: 0.6 }}
+            initial={isStatic ? false : { opacity: 0, y: 10 }}
+            animate={isStatic ? undefined : { opacity: 1, y: 0 }}
+            transition={isStatic ? { duration: 0 } : { delay: 1.5, duration: motionCfg.duration, ease: motionCfg.ease as Easing }}
             className="flex flex-wrap items-center justify-center gap-2 mb-3"
           >
             <Badge
@@ -427,9 +433,9 @@ export default function InvitationCard({
           {/* ─── PERSONAL MESSAGE ─── */}
           {personalMessage && (
             <motion.div
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 1.65, duration: 0.6 }}
+              initial={isStatic ? false : { opacity: 0, y: 10 }}
+              animate={isStatic ? undefined : { opacity: 1, y: 0 }}
+              transition={isStatic ? { duration: 0 } : { delay: 1.65, duration: motionCfg.duration, ease: motionCfg.ease as Easing }}
               className="w-full mt-1 mb-2"
             >
               <div className="relative px-4 py-3 rounded-lg bg-gold/[0.04] dark:bg-gold/[0.06] border border-gold/10">
@@ -449,9 +455,9 @@ export default function InvitationCard({
 
           {/* ─── BOTTOM SECTION ─── */}
           <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 1.8, duration: 0.6 }}
+            initial={isStatic ? false : { opacity: 0, y: 10 }}
+            animate={isStatic ? undefined : { opacity: 1, y: 0 }}
+            transition={isStatic ? { duration: 0 } : { delay: 1.8, duration: motionCfg.duration, ease: motionCfg.ease as Easing }}
             className="w-full flex flex-col items-center"
           >
             {/* Date */}
@@ -498,8 +504,8 @@ export default function InvitationCard({
             {/* Couple photo watermark/accent */}
             {couplePhoto1Path && (
               <motion.div
-                animate={{ y: [0, -2, 0] }}
-                transition={{ duration: 5, repeat: Infinity, ease: 'easeInOut' }}
+                animate={isStatic ? undefined : { y: [0, -2, 0] }}
+                transition={isStatic ? undefined : { duration: 5, repeat: Infinity, ease: 'easeInOut' }}
                 className="relative opacity-30 dark:opacity-20"
               >
                 <div className="w-10 h-10 rounded-full overflow-hidden ring-1 ring-gold/20">

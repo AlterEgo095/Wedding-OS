@@ -2,6 +2,17 @@ import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { verifyCsrf, CSRF_EXEMPT_PATHS } from '@/lib/csrf'
 import { isCustomDomainRequest } from '@/lib/custom-domains'
+// Phase 4C — auto-expiry check for impersonation sessions.
+// `decodeImpersonationToken` is a pure-JS base64 decode (NO signature
+// verification — see the security note on the function). It's safe to call
+// from middleware regardless of runtime (Edge or Node).
+// Imported from impersonation-edge.ts (NOT auth.ts) to avoid pulling
+// node:crypto/node:os into the Edge Runtime.
+import {
+  decodeImpersonationToken,
+  IMPERSONATION_COOKIE_NAME,
+  isImpersonationExpired,
+} from '@/lib/impersonation-edge'
 
 // Middleware handles:
 //   1. HTTPS redirect in production (defense-in-depth)
@@ -292,12 +303,127 @@ export async function middleware(request: NextRequest) {
     }
   }
 
+  // ─── Phase 4C — Impersonation session auto-expiry ──────────────────────
+  // On EVERY request, check the httpOnly `impersonation_session` cookie.
+  // If it's present AND the embedded `expiresAt` has elapsed (30-min hard
+  // limit), we auto-cleanup:
+  //   1. Restore the `auth_token` cookie from the embedded `originalToken`
+  //      (the admin's pre-impersonation JWT — still valid for 8h).
+  //   2. Clear the `impersonation_session` cookie.
+  //   3. Redirect navigations to /platform/admin?impersonation_expired=1
+  //      OR return a 401 JSON for API requests (so the client can re-auth).
+  //
+  // SECURITY: `decodeImpersonationToken` does NOT verify the JWT signature
+  // (Edge runtime doesn't load JWT_SECRET). The originalToken restored
+  // here is itself a signed JWT — server-side `getAuthUser()` verifies
+  // its signature on the next request. A tampered impersonation_session
+  // cookie thus self-DoSes the user (originalToken won't verify →
+  // redirected to login) with NO privilege escalation. See the security
+  // note on `decodeImpersonationToken` in src/lib/auth.ts.
+  //
+  // Skip the check entirely for the impersonate endpoints themselves:
+  //   - POST /api/platform/impersonate      (start) — sets a NEW cookie
+  //   - POST /api/platform/impersonate/stop (stop)  — clears the cookie
+  //   - GET  /api/platform/impersonate/status — returns expired state
+  // Otherwise the auto-cleanup would race with the stop endpoint (which
+  // also clears the cookie + restores the originalToken).
+  const isImpersonateRoute =
+    url.pathname === '/api/platform/impersonate' ||
+    url.pathname === '/api/platform/impersonate/stop' ||
+    url.pathname === '/api/platform/impersonate/status';
+  if (!isImpersonateRoute) {
+    const impersonationCookie = request.cookies.get(IMPERSONATION_COOKIE_NAME)?.value;
+    if (impersonationCookie) {
+      const payload = decodeImpersonationToken(impersonationCookie);
+      if (payload && isImpersonationExpired(payload)) {
+        // ── Auto-cleanup: restore + clear + redirect ──────────────────
+        // Restore the admin's original auth_token. The originalToken is a
+        // signed JWT captured at impersonation start (still valid 8h).
+        const restoredResponse = url.pathname.startsWith('/api/')
+          ? NextResponse.json(
+              { error: "Session d'impersonation expirée", impersonationExpired: true },
+              { status: 401 },
+            )
+          : NextResponse.redirect(
+              new URL('/platform/admin?impersonation_expired=1', url),
+            );
+        restoredResponse.cookies.set('auth_token', payload.originalToken, {
+          httpOnly: true,
+          secure: process.env.NODE_ENV === 'production',
+          sameSite: 'strict',
+          path: '/',
+          maxAge: 8 * 60 * 60, // 8h — matches generateToken's JWT expiry
+        });
+        restoredResponse.cookies.delete(IMPERSONATION_COOKIE_NAME);
+        // Preserve the security headers that would otherwise be applied
+        // by the `NextResponse.next()` path below.
+        restoredResponse.headers.set('X-Content-Type-Options', 'nosniff');
+        restoredResponse.headers.set('X-Frame-Options', 'SAMEORIGIN');
+        restoredResponse.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
+        return restoredResponse;
+      }
+      // If payload is null (malformed cookie), let the request through —
+      // the stop endpoint + status endpoint will handle cleanup. The
+      // auth_token cookie alone is enough for normal auth flow.
+    }
+  }
+
   const response = NextResponse.next();
 
   // ─── Defense-in-depth security headers ───────────────────────────────────
   response.headers.set('X-Content-Type-Options', 'nosniff');
   response.headers.set('X-Frame-Options', 'SAMEORIGIN');
   response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
+
+  // ─── P5.3-4 (audit-A + audit-F M-4): Cache-Control + Vary headers ────────
+  //
+  // Two concerns addressed:
+  //
+  // 1. CDN cross-wedding contamination (audit-A): without `Vary: Host`, a CDN
+  //    could serve a cached response from wedding A (on wedding.hpph.net) to a
+  //    visitor of wedding B (on mariage-sophie.fr) if both resolve to the same
+  //    /w/[slug] path. Adding `Vary: Host` forces CDNs to keep separate cache
+  //    entries per Host header. `Vary: Accept-Encoding` is the standard
+  //    companion (prevents serving a Brotli response to a gzip-only client).
+  //    `Vary: X-White-Label` ensures white-label vs platform responses are
+  //    cached separately (the same wedding renders differently on its custom
+  //    domain vs the default platform domain due to ThemeInjector).
+  //
+  // 2. Authenticated content caching (audit-F M-4): admin routes
+  //    (/platform/*, /w/[slug]/admin/*) MUST NOT be cached by any shared cache.
+  //    They render user-specific data (admin names, KPIs, audit logs) that must
+  //    never leak between users. `Cache-Control: private, no-store,
+  //    must-revalidate` is the strongest possible directive.
+  //
+  // Public wedding pages (/w/[slug] non-admin) use ISR with `revalidate = 300`
+  // — Next.js sets appropriate `Cache-Control: s-maxage=300,
+  // stale-while-revalidate=300` automatically. We DON'T override that here; we
+  // only append Vary headers to make CDN caching safe.
+  // P5.3-4 note: Next.js 16 middleware's `headers.append()` for `Vary` does
+  // not reliably propagate to the final response (Next.js overwrites Vary with
+  // its own RSC-related values: `rsc, next-router-state-tree, ...`). Using
+  // `set()` with a comma-joined string ensures our CDN-safety directives are
+  // present as a distinct Vary header line (HTTP allows multiple Vary headers;
+  // the effective meaning is the union of all values).
+  response.headers.set('Vary', 'Host, Accept-Encoding, X-White-Label');
+
+  const isAdminOrAuthRoute =
+    url.pathname.startsWith('/platform') ||
+    url.pathname.startsWith('/admin') ||
+    url.pathname.includes('/admin/') ||
+    url.pathname.startsWith('/api/admin') ||
+    url.pathname.startsWith('/api/platform') ||
+    url.pathname.startsWith('/api/org') ||
+    url.pathname.startsWith('/api/auth') ||
+    url.pathname.startsWith('/api/guest/me') ||
+    url.pathname.startsWith('/api/onboarding');
+
+  if (isAdminOrAuthRoute) {
+    response.headers.set(
+      'Cache-Control',
+      'private, no-store, must-revalidate'
+    );
+  }
 
   return response;
 }

@@ -25,6 +25,7 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import { Skeleton } from '@/components/ui/skeleton'
+import { MotionReveal } from '@/components/premium/MotionReveal'
 
 /* ─── Types ─── */
 interface TimelineEvent {
@@ -546,7 +547,7 @@ export default function EventTimeline({ events }: { events: TimelineEvent[] }) {
       {/* Floating sparkles */}
       <FloatingParticles />
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
+      <MotionReveal preset="fade-up" className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
         {/* ─── Section Header ─── */}
         <motion.div
           initial={{ opacity: 0, y: 40 }}
@@ -680,7 +681,7 @@ export default function EventTimeline({ events }: { events: TimelineEvent[] }) {
             </div>
           </motion.div>
         </div>
-      </div>
+      </MotionReveal>
     </section>
   )
 }

@@ -51,10 +51,24 @@ export function useGuestAuth() {
   return useContext(GuestAuthContext)
 }
 
-export function GuestAuthProvider({ children }: { children: ReactNode }) {
+export function GuestAuthProvider({ children, preview }: { children: ReactNode; preview?: boolean }) {
+  // Phase 4A (MISSION 5.9.0 §20.6) — Preview mode:
+  // When `preview` is true, we skip the /api/guest/me session check entirely.
+  // This is the read-only preview path used by /platform/admin/preview/[slug]
+  // (the iframe loads /w/[slug]?preview=true). Skipping checkSession means:
+  //   - NO visit is logged (no VIEW_INVITATION access log entry)
+  //   - NO analytics event fires (the GuestAuthProvider is the only caller
+  //     that would trigger /api/guest/me, which is the visit counter)
+  //   - The guest auth gate renders the "not-authenticated" branch
+  //     immediately (loading=false from the start) → the admin sees the
+  //     full manifest without logging in as a guest.
+  // The admin CANNOT submit RSVPs / interact with guest-only features
+  // because no guest session is established (login/logout are no-ops in
+  // preview mode — see the early-returns below).
   const [guest, setGuest] = useState<GuestData | null>(null)
   const [authenticated, setAuthenticated] = useState(false)
-  const [loading, setLoading] = useState(true)
+  // In preview mode, loading starts false so the gate renders immediately.
+  const [loading, setLoading] = useState(!preview)
 
   const checkSession = useCallback(async () => {
     try {
@@ -78,8 +92,10 @@ export function GuestAuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   useEffect(() => {
+    // Phase 4A — skip session check in preview mode (no visit logged).
+    if (preview) return
     checkSession()
-  }, [checkSession])
+  }, [checkSession, preview])
 
   const login = useCallback(async (code: string, firstName?: string, lastName?: string) => {
     try {

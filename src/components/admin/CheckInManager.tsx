@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { triggerHaptic, playSuccessSound } from '@/lib/haptics/feedback'
 
 /**
  * CheckInManager — Mission 4.7 Phase 3
@@ -154,6 +155,23 @@ export default function CheckInManager({ weddingSlug, csrfToken }: Props) {
       setResult(data)
       setCode('')
       fetchDashboard() // refresh stats
+
+      // Phase 3D #6 — mobile haptic + sound feedback on a successful scan.
+      // Fires only when:
+      //   - The check-in succeeded (CHECKED_IN — guest just arrived) OR the
+      //     guest was already checked in (ALREADY_CHECKED_IN — staff gets
+      //     confirmation that the scan registered, even though no DB change).
+      //   - The user's device supports navigator.vibrate (mobile-only — iOS
+      //     Safari silently ignores it).
+      //   - The user has NOT set prefers-reduced-motion (playSuccessSound
+      //     checks this internally; triggerHaptic is NOT gated on reduced
+      //     motion because vibration is a tactile cue, not a visual one).
+      //   - A prior user gesture has occurred (the click on "Valider" /
+      //     Enter on the input — required by the Web Audio autoplay policy).
+      if (data.status === 'CHECKED_IN' || data.status === 'ALREADY_CHECKED_IN') {
+        triggerHaptic(100)
+        playSuccessSound()
+      }
     } catch (err) {
       setResult({
         status: 'UNKNOWN',

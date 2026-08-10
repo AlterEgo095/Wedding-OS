@@ -65,32 +65,48 @@
 :root {
   --radius: 0.75rem;
 
+  /* ═══ MISSION-5.9.0 Phase 1A — Activate 9 dead --theme-* tokens ═══
+     Previously only 4 of 13 tokens emitted by getThemeCssVars() were consumed
+     here. The other 9 (--theme-surface, --theme-surface-deep, --theme-pattern,
+     --theme-ambiance, --theme-text, --theme-text-muted, --theme-primary-light,
+     --theme-primary-dark, --theme-accent-light) were written but never read.
+     This blocked 3 of 5 wedding identities (Botanical Romance, Cinematic Dark,
+     Modern Champagne). Now all 13 are consumed below.
+     ═════════════════════════════════════════════════════════════ */
+
   /* Core palette — theme-aware via --theme-* with fallbacks (Phase 8 themes) */
   --gold: var(--theme-primary, oklch(0.68 0.12 85));
-  --gold-light: var(--theme-primary, oklch(0.82 0.08 85));
-  --gold-dark: var(--theme-primary, oklch(0.52 0.14 85));
+  --gold-light: var(--theme-primary-light, var(--theme-primary, oklch(0.82 0.08 85)));
+  --gold-dark: var(--theme-primary-dark, var(--theme-primary, oklch(0.52 0.14 85)));
   --champagne: oklch(0.92 0.04 85);
   --rose-gold: var(--theme-accent, oklch(0.72 0.08 30));
+  --rose-gold-light: var(--theme-accent-light, var(--theme-accent, oklch(0.82 0.06 30)));
   --cream: oklch(0.97 0.01 85);
 
-  /* Semantic tokens */
-  --background: oklch(0.98 0.005 85);
-  --foreground: oklch(0.18 0.02 60);
-
-  --card: oklch(0.99 0.005 85);
-  --card-foreground: oklch(0.18 0.02 60);
-
-  --popover: oklch(0.99 0.005 85);
-  --popover-foreground: oklch(0.18 0.02 60);
-
-  --primary: var(--theme-primary, oklch(0.58 0.14 75));
+  /* MISSION-5.9.0 Phase 1C — 3-layer theme architecture:
+     --primary resolves as: org-brand > wedding-theme > default.
+     The server OrgBrandInjector sets --brand-primary (white-label).
+     The client WeddingThemeInjector sets --theme-primary (couple's choice).
+     Both coexist — no longer does org brand silently kill wedding theme. */
+  --brand-primary: initial; /* set by OrgBrandInjector when on custom domain */
+  --primary: var(--brand-primary, var(--theme-primary, oklch(0.58 0.14 75)));
   --primary-foreground: oklch(0.98 0.005 85);
+
+  /* Semantic tokens — surface/text now theme-aware (was hardcoded) */
+  --background: var(--theme-surface, oklch(0.98 0.005 85));
+  --foreground: var(--theme-text, oklch(0.18 0.02 60));
+
+  --card: var(--theme-surface, oklch(0.99 0.005 85));
+  --card-foreground: var(--theme-text, oklch(0.18 0.02 60));
+
+  --popover: var(--theme-surface, oklch(0.99 0.005 85));
+  --popover-foreground: var(--theme-text, oklch(0.18 0.02 60));
 
   --secondary: oklch(0.95 0.02 85);
   --secondary-foreground: oklch(0.30 0.04 60);
 
   --muted: oklch(0.94 0.015 85);
-  --muted-foreground: oklch(0.50 0.03 60);
+  --muted-foreground: var(--theme-text-muted, oklch(0.50 0.03 60));
 
   --accent: var(--theme-accent, oklch(0.72 0.08 30));
   --accent-foreground: oklch(0.98 0.005 85);
@@ -99,7 +115,7 @@
 
   --border: oklch(0.90 0.02 85);
   --input: oklch(0.90 0.02 85);
-  --ring: var(--theme-primary, oklch(0.68 0.12 85));
+  --ring: var(--brand-primary, var(--theme-primary, oklch(0.68 0.12 85)));
 
   /* Chart colors — warm gold/rose palette */
   --chart-1: oklch(0.68 0.14 75);
@@ -109,18 +125,55 @@
   --chart-5: oklch(0.58 0.10 50);
 
   /* Sidebar */
-  --sidebar: oklch(0.96 0.015 85);
-  --sidebar-foreground: oklch(0.18 0.02 60);
-  --sidebar-primary: oklch(0.58 0.14 75);
+  --sidebar: var(--theme-surface-deep, oklch(0.96 0.015 85));
+  --sidebar-foreground: var(--theme-text, oklch(0.18 0.02 60));
+  --sidebar-primary: var(--brand-primary, var(--theme-primary, oklch(0.58 0.14 75)));
   --sidebar-primary-foreground: oklch(0.98 0.005 85);
   --sidebar-accent: oklch(0.92 0.03 85);
   --sidebar-accent-foreground: oklch(0.30 0.04 60);
   --sidebar-border: oklch(0.90 0.02 85);
-  --sidebar-ring: oklch(0.68 0.12 85);
+  --sidebar-ring: var(--brand-primary, var(--theme-primary, oklch(0.68 0.12 85)));
 
   /* Theme-aware fonts — fall back to default display/body fonts (Phase 8 themes) */
   --font-display: var(--theme-font-display, var(--font-cormorant));
   --font-body: var(--theme-font-body, var(--font-geist-sans));
+
+  /* ═══ MISSION-5.9.0 Phase 1A — New token scales (Design System 2.0) ═══ */
+  /* Spacing scale (was missing — Tailwind defaults only) */
+  --space-1: 0.25rem;  --space-2: 0.5rem;  --space-3: 0.75rem;
+  --space-4: 1rem;  --space-6: 1.5rem;  --space-8: 2rem;
+  --space-12: 3rem;  --space-16: 4rem;  --space-24: 6rem;  --space-32: 8rem;
+
+  /* Type scale (was missing) */
+  --text-xs: 0.75rem;  --text-sm: 0.875rem;  --text-base: 1rem;
+  --text-lg: 1.125rem;  --text-xl: 1.25rem;  --text-2xl: 1.5rem;
+  --text-3xl: 1.875rem;  --text-4xl: 2.25rem;  --text-5xl: 3rem;
+  --text-6xl: 3.75rem;  --text-7xl: 4.5rem;
+
+  /* Shadow system (was missing — ad-hoc shadows everywhere) */
+  --shadow-sm: 0 1px 2px oklch(0.18 0.02 60 / 0.05);
+  --shadow-md: 0 4px 6px oklch(0.18 0.02 60 / 0.07), 0 2px 4px oklch(0.18 0.02 60 / 0.05);
+  --shadow-lg: 0 10px 25px oklch(0.18 0.02 60 / 0.10), 0 4px 10px oklch(0.18 0.02 60 / 0.05);
+  --shadow-gold: 0 4px 20px oklch(0.68 0.12 85 / 0.25);
+
+  /* Glass / blur tokens (was missing — ad-hoc backdrop-blur) */
+  --glass-bg: oklch(0.99 0.005 85 / 0.70);
+  --glass-border: oklch(0.68 0.12 85 / 0.20);
+  --glass-blur: 12px;
+
+  /* Z-index scale (was ad-hoc z-[9999]) */
+  --z-base: 1;  --z-floating: 10;  --z-sticky: 20;  --z-overlay: 30;
+  --z-modal: 40;  --z-toast: 50;
+
+  /* Motion tokens (was partial) */
+  --motion-tier: subtle; /* subtle | elegant | cinematic | none */
+  --duration-fast: 150ms;  --duration-base: 250ms;  --duration-slow: 450ms;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+
+  /* Ambient tokens — consumed by LuxuryVisualEngine + pattern overlay */
+  --ambient-glow: var(--theme-ambiance, oklch(0.68 0.12 85 / 0.04));
+  --pattern-url: var(--theme-pattern, none);
 }
 
 /* ══════════════════════════════════════════════════════════════
@@ -886,31 +939,24 @@ html {
 }
 
 
-/* ═══ AENWS RESPONSIVE DEFENSE LAYER ═══ */
-/* Empêche tout débordement horizontal sur tous les écrans */
+/* ═══ MISSION-5.9.0 Phase 0.12 — Responsive layer (replaces "AENWS DEFENSE LAYER") ═══
+   The previous "defense layer" applied `* { max-width: 100% }` globally, which
+   broke fixed/absolute overlays (modals, tooltips, dropdowns), whitespace-nowrap
+   chips, and tables on desktop. Replaced with targeted overflow-x:hidden on body
+   + responsive media queries scoped to mobile only.
+   ═══════════════════════════════════════════════════════════════════ */
 
 html, body {
   overflow-x: hidden;
-  max-width: 100vw;
 }
 
-/* Tous les éléments ne doivent pas dépasser leur conteneur */
-*, *::before, *::after {
-  max-width: 100%;
-}
-
-/* Images et médias toujours responsives */
+/* Images and media always responsive */
 img, video, canvas, svg, iframe {
   max-width: 100%;
   height: auto;
 }
 
-/* Les boutons et liens ne doivent pas dépasser */
-button, a {
-  max-width: 100%;
-}
-
-/* Les conteneurs flex/grid respectent les limites */
+/* Flex/grid containers respect bounds (keep this — it's safe and useful) */
 .flex, .grid {
   min-width: 0;
 }
@@ -921,12 +967,7 @@ button, a {
     padding-left: 1rem !important;
     padding-right: 1rem !important;
   }
-  
-  /* Les boutons CTA prennent toute la largeur en mobile */
-  .sm\:w-auto {
-    width: 100% !important;
-  }
-  
+
   /* Textes plus petits en mobile */
   h1 { font-size: clamp(2rem, 8vw, 3.5rem); }
   h2 { font-size: clamp(1.5rem, 6vw, 2.5rem); }
@@ -960,27 +1001,97 @@ button, a {
   display: none;
 }
 
-/* Modales et dialogues responsive */
+/* Modales et dialogues responsive (mobile only — was global) */
 @media (max-width: 640px) {
   [role="dialog"], .fixed.inset-0 {
     padding: 1rem !important;
   }
-  
+
   [role="dialog"] > * {
     max-height: 90vh !important;
     overflow-y: auto !important;
   }
-}
 
-/* Tables responsive — scroll horizontal si nécessaire */
-table {
-  display: block;
-  overflow-x: auto;
-  white-space: nowrap;
-  -webkit-overflow-scrolling: touch;
+  /* Tables scroll horizontally on mobile only — was global, broke desktop layout */
+  table {
+    display: block;
+    overflow-x: auto;
+    white-space: nowrap;
+    -webkit-overflow-scrolling: touch;
+  }
 }
 
 /* Prévention du zoom sur input focus iOS */
 input, select, textarea {
   font-size: 16px;
+}
+
+/* ═══ MISSION-5.9.0 Phase 0.7 — Apply --font-body token (was defined, never used) ═══
+   The body element now uses var(--font-body) which resolves to
+   var(--theme-font-body) when a wedding theme sets it, falling back to
+   var(--font-geist-sans). This unblocks per-wedding body-font overrides
+   (e.g. Modern Champagne identity uses Geist Sans for body instead of Cormorant).
+   ═══════════════════════════════════════════════════════════════════ */
+body {
+  font-family: var(--font-body), system-ui, sans-serif;
+}
+
+/* Display font utility — use font-display class to apply the theme display font */
+.font-display {
+  font-family: var(--font-display), serif;
+}
+.font-body {
+  font-family: var(--font-body), system-ui, sans-serif;
+}
+.font-serif {
+  font-family: var(--font-playfair), serif;
+}
+
+/* ═══ MISSION-5.9.0 Phase 1A — Pattern overlay (consumes --theme-pattern) ═══
+   When a wedding theme sets --theme-pattern (e.g. Botanical Romance leaf pattern),
+   it renders as a subtle body::before overlay. Default = none (no perf cost).
+   ═══════════════════════════════════════════════════════════════════ */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background-image: var(--pattern-url);
+  background-size: var(--pattern-size, 400px);
+  background-repeat: var(--pattern-repeat, repeat);
+  opacity: var(--pattern-opacity, 0.04);
+}
+
+/* Ensure content sits above pattern overlay */
+main, header, footer, nav, aside {
+  position: relative;
+  z-index: var(--z-base);
+}
+
+/* ═══ MISSION-5.9.0 Phase 3A — Motion tier system ═══
+   The `--motion-tier` variable (default 'subtle', declared in :root above)
+   is overridden per-identity by the WeddingThemeInjector based on the
+   wedding's identity preset. Valid values: subtle | elegant | cinematic | none.
+
+   When the resolved tier is 'none', we hard-kill all CSS transitions and
+   animations document-wide. This is the *design* kill switch (distinct from
+   the user's `prefers-reduced-motion` setting, which is handled separately
+   in JS via framer-motion's `useReducedMotion()` + MotionReveal's plain-div
+   fallback). Two selectors are exposed:
+     - `:root[style*="--motion-tier: none"]` — catches inline-style overrides
+       (the path ThemeInjector uses when injecting identity CSS variables).
+     - `[data-motion-tier="none"]` — opt-in escape hatch for components that
+       want to gate their own CSS animations on a data attribute.
+
+   `animation-duration: 0.01ms !important` (rather than `0ms`) keeps the
+   animation's start/end events firing — some libraries (e.g. sonner toasts)
+   rely on `animationend` for cleanup.
+   ═════════════════════════════════════════════════════════════════ */
+:root[style*="--motion-tier: none"] *,
+[data-motion-tier="none"] * {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+  scroll-behavior: auto !important;
 }

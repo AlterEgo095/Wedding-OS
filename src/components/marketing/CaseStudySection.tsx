@@ -1,6 +1,3 @@
-'use client'
-
-import { motion } from 'framer-motion'
 import Link from 'next/link'
 import { ArrowRight, MapPin, Calendar, Users, Table2, Clock, Image as ImageIcon, CheckCircle2 } from 'lucide-react'
 
@@ -14,6 +11,9 @@ import { ArrowRight, MapPin, Calendar, Users, Table2, Clock, Image as ImageIcon,
  *   - real counts (guests, tables, stories, timeline, media)
  *
  * The CTA links to /w/josue-hornella (the live experience).
+ *
+ * Server Component (Phase 2B): scroll-triggered motion removed — content
+ * renders identically. Animation can be re-added via CSS in Phase 3A.
  */
 
 interface CaseStudyData {
@@ -67,13 +67,7 @@ export default function CaseStudySection({ caseStudy }: Props) {
       </div>
 
       <div className="max-w-6xl mx-auto">
-        <motion.div
-          initial={{ opacity: 0, y: 30 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true, amount: 0.3 }}
-          transition={{ duration: 0.7 }}
-          className="text-center mb-12"
-        >
+        <div className="text-center mb-12">
           <span className="font-display text-xs tracking-[0.3em] uppercase text-gold/70 font-semibold mb-4 block">
             Étude de cas · Première réalisation
           </span>
@@ -84,13 +78,9 @@ export default function CaseStudySection({ caseStudy }: Props) {
             La première expérience événementielle complète déployée sur la plateforme.
             Une preuve vivante de ce que le moteur sait créer.
           </p>
-        </motion.div>
+        </div>
 
-        <motion.div
-          initial={{ opacity: 0, y: 30 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true, amount: 0.2 }}
-          transition={{ duration: 0.7, delay: 0.2 }}
+        <div
           className="grid lg:grid-cols-2 gap-8 items-center"
         >
           {/* Left: narrative */}
@@ -145,12 +135,8 @@ export default function CaseStudySection({ caseStudy }: Props) {
             {stats.map((stat, i) => {
               const Icon = stat.icon
               return (
-                <motion.div
+                <div
                   key={stat.label}
-                  initial={{ opacity: 0, scale: 0.9 }}
-                  whileInView={{ opacity: 1, scale: 1 }}
-                  viewport={{ once: true }}
-                  transition={{ duration: 0.4, delay: 0.3 + i * 0.1 }}
                   className="text-center p-4 rounded-xl bg-gold/5 border border-gold/10"
                 >
                   <Icon className="size-6 mx-auto mb-2 text-gold-dark dark:text-gold-light" />
@@ -160,11 +146,11 @@ export default function CaseStudySection({ caseStudy }: Props) {
                   <div className="font-display text-[10px] tracking-[0.2em] uppercase text-muted-foreground">
                     {stat.label}
                   </div>
-                </motion.div>
+                </div>
               )
             })}
           </div>
-        </motion.div>
+        </div>
       </div>
     </section>
   )

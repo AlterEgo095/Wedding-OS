@@ -42,6 +42,10 @@ import PortfolioSection from '@/components/marketing/PortfolioSection'
 import CaseStudySection from '@/components/marketing/CaseStudySection'
 import HowItWorks from '@/components/marketing/HowItWorks'
 import ThreeWorldsSection from '@/components/marketing/ThreeWorldsSection'
+// Phase 2C (Mission 5.9.0 §20.4) — 3 new marketing sections.
+import WhyUs from '@/components/marketing/WhyUs'
+import TestimonialsSection from '@/components/marketing/TestimonialsSection'
+import PricingSection from '@/components/marketing/PricingSection'
 import CommercialCTA from '@/components/marketing/CommercialCTA'
 import MarketingFooter from '@/components/marketing/MarketingFooter'
 
@@ -259,7 +263,7 @@ export default async function MarketingHome() {
   ])
 
   return (
-    <main className="min-h-screen bg-background text-foreground">
+    <main id="main" className="min-h-screen bg-background text-foreground">
       {/* ── Mission 6.0 P1.9 — Espace Agences banner (top strip) ─────────────── */}
       {/* Thin top-of-page strip inviting agencies to sign up. Placed ABOVE the
           hero so it's prominent on first paint without breaking the existing
@@ -309,7 +313,16 @@ export default async function MarketingHome() {
       {/* SECTION 8 — THREE WORLDS (structural proof: 6 vs 4 vs 6 sections) */}
       <ThreeWorldsSection />
 
-      {/* SECTION 9 — COMMERCIAL CTA (real onboarding, no fake checkout) */}
+      {/* SECTION 9 — WHY US (Phase 2C — 4 emotional pillars, moved from /onboarding) */}
+      <WhyUs />
+
+      {/* SECTION 10 — TESTIMONIALS (Phase 2C — first social proof block on homepage) */}
+      <TestimonialsSection />
+
+      {/* SECTION 11 — PRICING (Phase 2C — first pricing block on homepage) */}
+      <PricingSection />
+
+      {/* SECTION 12 — COMMERCIAL CTA (real onboarding, no fake checkout) */}
       <CommercialCTA />
 
       {/* Footer */}

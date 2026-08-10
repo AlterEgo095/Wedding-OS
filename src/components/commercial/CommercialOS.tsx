@@ -1,7 +1,9 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { motion } from 'framer-motion'
+// Note (5.9.0-POST-PHASE-1): this admin dashboard has no framer-motion usage —
+// the previous `motion` import was unused. It is intentionally static; no
+// migration to the motion tier system is needed. See worklog for details.
 import {
   TrendingUp, Users, FileText, CreditCard, Send, Package,
   Plus, Check, X, Loader2, AlertCircle,

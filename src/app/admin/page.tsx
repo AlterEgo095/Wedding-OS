@@ -332,7 +332,7 @@ export default function AdminPage() {
               animate={{ x: 0 }}
               exit={{ x: -280 }}
               transition={{ type: 'spring', damping: 30, stiffness: 300 }}
-              className="absolute left-0 top-0 bottom-0 w-70 z-50 md:hidden flex flex-col border-r border-white/10"
+              className="absolute left-0 top-0 bottom-0 w-72 z-50 md:hidden flex flex-col border-r border-white/10"
               style={{
                 background: 'linear-gradient(135deg, oklch(0.12 0.02 270), oklch(0.16 0.02 270))',
               }}

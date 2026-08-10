@@ -70,7 +70,13 @@ export interface PipelineContext {
 
 export interface DeploymentResult {
   deploymentId: string;
-  status: 'DEPLOYED' | 'FAILED';
+  /**
+   * 'DEPLOYED'  → full deploy: Wedding.publishedConfigJson written + wedding flipped to PUBLISHED + ISR cache busted.
+   * 'STAGING'   → preview-only deploy: configJson snapshot persisted on the Deployment row, but Wedding.publishedConfigJson
+   *               is NOT written, wedding status is NOT flipped, ISR cache is NOT busted. Use promote-staging to flip STAGING → DEPLOYED.
+   * 'FAILED'    → pipeline threw at some stage; deployment row is marked FAILED + logsJson contains the error.
+   */
+  status: 'DEPLOYED' | 'STAGING' | 'FAILED';
   logs: string[];
   url: string | null;
   version: string;
@@ -83,6 +89,17 @@ export interface RunPipelineInput {
   collectionId?: string | null;
   /** Acting admin user ID (for audit log). */
   triggeredBy?: string | null;
+  /**
+   * P4-4 (Staging deployments) — when true, the pipeline runs end-to-end but
+   * does NOT write Wedding.publishedConfigJson, does NOT flip the wedding
+   * status to PUBLISHED, and does NOT invalidate the per-wedding ISR cache.
+   * The Deployment row is marked STAGING (not DEPLOYED) with the compiled
+   * configJson snapshot persisted on it. Admin can later call
+   * POST /api/platform/deployments/{id}/promote-staging to flip STAGING →
+   * DEPLOYED (copies configJson → publishedConfigJson + flips wedding to
+   * PUBLISHED + invalidates the cache). Default false (full deploy).
+   */
+  staging?: boolean;
 }
 
 // ─── Pipeline stage names (fixed order — DO NOT reorder) ──────────────────────
@@ -260,7 +277,7 @@ async function runStage(
 async function persist(
   deploymentId: string,
   ctx: PipelineContext,
-  deploymentStatus: 'PENDING' | 'BUILDING' | 'DEPLOYED' | 'FAILED'
+  deploymentStatus: 'PENDING' | 'BUILDING' | 'STAGING' | 'DEPLOYED' | 'FAILED'
 ): Promise<void> {
   await db.deployment.update({
     where: { id: deploymentId },
@@ -277,12 +294,31 @@ async function persist(
 
 // ─── Main entry point ─────────────────────────────────────────────────────────
 
+/**
+ * Run the canonical frontend deployment pipeline for a wedding.
+ *
+ * P4-4 — `input.staging === true` switches the pipeline into PREVIEW-ONLY
+ * mode: every stage runs (validateInputs → resolveExperience), the
+ * PublishedConfig is compiled, and the snapshot is persisted on the
+ * Deployment row (status=STAGING, configJson=<compiled>), but the THREE
+ * production-side effects are SKIPPED:
+ *   1. db.wedding.update({ status:'PUBLISHED', publishedConfigJson, ... }) — NOT called
+ *   2. invalidateWeddingCache(slug) — NOT called
+ *   3. final persist status — STAGING instead of DEPLOYED
+ * This lets an admin preview a build before going live. Promote a STAGING
+ * deployment to production via POST /api/platform/deployments/{id}/promote-staging
+ * (which performs steps 1+2 atomically + flips the deployment STAGING → DEPLOYED).
+ *
+ * @param input - weddingId + templateId + themeId + collectionId? + triggeredBy? + staging?
+ * @returns DeploymentResult with status 'DEPLOYED' | 'STAGING' | 'FAILED'.
+ */
 export async function runDeploymentPipeline(
   input: RunPipelineInput
 ): Promise<DeploymentResult> {
   const version = makeVersion();
   const logs: string[] = [];
   const triggeredBy = input.triggeredBy ?? null;
+  const staging = input.staging === true;
 
   logger.info('pipeline.start', {
     weddingId: input.weddingId,
@@ -291,6 +327,7 @@ export async function runDeploymentPipeline(
     collectionId: input.collectionId ?? null,
     version,
     triggeredBy,
+    staging,
   });
 
   // ── Pre-fetch the wedding (we need its slug for the URL + coupleLabel) ────
@@ -722,6 +759,18 @@ export async function runDeploymentPipeline(
     });
 
     // ── 11. publishFrontend ───────────────────────────────────────────────
+    //
+    // P4-4 — In STAGING mode, this stage persists the compiled configJson
+    // on the Deployment row (so promote-staging can copy it to
+    // Wedding.publishedConfigJson later) but SKIPS the three production
+    // side-effects:
+    //   • db.wedding.update (no publishedConfigJson, no status flip, no publishedAt)
+    //   • invalidateWeddingCache (public site must NOT change)
+    //   • deployment status is STAGING (not DEPLOYED)
+    // The wedding row remains untouched — guests keep seeing the previously
+    // published config. Admin can preview the staging build via the GovernancePanel
+    // §3 staging list (which fetches the deployment's configJson directly),
+    // and promote it to production when ready.
     await runStage(runner, 'publishFrontend', async () => {
       const publishedConfig = (ctx as PipelineContext & { _publishedConfig?: PublishedConfig })
         ._publishedConfig;
@@ -729,27 +778,48 @@ export async function runDeploymentPipeline(
         throw new Error('compileFrontend did not produce a PublishedConfig');
       }
       const url = `/w/${wedding.slug}`;
-      await db.wedding.update({
-        where: { id: wedding.id },
-        data: {
-          status: 'PUBLISHED',
-          publishedAt: new Date(),
-          publishedConfigJson: JSON.stringify(publishedConfig),
-          publishedVersion: version,
-        },
-      });
+      const configJsonSnapshot = JSON.stringify(publishedConfig);
+
+      if (!staging) {
+        // ── Full deploy — write the live config on the Wedding row ──
+        await db.wedding.update({
+          where: { id: wedding.id },
+          data: {
+            status: 'PUBLISHED',
+            publishedAt: new Date(),
+            publishedConfigJson: configJsonSnapshot,
+            publishedVersion: version,
+          },
+        });
+      }
       // Mission 6.0 P0.6 — persist the full config snapshot on the Deployment row
       // so rollback is possible (previously only Wedding.publishedConfigJson held it).
+      // P4-4 — in STAGING mode, this snapshot is the ONLY persisted copy of the
+      // build (the Wedding row is untouched). promote-staging will copy it to
+      // Wedding.publishedConfigJson when the admin promotes.
       await db.deployment.update({
         where: { id: deploymentId },
-        data: { status: 'DEPLOYED', url, configJson: JSON.stringify(publishedConfig) },
+        data: {
+          status: staging ? 'STAGING' : 'DEPLOYED',
+          url,
+          configJson: configJsonSnapshot,
+        },
       });
-      // Mission 6.0 P0.9 — invalidate the per-wedding ISR cache so the
-      // public /w/[slug] page picks up the new publishedConfigJson + status
-      // immediately. Without this, the 5-min fallback revalidate would
-      // serve the stale (pre-publish) snapshot to guests.
-      await invalidateWeddingCache(wedding.slug);
-      logs.push(`[publishFrontend] Wedding.status=PUBLISHED url=${url} cache invalidated`);
+      if (!staging) {
+        // Mission 6.0 P0.9 — invalidate the per-wedding ISR cache so the
+        // public /w/[slug] page picks up the new publishedConfigJson + status
+        // immediately. Without this, the 5-min fallback revalidate would
+        // serve the stale (pre-publish) snapshot to guests.
+        // P4-4 — SKIPPED in STAGING mode (no public-side change to invalidate).
+        await invalidateWeddingCache(wedding.slug);
+        logs.push(
+          `[publishFrontend] Wedding.status=PUBLISHED url=${url} cache invalidated`
+        );
+      } else {
+        logs.push(
+          `[publishFrontend] STAGING — configJson snapshot persisted on deployment ${deploymentId} (wedding row untouched, cache NOT invalidated)`
+        );
+      }
     });
 
     // ── 12. resolveExperience [P3.4] ──────────────────────────────────────
@@ -796,12 +866,21 @@ export async function runDeploymentPipeline(
     });
 
     // ── Success — final persist ───────────────────────────────────────────
-    await persist(deploymentId, ctx, 'DEPLOYED');
-    logger.info('pipeline.success', { deploymentId, version, weddingId: wedding.id });
+    // P4-4 — in STAGING mode the deployment's terminal status is STAGING, not DEPLOYED.
+    // The Wedding row + ISR cache are untouched (handled inside publishFrontend above).
+    const finalStatus: 'STAGING' | 'DEPLOYED' = staging ? 'STAGING' : 'DEPLOYED';
+    await persist(deploymentId, ctx, finalStatus);
+    logger.info('pipeline.success', {
+      deploymentId,
+      version,
+      weddingId: wedding.id,
+      staging,
+      status: finalStatus,
+    });
 
     return {
       deploymentId,
-      status: 'DEPLOYED',
+      status: finalStatus,
       logs,
       url: `/w/${wedding.slug}`,
       version,
@@ -973,3 +1052,4 @@ export async function retryDeployment(
     triggeredBy,
   });
 }
+

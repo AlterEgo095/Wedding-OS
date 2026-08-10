@@ -41,6 +41,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Skeleton } from '@/components/ui/skeleton';
+import { MotionReveal } from '@/components/premium/MotionReveal';
 
 interface GuestbookEntry {
   id: string;
@@ -331,7 +332,7 @@ export function GuestbookWidget({ weddingId, slug: _slug }: GuestbookWidgetProps
       </div>
 
       {/* Entries list */}
-      <div className="space-y-4">
+      <MotionReveal preset="fade-up" className="space-y-4">
         <div className="flex items-baseline justify-between">
           <h3 className="text-sm font-medium text-zinc-300">
             {total} message{total > 1 ? 's' : ''}
@@ -414,7 +415,7 @@ export function GuestbookWidget({ weddingId, slug: _slug }: GuestbookWidgetProps
             </Button>
           </div>
         )}
-      </div>
+      </MotionReveal>
     </section>
   );
 }

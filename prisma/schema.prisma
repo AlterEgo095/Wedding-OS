@@ -239,6 +239,16 @@ model Wedding {
   // instead of falling back to the hardcoded LAYOUT_SECTIONS map.
   layoutId           String?
 
+  // ─── MISSION 5.9.2 P1 — Theme snapshot (immutable publish-time copy) ───────
+  // When a Wedding is published, the current state of its PlatformTheme is
+  // frozen into a PlatformThemeSnapshot row. This FK points to that snapshot
+  // so the renderer always reads the exact theme version the couple signed
+  // off on at publish time — even if the live PlatformTheme is later edited
+  // (audit 5.9.1 P1-5 fix). Null = no snapshot yet (legacy weddings +
+  // unpublished drafts → renderer falls back to the live PlatformTheme).
+  themeSnapshotId    String?
+  themeSnapshot      PlatformThemeSnapshot? @relation(fields: [themeSnapshotId], references: [id], onDelete: SetNull)
+
   @@index([organizationId])
   @@index([status, organizationId])
 }
@@ -805,6 +815,11 @@ model Collection {
   // Cached full QualityReport JSON (not just the qualityScore int).
   qualityReportJson  String?
 
+  // ─── MISSION 5.9.2 P3-A — Commercial lock flag + audit fields ───────────
+  isLocked        Boolean   @default(false)
+  lockedAt        DateTime?
+  lockedBy        String?
+
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
@@ -816,6 +831,21 @@ model Collection {
   designVersions  DesignVersion[]
   ingestionJobs   IngestionJob[]
   exportJobs      ExportJob[]
+
+  @@index([isLocked])
+
+  // ─── MISSION 5.9.2 P1 — PlatformTheme FK (single source of truth) ──────────
+  // Links this Collection to its corresponding PlatformTheme row. Nullable for
+  // backward compat: legacy Collections seeded before P1 have themeId = null
+  // and continue to use their embedded `themeSeed` JSON (zero regression).
+  // When set, `applyCollection()` propagates this themeId to the Wedding so
+  // the renderer can resolve the full theme config from a single DB row
+  // instead of the fragmented THEME_PACKAGES / THEME_PRESETS / COLLECTION_SEEDS
+  // registries (audit 5.9.1 P1-1 fix — "four disconnected theme registries").
+  themeId         String?
+  platformTheme   PlatformTheme? @relation(fields: [themeId], references: [id], onDelete: SetNull)
+
+  @@index([themeId])
 }
 
 model CollectionVariant {
@@ -1263,7 +1293,7 @@ model PlatformTheme {
   id           String   @id @default(cuid())
   name         String
   slug         String   @unique
-  paletteJson  String   @default("{}") // { primary, accent, background }
+  paletteJson  String   @default("{}") // { primary, accent, background, surface, surfaceDeep, text, ... }
   fontDisplay  String?
   fontBody     String?
   isBuiltIn    Boolean  @default(false)
@@ -1271,7 +1301,110 @@ model PlatformTheme {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
+  // ─── MISSION 5.9.2 P0 (QW8) — Commercial catalog fields ───────────────────
+  // Enables the Super Admin to present themes as a premium commercial catalog
+  // with tier, category, and recommendation markers (audit 5.9.1 P0-1 fix).
+  isPremium      Boolean  @default(false) // marks premium (paid) themes
+  isRecommended  Boolean  @default(false) // highlighted in the catalog UI
+  isDefault      Boolean  @default(false) // the default theme for new weddings
+  tier           String   @default("STANDARD") // FREE | STANDARD | PREMIUM | EXCLUSIVE
+  category       String?  // ROYAL | LUXURY | EDITORIAL | MINIMAL | ROMANTIC | BOTANICAL | CINEMATIC | AFRICAN | CHAMPAGNE | DESTINATION
+  version        String   @default("1.0.0") // semver — bumped on each edit
+
+  // ─── MISSION 5.9.2 P0 (QW5+QW6) — Apply pipeline fields ───────────────────
+  // `identity` stores the WeddingIdentity slug (royal-luxury, minimal-editorial,
+  // etc.) so the apply endpoint can persist the full identity preset (not just
+  // 4 CSS vars) into the Wedding's Theme row.
+  // `configJson` stores the full resolved theme config (all 13 CSS tokens +
+  // pattern + ambiance + motionTier + sectionOverrides + preview swatch) so the
+  // ThemeInjector can read the complete config and set ALL --theme-* variables.
+  identity       String?  // WeddingIdentity slug (royal-luxury | minimal-editorial | botanical-romance | cinematic-dark | modern-champagne)
+  configJson     String   @default("{}") // full resolved theme config JSON
+
+  // ─── MISSION 5.9.2 P4-5 — Theme asset management ──────────────────────────
+  // Stores per-theme background + pattern image URLs (and optional alt text /
+  // repeat mode) so couples get a visually complete theme out of the box.
+  // Shape: { "background": { "url": "...", "alt": "..." }, "pattern": { "url": "...", "repeat": "repeat" } }
+  // Empty object default — non-breaking for existing rows (no migration backfill
+  // needed since SQLite treats the new column as `String NOT NULL DEFAULT '{}'`).
+  assetsJson     String   @default("{}")
+
+  // ─── MISSION 5.9.2 P3-A — Commercial lock + approval workflow ─────────────
+  isLocked        Boolean   @default(false)
+  lockedAt        DateTime?
+  lockedBy        String?
+  approvalStatus  String    @default("DRAFT")
+  approvedAt      DateTime?
+  approvedBy      String?
+
   @@index([status])
+  @@index([tier])
+  @@index([category])
+  @@index([isPremium])
+  @@index([isRecommended])
+  @@index([isLocked])
+  @@index([approvalStatus])
+
+  // ─── MISSION 5.9.2 P1 — Snapshots (immutable publish-time copies) ──────────
+  // When a Wedding is published, the current state of its PlatformTheme is
+  // frozen into a PlatformThemeSnapshot row (see model below). This enables
+  // rollback (Wedding A on Theme v1.0.0 + Wedding B on Theme v1.1.0) without
+  // breaking already-published weddings when the live PlatformTheme is edited
+  // later (audit 5.9.1 P1-5 fix).
+  snapshots PlatformThemeSnapshot[]
+  // ─── MISSION 5.9.2 P1 — Collections referencing this theme ─────────────────
+  // Reverse relation — Collections whose `themeId` points to this row.
+  // Populated by `ensureCollectionsSeeded()` (Phase 1 catalog unification).
+  collections Collection[]
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// MISSION 5.9.2 P1 — PlatformThemeSnapshot
+// ══════════════════════════════════════════════════════════════════════════════
+// Immutable copy of a PlatformTheme at publish time. Created by
+// `createThemeSnapshot()` (src/lib/themes/snapshots.ts) and referenced by
+// `Wedding.themeSnapshotId` so each published wedding pins to a specific
+// version of its theme (audit 5.9.1 P1-5 fix — "no version, no snapshot,
+// no rollback" → now resolved).
+//
+// Cardinality: 1 PlatformTheme → N PlatformThemeSnapshot (one per publish).
+// A snapshot is IMMUTABLE — once created, its fields never change. Edits to
+// the live PlatformTheme do NOT propagate to existing snapshots.
+// ══════════════════════════════════════════════════════════════════════════════
+model PlatformThemeSnapshot {
+  id              String   @id @default(cuid())
+  // The PlatformTheme this snapshot was created from. Nullable + SetNull so
+  // deleting a PlatformTheme preserves its historical snapshots (forensic
+  // value for already-published weddings).
+  platformThemeId String?
+  platformTheme   PlatformTheme? @relation(fields: [platformThemeId], references: [id], onDelete: SetNull)
+  // Snapshot of the platformTheme.slug at creation time (kept denormalized
+  // so a snapshot remains identifiable even if the source theme is deleted).
+  themeSlug       String
+  // Snapshot of the semver at creation time (e.g. "1.0.0").
+  version         String   @default("1.0.0")
+  // Frozen copies of all PlatformTheme fields.
+  name            String
+  paletteJson     String   @default("{}")
+  fontDisplay     String?
+  fontBody        String?
+  isPremium       Boolean  @default(false)
+  isRecommended   Boolean  @default(false)
+  isDefault       Boolean  @default(false)
+  tier            String   @default("STANDARD")
+  category        String?
+  identity        String?
+  configJson      String   @default("{}")
+  // Audit trail — who created the snapshot and when.
+  triggeredBy     String?  // admin user ID
+  createdAt       DateTime @default(now())
+
+  // Reverse relation — weddings pointing to this snapshot.
+  weddings        Wedding[]
+
+  @@index([platformThemeId])
+  @@index([themeSlug])
+  @@index([createdAt])
 }
 
 // Registry of reusable UI components (hero, gallery, timeline, rsvp-form...).
@@ -1304,7 +1437,13 @@ model PlatformAsset {
   @@index([type])
 }
 
-// Wedding frontend deployment tracking. status: PENDING | BUILDING | DEPLOYED | FAILED.
+// Wedding frontend deployment tracking. status: PENDING | BUILDING | STAGING | DEPLOYED | FAILED | LEGACY.
+//
+// P4-4 — STAGING = pipeline ran successfully, configJson stored on the Deployment
+// row, but wedding NOT flipped to PUBLISHED + publishedConfigJson NOT written +
+// ISR cache NOT invalidated. Use promote-staging to flip STAGING → DEPLOYED
+// (copies configJson → publishedConfigJson + flips wedding to PUBLISHED + busts
+// the per-wedding ISR cache).
 model Deployment {
   id          String    @id @default(cuid())
   weddingId   String?
@@ -1318,7 +1457,7 @@ model Deployment {
   collectionId  String?
   configJson    String?   // full PublishedConfig JSON snapshot
   version       String
-  status        String    @default("PENDING") // PENDING | BUILDING | DEPLOYED | FAILED | LEGACY
+  status        String    @default("PENDING") // PENDING | BUILDING | STAGING | DEPLOYED | FAILED | LEGACY
   url           String?
   logsJson      String    @default("[]") // JSON array of log lines
   triggeredBy   String?   // acting admin user ID (for audit trail)
@@ -1682,3 +1821,5 @@ model ExperienceReport {
   @@unique([weddingId, periodStart, granularity])
   @@index([weddingId, periodStart])
 }
+
+

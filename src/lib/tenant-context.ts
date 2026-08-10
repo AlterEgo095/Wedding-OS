@@ -80,12 +80,17 @@ export interface TenantContext {
 // Without this, runWithTenant sets context on ALS instance A while the Prisma
 // extension reads from ALS instance B → TENANT_FAIL_CLOSED on every request.
 
+// P5.3-2 (audit-F M-14): Always cache ALS in globalThis, including in production.
+// Previously this was gated on `NODE_ENV !== 'production'`, which left production
+// vulnerable to ALS instance divergence if Next.js hot-reloads a route module
+// (the new module would create a fresh ALS that the Prisma extension's closure
+// doesn't see → all tenant-scoped queries fail-closed with TENANT_FAIL_CLOSED).
+// Caching in globalThis is a no-op when the same module instance is reused
+// (the common case) and a safety net when it isn't.
 const globalForALS = globalThis as unknown as { __tenantAls?: AsyncLocalStorage<TenantContext> };
 const tenantAls: AsyncLocalStorage<TenantContext> =
   globalForALS.__tenantAls ?? new AsyncLocalStorage<TenantContext>();
-if (process.env.NODE_ENV !== 'production') {
-  globalForALS.__tenantAls = tenantAls;
-}
+globalForALS.__tenantAls = tenantAls;
 
 /**
  * Run a function within a tenant context. All Prisma queries against

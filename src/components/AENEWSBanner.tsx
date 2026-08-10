@@ -3,12 +3,14 @@
 import { useEffect, useRef, useState } from 'react'
 import Image from 'next/image'
 import { motion, useInView } from 'framer-motion'
+import type { Easing } from 'framer-motion'
 import {
   Sparkles, Users, QrCode, Mail, CalendarCheck,
   Image as ImageIcon, LayoutDashboard, ArrowRight,
   Globe, Cpu, Zap, Heart, CheckCircle2, ExternalLink
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { useMotionTier } from '@/lib/motion/useMotionTier'
 
 const WHATSAPP_URL = 'https://wa.me/243816515095?text=Bonjour%2C%20je%20souhaite%20obtenir%20une%20plateforme%20similaire%20pour%20mon%20%C3%A9v%C3%A9nement.'
 const AENEWS_URL = 'https://aenews.net'
@@ -71,6 +73,10 @@ interface AENEWSBannerProps {
 export default function AENEWSBanner({ variant = 'homepage' }: AENEWSBannerProps) {
   const sectionRef = useRef<HTMLDivElement>(null)
   const isInView = useInView(sectionRef, { once: true, margin: '-60px' })
+  const { config: motionCfg, reduced: prefersReducedMotion, tier } = useMotionTier()
+  // Static path: render plain divs (no motion). Layout/className/children are
+  // identical — only the animation layer is removed.
+  const isStatic = prefersReducedMotion || tier === 'none'
 
   // ─── P1.10 White Label — auto-hide on custom domains ─────────────────────
   // `shouldRender` starts false on both server and client first render (no
@@ -107,29 +113,33 @@ export default function AENEWSBanner({ variant = 'homepage' }: AENEWSBannerProps
       {/* Animated gradient mesh */}
       <div className="absolute inset-0 pointer-events-none overflow-hidden">
         <motion.div
-          animate={{
+          animate={isStatic ? undefined : {
             x: [0, 40, 0],
             y: [0, -30, 0],
             opacity: [0.15, 0.35, 0.15],
           }}
-          transition={{ duration: 10, repeat: Infinity, ease: 'easeInOut' }}
+          transition={isStatic ? undefined : { duration: 10, repeat: Infinity, ease: 'easeInOut' }}
+          style={isStatic ? { opacity: 0.25 } : undefined}
           className="absolute -top-32 -right-32 w-[500px] h-[500px] rounded-full"
-          style={{
+        >
+          <div className="absolute inset-0 rounded-full" style={{
             background: 'radial-gradient(circle, oklch(0.68 0.12 85 / 10%) 0%, transparent 70%)',
-          }}
-        />
+          }} />
+        </motion.div>
         <motion.div
-          animate={{
+          animate={isStatic ? undefined : {
             x: [0, -30, 0],
             y: [0, 25, 0],
             opacity: [0.1, 0.25, 0.1],
           }}
-          transition={{ duration: 12, repeat: Infinity, ease: 'easeInOut', delay: 2 }}
+          transition={isStatic ? undefined : { duration: 12, repeat: Infinity, ease: 'easeInOut', delay: 2 }}
+          style={isStatic ? { opacity: 0.18 } : undefined}
           className="absolute -bottom-32 -left-32 w-[600px] h-[600px] rounded-full"
-          style={{
+        >
+          <div className="absolute inset-0 rounded-full" style={{
             background: 'radial-gradient(circle, oklch(0.72 0.08 30 / 6%) 0%, transparent 70%)',
-          }}
-        />
+          }} />
+        </motion.div>
       </div>
 
       {/* Grid pattern overlay */}
@@ -152,16 +162,16 @@ export default function AENEWSBanner({ variant = 'homepage' }: AENEWSBannerProps
       <div className="relative z-10 max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* ─── Header with Logo ─── */}
         <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={isInView ? { opacity: 1, y: 0 } : {}}
-          transition={{ duration: 0.8 }}
+          initial={isStatic ? false : { opacity: 0, y: 20 }}
+          animate={isStatic ? undefined : (isInView ? { opacity: 1, y: 0 } : {})}
+          transition={isStatic ? { duration: 0 } : { duration: motionCfg.duration, ease: motionCfg.ease as Easing }}
           className="text-center mb-8 md:mb-12"
         >
           {/* AENEWS Logo */}
           <motion.div
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={isInView ? { opacity: 1, scale: 1 } : {}}
-            transition={{ duration: 0.6, delay: 0.1 }}
+            initial={isStatic ? false : { opacity: 0, scale: 0.9 }}
+            animate={isStatic ? undefined : (isInView ? { opacity: 1, scale: 1 } : {})}
+            transition={isStatic ? { duration: 0 } : { duration: motionCfg.duration, ease: motionCfg.ease as Easing, delay: 0.1 }}
             className="flex items-center justify-center mb-6"
           >
             <div className="relative">
@@ -183,9 +193,9 @@ export default function AENEWSBanner({ variant = 'homepage' }: AENEWSBannerProps
 
           {/* Title */}
           <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={isInView ? { opacity: 1, y: 0 } : {}}
-            transition={{ duration: 0.6, delay: 0.2 }}
+            initial={isStatic ? false : { opacity: 0, y: 10 }}
+            animate={isStatic ? undefined : (isInView ? { opacity: 1, y: 0 } : {})}
+            transition={isStatic ? { duration: 0 } : { duration: motionCfg.duration, ease: motionCfg.ease as Easing, delay: 0.2 }}
           >
             <p className="font-display text-xs md:text-sm tracking-[0.2em] uppercase text-white/30 mb-3 font-semibold">
               Expérience digitale
@@ -201,9 +211,9 @@ export default function AENEWSBanner({ variant = 'homepage' }: AENEWSBannerProps
 
           {/* Subtitle */}
           <motion.p
-            initial={{ opacity: 0, y: 10 }}
-            animate={isInView ? { opacity: 1, y: 0 } : {}}
-            transition={{ duration: 0.6, delay: 0.3 }}
+            initial={isStatic ? false : { opacity: 0, y: 10 }}
+            animate={isStatic ? undefined : (isInView ? { opacity: 1, y: 0 } : {})}
+            transition={isStatic ? { duration: 0 } : { duration: motionCfg.duration, ease: motionCfg.ease as Easing, delay: 0.3 }}
             className="font-display text-sm md:text-base lg:text-lg text-white/50 max-w-2xl mx-auto leading-relaxed"
           >
             Solutions numériques innovantes pour mariages, événements, entreprises et organisations.
@@ -211,9 +221,9 @@ export default function AENEWSBanner({ variant = 'homepage' }: AENEWSBannerProps
 
           {/* Decorative divider */}
           <motion.div
-            initial={{ opacity: 0, scaleX: 0 }}
-            animate={isInView ? { opacity: 1, scaleX: 1 } : {}}
-            transition={{ duration: 0.6, delay: 0.4 }}
+            initial={isStatic ? false : { opacity: 0, scaleX: 0 }}
+            animate={isStatic ? undefined : (isInView ? { opacity: 1, scaleX: 1 } : {})}
+            transition={isStatic ? { duration: 0 } : { duration: motionCfg.duration, ease: motionCfg.ease as Easing, delay: 0.4 }}
             className="flex items-center justify-center gap-3 mt-6"
           >
             <div className="h-px w-16 bg-gradient-to-r from-transparent to-gold/40" />
@@ -224,9 +234,9 @@ export default function AENEWSBanner({ variant = 'homepage' }: AENEWSBannerProps
 
         {/* ─── Description ─── */}
         <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={isInView ? { opacity: 1, y: 0 } : {}}
-          transition={{ duration: 0.8, delay: 0.4 }}
+          initial={isStatic ? false : { opacity: 0, y: 20 }}
+          animate={isStatic ? undefined : (isInView ? { opacity: 1, y: 0 } : {})}
+          transition={isStatic ? { duration: 0 } : { duration: motionCfg.duration, ease: motionCfg.ease as Easing, delay: 0.4 }}
           className="max-w-3xl mx-auto text-center mb-8 md:mb-10"
         >
           <p className="font-display text-sm md:text-base text-white/40 leading-relaxed mb-4">
@@ -239,17 +249,17 @@ export default function AENEWSBanner({ variant = 'homepage' }: AENEWSBannerProps
 
         {/* ─── Feature Grid ─── */}
         <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={isInView ? { opacity: 1, y: 0 } : {}}
-          transition={{ duration: 0.8, delay: 0.5 }}
+          initial={isStatic ? false : { opacity: 0, y: 20 }}
+          animate={isStatic ? undefined : (isInView ? { opacity: 1, y: 0 } : {})}
+          transition={isStatic ? { duration: 0 } : { duration: motionCfg.duration, ease: motionCfg.ease as Easing, delay: 0.5 }}
           className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4 mb-8 md:mb-10 max-w-4xl mx-auto"
         >
           {features.map((feature, i) => (
             <motion.div
               key={feature.label}
-              initial={{ opacity: 0, y: 15 }}
-              animate={isInView ? { opacity: 1, y: 0 } : {}}
-              transition={{ delay: 0.5 + i * 0.06, duration: 0.5 }}
+              initial={isStatic ? false : { opacity: 0, y: 15 }}
+              animate={isStatic ? undefined : (isInView ? { opacity: 1, y: 0 } : {})}
+              transition={isStatic ? { duration: 0 } : { delay: 0.5 + i * 0.06, duration: motionCfg.duration, ease: motionCfg.ease as Easing }}
               className="flex flex-col items-center gap-2 p-3 md:p-4 rounded-xl border border-white/5 bg-white/[0.02] backdrop-blur-sm hover:bg-white/[0.06] hover:border-gold/20 transition-all duration-300 group"
             >
               <div className="w-8 h-8 md:w-10 md:h-10 rounded-lg bg-gradient-to-br from-gold/12 to-rose-gold/8 flex items-center justify-center group-hover:scale-110 transition-transform duration-300">
@@ -264,9 +274,9 @@ export default function AENEWSBanner({ variant = 'homepage' }: AENEWSBannerProps
 
         {/* ─── Closing Statement ─── */}
         <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          animate={isInView ? { opacity: 1, y: 0 } : {}}
-          transition={{ duration: 0.6, delay: 0.7 }}
+          initial={isStatic ? false : { opacity: 0, y: 10 }}
+          animate={isStatic ? undefined : (isInView ? { opacity: 1, y: 0 } : {})}
+          transition={isStatic ? { duration: 0 } : { duration: motionCfg.duration, ease: motionCfg.ease as Easing, delay: 0.7 }}
           className="text-center mb-8 md:mb-10"
         >
           <p className="font-serif text-lg md:text-xl lg:text-2xl font-semibold text-white/60 italic">
@@ -276,9 +286,9 @@ export default function AENEWSBanner({ variant = 'homepage' }: AENEWSBannerProps
 
         {/* ─── CTA Buttons ─── */}
         <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={isInView ? { opacity: 1, y: 0 } : {}}
-          transition={{ duration: 0.8, delay: 0.8 }}
+          initial={isStatic ? false : { opacity: 0, y: 20 }}
+          animate={isStatic ? undefined : (isInView ? { opacity: 1, y: 0 } : {})}
+          transition={isStatic ? { duration: 0 } : { duration: motionCfg.duration, ease: motionCfg.ease as Easing, delay: 0.8 }}
           className="flex flex-col sm:flex-row items-center justify-center gap-4"
         >
           {/* Primary: Créer ma plateforme — WhatsApp */}
@@ -321,9 +331,9 @@ export default function AENEWSBanner({ variant = 'homepage' }: AENEWSBannerProps
 
         {/* ─── Signature de marque ─── */}
         <motion.div
-          initial={{ opacity: 0 }}
-          animate={isInView ? { opacity: 1 } : {}}
-          transition={{ duration: 0.8, delay: 1.0 }}
+          initial={isStatic ? false : { opacity: 0 }}
+          animate={isStatic ? undefined : (isInView ? { opacity: 1 } : {})}
+          transition={isStatic ? { duration: 0 } : { duration: motionCfg.duration, ease: motionCfg.ease as Easing, delay: 1.0 }}
           className="mt-10 md:mt-14 text-center"
         >
           <div className="flex items-center justify-center gap-3 text-white/20">

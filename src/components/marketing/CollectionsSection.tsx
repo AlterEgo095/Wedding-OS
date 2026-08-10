@@ -1,8 +1,8 @@
 'use client'
 
-import { motion } from 'framer-motion'
 import Link from 'next/link'
 import { ArrowRight, Check, Monitor, Smartphone, Tablet } from 'lucide-react'
+import { MotionReveal } from '@/components/premium/MotionReveal'
 
 /**
  * CollectionsSection — SECTION 4
@@ -98,13 +98,7 @@ export default function CollectionsSection({ collections }: Props) {
       </div>
 
       <div className="max-w-7xl mx-auto">
-        <motion.div
-          initial={{ opacity: 0, y: 30 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true, amount: 0.3 }}
-          transition={{ duration: 0.7 }}
-          className="text-center mb-16"
-        >
+        <MotionReveal preset="fade-up" className="text-center mb-16">
           <span className="inline-block px-4 py-1.5 rounded-full text-[11px] font-semibold tracking-widest uppercase text-gold bg-gold/10 border border-gold/20 mb-4">
             Bibliothèque de Thèmes
           </span>
@@ -114,7 +108,7 @@ export default function CollectionsSection({ collections }: Props) {
           <p className="font-display text-lg text-muted-foreground max-w-2xl mx-auto">
             Des collections premium conçues pour sublimer votre mariage. Chaque thème est une expérience visuelle complète.
           </p>
-        </motion.div>
+        </MotionReveal>
 
         {collections.length === 0 ? (
           <p className="text-center text-muted-foreground">Aucune Collection disponible.</p>
@@ -125,14 +119,11 @@ export default function CollectionsSection({ collections }: Props) {
               const features = LAYOUT_FEATURES[theme.layout] || LAYOUT_FEATURES.classic
               
               return (
-                <motion.div
+                <MotionReveal
                   key={col.id}
-                  initial={{ opacity: 0, y: 40 }}
-                  whileInView={{ opacity: 1, y: 0 }}
-                  viewport={{ once: true }}
-                  transition={{ duration: 0.6, delay: (i % 3) * 0.12 }}
-                  className="group relative rounded-3xl overflow-hidden glass-card border border-white/10 hover:border-gold/40 transition-all duration-500 hover:shadow-2xl hover:shadow-gold/10"
-                  whileHover={{ y: -4 }}
+                  preset="fade-up"
+                  delay={(i % 3) * 0.12}
+                  className="group relative rounded-3xl overflow-hidden glass-card border border-white/10 hover:border-gold/40 hover:-translate-y-1 transition-all duration-500 hover:shadow-2xl hover:shadow-gold/10"
                 >
                   {/* ═══ IMMERSIVE HERO PREVIEW ═══ */}
                   <div
@@ -291,18 +282,16 @@ export default function CollectionsSection({ collections }: Props) {
                       </Link>
                     </div>
                   </div>
-                </motion.div>
+                </MotionReveal>
               )
             })}
           </div>
         )}
 
         {/* Bottom CTA */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true }}
-          transition={{ duration: 0.6, delay: 0.3 }}
+        <MotionReveal
+          preset="fade-up"
+          delay={0.3}
           className="text-center mt-12"
         >
           <Link
@@ -312,7 +301,7 @@ export default function CollectionsSection({ collections }: Props) {
             Voir tous les thèmes
             <ArrowRight className="w-4 h-4" />
           </Link>
-        </motion.div>
+        </MotionReveal>
       </div>
     </section>
   )

@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Badge } from '@/components/ui/badge'
+import { DropZone } from '@/components/ui/drop-zone'
 import {
   Dialog,
   DialogContent,
@@ -265,32 +266,56 @@ export default function MediaManager({ token, onSessionExpired }: MediaManagerPr
           <div className="space-y-4">
             <div className="space-y-2">
               <Label>Fichier *</Label>
-              <div
-                className="border-2 border-dashed border-white/20 rounded-lg p-6 text-center cursor-pointer hover:border-gold/40 transition-colors"
-                onClick={() => fileInputRef.current?.click()}
+              {/* Phase 3D #4: DropZone replaces the manual click-to-select div.
+                  The DropZone handles drag-over (gold highlight) + drop. The
+                  click-to-select path is preserved via an onClick that opens
+                  the hidden file input — so the zone works for both
+                  drag-drop AND keyboard/click users. */}
+              <DropZone
+                accept="image/*,video/*,.pdf,.doc,.docx"
+                onDrop={(files) => setUploadFile(files[0] || null)}
+                className="cursor-pointer"
               >
-                {uploadFile ? (
-                  <div className="flex items-center justify-center gap-2">
-                    <ImageIcon className="w-4 h-4 text-gold" />
-                    <span className="text-sm truncate">{uploadFile.name}</span>
-                    <button onClick={(e) => { e.stopPropagation(); setUploadFile(null) }}>
-                      <X className="w-4 h-4 text-muted-foreground hover:text-foreground" />
-                    </button>
-                  </div>
-                ) : (
-                  <>
-                    <Upload className="w-8 h-8 mx-auto mb-2 text-muted-foreground" />
-                    <p className="text-sm text-muted-foreground">Cliquez pour sélectionner un fichier</p>
-                  </>
-                )}
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/*,video/*,.pdf,.doc,.docx"
-                  className="hidden"
-                  onChange={(e) => setUploadFile(e.target.files?.[0] || null)}
-                />
-              </div>
+                <div
+                  onClick={() => fileInputRef.current?.click()}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault()
+                      fileInputRef.current?.click()
+                    }
+                  }}
+                  aria-label="Sélectionner un fichier"
+                >
+                  {uploadFile ? (
+                    <div className="flex items-center justify-center gap-2">
+                      <ImageIcon className="w-4 h-4 text-gold" />
+                      <span className="text-sm truncate">{uploadFile.name}</span>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setUploadFile(null) }}
+                        aria-label="Retirer le fichier"
+                      >
+                        <X className="w-4 h-4 text-muted-foreground hover:text-foreground" />
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      <Upload className="w-8 h-8 mx-auto mb-2 text-muted-foreground" />
+                      <p className="text-sm text-muted-foreground">
+                        Glissez un fichier ici ou cliquez pour parcourir
+                      </p>
+                    </>
+                  )}
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*,video/*,.pdf,.doc,.docx"
+                    className="hidden"
+                    onChange={(e) => setUploadFile(e.target.files?.[0] || null)}
+                  />
+                </div>
+              </DropZone>
             </div>
             <div className="space-y-2">
               <Label>Titre</Label>

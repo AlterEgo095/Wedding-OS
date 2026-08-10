@@ -178,6 +178,15 @@ export const CSRF_EXEMPT_PATHS: readonly string[] = [
   '/api/guest/logout',    // guest ends their session
   '/api/guest/access-logs', // guest access log write (beacon-style)
   '/api/health',          // public health check (no state change anyway)
+  // Phase 4D — public share-event audit log. Anyone (guest, organizer, or
+  // anonymous visitor) can share a wedding invitation via WhatsApp. The
+  // endpoint is rate-limited (10/IP/minute) and writes an AuditLog row with
+  // `action: wedding.share`. No CSRF cookie is available for guests (the
+  // guest auth flow does not issue csrf_token), so the double-submit pattern
+  // cannot apply. The audit log itself is the abuse-prevention control: a
+  // flood of share events from one IP is rate-limited server-side and any
+  // single share event is non-destructive (just an insert into AuditLog).
+  '/api/w/share-event',
   // Mission 6.0 P1.9 — Org signup (public entry point). The user has no CSRF
   // cookie yet when first reaching the wizard. The route issues its own fresh
   // CSRF cookie on success (alongside the auth cookie) so subsequent state-

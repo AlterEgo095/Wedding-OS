@@ -56,11 +56,14 @@ import {
   Users as UsersIcon,
   Pause,
   Play,
+  // Phase 4C — Impersonate icon (View-as / Impersonate, audit §20.6)
+  UserCog,
 } from 'lucide-react'
 
 import Link from 'next/link'
 import { formatDate, formatDateTime } from '@/lib/format'
 import { ROLE_BADGE_CLASS, getRoleLabel } from '@/lib/ui-labels'
+import { isPlatformAdmin } from '@/lib/types'
 
 import {
   type UserRow,
@@ -98,7 +101,26 @@ const USER_ROLES = [
   { value: 'CONTROLLER', label: 'Contrôleur', needsWedding: true },
 ]
 
-export function UsersTab({ fetchWithAuth }: { fetchWithAuth: (url: string, init?: RequestInit) => Promise<Response | null> }) {
+// Phase 4C — Roles that can be impersonated by a PLATFORM_ADMIN.
+// Per audit §20.6: only wedding-admin roles (ORGANIZER / RECEPTION /
+// CONTROLLER) are impersonatable. Org-scoped roles (ORG_ADMIN/ORG_MEMBER/
+// ORG_VIEWER) and PLATFORM_ADMIN are intentionally NOT in this set.
+const IMPERSONATABLE_ROLES = new Set(['ORGANIZER', 'RECEPTION', 'CONTROLLER'])
+
+export function UsersTab({
+  fetchWithAuth,
+  currentRole,
+}: {
+  fetchWithAuth: (url: string, init?: RequestInit) => Promise<Response | null>
+  /**
+   * Phase 4C — Role of the currently-logged-in platform admin.
+   * Used to gate the "Impersoner" button: only PLATFORM_ADMIN / SUPER_ADMIN
+   * see it (defense-in-depth on top of the page-level gate that already
+   * restricts /platform/admin to those roles).
+   */
+  currentRole?: string
+}) {
+  const canImpersonate = isPlatformAdmin(currentRole || '')
   const [users, setUsers] = useState<UserRow[]>([])
   const [total, setTotal] = useState(0)
   const [totalPages, setTotalPages] = useState(1)
@@ -311,6 +333,56 @@ export function UsersTab({ fetchWithAuth }: { fetchWithAuth: (url: string, init?
     }
   }
 
+  // ─── Phase 4C — Impersonate a wedding admin (audit §20.6) ──────────────
+  // Confirms with the user, then POSTs /api/platform/impersonate with the
+  // target user's ID. On success, the server sets two cookies:
+  //   - auth_token = target user's JWT (admin "becomes" the target)
+  //   - impersonation_session = signed JWT carrying the admin's original
+  //     auth_token + the 30-min expiry
+  // We then redirect to the returned `redirectUrl` (the target's wedding
+  // admin). The banner is rendered by the wedding admin page after it
+  // polls /api/platform/impersonate/status.
+  const [impersonatingId, setImpersonatingId] = useState<string | null>(null)
+  const handleImpersonate = async (u: UserRow) => {
+    const confirmed = window.confirm(
+      `Voulez-vous vous connecter en tant que ${u.name} ? ` +
+      `Cette session sera enregistrée et expirera dans 30 minutes.`,
+    )
+    if (!confirmed) return
+    setImpersonatingId(u.id)
+    try {
+      const res = await fetchWithAuth('/api/platform/impersonate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ targetUserId: u.id }),
+      })
+      if (!res) {
+        setImpersonatingId(null)
+        return
+      }
+      const json = (await res.json().catch(() => ({}))) as {
+        success?: boolean
+        redirectUrl?: string
+        error?: string
+      }
+      if (res.ok && json.success && json.redirectUrl) {
+        toast.success(`Impersonation de ${u.name} démarrée (30 min)`)
+        // Hard navigation — the new auth_token + impersonation_session
+        // cookies must take effect before the wedding admin page renders.
+        // router.push uses client-side navigation which doesn't always
+        // flush cookie changes correctly; window.location.href forces a
+        // full page load that re-reads cookies server-side.
+        window.location.href = json.redirectUrl
+      } else {
+        toast.error(json.error || "Erreur lors de l'impersonation")
+        setImpersonatingId(null)
+      }
+    } catch {
+      toast.error('Erreur de connexion')
+      setImpersonatingId(null)
+    }
+  }
+
   const selectedRoleConfig = USER_ROLES.find((r) => r.value === form.role)
 
   return (
@@ -431,6 +503,33 @@ export function UsersTab({ fetchWithAuth }: { fetchWithAuth: (url: string, init?
                               <Pencil className="w-3.5 h-3.5 mr-2" />
                               Modifier
                             </DropdownMenuItem>
+                            {/* Phase 4C — Impersonate (View-as).
+                                Only PLATFORM_ADMIN sees this. Only
+                                ORGANIZER / RECEPTION / CONTROLLER roles
+                                are impersonatable. Suspended users can't
+                                be impersonated (they have no permissions
+                                → no point + blocks privilege edge cases). */}
+                            {canImpersonate &&
+                              IMPERSONATABLE_ROLES.has(u.role) &&
+                              !u.suspended && (
+                                <DropdownMenuItem
+                                  className="text-violet-400 focus:text-violet-300"
+                                  disabled={impersonatingId === u.id}
+                                  onClick={() => handleImpersonate(u)}
+                                >
+                                  {impersonatingId === u.id ? (
+                                    <>
+                                      <Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" />
+                                      Impersonation…
+                                    </>
+                                  ) : (
+                                    <>
+                                      <UserCog className="w-3.5 h-3.5 mr-2" />
+                                      Impersoner
+                                    </>
+                                  )}
+                                </DropdownMenuItem>
+                              )}
                             {/* P5.1 H-DELEG-3 — Soft-suspend toggle */}
                             <DropdownMenuItem
                               className={u.suspended ? "text-emerald-400 focus:text-emerald-300" : "text-orange-400 focus:text-orange-300"}

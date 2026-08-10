@@ -1,0 +1,111 @@
+# ══════════════════════════════════════════════════════════════════════════════
+# docker-compose.prod.yml — AENEWS Wedding OS
+# Production deployment for wedding.hpph.net
+# Port: 3080 (localhost only) — Nginx reverse proxy handles SSL/public access
+# ══════════════════════════════════════════════════════════════════════════════
+
+# Mission 6.0 P0 — Added Redis service for distributed rate-limiting.
+# Mission 4.0 Phase 1 — Runtime provenance.
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        DEPLOY_SHA: ${DEPLOY_SHA:-unknown}
+        BUILD_TIME: ${BUILD_TIME:-unknown}
+    container_name: wedding-app
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      DEPLOY_SHA: ${DEPLOY_SHA:-unknown}
+      BUILD_TIME: ${BUILD_TIME:-unknown}
+      REALTIME_PUSH_TOKEN: wedding-realtime-push-token-2026
+      REALTIME_SERVICE_URL: http://host.docker.internal:3006/internal/push
+    ports:
+      - "127.0.0.1:3080:3000"
+    volumes:
+      - wedding-db:/app/db
+      - wedding-uploads:/app/public/uploads
+      - wedding-logs:/app/logs
+    networks:
+      - wedding-network
+    # P4.8 FIX-P4-REALTIME: allow container to reach host port 3006 (realtime
+    # mini-service running under systemd on the host). On Linux, host-gateway
+    # resolves to the docker bridge gateway so host.docker.internal works.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "const http=require('http');const r=http.get({host:'127.0.0.1',port:3000,path:'/api/health',timeout:5000},res=>{process.exit(res.statusCode<500?0:1)});r.on('timeout',()=>process.exit(1));r.on('error',()=>process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '1.0'
+        reservations:
+          memory: 256M
+          cpus: '0.25'
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    security_opt:
+      - no-new-privileges:true
+
+  # ─── Redis (Mission 6.0 P0.4) ──────────────────────────────────────────────
+  # Distributed rate-limiting + future session store.
+  # ioredis is already in package.json; src/lib/redis.ts auto-detects REDIS_URL.
+  # AOF persistence enabled so rate-limit counters survive container restarts.
+  redis:
+    image: redis:7-alpine
+    container_name: wedding-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --maxmemory 64mb --maxmemory-policy allkeys-lru
+    volumes:
+      - wedding-redis:/data
+    networks:
+      - wedding-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    deploy:
+      resources:
+        limits:
+          memory: 96M
+          cpus: '0.25'
+        reservations:
+          memory: 32M
+          cpus: '0.05'
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "2"
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  wedding-db:
+    driver: local
+  wedding-uploads:
+    driver: local
+  wedding-logs:
+    driver: local
+  wedding-redis:
+    driver: local
+
+networks:
+  wedding-network:
+    driver: bridge

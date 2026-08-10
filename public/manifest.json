@@ -35,7 +35,7 @@
     },
     {
       "src": "/icons/screenshot-desktop.png",
-      "sizes": "1440x900",
+      "sizes": "1920x1080",
       "type": "image/png",
       "form_factor": "wide",
       "label": "Heureux Mariage sur desktop"

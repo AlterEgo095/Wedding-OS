@@ -33,15 +33,38 @@ import { db } from '@/lib/db';
 import { safeJsonParse } from '@/lib/safe-json';
 
 // ─── Section Types ────────────────────────────────────────────────────────────
+//
+// MISSION 5.9.0 — Phase 1E (audit §20.3) expanded this from 6 to 14 types so
+// the full 13-step public narrative is reachable from the manifest:
+//   HERO · COUPLE · COUNTDOWN · STORY · GALLERY · TIMELINE · VENUE · MAP
+//   INVITATION · RSVP · GUEST-AUTH · GUEST-EXPERIENCE · GUESTBOOK · CTA
+//
+// The 8 new types are ADDITIVE — existing layouts (royal, classic, minimal,
+// destination, modern) still ship their original 6-section configuration.
+// Designers add the new sections explicitly via the manifest editor (or by
+// binding the wedding to a new DB-seeded Layout row). The new types default
+// to `enabled: false` everywhere they aren't listed, so existing published
+// weddings render identically.
 export type SectionType =
   | 'hero'
+  | 'couple'           // NEW — couple spotlight (names, photo, initials)
+  | 'countdown'        // NEW — live countdown to wedding date
   | 'story'
   | 'gallery'
   | 'timeline'
-  | 'map'
-  | 'guest-auth';
+  | 'venue'            // NEW — venue details (extracted from map, address-only variant)
+  | 'map'              // existing — full map with directions
+  | 'invitation'       // NEW — invitation card with RSVP CTA
+  | 'rsvp'             // NEW — RSVP form (standalone, separate from guest-auth)
+  | 'guest-auth'
+  | 'guest-experience' // NEW — guest personal space (after login)
+  | 'guestbook'        // NEW — guestbook messages
+  | 'cta';             // NEW — final call-to-action (share photos, guestbook, thank you)
 
-export const SECTION_TYPES: SectionType[] = ['hero', 'story', 'gallery', 'timeline', 'map', 'guest-auth'];
+export const SECTION_TYPES: SectionType[] = [
+  'hero', 'couple', 'countdown', 'story', 'gallery', 'timeline',
+  'venue', 'map', 'invitation', 'rsvp', 'guest-auth', 'guest-experience', 'guestbook', 'cta',
+];
 
 // ─── Manifest Section ─────────────────────────────────────────────────────────
 export interface ManifestSection {

@@ -17,11 +17,13 @@ export default function Footer() {
   const [coupleLabel, setCoupleLabel] = useState<string>('Mariage')
   const [hashtag, setHashtag] = useState<string>('')
   const [dateDisplay, setDateDisplay] = useState<string>('')
-  // Couple photo paths — settings-driven when available, falling back to the
-  // legacy default-wedding photo path so the default wedding renders
-  // identically (zero regression).
-  const [couplePhoto1Path, setCouplePhoto1Path] = useState<string>('/uploads/couple-photo-1.jpeg')
-  const [couplePhoto2Path, setCouplePhoto2Path] = useState<string>('/uploads/couple-photo-2.jpeg')
+  // Couple photo paths — settings-driven, empty initial value. P0-QW3:
+  // previously initialised to '/uploads/couple-photo-{1,2}.jpeg' which
+  // leaked the default wedding's photos on first paint (before the
+  // /api/settings fetch resolved). The img tags below conditionally
+  // render so we never emit a broken <Image src=""> when no path is set.
+  const [couplePhoto1Path, setCouplePhoto1Path] = useState<string>('')
+  const [couplePhoto2Path, setCouplePhoto2Path] = useState<string>('')
   const [groomName, setGroomName] = useState<string>('')
   const [brideName, setBrideName] = useState<string>('')
 
@@ -62,14 +64,26 @@ export default function Footer() {
           transition={{ duration: 0.6 }}
           className="flex items-center justify-center gap-3 mb-6"
         >
+          {/* P0-QW3: gradient placeholder when no couple_photo_1 is set —
+              previously rendered '/uploads/couple-photo-1.jpeg' on first paint
+              (before the /api/settings fetch resolved), leaking the default
+              wedding's groom photo into every tenant's footer. */}
           <div className="relative w-14 h-14 md:w-16 md:h-16 rounded-full overflow-hidden gold-border shadow-md shadow-gold/10">
-            <Image
-              src={couplePhoto1Path}
-              alt={groomName || 'Photo du mari'}
-              fill
-              sizes="64px"
-              className="object-cover"
-            />
+            {couplePhoto1Path ? (
+              <Image
+                src={couplePhoto1Path}
+                alt={groomName || 'Photo du mari'}
+                fill
+                sizes="64px"
+                className="object-cover"
+              />
+            ) : (
+              <div className="absolute inset-0 bg-gradient-to-br from-gold/25 via-gold-dark/15 to-rose-gold/25 flex items-center justify-center">
+                <span className="font-serif text-lg text-gold/50 font-bold">
+                  {groomName ? groomName.charAt(0).toUpperCase() : '♡'}
+                </span>
+              </div>
+            )}
           </div>
           <motion.div
             animate={{ scale: [1, 1.15, 1] }}
@@ -77,14 +91,23 @@ export default function Footer() {
           >
             <Heart className="size-5 text-gold fill-gold/30" />
           </motion.div>
+          {/* P0-QW3: gradient placeholder when no couple_photo_2 is set. */}
           <div className="relative w-14 h-14 md:w-16 md:h-16 rounded-full overflow-hidden gold-border shadow-md shadow-gold/10">
-            <Image
-              src={couplePhoto2Path}
-              alt={brideName || 'Photo de la mariée'}
-              fill
-              sizes="64px"
-              className="object-cover"
-            />
+            {couplePhoto2Path ? (
+              <Image
+                src={couplePhoto2Path}
+                alt={brideName || 'Photo de la mariée'}
+                fill
+                sizes="64px"
+                className="object-cover"
+              />
+            ) : (
+              <div className="absolute inset-0 bg-gradient-to-br from-rose-gold/25 via-gold/15 to-gold-dark/25 flex items-center justify-center">
+                <span className="font-serif text-lg text-rose-gold/50 font-bold">
+                  {brideName ? brideName.charAt(0).toUpperCase() : '♡'}
+                </span>
+              </div>
+            )}
           </div>
         </motion.div>
 

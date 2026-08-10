@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
 import {
@@ -31,12 +31,19 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import {
-  THEME_TEMPLATES,
-  FONT_OPTIONS,
-  LAYOUT_OPTIONS,
-  type ThemeTemplate,
-} from '@/lib/themes/templates';
+// P4-2 (MISSION 5.9.1): legacy ThemeTemplates removed from templates.ts.
+// The 4 hardcoded entries (classic-gold, romantic-rose, minimal-modern,
+// royal-night) were migrated to PlatformTheme DB rows in P1-2 and the
+// `THEME_TEMPLATES` array is now empty. This component now sources the
+// template cards from the unified `THEME_PRESETS` registry (presets.ts),
+// which includes the 12 THEME_PACKAGES-derived presets AND (post-P4-2) 4
+// broken entries derived from the now-empty THEME_TEMPLATES array — those
+// broken entries are filtered out below via `isCompletePreset`.
+//
+// The utility imports (FONT_OPTIONS, LAYOUT_OPTIONS) from templates.ts are
+// preserved — those constants are NOT affected by P4-2.
+import { FONT_OPTIONS, LAYOUT_OPTIONS } from '@/lib/themes/templates';
+import { THEME_PRESETS, type ThemePreset } from '@/lib/themes/presets';
 import { validateCustomDomain } from '@/lib/custom-domains';
 
 interface ThemeData {
@@ -68,6 +75,93 @@ interface WeddingOption {
   coupleLabel: string;
 }
 
+// ─── P4-2: ThemePreset → card-shape adapter ───────────────────────────────────
+// Local view of a `ThemePreset` with only the fields needed to render a
+// template card. Kept narrow so the JSX stays readable and so we can filter
+// out broken presets (post-P4-2 the empty THEME_TEMPLATES array causes
+// presets.ts to produce 4 presets with all-undefined fields — they fail the
+// `isCompletePresetCard` guard below and are silently excluded from the grid).
+interface TemplateCard {
+  /** Used as the React key + the `templateId` sent to /api/theme/apply-template. */
+  id: string;
+  /** Display name. */
+  name: string;
+  description: string;
+  primaryColor: string;
+  accentColor: string;
+  fontDisplay: string;
+  fontBody: string;
+  layout: string;
+  preview: {
+    bg: string;
+    text: string;
+    swatch: string[];
+  };
+}
+
+/**
+ * P4-2: predicate that excludes broken `ThemePreset` entries.
+ *
+ * Post-P4-2, `src/lib/themes/presets.ts` builds `THEME_PRESETS` by appending
+ *   `templateToPreset(THEME_TEMPLATES.find(t => t.id === 'classic-gold') as ThemeTemplate, ...)`
+ * for the 4 legacy slugs. With `THEME_TEMPLATES` now empty, those 4 `.find()`
+ * calls return `undefined` and the resulting 4 entries in `THEME_PRESETS`
+ * have all-`undefined` fields (slug, label, preview, primaryColor, ...).
+ * This predicate excludes them so the UI doesn't render broken cards.
+ *
+ * Implementation note: the `ThemePreset` interface declares all fields as
+ * REQUIRED, so TypeScript thinks `typeof preset.slug === 'string'` is always
+ * true. We cast via `as unknown as Record<string, unknown>` to bypass TS's
+ * type narrowing and perform a real runtime check on the values that presets.ts
+ * may have left `undefined` at module load.
+ *
+ * If `presets.ts` is also deployed with the P4-2 cleanup (the 4 broken
+ * `templateToPreset(THEME_TEMPLATES.find(...))` calls removed), this predicate
+ * becomes a no-op but is still safe to keep (defensive against future malformed
+ * presets).
+ */
+function isCompletePresetCard(preset: ThemePreset): boolean {
+  // Cast to a permissive Record so TS allows defensive runtime checks on
+  // fields that the ThemePreset interface says are required but that
+  // presets.ts may leave undefined at runtime (the broken-entries case).
+  const p = preset as unknown as Record<string, unknown>;
+  const preview = p.preview as
+    | { bg?: unknown; text?: unknown; swatch?: unknown }
+    | undefined;
+  return (
+    typeof p.slug === 'string' &&
+    (p.slug as string).length > 0 &&
+    typeof p.label === 'string' &&
+    (p.label as string).length > 0 &&
+    typeof p.primaryColor === 'string' &&
+    typeof p.accentColor === 'string' &&
+    typeof p.fontDisplay === 'string' &&
+    typeof p.fontBody === 'string' &&
+    typeof p.layout === 'string' &&
+    preview !== undefined &&
+    typeof preview.bg === 'string' &&
+    typeof preview.text === 'string' &&
+    Array.isArray(preview.swatch)
+  );
+}
+
+/** P4-2: adapt a `ThemePreset` to the local `TemplateCard` shape. */
+function presetToCard(preset: ThemePreset): TemplateCard {
+  // We've already validated the required fields via `isCompletePresetCard`
+  // before calling this — the non-null assertions here are safe.
+  return {
+    id: preset.slug,
+    name: preset.label,
+    description: preset.description,
+    primaryColor: preset.primaryColor,
+    accentColor: preset.accentColor,
+    fontDisplay: preset.fontDisplay,
+    fontBody: preset.fontBody,
+    layout: preset.layout,
+    preview: preset.preview,
+  };
+}
+
 export function ThemeCustomizer({ slug: explicitSlug }: ThemeCustomizerProps = {}) {
   const [theme, setTheme] = useState<ThemeData | null>(null);
   const [domain, setDomain] = useState<CustomDomainData | null>(null);
@@ -93,6 +187,17 @@ export function ThemeCustomizer({ slug: explicitSlug }: ThemeCustomizerProps = {
   const slug = explicitSlug ?? selectedSlug;
 
   const headers = { 'X-Wedding-Slug': slug };
+
+  // P4-2: derive the list of template cards from the unified THEME_PRESETS
+  // registry, filtering out broken entries (post-P4-2 the empty
+  // THEME_TEMPLATES array produces 4 broken presets in THEME_PRESETS — those
+  // are silently excluded by `isCompletePresetCard`). The list is stable
+  // (THEME_PRESETS is a module constant), so `useMemo` with an empty dep array
+  // is correct — the cards don't change between renders.
+  const templateCards = useMemo<TemplateCard[]>(
+    () => THEME_PRESETS.filter(isCompletePresetCard).map(presetToCard),
+    [],
+  );
 
   // Fetch the list of weddings (platform admin context only — when no
   // explicit slug was passed). Best-effort: on failure, leave the picker
@@ -176,13 +281,18 @@ export function ThemeCustomizer({ slug: explicitSlug }: ThemeCustomizerProps = {
     Promise.all([fetchTheme(), fetchDomain()]).finally(() => setLoading(false));
   }, [fetchTheme, fetchDomain]);
 
-  const handleApplyTemplate = async (template: ThemeTemplate) => {
-    setApplyingTemplate(template.id);
+  // P4-2: handleApplyTemplate now receives a `TemplateCard` derived from a
+  // `ThemePreset`. The `card.id` is the preset's `slug`, which is what the
+  // /api/theme/apply-template endpoint expects as `templateId` (the route
+  // falls back to `db.platformTheme.findUnique({ where: { slug: templateId } })`
+  // when `getTemplate()` returns null — see the P4-2 changes in that route).
+  const handleApplyTemplate = async (card: TemplateCard) => {
+    setApplyingTemplate(card.id);
     try {
       const res = await fetch('/api/theme/apply-template', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...headers },
-        body: JSON.stringify({ templateId: template.id }),
+        body: JSON.stringify({ templateId: card.id }),
       });
       if (!res.ok) {
         const err = await res.json();
@@ -190,7 +300,7 @@ export function ThemeCustomizer({ slug: explicitSlug }: ThemeCustomizerProps = {
       }
       const data = await res.json();
       setTheme(data.theme);
-      toast.success(`Template "${template.name}" appliqué`);
+      toast.success(`Template "${card.name}" appliqué`);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Erreur lors de l\'application du template');
     } finally {
@@ -315,54 +425,68 @@ export function ThemeCustomizer({ slug: explicitSlug }: ThemeCustomizerProps = {
           </CardTitle>
           <p className="text-xs text-muted-foreground">
             Appliquez un modèle complet en un clic — couleurs, polices et layout.
+            {/* P4-2: source = THEME_PRESETS registry (the 4 legacy hardcoded
+                THEME_TEMPLATES were migrated to PlatformTheme DB rows in P1-2). */}
           </p>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
-            {THEME_TEMPLATES.map((template) => (
-              <motion.button
-                key={template.id}
-                whileHover={{ y: -2 }}
-                whileTap={{ scale: 0.98 }}
-                onClick={() => handleApplyTemplate(template)}
-                disabled={applyingTemplate !== null}
-                className="group relative text-left rounded-lg overflow-hidden border border-white/10 hover:border-gold/40 transition-colors disabled:opacity-60"
-                style={{ background: template.preview.bg }}
-              >
-                {/* Swatches */}
-                <div className="flex h-16">
-                  {template.preview.swatch.map((color, i) => (
-                    <div
-                      key={i}
-                      className="flex-1"
-                      style={{ background: color }}
-                    />
-                  ))}
-                </div>
-                {/* Info */}
-                <div className="p-3" style={{ color: template.preview.text }}>
-                  <p className="font-display text-sm font-semibold" style={{ fontFamily: `'${template.fontDisplay}', serif` }}>
-                    {template.name}
-                  </p>
-                  <p className="text-[10px] opacity-70 mt-1 line-clamp-2">
-                    {template.description}
-                  </p>
-                </div>
-                {/* Loading overlay */}
-                {applyingTemplate === template.id && (
-                  <div className="absolute inset-0 flex items-center justify-center bg-black/50">
-                    <Loader2 className="w-5 h-5 animate-spin text-white" />
+          {templateCards.length === 0 ? (
+            // P4-2: defensive empty-state — if THEME_PRESETS is empty or only
+            // contains broken entries, show a friendly message instead of an
+            // empty grid. In practice this only happens if the seed hasn't run
+            // (no PlatformThemes in DB) AND the THEME_PACKAGES registry is
+            // also empty.
+            <p className="text-xs text-muted-foreground italic">
+              Aucun template disponible — les templates seront disponibles après le
+              seed initial du catalogue de thèmes.
+            </p>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+              {templateCards.map((card) => (
+                <motion.button
+                  key={card.id}
+                  whileHover={{ y: -2 }}
+                  whileTap={{ scale: 0.98 }}
+                  onClick={() => handleApplyTemplate(card)}
+                  disabled={applyingTemplate !== null}
+                  className="group relative text-left rounded-lg overflow-hidden border border-white/10 hover:border-gold/40 transition-colors disabled:opacity-60"
+                  style={{ background: card.preview.bg }}
+                >
+                  {/* Swatches */}
+                  <div className="flex h-16">
+                    {card.preview.swatch.map((color, i) => (
+                      <div
+                        key={i}
+                        className="flex-1"
+                        style={{ background: color }}
+                      />
+                    ))}
                   </div>
-                )}
-                {/* Active indicator */}
-                {applyingTemplate === null && theme.primaryColor.toUpperCase() === template.primaryColor.toUpperCase() && (
-                  <div className="absolute top-2 right-2 w-5 h-5 rounded-full bg-emerald-500 flex items-center justify-center">
-                    <Check className="w-3 h-3 text-white" />
+                  {/* Info */}
+                  <div className="p-3" style={{ color: card.preview.text }}>
+                    <p className="font-display text-sm font-semibold" style={{ fontFamily: `'${card.fontDisplay}', serif` }}>
+                      {card.name}
+                    </p>
+                    <p className="text-[10px] opacity-70 mt-1 line-clamp-2">
+                      {card.description}
+                    </p>
                   </div>
-                )}
-              </motion.button>
-            ))}
-          </div>
+                  {/* Loading overlay */}
+                  {applyingTemplate === card.id && (
+                    <div className="absolute inset-0 flex items-center justify-center bg-black/50">
+                      <Loader2 className="w-5 h-5 animate-spin text-white" />
+                    </div>
+                  )}
+                  {/* Active indicator */}
+                  {applyingTemplate === null && theme.primaryColor.toUpperCase() === card.primaryColor.toUpperCase() && (
+                    <div className="absolute top-2 right-2 w-5 h-5 rounded-full bg-emerald-500 flex items-center justify-center">
+                      <Check className="w-3 h-3 text-white" />
+                    </div>
+                  )}
+                </motion.button>
+              ))}
+            </div>
+          )}
         </CardContent>
       </Card>
 

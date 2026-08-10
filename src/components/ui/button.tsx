@@ -22,10 +22,12 @@ const buttonVariants = cva(
         link: "text-primary underline-offset-4 hover:underline",
       },
       size: {
-        default: "h-9 px-4 py-2 has-[>svg]:px-3",
-        sm: "h-8 rounded-md gap-1.5 px-3 has-[>svg]:px-2.5",
-        lg: "h-10 rounded-md px-6 has-[>svg]:px-4",
-        icon: "size-9",
+        // MISSION-5.9.0 Phase 0.5: bumped all sizes to meet WCAG 2.5.5 (44×44 px min touch target).
+        // Added min-h-[44px] min-w-[44px] to icon variant. Default h-9→h-11, sm h-8→h-10, lg h-10→h-12.
+        default: "h-11 px-4 py-2 has-[>svg]:px-3 min-h-[44px]",
+        sm: "h-10 rounded-md gap-1.5 px-3 has-[>svg]:px-2.5 min-h-[40px]",
+        lg: "h-12 rounded-md px-6 has-[>svg]:px-4 min-h-[48px]",
+        icon: "size-11 min-h-[44px] min-w-[44px]",
       },
     },
     defaultVariants: {

@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Music2, Play, Pause, Volume2, VolumeX, X } from 'lucide-react'
+import { useMotionTier } from '@/lib/motion/useMotionTier'
 
 // LocalStorage keys for persistence
 const LS_MUSIC_USER_ENABLED = 'wedding_music_user_enabled'
@@ -21,6 +22,11 @@ export default function AmbientMusicPlayer({ musicFile, defaultVolume, enabled }
   const [expanded, setExpanded] = useState(false)
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const currentSrcRef = useRef('')
+  const { reduced: prefersReducedMotion, tier } = useMotionTier()
+  // Static path: render plain divs (no motion). Layout/className/children are
+  // identical — only the animation layer is removed. Functional behaviour
+  // (autoplay prompt, play/pause, mute, expand) is unchanged.
+  const isStatic = prefersReducedMotion || tier === 'none'
 
   // Initialize or re-initialize audio element when musicFile changes
   useEffect(() => {
@@ -124,10 +130,10 @@ export default function AmbientMusicPlayer({ musicFile, defaultVolume, enabled }
       <AnimatePresence>
         {showPrompt && !isPlaying && (
           <motion.div
-            initial={{ opacity: 0, y: 40, scale: 0.9 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 20, scale: 0.95 }}
-            transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+            initial={isStatic ? false : { opacity: 0, y: 40, scale: 0.9 }}
+            animate={isStatic ? undefined : { opacity: 1, y: 0, scale: 1 }}
+            exit={isStatic ? undefined : { opacity: 0, y: 20, scale: 0.95 }}
+            transition={isStatic ? { duration: 0 } : { type: 'spring', damping: 25, stiffness: 300 }}
             className="fixed bottom-20 left-1/2 -translate-x-1/2 z-[60] px-4"
           >
             <div
@@ -138,8 +144,8 @@ export default function AmbientMusicPlayer({ musicFile, defaultVolume, enabled }
               }}
             >
               <motion.div
-                animate={{ rotate: [0, 5, -5, 0] }}
-                transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
+                animate={isStatic ? undefined : { rotate: [0, 5, -5, 0] }}
+                transition={isStatic ? undefined : { duration: 2, repeat: Infinity, ease: 'easeInOut' }}
               >
                 <Music2 className="w-5 h-5 text-white" />
               </motion.div>
@@ -166,19 +172,19 @@ export default function AmbientMusicPlayer({ musicFile, defaultVolume, enabled }
 
       {/* Floating Music Button */}
       <motion.div
-        initial={{ opacity: 0, scale: 0 }}
-        animate={{ opacity: 1, scale: 1 }}
-        transition={{ delay: 1.5, type: 'spring', stiffness: 200, damping: 20 }}
+        initial={isStatic ? false : { opacity: 0, scale: 0 }}
+        animate={isStatic ? undefined : { opacity: 1, scale: 1 }}
+        transition={isStatic ? { duration: 0 } : { delay: 1.5, type: 'spring', stiffness: 200, damping: 20 }}
         className="fixed bottom-6 left-6 z-[55]"
       >
         {/* Expanded Controls */}
         <AnimatePresence>
           {expanded && (
             <motion.div
-              initial={{ opacity: 0, y: 10, scale: 0.9 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 10, scale: 0.9 }}
-              transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+              initial={isStatic ? false : { opacity: 0, y: 10, scale: 0.9 }}
+              animate={isStatic ? undefined : { opacity: 1, y: 0, scale: 1 }}
+              exit={isStatic ? undefined : { opacity: 0, y: 10, scale: 0.9 }}
+              transition={isStatic ? { duration: 0 } : { type: 'spring', damping: 25, stiffness: 300 }}
               className="absolute bottom-14 left-0 flex items-center gap-2 px-3 py-2 rounded-xl shadow-xl"
               style={{
                 background: 'linear-gradient(135deg, rgba(253,250,243,0.98), rgba(247,241,229,0.98))',
@@ -237,8 +243,8 @@ export default function AmbientMusicPlayer({ musicFile, defaultVolume, enabled }
         >
           {isPlaying ? (
             <motion.div
-              animate={{ rotate: 360 }}
-              transition={{ duration: 3, repeat: Infinity, ease: 'linear' }}
+              animate={isStatic ? undefined : { rotate: 360 }}
+              transition={isStatic ? undefined : { duration: 3, repeat: Infinity, ease: 'linear' }}
             >
               <Music2 className="w-5 h-5 text-white" />
             </motion.div>
@@ -250,8 +256,8 @@ export default function AmbientMusicPlayer({ musicFile, defaultVolume, enabled }
           {isPlaying && !expanded && (
             <motion.div
               className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-emerald-400"
-              animate={{ scale: [1, 1.2, 1] }}
-              transition={{ duration: 1.5, repeat: Infinity }}
+              animate={isStatic ? undefined : { scale: [1, 1.2, 1] }}
+              transition={isStatic ? undefined : { duration: 1.5, repeat: Infinity }}
               style={{ boxShadow: '0 0 6px rgba(52,211,153,0.5)' }}
             />
           )}

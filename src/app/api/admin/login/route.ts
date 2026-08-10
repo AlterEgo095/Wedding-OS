@@ -1,7 +1,7 @@
 export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { verifyPassword, generateToken, checkLoginRateLimit, resetLoginRateLimit, setAuthCookie } from '@/lib/auth';
+import { verifyPassword, generateToken, checkLoginRateLimitAsync, resetLoginRateLimitAsync, setAuthCookie } from '@/lib/auth';
 import { getRateLimitKey, checkRateLimit, withSecurityHeaders } from '@/lib/rate-limit';
 // P2-SEC-1: structured logger (no stack leak).
 import { logger } from '@/lib/logger';
@@ -44,10 +44,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (!checkLoginRateLimit(email.toLowerCase())) {
+    // P5.3-6 (audit-F H-3): Redis-backed login rate limit (with in-memory fallback).
+    const { allowed: loginAllowed, retryAfterSeconds } = await checkLoginRateLimitAsync(email.toLowerCase());
+    if (!loginAllowed) {
       return NextResponse.json(
         { error: 'Too many login attempts. Please try again later.' },
-        { status: 429 }
+        { status: 429, headers: retryAfterSeconds ? { 'Retry-After': String(retryAfterSeconds) } : undefined }
       );
     }
 
@@ -64,7 +66,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid email or password' }, { status: 401 });
     }
 
-    resetLoginRateLimit(email.toLowerCase());
+    await resetLoginRateLimitAsync(email.toLowerCase());
 
     // ─── P4.7: 2FA check (any admin/staff role) ───────────────────────────
     // If the user has 2FA enabled, do NOT issue the auth cookie yet. Return a

@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import Image from 'next/image'
 import { motion, AnimatePresence } from 'framer-motion'
+import type { Easing } from 'framer-motion'
 import {
   Crown, Gem, Heart, Sparkles, Globe, Mail, Printer, Megaphone,
   Check, ChevronRight, X, Rocket, ArrowRight, Star, Layers, Loader2,
@@ -14,6 +15,7 @@ import {
 } from '@/components/ui/dialog'
 import { Separator } from '@/components/ui/separator'
 import { DesignRenderer } from '@/components/collections/designs/DesignRenderer'
+import { useMotionTier } from '@/lib/motion/useMotionTier'
 import type { PremiumCollection, PackId, CollectionPack } from '@/lib/collections/types'
 import { countModules, countVariants } from '@/lib/collections/types'
 import { COLLECTIONS } from '@/lib/collections/catalog'
@@ -121,11 +123,13 @@ const TIER_STYLES: Record<string, string> = {
 
 function CollectionCard({ c, onOpen }: { c: PublicCollection; onOpen: () => void }) {
   const ds = c.designSystem
+  const { config: motionCfg, reduced: prefersReducedMotion, tier } = useMotionTier()
+  const isStatic = prefersReducedMotion || tier === 'none'
   return (
     <motion.button
       onClick={onOpen}
-      whileHover={{ y: -4 }}
-      transition={{ type: 'spring', stiffness: 300, damping: 24 }}
+      whileHover={isStatic ? undefined : { y: -4 }}
+      transition={isStatic ? { duration: 0 } : { type: 'spring', stiffness: 300, damping: 24 }}
       className="group relative text-left w-full rounded-2xl overflow-hidden border border-gold/20 hover:border-gold/50 transition-colors bg-card"
       style={{ boxShadow: '0 8px 32px -12px rgba(212, 168, 83, 0.15)' }}
     >
@@ -216,6 +220,8 @@ function PackTabButton({ pack, active, onClick, ds }: {
 function ModulePreview({ pack, ds, couple }: { pack: CollectionPack; ds: PremiumCollection['designSystem']; couple: CouplePreview }) {
   const [activeVariantByModule, setActiveVariantByModule] = useState<Record<string, string>>({})
   const [expandedModule, setExpandedModule] = useState<string | null>(null)
+  const { reduced: prefersReducedMotion, tier } = useMotionTier()
+  const isStatic = prefersReducedMotion || tier === 'none'
 
   return (
     <div className="space-y-3">
@@ -281,7 +287,12 @@ function ModulePreview({ pack, ds, couple }: { pack: CollectionPack; ds: Premium
               {/* Tags + quality (expanded) */}
               <AnimatePresence>
                 {isExpanded && (
-                  <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
+                  <motion.div
+                    initial={isStatic ? false : { height: 0, opacity: 0 }}
+                    animate={isStatic ? undefined : { height: 'auto', opacity: 1 }}
+                    exit={isStatic ? undefined : { height: 0, opacity: 0 }}
+                    className="overflow-hidden"
+                  >
                     <div className="pt-3 mt-3 border-t flex flex-wrap items-center gap-2" style={{ borderColor: `${ds.primary}20` }}>
                       <span className="text-[10px] font-semibold" style={{ color: ds.textMuted }}>Qualité :</span>
                       <div className="flex items-center gap-1">
@@ -393,7 +404,7 @@ function CollectionDetail({ collection, onClose }: { collection: PublicCollectio
         <div className="flex items-start gap-4 pr-10">
           <div className="w-20 h-20 rounded-xl overflow-hidden flex-shrink-0 relative" style={{ border: `1px solid ${ds.primary}40` }}>
             {collection.coverImage && (
-              <Image src={collection.coverImage} alt={collection.name} fill className="object-cover" unoptimized />
+              <Image src={collection.coverImage} alt={collection.name} fill className="object-cover" sizes="80px" unoptimized />
             )}
           </div>
           <div className="flex-1 min-w-0">
@@ -481,6 +492,8 @@ export default function CollectionsShowcase() {
   // P3: use the static catalog directly (no fetch). The showcase is the Phase 6
   // "Premium Collection Factory" — it displays the COLLECTIONS catalog, not the
   // DB Collection rows served by /api/collections (which have a different shape).
+  const { config: motionCfg, reduced: prefersReducedMotion, tier } = useMotionTier()
+  const isStatic = prefersReducedMotion || tier === 'none'
   const [collections] = useState<PublicCollection[]>(PUBLIC_CATALOG)
   const [families] = useState<{ family: string; count: number }[]>(() => {
     const map = new Map<string, number>()
@@ -510,10 +523,10 @@ export default function CollectionsShowcase() {
       <div className="max-w-7xl mx-auto">
         {/* Heading */}
         <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true, amount: 0.3 }}
-          transition={{ duration: 0.6 }}
+          initial={isStatic ? false : { opacity: 0, y: 20 }}
+          whileInView={isStatic ? undefined : { opacity: 1, y: 0 }}
+          viewport={isStatic ? undefined : { once: true, amount: 0.3 }}
+          transition={isStatic ? { duration: 0 } : { duration: motionCfg.duration, ease: motionCfg.ease as Easing }}
           className="text-center mb-12"
         >
           <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-gold/10 border border-gold/30 text-gold-light text-xs font-display tracking-widest mb-4">
@@ -576,10 +589,10 @@ export default function CollectionsShowcase() {
 
         {/* Commercial flow callout */}
         <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true }}
-          transition={{ duration: 0.6, delay: 0.2 }}
+          initial={isStatic ? false : { opacity: 0, y: 20 }}
+          whileInView={isStatic ? undefined : { opacity: 1, y: 0 }}
+          viewport={isStatic ? undefined : { once: true }}
+          transition={isStatic ? { duration: 0 } : { duration: motionCfg.duration, ease: motionCfg.ease as Easing, delay: 0.2 }}
           className="mt-16 rounded-2xl p-6 md:p-8 border border-gold/20 bg-card/50 backdrop-blur-sm"
         >
           <div className="flex flex-col md:flex-row items-center gap-6">

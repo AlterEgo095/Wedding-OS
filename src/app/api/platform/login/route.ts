@@ -4,8 +4,8 @@ import { db } from '@/lib/db';
 import {
   verifyPassword,
   generateToken,
-  checkLoginRateLimit,
-  resetLoginRateLimit,
+  checkLoginRateLimitAsync,
+  resetLoginRateLimitAsync,
   setAuthCookie,
 } from '@/lib/auth';
 import { getRateLimitKey, checkRateLimit, withSecurityHeaders } from '@/lib/rate-limit';
@@ -62,11 +62,13 @@ export async function POST(request: NextRequest) {
     }
 
     // ─── Per-email rate limit (5 attempts / 15 min) ────────────────────────
+    // P5.3-6 (audit-F H-3): Redis-backed login rate limit (with in-memory fallback).
     const normalizedEmail = email.toLowerCase();
-    if (!checkLoginRateLimit(normalizedEmail)) {
+    const { allowed: loginAllowed, retryAfterSeconds } = await checkLoginRateLimitAsync(normalizedEmail);
+    if (!loginAllowed) {
       return NextResponse.json(
         { error: 'Too many login attempts. Please try again later.' },
-        { status: 429 }
+        { status: 429, headers: retryAfterSeconds ? { 'Retry-After': String(retryAfterSeconds) } : undefined }
       );
     }
 
@@ -99,7 +101,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    resetLoginRateLimit(normalizedEmail);
+    await resetLoginRateLimitAsync(normalizedEmail);
 
     // ─── P1-SEC-8: 2FA check ───────────────────────────────────────────────
     // If the user has 2FA enabled, do NOT issue the auth cookie yet. Return a

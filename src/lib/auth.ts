@@ -146,6 +146,127 @@ export function verifyToken(token: string): AuthUser | null {
   }
 }
 
+// ─── Phase 4C — Impersonation session token ─────────────────────────────────
+//
+// A separate, signed JWT stored in the httpOnly `impersonation_session` cookie
+// while a PLATFORM_ADMIN is impersonating a wedding admin. The token carries:
+//
+//   - adminUserId:   the original PLATFORM_ADMIN's AdminUser.id
+//   - adminEmail:    the original admin's email (for audit-log detail)
+//   - targetUserId:  the impersonated user's AdminUser.id
+//   - targetName:    the impersonated user's display name (for the banner UI)
+//   - targetRole:    the impersonated user's role (ORGANIZER / RECEPTION / CONTROLLER)
+//   - targetEmail:   the impersonated user's email (for audit-log detail)
+//   - originalToken: the original `auth_token` JWT — restored on stop / auto-expiry
+//   - expiresAt:     epoch-ms, NOW + 30 min (hard limit, no renewal)
+//   - iat:           issued-at (jwt.sign injects this automatically)
+//
+// The token is signed with the SAME JWT_SECRET as `auth_token`. We use
+// `ignoreExpiration: true` when verifying so the middleware can read the
+// `originalToken` to RESTORE the admin's session even after the 30-min
+// window has elapsed (auto-expiry flow). The `expiresAt` claim is checked
+// explicitly by callers (middleware + status endpoint).
+//
+// Security: the cookie is httpOnly + sameSite=strict + secure in prod. JS
+// cannot read it, so the embedded `originalToken` is never exposed to the
+// browser. CSRF protection still applies via the double-submit pattern
+// (the csrf_token cookie is unaffected by impersonation).
+//
+// NOTE on `originalToken` storage: we embed the admin's existing auth_token
+// (already a JWT with its own 8h expiry) inside the impersonation_session
+// JWT. On stop, we restore that token to the `auth_token` cookie. On
+// auto-expiry (30min), the originalToken is still valid (8h > 30min) so the
+// admin's session is preserved.
+
+// Edge-safe impersonation types + constants + decode/expiry helpers live in
+// impersonation-edge.ts (no node:crypto/node:os — safe for Edge middleware).
+// Re-exported here so existing callers importing from auth.ts still work.
+export {
+  type ImpersonationPayload,
+  IMPERSONATION_COOKIE_NAME,
+  IMPERSONATION_MAX_AGE_MS,
+  decodeImpersonationToken,
+  isImpersonationExpired,
+} from './impersonation-edge';
+import type { ImpersonationPayload } from './impersonation-edge';
+import { IMPERSONATION_COOKIE_NAME } from './impersonation-edge';
+
+/**
+ * Sign an impersonation-session JWT. The token embeds the original admin's
+ * auth_token (still valid 8h) so it can be restored on stop / auto-expiry.
+ */
+export function signImpersonationToken(payload: ImpersonationPayload): string {
+  return jwt.sign(payload, getJwtSecret(), {
+    // JWT `expiresIn` is set to 35min (slightly longer than our 30-min
+    // business window) so the JWT itself remains verifiable past the
+    // 30-min mark — that lets the middleware read the originalToken to
+    // restore the admin session. The 30-min hard limit is enforced by
+    // the explicit `expiresAt` claim, NOT by JWT expiry.
+    expiresIn: '35m',
+  });
+}
+
+/**
+ * Verify an impersonation-session JWT. Uses `ignoreExpiration: true` so the
+ * payload (including `originalToken` + `expiresAt`) is recoverable even
+ * after the JWT's own 35-min expiry. Callers MUST check `expiresAt`
+ * explicitly to enforce the 30-min business window.
+ *
+ * Returns null if the signature is invalid or the token is malformed.
+ */
+export function verifyImpersonationToken(token: string): ImpersonationPayload | null {
+  try {
+    const payload = jwt.verify(token, getJwtSecret(), {
+      ignoreExpiration: true,
+    }) as ImpersonationPayload;
+    if (
+      !payload ||
+      typeof payload.adminUserId !== 'string' ||
+      typeof payload.targetUserId !== 'string' ||
+      typeof payload.originalToken !== 'string' ||
+      typeof payload.expiresAt !== 'number'
+    ) {
+      return null;
+    }
+    return payload;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Set the httpOnly `impersonation_session` cookie on a NextResponse.
+ * The cookie's maxAge matches the JWT's 35-min TTL (slightly longer than the
+ * 30-min business window) so the browser retains the cookie past the
+ * business expiry — letting the middleware read it to restore the admin
+ * session on the next request after expiry.
+ */
+export function setImpersonationCookie(
+  response: NextResponse,
+  token: string
+): NextResponse {
+  response.cookies.set(IMPERSONATION_COOKIE_NAME, token, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'strict',
+    path: '/',
+    maxAge: 35 * 60, // 35 min — matches signImpersonationToken's expiresIn
+  });
+  return response;
+}
+
+/**
+ * Clear the `impersonation_session` cookie. Used by the stop endpoint + by
+ * the middleware's auto-expiry flow.
+ */
+export function clearImpersonationCookie(response: NextResponse): NextResponse {
+  response.cookies.delete(IMPERSONATION_COOKIE_NAME);
+  return response;
+}
+
+// decodeImpersonationToken + isImpersonationExpired are re-exported from
+// impersonation-edge.ts (see above). They are Edge-safe (pure JS, no crypto).
+
 export function getTokenFromRequest(request: NextRequest): string | null {
   // P1-SEC-3: Authorization header is kept as a fallback for any client that
   // still sends it, but the httpOnly `auth_token` cookie is the primary auth
@@ -464,8 +585,18 @@ export function getCanonicalRole(role: string): Role {
 
 // ─── Rate limiting (login attempts) ───────────────────────────────────────────
 //
-// Simple in-memory rate limiter — sufficient for a single-instance deployment.
-// For multi-instance (Phase 9+), migrate to Redis-backed rate limiting.
+// P5.3-6 (audit-F H-3): Migrated to Redis-backed rate limiting with an
+// in-memory fallback. The previous implementation used a process-local Map,
+// which meant a multi-replica deployment would multiply the brute-force budget
+// by the replica count (5 attempts × N replicas = 5N attempts per 15 min).
+//
+// The async versions (`checkLoginRateLimitAsync` / `resetLoginRateLimitAsync`)
+// use the same Redis client as `checkRateLimitAsync` (from src/lib/rate-limit.ts)
+// — when REDIS_URL is configured + ioredis is reachable, the counter is shared
+// across all replicas. Otherwise it falls back to the in-memory Map below.
+//
+// The legacy sync functions are retained for backward-compatibility with any
+// code paths that cannot be made async; new code should use the async versions.
 
 const loginAttempts = new Map<string, { count: number; lastAttempt: number }>();
 const MAX_LOGIN_ATTEMPTS = 5;
@@ -491,4 +622,82 @@ export function checkLoginRateLimit(email: string): boolean {
 
 export function resetLoginRateLimit(email: string): void {
   loginAttempts.delete(email);
+}
+
+// ─── P5.3-6: Redis-backed login rate limiter (async) ────────────────────────
+//
+// Uses a Redis key `login-rl:<email-normalized>:<window-start>` so the counter
+// is shared across all app replicas. The window-start is `floor(now /
+// LOGIN_WINDOW_MS)` so the counter auto-rolls at the window boundary without a
+// background sweeper. The EXPIRE on first INCR ensures the key is evicted
+// shortly after the window closes.
+//
+// Returns `{ allowed, retryAfterSeconds? }` to match the contract of
+// `checkRateLimitAsync` (src/lib/rate-limit.ts). `retryAfterSeconds` is
+// populated only when the limit is exceeded — callers can use it for the
+// `Retry-After` response header.
+
+export async function checkLoginRateLimitAsync(
+  email: string
+): Promise<{ allowed: boolean; retryAfterSeconds?: number }> {
+  // Lazy import to avoid loading Redis on cold start when not needed.
+  const { getRedis } = await import('./redis');
+  const redis = await getRedis();
+  const normalizedEmail = email.toLowerCase().trim();
+  const redisKey = (suffix: string) => `login-rl:${normalizedEmail}:${suffix}`;
+
+  if (redis) {
+    try {
+      const windowStart = Math.floor(Date.now() / LOGIN_WINDOW_MS);
+      const key = redisKey(String(windowStart));
+      const count = await redis.incr(key);
+      if (count === 1) {
+        await redis.expire(key, Math.ceil(LOGIN_WINDOW_MS / 1000));
+      }
+      if (count > MAX_LOGIN_ATTEMPTS) {
+        return {
+          allowed: false,
+          retryAfterSeconds: Math.ceil(LOGIN_WINDOW_MS / 1000),
+        };
+      }
+      return { allowed: true };
+    } catch (err) {
+      // Redis error — fall through to in-memory
+      console.warn('login rate-limit redis error, falling back to in-memory', err);
+    }
+  }
+
+  // In-memory fallback (same logic as the sync version, but async-shaped)
+  const allowed = checkLoginRateLimit(normalizedEmail);
+  if (!allowed) {
+    return {
+      allowed: false,
+      retryAfterSeconds: Math.max(1, Math.ceil(LOGIN_WINDOW_MS / 1000)),
+    };
+  }
+  return { allowed: true };
+}
+
+export async function resetLoginRateLimitAsync(email: string): Promise<void> {
+  const { getRedis } = await import('./redis');
+  const redis = await getRedis();
+  const normalizedEmail = email.toLowerCase().trim();
+
+  if (redis) {
+    try {
+      // Delete all window-bucketed keys for this email. We don't know the
+      // current window-start (the attacker may have been locked out in a
+      // previous window that has since rolled), so we delete the current
+      // window's key (the only one that could be active). Stale keys from
+      // past windows are auto-evicted by their EXPIRE TTL.
+      const windowStart = Math.floor(Date.now() / LOGIN_WINDOW_MS);
+      await redis.del(`login-rl:${normalizedEmail}:${windowStart}`);
+      return;
+    } catch (err) {
+      console.warn('login rate-limit redis reset error, falling back to in-memory', err);
+    }
+  }
+
+  // In-memory fallback
+  resetLoginRateLimit(normalizedEmail);
 }

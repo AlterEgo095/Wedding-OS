@@ -2,8 +2,10 @@
 
 import { useRef } from 'react'
 import { motion, useInView } from 'framer-motion'
+import type { Easing } from 'framer-motion'
 import { MessageCircle, Sparkles, QrCode, Users, LayoutDashboard, Mail, CalendarCheck, Image as ImageIcon, ArrowRight, CheckCircle2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { useMotionTier } from '@/lib/motion/useMotionTier'
 
 const WHATSAPP_URL = 'https://wa.me/243816515095?text=Bonjour%2C%20je%20souhaite%20obtenir%20une%20plateforme%20%C3%A9v%C3%A9nementielle%20similaire%20pour%20mon%20mariage%20ou%20mon%20%C3%A9v%C3%A9nement.'
 
@@ -19,6 +21,10 @@ const features = [
 export default function MarketingSection() {
   const sectionRef = useRef<HTMLDivElement>(null)
   const isInView = useInView(sectionRef, { once: true, margin: '-80px' })
+  const { config: motionCfg, reduced: prefersReducedMotion, tier } = useMotionTier()
+  // Static path: render plain divs (no motion). Layout/className/children are
+  // identical — only the animation layer is removed.
+  const isStatic = prefersReducedMotion || tier === 'none'
 
   return (
     <section
@@ -37,18 +43,21 @@ export default function MarketingSection() {
       {/* Floating particles */}
       <div className="absolute inset-0 pointer-events-none overflow-hidden">
         <motion.div
-          animate={{ y: [-15, 15, -15], opacity: [0.15, 0.3, 0.15] }}
-          transition={{ duration: 6, repeat: Infinity, ease: 'easeInOut' }}
+          animate={isStatic ? undefined : { y: [-15, 15, -15], opacity: [0.15, 0.3, 0.15] }}
+          transition={isStatic ? undefined : { duration: 6, repeat: Infinity, ease: 'easeInOut' }}
+          style={isStatic ? { opacity: 0.2 } : undefined}
           className="absolute top-1/4 left-[10%] w-2 h-2 rounded-full bg-gold/20"
         />
         <motion.div
-          animate={{ y: [10, -10, 10], opacity: [0.1, 0.25, 0.1] }}
-          transition={{ duration: 5, repeat: Infinity, ease: 'easeInOut', delay: 1 }}
+          animate={isStatic ? undefined : { y: [10, -10, 10], opacity: [0.1, 0.25, 0.1] }}
+          transition={isStatic ? undefined : { duration: 5, repeat: Infinity, ease: 'easeInOut', delay: 1 }}
+          style={isStatic ? { opacity: 0.15 } : undefined}
           className="absolute top-1/3 right-[15%] w-1.5 h-1.5 rounded-full bg-rose-gold/20"
         />
         <motion.div
-          animate={{ y: [-10, 10, -10], opacity: [0.15, 0.3, 0.15] }}
-          transition={{ duration: 7, repeat: Infinity, ease: 'easeInOut', delay: 2 }}
+          animate={isStatic ? undefined : { y: [-10, 10, -10], opacity: [0.15, 0.3, 0.15] }}
+          transition={isStatic ? undefined : { duration: 7, repeat: Infinity, ease: 'easeInOut', delay: 2 }}
+          style={isStatic ? { opacity: 0.2 } : undefined}
           className="absolute bottom-1/4 left-[20%] w-1 h-1 rounded-full bg-gold-light/20"
         />
       </div>
@@ -56,16 +65,16 @@ export default function MarketingSection() {
       <div className="relative z-10 max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* ─── Section Title ─── */}
         <motion.div
-          initial={{ opacity: 0, y: 30 }}
-          animate={isInView ? { opacity: 1, y: 0 } : {}}
-          transition={{ duration: 0.8 }}
+          initial={isStatic ? false : { opacity: 0, y: 30 }}
+          animate={isStatic ? undefined : (isInView ? { opacity: 1, y: 0 } : {})}
+          transition={isStatic ? { duration: 0 } : { duration: motionCfg.duration, ease: motionCfg.ease as Easing }}
           className="text-center mb-12"
         >
           {/* Badge */}
           <motion.div
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={isInView ? { opacity: 1, scale: 1 } : {}}
-            transition={{ duration: 0.6, delay: 0.2 }}
+            initial={isStatic ? false : { opacity: 0, scale: 0.9 }}
+            animate={isStatic ? undefined : (isInView ? { opacity: 1, scale: 1 } : {})}
+            transition={isStatic ? { duration: 0 } : { duration: motionCfg.duration, ease: motionCfg.ease as Easing, delay: 0.2 }}
             className="inline-flex items-center gap-2 px-4 py-2 rounded-full glass-card gold-border mb-8"
           >
             <Sparkles className="size-4 text-gold" />
@@ -89,17 +98,17 @@ export default function MarketingSection() {
 
         {/* ─── Feature Grid ─── */}
         <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={isInView ? { opacity: 1, y: 0 } : {}}
-          transition={{ duration: 0.8, delay: 0.3 }}
+          initial={isStatic ? false : { opacity: 0, y: 20 }}
+          animate={isStatic ? undefined : (isInView ? { opacity: 1, y: 0 } : {})}
+          transition={isStatic ? { duration: 0 } : { duration: motionCfg.duration, ease: motionCfg.ease as Easing, delay: 0.3 }}
           className="grid grid-cols-2 md:grid-cols-3 gap-4 md:gap-6 mb-12"
         >
           {features.map((feature, i) => (
             <motion.div
               key={feature.label}
-              initial={{ opacity: 0, y: 20 }}
-              animate={isInView ? { opacity: 1, y: 0 } : {}}
-              transition={{ delay: 0.3 + i * 0.08, duration: 0.5 }}
+              initial={isStatic ? false : { opacity: 0, y: 20 }}
+              animate={isStatic ? undefined : (isInView ? { opacity: 1, y: 0 } : {})}
+              transition={isStatic ? { duration: 0 } : { delay: 0.3 + i * 0.08, duration: motionCfg.duration, ease: motionCfg.ease as Easing }}
               className="glass-card p-4 md:p-6 rounded-xl text-center group hover:shadow-lg hover:shadow-gold/5 transition-all duration-300"
             >
               <div className="w-10 h-10 md:w-12 md:h-12 mx-auto mb-3 rounded-full bg-gradient-to-br from-gold/10 to-rose-gold/10 flex items-center justify-center group-hover:scale-110 transition-transform duration-300">
@@ -114,9 +123,9 @@ export default function MarketingSection() {
 
         {/* ─── Marketing Text ─── */}
         <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={isInView ? { opacity: 1, y: 0 } : {}}
-          transition={{ duration: 0.8, delay: 0.6 }}
+          initial={isStatic ? false : { opacity: 0, y: 20 }}
+          animate={isStatic ? undefined : (isInView ? { opacity: 1, y: 0 } : {})}
+          transition={isStatic ? { duration: 0 } : { duration: motionCfg.duration, ease: motionCfg.ease as Easing, delay: 0.6 }}
           className="max-w-3xl mx-auto text-center mb-12"
         >
           <p className="font-display text-base md:text-lg text-muted-foreground/80 leading-relaxed mb-6">
@@ -127,9 +136,9 @@ export default function MarketingSection() {
             {['Sur mesure', 'Premium', 'Innovant'].map((item, i) => (
               <motion.div
                 key={item}
-                initial={{ opacity: 0, x: i === 0 ? -20 : i === 2 ? 20 : 0, scale: 0.8 }}
-                animate={isInView ? { opacity: 1, x: 0, scale: 1 } : {}}
-                transition={{ delay: 0.8 + i * 0.1, duration: 0.5 }}
+                initial={isStatic ? false : { opacity: 0, x: i === 0 ? -20 : i === 2 ? 20 : 0, scale: 0.8 }}
+                animate={isStatic ? undefined : (isInView ? { opacity: 1, x: 0, scale: 1 } : {})}
+                transition={isStatic ? { duration: 0 } : { delay: 0.8 + i * 0.1, duration: motionCfg.duration, ease: motionCfg.ease as Easing }}
                 className="flex items-center gap-1.5"
               >
                 <CheckCircle2 className="size-4 text-gold" />
@@ -145,9 +154,9 @@ export default function MarketingSection() {
 
         {/* ─── CTA Button ─── */}
         <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={isInView ? { opacity: 1, y: 0 } : {}}
-          transition={{ duration: 0.8, delay: 0.9 }}
+          initial={isStatic ? false : { opacity: 0, y: 20 }}
+          animate={isStatic ? undefined : (isInView ? { opacity: 1, y: 0 } : {})}
+          transition={isStatic ? { duration: 0 } : { duration: motionCfg.duration, ease: motionCfg.ease as Easing, delay: 0.9 }}
           className="flex flex-col items-center"
         >
           <a

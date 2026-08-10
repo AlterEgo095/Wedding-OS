@@ -9,6 +9,13 @@
 //     Deployments, Governance) → ./tabs/production/*.tsx
 // The shell now contains: imports, usePlatformFetch, NAV_ITEMS, the auth
 // gate, the sidebar/top bar, and the renderTabContent switch.
+//
+// ─── Phase 4A (MISSION 5.9.0 §20.6) — Preview Lab ────────────────────────────
+// The Preview Lab lives at /platform/admin/preview/[weddingSlug] (a separate
+// Server-Component route, auth-gated via getServerAuthUser + isPlatformAdmin).
+// It's NOT a tab here — it's a standalone page with its own layout (no
+// sidebar) so the iframes get maximum viewport width. Entry point: the
+// WeddingsTab dropdown ("Lab Preview" item per wedding, added Phase 4A).
 // ════════════════════════════════════════════════════════════════════════════
 
 import { useState, useEffect, useCallback, useRef, useSyncExternalStore, type ReactNode } from 'react'
@@ -18,7 +25,6 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
-import { Separator } from '@/components/ui/separator'
 import {
   LayoutGrid,
   LayoutDashboard,
@@ -27,7 +33,6 @@ import {
   ScrollText,
   Crown,
   LogOut,
-  Menu as MenuIcon,
   X,
   Loader2,
   ExternalLink,
@@ -53,6 +58,8 @@ import {
   BookOpen,
   // P4.7 — 2FA setup: re-using ShieldCheck (already imported above for the
   // Governance tab icon).
+  // Phase 2E — Identity presets catalog tab.
+  Sparkles,
 } from 'lucide-react'
 
 import dynamic from 'next/dynamic'
@@ -64,6 +71,9 @@ const CollectionsFactoryTab = dynamic(() => import('./CollectionsFactoryTab').th
 const ThemeCustomizer = dynamic(() => import('@/components/admin/ThemeCustomizer').then((m) => m.ThemeCustomizer), { ssr: false })
 const MarketingControlPlane = dynamic(() => import('@/components/marketing/MarketingControlPlane'), { ssr: false })
 const CommercialOS = dynamic(() => import('@/components/commercial/CommercialOS'), { ssr: false })
+
+// Phase 2E (MISSION 5.9.0 §20.4) — Identity presets viewer (read-only catalog).
+const IdentityPresetsManager = dynamic(() => import('./tabs/production/IdentityPresetsManager').then((m) => m.IdentityPresetsManager))
 
 // Extracted tabs (CONS-3).
 import { DashboardTab } from './tabs/DashboardTab'
@@ -100,6 +110,12 @@ import {
   type FetchWithAuth,
   getRoleLabel,
 } from './tabs/shared'
+import {
+  AdminShell,
+  type AdminShellSection,
+  type AdminShellUser,
+  type AdminShellBreadcrumb,
+} from '@/components/admin/AdminShell'
 
 // useSyncExternalStore subscribe placeholder — we only need the getServerSnapshot
 // vs getSnapshot split to detect "are we hydrated yet?" without triggering the
@@ -135,6 +151,8 @@ const NAV_ITEMS: NavItem[] = [
   { id: 'collections', label: 'Collections', icon: LayoutGrid },
   { id: 'templates', label: 'Templates', icon: FileText },
   { id: 'themes', label: 'Thèmes', icon: Palette },
+  // Phase 2E (MISSION 5.9.0 §20.4) — Identity presets catalog (read-only viewer).
+  { id: 'identities', label: 'Identités', icon: Sparkles },
   { id: 'components-registry', label: 'Composants', icon: Boxes },
   { id: 'assets', label: 'Assets', icon: ImageIcon },
   { id: 'deployments', label: 'Déploiements', icon: Cloud },
@@ -162,6 +180,7 @@ const NAV_SECTIONS: Record<string, string> = {
   collections: 'PRODUCTION STUDIO',
   templates: 'PRODUCTION STUDIO',
   themes: 'PRODUCTION STUDIO',
+  identities: 'PRODUCTION STUDIO',
   'components-registry': 'PRODUCTION STUDIO',
   assets: 'PRODUCTION STUDIO',
   deployments: 'PRODUCTION STUDIO',
@@ -175,6 +194,27 @@ const NAV_SECTIONS: Record<string, string> = {
   'qr-invitations': 'PRODUCTION STUDIO',
   ops: 'PRODUCTION STUDIO',
   users: 'SYSTEM',
+}
+
+// Phase 2F — section color stripes (audit §20.4). Each section gets a
+// distinct 2px left color stripe for visual scanning. Mirrors the
+// wedding-admin's 6-section IA pattern. Colors:
+//   COMMAND CENTER     → gold
+//   COMMERCIAL         → emerald
+//   EVENT OPERATIONS   → rose
+//   ORGANIZATIONS      → violet
+//   PRODUCTION STUDIO  → gold
+//   SYSTEM             → slate
+const SECTION_STRIPE_COLOR: Record<
+  string,
+  'gold' | 'emerald' | 'rose' | 'violet' | 'slate'
+> = {
+  'COMMAND CENTER': 'gold',
+  COMMERCIAL: 'emerald',
+  'EVENT OPERATIONS': 'rose',
+  ORGANIZATIONS: 'violet',
+  'PRODUCTION STUDIO': 'gold',
+  SYSTEM: 'slate',
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -278,7 +318,6 @@ export default function PlatformAdminPage() {
   const [user, setUser] = useState<AuthUser | null>(null)
   const [authChecked, setAuthChecked] = useState(false)
   const [activeTab, setActiveTab] = useState<TabId>('dashboard')
-  const [sidebarOpen, setSidebarOpen] = useState(false)
   // P4.7: 2FA setup modal — visible to ALL logged-in platform users.
   const [twoFactorOpen, setTwoFactorOpen] = useState(false)
 
@@ -324,6 +363,24 @@ export default function PlatformAdminPage() {
     }
   }, [authChecked, user, router])
 
+  // Phase 4C — When the middleware's impersonation auto-expiry redirects
+  // here with ?impersonation_expired=1, surface a one-shot toast so the
+  // admin understands why they were bounced out of the wedding admin.
+  // We use window.location.search (not useSearchParams) to avoid adding a
+  // Suspense boundary to this already-complex page.
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const params = new URLSearchParams(window.location.search)
+    if (params.get('impersonation_expired') === '1') {
+      toast.info("Session d'impersonation expirée", {
+        description: 'La session de 30 minutes est terminée. Vous pouvez relancer l\'impersonation si nécessaire.',
+      })
+      // Clean the query param so the toast doesn't re-fire on refresh.
+      const cleanUrl = window.location.pathname
+      window.history.replaceState({}, '', cleanUrl)
+    }
+  }, [])
+
   const handleLogout = useCallback(async () => {
     try {
       await fetch('/api/platform/logout', { method: 'POST', credentials: 'include' })
@@ -342,7 +399,6 @@ export default function PlatformAdminPage() {
 
   const handleTabChange = useCallback((tabId: TabId) => {
     setActiveTab(tabId)
-    setSidebarOpen(false)
   }, [])
 
   const activeNavItem = NAV_ITEMS.find((item) => item.id === activeTab)
@@ -360,7 +416,9 @@ export default function PlatformAdminPage() {
       case 'onboarding':
         return <OnboardingTab fetchWithAuth={fetchWithAuth} />
       case 'users':
-        return <UsersTab fetchWithAuth={fetchWithAuth} />
+        // Phase 4C — pass currentRole so UsersTab can gate the "Impersoner"
+        // button on PLATFORM_ADMIN / SUPER_ADMIN (defense-in-depth).
+        return <UsersTab fetchWithAuth={fetchWithAuth} currentRole={user?.role || ''} />
       case 'audit':
         return <AuditTab fetchWithAuth={fetchWithAuth} />
       case 'appearance':
@@ -376,6 +434,9 @@ export default function PlatformAdminPage() {
         return <TemplatesManager csrfToken={getCsrfToken()} />
       case 'themes':
         return <ThemesManager csrfToken={getCsrfToken()} />
+      // Phase 2E (MISSION 5.9.0 §20.4) — Identity presets catalog (read-only).
+      case 'identities':
+        return <IdentityPresetsManager />
       case 'components-registry':
         return <ComponentsRegistry csrfToken={getCsrfToken()} />
       case 'assets':
@@ -418,7 +479,64 @@ export default function PlatformAdminPage() {
     )
   }
 
-  const SidebarHeader = (
+  // ─── Build <AdminShell> props ──────────────────────────────────────────────
+  // Phase 1D: chrome extracted into the reusable <AdminShell> primitive. The
+  // 23 NAV_ITEMS are grouped into 6 sections using the existing NAV_SECTIONS
+  // map (COMMAND CENTER, COMMERCIAL, EVENT OPERATIONS, ORGANIZATIONS,
+  // PRODUCTION STUDIO, SYSTEM). Items without an explicit NAV_SECTIONS entry
+  // (billing, onboarding, guestbook, audit) inherit the previous item's
+  // section so they remain grouped with their logical siblings.
+  //
+  // Phase 2F: each section gets a distinct color stripe via
+  // SECTION_STRIPE_COLOR (audit §20.4).
+
+  const sections: AdminShellSection[] = (() => {
+    const result: AdminShellSection[] = []
+    let currentSectionLabel: string | undefined
+    let currentSectionId = 'section-0'
+    let idx = 0
+    for (const item of NAV_ITEMS) {
+      const itemSectionLabel = NAV_SECTIONS[item.id]
+      // Start a new section when this item has an explicit section label
+      // that differs from the current one. Items without an explicit label
+      // stay in the current section (preserves the visual grouping of
+      // billing/onboarding under COMMERCIAL, audit under SYSTEM, etc.).
+      const startsNewSection =
+        itemSectionLabel !== undefined && itemSectionLabel !== currentSectionLabel
+      if (result.length === 0 || startsNewSection) {
+        currentSectionLabel = itemSectionLabel
+        currentSectionId = `section-${idx++}`
+        result.push({
+          id: currentSectionId,
+          label: itemSectionLabel, // undefined → no header rendered
+          stripeColor: itemSectionLabel
+            ? SECTION_STRIPE_COLOR[itemSectionLabel]
+            : undefined,
+          items: [],
+        })
+      }
+      result[result.length - 1].items.push({
+        href: `#${item.id}`,
+        label: item.label,
+        icon: <item.icon className="w-4 h-4 shrink-0" />,
+        active: activeTab === item.id,
+        onNavigate: () => handleTabChange(item.id),
+      })
+    }
+    return result
+  })()
+
+  // ─── Breadcrumbs (Phase 2F) ─────────────────────────────────────────────
+  // Plateforme (link to /platform/admin) > Section label (intermediate) >
+  // Page label (current). The last item is rendered with text-gold (no link).
+  const activeSectionLabel = NAV_SECTIONS[activeTab as string]
+  const breadcrumbs: AdminShellBreadcrumb[] = [
+    { label: 'Plateforme', href: '/platform/admin' },
+    ...(activeSectionLabel ? [{ label: activeSectionLabel }] : []),
+    { label: activeNavItem?.label || '' },
+  ]
+
+  const brand = (
     <div className="p-4 flex items-center gap-3">
       <div className="w-10 h-10 rounded-full bg-gradient-gold flex items-center justify-center shrink-0 shadow-lg">
         <Crown className="w-5 h-5 text-white" />
@@ -434,58 +552,8 @@ export default function PlatformAdminPage() {
     </div>
   )
 
-  const SidebarNav = (
-    <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar py-2">
-      <nav className="px-2 space-y-1">
-        {NAV_ITEMS.map((item, idx) => {
-          const isActive = activeTab === item.id
-          const section = NAV_SECTIONS[item.id]
-          const prevItem = idx > 0 ? NAV_ITEMS[idx - 1] : null
-          const showSectionHeader = section && (!prevItem || NAV_SECTIONS[prevItem.id] !== section)
-          return (
-            <div key={item.id}>
-              {showSectionHeader && (
-                <p className="px-3 pt-4 pb-1 text-[10px] font-semibold uppercase tracking-widest text-gold/50">
-                  {section}
-                </p>
-              )}
-              <button
-                onClick={() => handleTabChange(item.id)}
-                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all ${
-                  isActive
-                    ? 'bg-gold/15 text-gold font-medium'
-                    : 'text-muted-foreground hover:text-foreground hover:bg-white/5'
-                }`}
-              >
-                <item.icon className="w-4 h-4 shrink-0" />
-                <span>{item.label}</span>
-                {isActive && (
-                  <motion.div
-                    layoutId="platform-sidebar-indicator"
-                    className="ml-auto w-1.5 h-1.5 rounded-full bg-gold"
-                  />
-                )}
-              </button>
-            </div>
-          )
-        })}
-      </nav>
-    </div>
-  )
-
-  const SidebarFooter = (
-    <div className="p-3">
-      <div className="flex items-center gap-2 mb-3 px-2">
-        <div className="w-9 h-9 rounded-full bg-gradient-gold flex items-center justify-center text-white text-sm font-bold shrink-0">
-          {user.name.charAt(0).toUpperCase()}
-        </div>
-        <div className="flex-1 min-w-0">
-          <p className="text-xs font-medium truncate">{user.name}</p>
-          <p className="text-[10px] text-gold/80 uppercase tracking-wider truncate">
-            {getRoleLabel(user.role)}
-          </p>
-        </div>
-      </div>
+  const sidebarFooter = (
+    <>
       <Button
         variant="ghost"
         className="w-full justify-start text-gold hover:text-gold hover:bg-gold/10 text-sm mb-1"
@@ -505,156 +573,107 @@ export default function PlatformAdminPage() {
       <Button
         variant="ghost"
         className="w-full justify-start text-muted-foreground hover:text-foreground text-sm mt-1"
-        onClick={() => window.location.href = '/'}
+        onClick={() => { window.location.href = '/' }}
       >
         <X className="w-4 h-4 mr-2" />
         Retour au site
       </Button>
-    </div>
+    </>
   )
 
-  return (
-    <div className="h-screen flex">
-      {/* Desktop sidebar */}
-      <aside className="hidden md:flex flex-col w-60 shrink-0 border-r border-white/10 bg-white/[0.02]">
-        {SidebarHeader}
-        <Separator className="bg-white/10" />
-        {SidebarNav}
-        <Separator className="bg-white/10" />
-        {SidebarFooter}
-      </aside>
-
-      {/* Mobile sidebar overlay */}
-      <AnimatePresence>
-        {sidebarOpen && (
-          <>
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="absolute inset-0 bg-black/50 z-40 md:hidden"
-              onClick={() => setSidebarOpen(false)}
-            />
-            <motion.aside
-              initial={{ x: -280 }}
-              animate={{ x: 0 }}
-              exit={{ x: -280 }}
-              transition={{ type: 'spring', damping: 30, stiffness: 300 }}
-              className="absolute left-0 top-0 bottom-0 w-64 z-50 md:hidden flex flex-col border-r border-white/10"
-              style={{
-                background:
-                  'linear-gradient(135deg, oklch(0.12 0.02 270), oklch(0.16 0.02 270))',
-              }}
-            >
-              <div className="p-4 flex items-center justify-between">
-                {SidebarHeader}
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-11 w-11 text-muted-foreground"
-                  onClick={() => setSidebarOpen(false)}
-                >
-                  <X className="w-4 h-4" />
-                </Button>
-              </div>
-              <Separator className="bg-white/10" />
-              {SidebarNav}
-              <Separator className="bg-white/10" />
-              {SidebarFooter}
-            </motion.aside>
-          </>
-        )}
-      </AnimatePresence>
-
-      {/* Main content area */}
-      <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
-        {/* Top bar */}
-        <header className="h-14 shrink-0 flex items-center gap-3 px-4 border-b border-white/10 bg-white/[0.02]">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-9 w-9 md:hidden"
-            onClick={() => setSidebarOpen(true)}
-            aria-label="Ouvrir le menu"
+  const mobileBottomBar = (
+    <nav className="md:hidden shrink-0 flex items-center border-t border-white/10 bg-white/[0.02] safe-area-pb">
+      {NAV_ITEMS.slice(0, 6).map((item) => {
+        const isActive = activeTab === item.id
+        return (
+          <button
+            key={item.id}
+            onClick={() => handleTabChange(item.id)}
+            className={`flex-1 flex flex-col items-center gap-1 py-2 text-xs transition-colors ${
+              isActive ? 'text-gold' : 'text-muted-foreground'
+            }`}
           >
-            <MenuIcon className="w-5 h-5" />
-          </Button>
+            <item.icon className="w-5 h-5" />
+            <span className="truncate text-[10px]">{item.label}</span>
+          </button>
+        )
+      })}
+    </nav>
+  )
 
-          <div className="flex items-center gap-2">
-            {activeNavItem && (
-              <>
-                <activeNavItem.icon className="w-4 h-4 text-gold" />
-                <h1 className="font-semibold text-sm">{activeNavItem.label}</h1>
-              </>
-            )}
-          </div>
-
-          <div className="ml-auto flex items-center gap-2">
-            <Link
-              href="/"
-              className="hidden sm:flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors px-2"
-            >
-              <ExternalLink className="w-3.5 h-3.5" />
-              <span>Voir le site</span>
-            </Link>
-            <div className="flex items-center gap-2 pl-2 border-l border-white/10">
-              <div className="w-8 h-8 rounded-full bg-gradient-gold flex items-center justify-center text-white text-xs font-bold">
-                {user.name.charAt(0).toUpperCase()}
-              </div>
-              <div className="hidden sm:flex flex-col">
-                <span className="text-xs font-medium leading-tight">{user.name}</span>
-                <span className="text-[10px] text-gold/70 uppercase tracking-wider leading-tight">
-                  {getRoleLabel(user.role)}
-                </span>
-              </div>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-11 w-11 text-red-400 hover:text-red-300 hover:bg-red-400/10"
-                onClick={handleLogout}
-                aria-label="Déconnexion"
-              >
-                <LogOut className="w-4 h-4" />
-              </Button>
-            </div>
-          </div>
-        </header>
-
-        {/* Content */}
-        <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar">
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={activeTab}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              transition={{ duration: 0.2 }}
-              className="min-h-full"
-            >
-              {renderContent()}
-            </motion.div>
-          </AnimatePresence>
+  const topBarRight = (
+    <>
+      <Link
+        href="/"
+        className="hidden sm:flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors px-2"
+      >
+        <ExternalLink className="w-3.5 h-3.5" />
+        <span>Voir le site</span>
+      </Link>
+      <div className="flex items-center gap-2 pl-2 border-l border-white/10">
+        <div className="w-8 h-8 rounded-full bg-gradient-gold flex items-center justify-center text-white text-xs font-bold">
+          {user.name.charAt(0).toUpperCase()}
         </div>
-
-        {/* Mobile bottom tab bar */}
-        <nav className="md:hidden shrink-0 flex items-center border-t border-white/10 bg-white/[0.02] safe-area-pb">
-          {NAV_ITEMS.slice(0, 6).map((item) => {
-            const isActive = activeTab === item.id
-            return (
-              <button
-                key={item.id}
-                onClick={() => handleTabChange(item.id)}
-                className={`flex-1 flex flex-col items-center gap-1 py-2 text-xs transition-colors ${
-                  isActive ? 'text-gold' : 'text-muted-foreground'
-                }`}
-              >
-                <item.icon className="w-5 h-5" />
-                <span className="truncate text-[10px]">{item.label}</span>
-              </button>
-            )
-          })}
-        </nav>
+        <div className="hidden sm:flex flex-col">
+          <span className="text-xs font-medium leading-tight">{user.name}</span>
+          <span className="text-[10px] text-gold/70 uppercase tracking-wider leading-tight">
+            {getRoleLabel(user.role)}
+          </span>
+        </div>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-11 w-11 text-red-400 hover:text-red-300 hover:bg-red-400/10"
+          onClick={handleLogout}
+          aria-label="Déconnexion"
+        >
+          <LogOut className="w-4 h-4" />
+        </Button>
       </div>
+    </>
+  )
+
+  const pageTitle = activeNavItem && (
+    <>
+      <activeNavItem.icon className="w-4 h-4 text-gold" />
+      <h1 className="font-semibold text-sm">{activeNavItem.label}</h1>
+    </>
+  )
+
+  const shellUser: AdminShellUser = {
+    name: user.name,
+    email: user.email,
+    roleLabel: getRoleLabel(user.role),
+    avatarInitial: user.name.charAt(0).toUpperCase(),
+  }
+
+  return (
+    <>
+      <AdminShell
+        sections={sections}
+        user={shellUser}
+        brand={brand}
+        sidebarFooter={sidebarFooter}
+        sidebarWidth="w-60"
+        mobileDrawerWidth="w-64"
+        pageTitle={pageTitle}
+        breadcrumbs={breadcrumbs}
+        topBarRight={topBarRight}
+        mobileBottomBar={mobileBottomBar}
+      >
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={activeTab}
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            transition={{ duration: 0.2 }}
+            className="min-h-full"
+          >
+            {renderContent()}
+          </motion.div>
+        </AnimatePresence>
+      </AdminShell>
 
       {/* P4.7 — 2FA setup modal (accessible from the sidebar footer) */}
       <TwoFactorSetup
@@ -665,6 +684,6 @@ export default function PlatformAdminPage() {
           toast.success('2FA activée avec succès')
         }}
       />
-    </div>
+    </>
   )
 }

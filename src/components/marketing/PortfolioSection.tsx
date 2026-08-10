@@ -1,8 +1,8 @@
 'use client'
 
-import { motion } from 'framer-motion'
 import Link from 'next/link'
 import { ArrowRight, Star, FlaskConical } from 'lucide-react'
+import { MotionReveal } from '@/components/premium/MotionReveal'
 
 /**
  * PortfolioSection — SECTION 5
@@ -49,13 +49,7 @@ export default function PortfolioSection({ events }: Props) {
   return (
     <section id="experiences" className="relative py-20 md:py-32 px-4 sm:px-6 lg:px-8">
       <div className="max-w-7xl mx-auto">
-        <motion.div
-          initial={{ opacity: 0, y: 30 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true, amount: 0.3 }}
-          transition={{ duration: 0.7 }}
-          className="text-center mb-16"
-        >
+        <MotionReveal preset="fade-up" className="text-center mb-16">
           <span className="font-display text-xs tracking-[0.3em] uppercase text-gold/70 font-semibold mb-4 block">
             Réalisations
           </span>
@@ -66,7 +60,7 @@ export default function PortfolioSection({ events }: Props) {
           <p className="font-display text-base sm:text-lg text-muted-foreground max-w-2xl mx-auto leading-relaxed">
             Chaque expérience est indépendante, avec sa propre Collection, son propre manifeste et son propre rendu.
           </p>
-        </motion.div>
+        </MotionReveal>
 
         {/* Real clients */}
         {realClients.length > 0 && (
@@ -109,12 +103,7 @@ export default function PortfolioSection({ events }: Props) {
 function EventCard({ event, delay = 0, isDemo = false }: { event: PortfolioEvent; delay?: number; isDemo?: boolean }) {
   const color = event.collectionPrimaryColor || '#D4A853'
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 25 }}
-      whileInView={{ opacity: 1, y: 0 }}
-      viewport={{ once: true }}
-      transition={{ duration: 0.5, delay }}
-    >
+    <MotionReveal preset="fade-up" delay={delay}>
       <Link
         href={`/w/${event.slug}`}
         className="group block rounded-2xl overflow-hidden glass-card border border-gold/15 hover:border-gold/40 transition-all duration-500 h-full"
@@ -157,6 +146,6 @@ function EventCard({ event, delay = 0, isDemo = false }: { event: PortfolioEvent
           </div>
         </div>
       </Link>
-    </motion.div>
+    </MotionReveal>
   )
 }

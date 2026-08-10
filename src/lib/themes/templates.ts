@@ -1,3 +1,35 @@
+// ─── MISSION 5.9.1 P4-2 — Legacy ThemeTemplates removed ─────────────────────
+// The 4 legacy ThemeTemplate entries (classic-gold, romantic-rose,
+// minimal-modern, royal-night) were migrated to PlatformTheme DB rows in
+// P1-2. The THEME_TEMPLATES array is now empty. Utility functions
+// (getFontOption, isValidHexColor, normalizeHexColor, getLayoutOption,
+// DEFAULT_THEME, FONT_OPTIONS, LAYOUT_OPTIONS) + the ThemeTemplate / FontOption
+// / LayoutOption types are KEPT — they are still referenced by
+// src/lib/themes/presets.ts (themePresetToTemplate), src/components/admin/
+// ThemeCustomizer.tsx, src/components/wedding/ThemeInjector.tsx and
+// src/app/api/theme/route.ts.
+//
+// ⚠️ NOTE P4-2 — re-export intentionally NOT added:
+// The P4-2 spec asked to "keep the re-export line
+//   `export { THEME_PRESETS, getThemePreset, type ThemePreset } from './presets'`"
+// but that re-export was REMOVED in Phase 1B because it created a circular
+// import (templates.ts → presets.ts → templates.ts) which crashed Next.js at
+// runtime (see the explanatory comment at the top of presets.ts). Consumers
+// that need the unified registry MUST import it directly from
+// `@/lib/themes/presets`. Re-adding the re-export here would re-introduce the
+// circular dep — DO NOT re-add it.
+//
+// ⚠️ NOTE P4-2 — presets.ts still imports THEME_TEMPLATES at runtime:
+// `src/lib/themes/presets.ts` builds `THEME_PRESETS` by appending
+//   `templateToPreset(THEME_TEMPLATES.find(t => t.id === 'classic-gold') as ThemeTemplate, ...)`
+// for the 4 legacy slugs. With THEME_TEMPLATES now empty, those 4 `.find()`
+// calls return `undefined`, and the resulting 4 entries in `THEME_PRESETS`
+// will have all-`undefined` fields (id, slug, label, preview, ...). This is a
+// KNOWN backward-compat risk flagged in the P4-2 README and requires a
+// follow-up task (P4-3 or sibling) to remove those 4 broken
+// `templateToPreset(THEME_TEMPLATES.find(...))` calls from presets.ts so that
+// `THEME_PRESETS` only contains the 12 THEME_PACKAGES-derived entries.
+// ────────────────────────────────────────────────────────────────────────────
 // ══════════════════════════════════════════════════════════════════════════════
 // Theme Templates — Phase 8 Themes & Customization
 // ══════════════════════════════════════════════════════════════════════════════
@@ -22,6 +54,19 @@
 //
 // New code paths should prefer `await getLayoutOptions()`.
 // Existing synchronous code paths can continue to import `LAYOUT_OPTIONS`.
+//
+// P4-2 (MISSION 5.9.1 — Dead code cleanup):
+// The 4 legacy `ThemeTemplate` entries (classic-gold, romantic-rose,
+// minimal-modern, royal-night) have been REMOVED. They were migrated to
+// `PlatformTheme` DB rows in P1-2 (marked `isBuiltIn=true`,
+// `status='PUBLISHED'`, `configJson.isLegacy=true`, `version='0.9.0'`).
+// `THEME_TEMPLATES` is now an EMPTY array — runtime code should read themes
+// from the DB-backed registry (`@/lib/themes/registry.ts`) or directly via
+// `db.platformTheme.findUnique({ where: { slug } })`. The legacy `getTemplate()`
+// helper is kept as a stub that returns `null` for the 4 migrated slugs so
+// existing callers (e.g. /api/theme/apply-template/route.ts) can branch into the
+// DB-fallback path. See file-level comment at the top for the full migration
+// notes.
 
 
 export interface ThemeTemplate {
@@ -140,70 +185,17 @@ export const LAYOUT_OPTIONS: LayoutOption[] = [
  */
 
 
-// ─── 4 Theme Templates ────────────────────────────────────────────────────────
+// ─── Theme Templates (EMPTY post-P4-2) ────────────────────────────────────────
+//
+// P4-2 (MISSION 5.9.1): the 4 legacy entries (classic-gold, romantic-rose,
+// minimal-modern, royal-night) have been migrated to PlatformTheme DB rows
+// (P1-2). The array is now empty. The constant is kept as an empty array
+// (rather than deleted) because `src/lib/themes/presets.ts` imports it at
+// runtime to build the unified THEME_PRESETS registry — deleting it would
+// cause a build-time import error in presets.ts. See the file-level comment
+// at the top for the backward-compat risks this creates.
 
-export const THEME_TEMPLATES: ThemeTemplate[] = [
-  {
-    id: 'classic-gold',
-    name: 'Or Classique',
-    description: 'L’élégance intemporelle de l’or et du champagne — la signature Heureux Mariage.',
-    primaryColor: '#D4A853',
-    accentColor: '#C8785A',
-    fontDisplay: 'Cormorant Garamond',
-    fontBody: 'Inter',
-    layout: 'classic',
-    preview: {
-      bg: '#1a1410',
-      text: '#F5E6D3',
-      swatch: ['#D4A853', '#C8785A', '#8B6F47', '#F5E6D3'],
-    },
-  },
-  {
-    id: 'romantic-rose',
-    name: 'Rose Romantique',
-    description: 'Tendresse et poésie pour une célébration tout en douceur et romantisme.',
-    primaryColor: '#E8B4B8',
-    accentColor: '#C08497',
-    fontDisplay: 'Playfair Display',
-    fontBody: 'Lato',
-    layout: 'modern',
-    preview: {
-      bg: '#2a1a1e',
-      text: '#FBE5E7',
-      swatch: ['#E8B4B8', '#C08497', '#8B5A6B', '#FBE5E7'],
-    },
-  },
-  {
-    id: 'minimal-modern',
-    name: 'Minimal Moderne',
-    description: 'Lignes pures, gris contemporains — pour les couples au goût épuré et moderne.',
-    primaryColor: '#525252',
-    accentColor: '#A3A3A3',
-    fontDisplay: 'Marcellus',
-    fontBody: 'Montserrat',
-    layout: 'minimalist',
-    preview: {
-      bg: '#1c1c1c',
-      text: '#E5E5E5',
-      swatch: ['#525252', '#A3A3A3', '#262626', '#E5E5E5'],
-    },
-  },
-  {
-    id: 'royal-night',
-    name: 'Nuit Royale',
-    description: 'Sombre et somptueux, l’or étincelant sur fond nuit pour une allure majestueuse.',
-    primaryColor: '#C9A14A',
-    accentColor: '#1B1B3A',
-    fontDisplay: 'Italiana',
-    fontBody: 'Lora',
-    layout: 'royal',
-    preview: {
-      bg: '#0f0f1e',
-      text: '#E5C97B',
-      swatch: ['#C9A14A', '#1B1B3A', '#3D2E5F', '#E5C97B'],
-    },
-  },
-];
+export const THEME_TEMPLATES: ThemeTemplate[] = [];
 
 // ─── Default Theme ────────────────────────────────────────────────────────────
 
@@ -217,8 +209,51 @@ export const DEFAULT_THEME = {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-export function getTemplate(id: string): ThemeTemplate | undefined {
-  return THEME_TEMPLATES.find(t => t.id === id);
+/**
+ * Slugs of the 4 ThemeTemplates that were migrated to PlatformTheme DB rows
+ * in P1-2 (MISSION 5.9.1). Kept as a closed set so that the deprecation path
+ * can be documented precisely and so callers wanting to detect a "legacy slug"
+ * (e.g. the DB fallback in /api/theme/apply-template/route.ts) can do so
+ * without re-introducing the hardcoded template values.
+ */
+export const LEGACY_TEMPLATE_SLUGS: ReadonlySet<string> = new Set([
+  'classic-gold',
+  'romantic-rose',
+  'minimal-modern',
+  'royal-night',
+]);
+
+/**
+ * Lookup a ThemeTemplate by id (slug).
+ *
+ * @deprecated Since MISSION 5.9.1 P4-2 — the 4 legacy ThemeTemplates were
+ *   migrated to PlatformTheme DB rows in P1-2. This function returns `null`
+ *   for the 4 legacy slugs (classic-gold, romantic-rose, minimal-modern,
+ *   royal-night) and for any other slug (the `THEME_TEMPLATES` array is now
+ *   empty). Callers should fall back to the DB-backed PlatformTheme:
+ *
+ *   ```ts
+ *   const platformTheme = await db.platformTheme.findUnique({
+ *     where: { slug: templateId },
+ *   });
+ *   ```
+ *
+ *   See `src/app/api/theme/apply-template/route.ts` for the canonical
+ *   fallback pattern.
+ *
+ *   The function is KEPT (not deleted) to preserve the module's public API
+ *   surface and to let TypeScript continue to flag any forgotten caller at
+ *   compile time. Removing it would force a flag-day migration of every
+ *   caller, which is out of scope for P4-2.
+ */
+export function getTemplate(id: string): ThemeTemplate | null {
+  // P4-2: THEME_TEMPLATES is now empty — the 4 legacy entries were migrated
+  // to PlatformTheme DB rows in P1-2. The function signature is preserved
+  // for backward compat but it ALWAYS returns null. Callers should fall
+  // back to `db.platformTheme.findUnique({ where: { slug: id } })` (see
+  // /api/theme/apply-template/route.ts for the canonical pattern).
+  void id; // kept on the signature for backward-compat callers
+  return null;
 }
 
 export function getFontOption(family: string): FontOption | undefined {

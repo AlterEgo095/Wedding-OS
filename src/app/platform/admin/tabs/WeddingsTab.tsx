@@ -61,6 +61,7 @@ import {
   Play,
   Archive,
   EyeOff,
+  Eye,
 } from 'lucide-react'
 
 import { PLAN_METADATA, type Plan, type WeddingStatus } from '@/lib/types'
@@ -500,6 +501,19 @@ export function WeddingsTab({ fetchWithAuth }: { fetchWithAuth: (url: string, in
                               <Link href={`/w/${w.slug}`} target="_blank" className="flex items-center cursor-pointer">
                                 <ExternalLink className="w-3.5 h-3.5 mr-2" />
                                 Voir le site
+                              </Link>
+                            </DropdownMenuItem>
+                            {/* Phase 4A (MISSION 5.9.0 §20.6) — Preview Lab entry point.
+                                Opens /platform/admin/preview/[slug] in a new tab so the
+                                admin keeps their place in the weddings list. */}
+                            <DropdownMenuItem asChild>
+                              <Link
+                                href={`/platform/admin/preview/${w.slug}`}
+                                target="_blank"
+                                className="flex items-center cursor-pointer"
+                              >
+                                <Eye className="w-3.5 h-3.5 mr-2" />
+                                Lab Preview
                               </Link>
                             </DropdownMenuItem>
 
