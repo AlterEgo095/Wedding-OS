@@ -2,6 +2,7 @@
 
 import { motion } from 'framer-motion'
 import Link from 'next/link'
+import Image from 'next/image'
 import { Sparkles, ArrowRight, Calendar, Palette, Globe } from 'lucide-react'
 
 /**
@@ -16,6 +17,8 @@ import { Sparkles, ArrowRight, Calendar, Palette, Globe } from 'lucide-react'
  *
  * NO default wedding dependency. NO couple photos. NO hardcoded names.
  * This is a PLATFORM hero, not a wedding hero.
+ *
+ * Phase G (5.8.10) — Premium brand logo integrated as hero anchor.
  */
 export default function MarketingHero() {
   return (
@@ -34,16 +37,55 @@ export default function MarketingHero() {
       </div>
 
       <div className="relative max-w-5xl mx-auto text-center">
-        {/* Eyebrow */}
+        {/* ═══ Phase G — Premium Wedding OS Logo ═══ */}
+        <motion.div
+          initial={{ opacity: 0, scale: 0.7, y: 30 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          transition={{ duration: 1.1, ease: [0.16, 1, 0.3, 1] }}
+          className="relative mx-auto mb-10 w-32 h-32 sm:w-40 sm:h-40 md:w-48 md:h-48"
+        >
+          {/* Radial gold glow behind logo */}
+          <div
+            className="absolute inset-0 rounded-full blur-3xl scale-125"
+            style={{
+              background:
+                'radial-gradient(circle, oklch(0.85 0.15 85 / 0.35) 0%, oklch(0.85 0.15 85 / 0.1) 40%, transparent 70%)',
+            }}
+            aria-hidden
+          />
+          {/* Rotating gold ring (decorative) */}
+          <div
+            className="absolute inset-[-6px] rounded-full border border-gold/20"
+            style={{
+              background:
+                'conic-gradient(from 0deg, transparent 0%, oklch(0.85 0.15 85 / 0.4) 25%, transparent 50%, oklch(0.85 0.15 85 / 0.2) 75%, transparent 100%)',
+              maskImage: 'radial-gradient(circle, transparent 60%, black 61%)',
+              WebkitMaskImage: 'radial-gradient(circle, transparent 60%, black 61%)',
+              animation: 'spin 20s linear infinite',
+            }}
+            aria-hidden
+          />
+          {/* Logo image */}
+          <Image
+            src="/brand/wedding-os-logo-800.jpg"
+            alt="Wedding OS — The Ultimate Wedding Platform"
+            fill
+            priority
+            sizes="(max-width: 640px) 128px, (max-width: 768px) 160px, 192px"
+            className="relative rounded-full object-cover ring-2 ring-gold/40 shadow-2xl shadow-gold/30"
+          />
+        </motion.div>
+
+        {/* Eyebrow — tagline under logo */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.7 }}
+          transition={{ duration: 0.7, delay: 0.4 }}
           className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full border border-gold/20 bg-gold/5 mb-8"
         >
           <Sparkles className="size-3.5 text-gold/70" />
           <span className="font-display text-[10px] sm:text-xs tracking-[0.25em] uppercase text-gold/80 font-semibold">
-            AENEWS Event Experience Platform
+            Create · Manage · Celebrate
           </span>
         </motion.div>
 

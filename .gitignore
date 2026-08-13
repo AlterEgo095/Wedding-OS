@@ -100,3 +100,29 @@ scripts/backup-db.cron.example
 # VPS SSH credentials — NEVER commit
 .zscripts/.vps-creds
 .zscripts/vps_ssh.py
+
+# ═══ Mission 5.8.13 — backup & temp file exclusions ═══
+backups/
+.p595-phase-*-backup-*/
+.seo-backup-*/
+*.bak
+*.bak.*
+*.bak-*
+*.bak-$(date*
+db/custom.db*
+db/*.backup-*
+db/*.bak.*
+db/*.pre-*
+db/*.recovery
+db/*.fix
+db/*.p5sync
+prisma/db/
+prisma/schema.prisma.bak*
+# VPS utility scripts (not part of the product)
+db-check*.js
+db-counts.js
+db-final.js
+db-guests.js
+backfill_media.js
+rebuild-5.8.12.sh
+

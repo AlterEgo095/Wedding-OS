@@ -14,6 +14,8 @@
  *  - The 60-minute commercial lifecycle cron (P2.6: subscription state
  *    machine enforcement — TRIALING→PENDING_PAYMENT, PENDING_PAYMENT→SUSPENDED,
  *    PAST_DUE→SUSPENDED, SUSPENDED→CANCELLED + entitlements revocation)
+ *  - Mission 5.8.11 P0 FIX: Auto-seed Collections catalog on boot so the
+ *    Collection Engine is never empty on a fresh container.
  */
 
 import { registerTokenReplayCacheCleanup, unregisterTokenReplayCacheCleanup } from "./guest-auth";
@@ -46,6 +48,28 @@ async function shutdown(signal: "SIGTERM" | "SIGINT") {
   }, 500);
 }
 
+/**
+ * Mission 5.8.11 P0 FIX — Auto-seed the Collection catalog on boot.
+ *
+ * ensureCollectionsSeeded() is idempotent: it checks each of the 12
+ * COLLECTION_SEEDS and only creates missing ones (Collection + 1 Variant +
+ * 34 CollectionModule rows per collection). On an already-seeded DB it's
+ * a no-op (12 findUnique calls that all hit).
+ *
+ * This runs in the background (not awaited) so it never blocks server startup.
+ * Errors are logged but never crash the server — a missing collection seed
+ * is recoverable via the public /api/collections endpoint's lazy seeding.
+ */
+async function seedCollectionsOnBoot() {
+  try {
+    const { ensureCollectionsSeeded } = await import("./collections");
+    await ensureCollectionsSeeded();
+    console.log("[instrumentation] Collection catalog seeded successfully.");
+  } catch (err) {
+    console.error("[instrumentation] Collection seeding failed (non-fatal):", err);
+  }
+}
+
 export function register() {
   const ns = process.env.NODE_ENV;
   console.log(`[instrumentation] Wedding OS starting — env=${ns} pid=${process.pid}`);
@@ -71,6 +95,10 @@ export function register() {
     // Non-fatal — log and continue. The cron is best-effort automation.
     console.error("[instrumentation] Failed to start commercial cron:", err);
   }
+
+  // ─── Mission 5.8.11 P0: Auto-seed Collections on boot ───────────────────
+  // Background (not awaited) — never blocks startup. Idempotent + error-safe.
+  void seedCollectionsOnBoot();
 
   // ─── Graceful shutdown ──────────────────────────────────────────────────
   process.on("SIGTERM", () => void shutdown("SIGTERM"));

@@ -34,6 +34,21 @@ import { toast } from 'sonner'
  * The API upserts on (guestId, channel=QR) — existing rows are reset to
  * PENDING, new rows are created. Codes do NOT change (Guest.invitationCode
  * is immutable after creation).
+ *
+ * P0/P1 FIXES (5.8.11-FIX):
+ *   - P0-1 (CSRF): read csrf_token cookie FRESH inside each handler rather
+ *     than relying on the csrfToken prop captured at render time (which can
+ *     be stale/empty if the page rendered before login or if the token was
+ *     rotated). Falls back to the prop if the cookie is unavailable.
+ *   - P0-2 (URL display): do NOT pre-compute invitationUrl/qrCodeUrl from
+ *     the RAW invitationCode. Show a placeholder until the invitation is
+ *     actually generated via the API (which returns the encrypted token URL).
+ *   - P0-3 (QR preview): the QR endpoint returns JSON { qrCode: dataUrl },
+ *     NOT a PNG. Fetch the JSON on demand and render the dataUrl — don't
+ *     use the URL directly as an <img src>.
+ *   - P1-3 (stat count): fetch /api/weddings/{id}/stats for the real
+ *     invitation count (DB has 243, UI used to show 0 because invitation
+ *     status was never fetched per-guest).
  */
 
 interface Guest {
@@ -57,7 +72,9 @@ interface GuestWithInvitation extends Guest {
   invitation?: InvitationInfo | null
   invitationUrl?: string
   qrCodeUrl?: string
+  qrDataUrl?: string
   loading?: boolean
+  qrLoading?: boolean
 }
 
 interface BulkResult {
@@ -72,6 +89,23 @@ interface Props {
   csrfToken: string
 }
 
+/**
+ * Read the csrf_token cookie FRESH from document.cookie.
+ *
+ * The wedding admin page's global fetch interceptor already does this, but
+ * InvitationManager sets the X-CSRF-Token header EXPLICITLY (which prevents
+ * the interceptor from overriding it). If the csrfToken prop is stale/empty,
+ * the explicit header would be empty → 403. This helper reads the cookie at
+ * CALL TIME (inside the fetch handler) so we always send the current token.
+ */
+function getFreshCsrfToken(fallback: string): string {
+  if (typeof document === 'undefined') return fallback
+  const match = document.cookie
+    .split('; ')
+    .find((row) => row.startsWith('csrf_token='))
+  return match ? match.split('=').slice(1).join('=') : fallback
+}
+
 export default function InvitationManager({ weddingId, weddingSlug, csrfToken }: Props) {
   const [guests, setGuests] = useState<GuestWithInvitation[]>([])
   const [loading, setLoading] = useState(true)
@@ -81,6 +115,29 @@ export default function InvitationManager({ weddingId, weddingSlug, csrfToken }:
   const [bulkResult, setBulkResult] = useState<BulkResult | null>(null)
   const [visibleQrs, setVisibleQrs] = useState<Set<string>>(new Set())
   const [copiedId, setCopiedId] = useState<string | null>(null)
+  // P1-3: real invitation count from /api/weddings/{id}/stats
+  const [invitationCount, setInvitationCount] = useState<number | null>(null)
+
+  // P1-3: Fetch the real invitation count from the stats endpoint.
+  // The stats endpoint counts ALL Invitation rows for the wedding (243),
+  // broken down by status. This is the source of truth — the per-guest
+  // invitation status is NOT available from the guests list endpoint.
+  const fetchInvitationCount = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/weddings/${weddingId}/stats`, {
+        headers: { 'X-Wedding-Slug': weddingSlug },
+      })
+      if (res.ok) {
+        const data = await res.json()
+        const count = data?.stats?.invitations?.total
+        if (typeof count === 'number') {
+          setInvitationCount(count)
+        }
+      }
+    } catch {
+      /* non-fatal — stat card will fall back to per-guest count */
+    }
+  }, [weddingId, weddingSlug])
 
   // Fetch guests + their invitation status
   const fetchGuests = useCallback(async () => {
@@ -92,33 +149,29 @@ export default function InvitationManager({ weddingId, weddingSlug, csrfToken }:
       if (res.ok) {
         const data = await res.json()
         const guestList = data.guests || []
-        // For each guest, check if they have an invitation
-        // (we fetch invitations via a separate call per guest — could be
-        // optimized with a bulk endpoint, but for <100 guests this is fine)
-        const guestsWithInvites = await Promise.all(
-          guestList.map(async (g: Guest) => {
-            // We don't have a "get invitation by guest" API, so we derive
-            // invitation status from the guest's invitationViewed flag +
-            // the invitationCode existence. For the UI, we show the
-            // invitation URL + QR URL that the generation API would return.
-            return {
-              ...g,
-              invitationUrl: `/w/${weddingSlug}/?invite=${g.invitationCode}`,
-              qrCodeUrl: `/api/guests/qrcode/${g.invitationCode}?wedding=${weddingSlug}`,
-              // invitation status is unknown until we generate — we mark as
-              // "not generated" if the guest has never viewed their invitation
-              invitation: g.status === 'CONFIRMED' || g.status === 'PENDING' ? null : null,
-            } as GuestWithInvitation
-          })
-        )
+        // P0-2 FIX: do NOT pre-compute invitationUrl/qrCodeUrl from the raw
+        // invitationCode. The encrypted token URL can only be computed
+        // server-side (needs ENCRYPTION_KEY). Show empty values until the
+        // admin clicks "Générer l'invitation" (which returns the real URL).
+        // The invitation status is also unknown until generated — we mark
+        // all as "unknown" (null) rather than guessing from guest.status.
+        const guestsWithInvites: GuestWithInvitation[] = guestList.map((g: Guest) => ({
+          ...g,
+          invitationUrl: undefined,
+          qrCodeUrl: undefined,
+          qrDataUrl: undefined,
+          invitation: null,
+        }))
         setGuests(guestsWithInvites)
+        // P1-3: fetch the real invitation count from the stats endpoint
+        fetchInvitationCount()
       }
     } catch (err) {
       toast.error('Erreur lors du chargement des invités')
     } finally {
       setLoading(false)
     }
-  }, [weddingSlug])
+  }, [weddingSlug, fetchInvitationCount])
 
   useEffect(() => {
     fetchGuests()
@@ -131,22 +184,28 @@ export default function InvitationManager({ weddingId, weddingSlug, csrfToken }:
     return true
   })
 
+  // P1-3: use the real invitation count from the stats endpoint when available.
+  // Fall back to the per-guest count (which is 0 if invitation status is unknown).
   const stats = {
     total: guests.length,
-    generated: guests.filter((g) => g.invitation).length,
-    notGenerated: guests.filter((g) => !g.invitation).length,
+    generated: invitationCount !== null ? invitationCount : guests.filter((g) => g.invitation).length,
+    notGenerated: invitationCount !== null
+      ? Math.max(0, guests.length - invitationCount)
+      : guests.filter((g) => !g.invitation).length,
   }
 
   // Individual invitation generation
   const handleGenerateSingle = async (guestId: string) => {
     setGuests((prev) => prev.map((g) => g.id === guestId ? { ...g, loading: true } : g))
     try {
+      // P0-1 FIX: read the csrf_token cookie FRESH (the prop may be stale).
+      const freshCsrf = getFreshCsrfToken(csrfToken)
       const res = await fetch(`/api/guests/${guestId}/invitation`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'X-Wedding-Slug': weddingSlug,
-          'X-CSRF-Token': csrfToken,
+          'X-CSRF-Token': freshCsrf,
         },
         body: '{}',
       })
@@ -154,12 +213,14 @@ export default function InvitationManager({ weddingId, weddingSlug, csrfToken }:
         const data = await res.json()
         setGuests((prev) => prev.map((g) =>
           g.id === guestId
-            ? { ...g, invitation: data.invitation, invitationUrl: data.invitationUrl, qrCodeUrl: data.qrCodeUrl, loading: false }
+            ? { ...g, invitation: data.invitation, invitationUrl: data.invitationUrl, qrCodeUrl: data.qrCodeUrl, qrDataUrl: undefined, loading: false }
             : g
         ))
         toast.success(`Invitation générée pour ${data.guest.firstName} ${data.guest.lastName}`)
+        // P1-3: refresh the invitation count after generation
+        fetchInvitationCount()
       } else {
-        const err = await res.json()
+        const err = await res.json().catch(() => ({ error: 'Erreur lors de la génération' }))
         toast.error(err.error || 'Erreur lors de la génération')
         setGuests((prev) => prev.map((g) => g.id === guestId ? { ...g, loading: false } : g))
       }
@@ -178,12 +239,14 @@ export default function InvitationManager({ weddingId, weddingSlug, csrfToken }:
     setBulkLoading(true)
     setBulkResult(null)
     try {
+      // P0-1 FIX: read the csrf_token cookie FRESH (the prop may be stale).
+      const freshCsrf = getFreshCsrfToken(csrfToken)
       const res = await fetch(`/api/weddings/${weddingId}/invitations/bulk`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'X-Wedding-Slug': weddingSlug,
-          'X-CSRF-Token': csrfToken,
+          'X-CSRF-Token': freshCsrf,
         },
         body: JSON.stringify({ guestIds: targetIds, channel: 'QR' }),
       })
@@ -206,6 +269,10 @@ export default function InvitationManager({ weddingId, weddingSlug, csrfToken }:
 
   // Copy link
   const handleCopyLink = async (url: string, guestId: string) => {
+    if (!url) {
+      toast.error("Aucun lien disponible — cliquez d'abord sur Générer")
+      return
+    }
     const fullUrl = `${window.location.origin}${url}`
     try {
       await navigator.clipboard.writeText(fullUrl)
@@ -217,14 +284,83 @@ export default function InvitationManager({ weddingId, weddingSlug, csrfToken }:
     }
   }
 
-  // Toggle QR visibility
-  const toggleQr = (guestId: string) => {
-    setVisibleQrs((prev) => {
-      const next = new Set(prev)
-      if (next.has(guestId)) next.delete(guestId)
-      else next.add(guestId)
-      return next
-    })
+  // P0-3 FIX: Toggle QR visibility — fetch the QR JSON on demand.
+  // The QR endpoint returns JSON { qrCode: dataUrl }, NOT a PNG image.
+  // We fetch the JSON and render the dataUrl as the <img src>. This also
+  // works with admin auth (the endpoint accepts auth_token cookie).
+  const toggleQr = async (guestId: string) => {
+    // If already visible, just hide it.
+    if (visibleQrs.has(guestId)) {
+      setVisibleQrs((prev) => {
+        const next = new Set(prev)
+        next.delete(guestId)
+        return next
+      })
+      return
+    }
+
+    const guest = guests.find((g) => g.id === guestId)
+    if (!guest) return
+
+    // If we already have the dataUrl cached, just show it.
+    if (guest.qrDataUrl) {
+      setVisibleQrs((prev) => new Set(prev).add(guestId))
+      return
+    }
+
+    // The QR endpoint works for ANY guest with an invitationCode — it
+    // generates the encrypted token on the fly. Build the URL if not set.
+    const qrCodeUrl = guest.qrCodeUrl || `/api/guests/qrcode/${guest.invitationCode}?wedding=${weddingSlug}`
+
+    // Show the panel with a loading state.
+    setGuests((prev) => prev.map((g) => g.id === guestId ? { ...g, qrLoading: true } : g))
+    setVisibleQrs((prev) => new Set(prev).add(guestId))
+
+    try {
+      const res = await fetch(qrCodeUrl, {
+        headers: { 'X-Wedding-Slug': weddingSlug },
+      })
+      if (res.ok) {
+        const data = await res.json()
+        if (data.qrCode) {
+          setGuests((prev) => prev.map((g) =>
+            g.id === guestId
+              ? { ...g, qrDataUrl: data.qrCode, qrCodeUrl: qrCodeUrl, qrLoading: false }
+              : g
+          ))
+          // P0-2: if the response includes a qrUrl (the encrypted invitation URL),
+          // also populate the invitationUrl so the admin can see/copy it.
+          if (data.qrUrl && !guest.invitationUrl) {
+            try {
+              const url = new URL(data.qrUrl)
+              const pathAndQuery = url.pathname + (url.search ? '?' + url.searchParams.toString() : '')
+              setGuests((prev) => prev.map((g) =>
+                g.id === guestId ? { ...g, invitationUrl: pathAndQuery } : g
+              ))
+            } catch {
+              // not a valid URL — leave invitationUrl as-is
+            }
+          }
+        } else {
+          toast.error('Format de réponse QR invalide')
+          setGuests((prev) => prev.map((g) => g.id === guestId ? { ...g, qrLoading: false } : g))
+        }
+      } else if (res.status === 401) {
+        toast.error('Authentification requise pour le QR code')
+        setGuests((prev) => prev.map((g) => g.id === guestId ? { ...g, qrLoading: false } : g))
+        setVisibleQrs((prev) => {
+          const next = new Set(prev)
+          next.delete(guestId)
+          return next
+        })
+      } else {
+        toast.error('Erreur lors du chargement du QR code')
+        setGuests((prev) => prev.map((g) => g.id === guestId ? { ...g, qrLoading: false } : g))
+      }
+    } catch (err) {
+      toast.error('Erreur de connexion')
+      setGuests((prev) => prev.map((g) => g.id === guestId ? { ...g, qrLoading: false } : g))
+    }
   }
 
   // Selection
@@ -412,24 +548,42 @@ export default function InvitationManager({ weddingId, weddingSlug, csrfToken }:
                         className="overflow-hidden"
                       >
                         <div className="mt-3 p-3 rounded-lg bg-muted/30 flex items-center gap-4">
-                          <img
-                            src={guest.qrCodeUrl}
-                            alt="QR code"
-                            className="w-24 h-24 rounded-lg border border-gold/20"
-                          />
+                          {guest.qrLoading ? (
+                            <div className="w-24 h-24 rounded-lg border border-gold/20 flex items-center justify-center">
+                              <Loader2 className="size-6 animate-spin text-gold" />
+                            </div>
+                          ) : guest.qrDataUrl ? (
+                            <img
+                              src={guest.qrDataUrl}
+                              alt="QR code"
+                              className="w-24 h-24 rounded-lg border border-gold/20"
+                            />
+                          ) : (
+                            <div className="w-24 h-24 rounded-lg border border-gold/20 flex items-center justify-center text-xs text-muted-foreground text-center p-2">
+                              QR indisponible
+                            </div>
+                          )}
                           <div className="flex-1 min-w-0">
                             <div className="text-xs text-muted-foreground mb-1">Lien d'invitation :</div>
-                            <div className="font-mono text-xs text-foreground truncate bg-background/50 p-2 rounded border border-gold/10">
-                              {guest.invitationUrl}
-                            </div>
-                            <a
-                              href={guest.invitationUrl}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="inline-flex items-center gap-1 text-xs text-gold hover:underline mt-2"
-                            >
-                              <Link2 className="size-3" /> Ouvrir l'expérience invité
-                            </a>
+                            {guest.invitationUrl ? (
+                              <>
+                                <div className="font-mono text-xs text-foreground truncate bg-background/50 p-2 rounded border border-gold/10 break-all">
+                                  {guest.invitationUrl}
+                                </div>
+                                <a
+                                  href={guest.invitationUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="inline-flex items-center gap-1 text-xs text-gold hover:underline mt-2"
+                                >
+                                  <Link2 className="size-3" /> Ouvrir l'expérience invité
+                                </a>
+                              </>
+                            ) : (
+                              <div className="text-xs text-muted-foreground italic p-2">
+                                Cliquez sur l'icône mail (Générer) pour obtenir le lien chiffré.
+                              </div>
+                            )}
                           </div>
                         </div>
                       </motion.div>

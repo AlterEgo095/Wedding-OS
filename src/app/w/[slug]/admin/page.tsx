@@ -92,6 +92,7 @@ import TwoFactorSetup from '@/components/auth/TwoFactorSetup'
 // P4.8 — Real-time UI widgets (LiveStatsWidget + LiveCheckInFeed)
 import { LiveStatsWidget } from '@/components/realtime/LiveStatsWidget'
 import { LiveCheckInFeed } from '@/components/realtime/LiveCheckInFeed'
+import { SkeletonAdminShell } from '@/components/design-system'
 
 interface AuthUser {
   id: string
@@ -632,23 +633,7 @@ export default function PerWeddingAdminPage() {
   // /api/me) — once authChecked is true, user is either set (show admin) or
   // null (the redirect effect sends the visitor to the login page).
   if (!mounted || !authChecked || !user) {
-    return (
-      <div
-        className="h-screen flex flex-col items-center justify-center gap-4"
-        style={{
-          background:
-            'linear-gradient(135deg, oklch(0.12 0.02 270), oklch(0.16 0.02 270), oklch(0.14 0.02 240))',
-        }}
-      >
-        <div className="w-12 h-12 rounded-full bg-gradient-gold flex items-center justify-center shadow-lg">
-          <Crown className="w-6 h-6 text-white" />
-        </div>
-        <div className="flex items-center gap-2 text-muted-foreground text-sm">
-          <Loader2 className="w-4 h-4 animate-spin" />
-          <span>Chargement de l&apos;espace administrateur…</span>
-        </div>
-      </div>
-    )
+    return <SkeletonAdminShell accent="gold" className="min-h-screen rounded-none border-0" />
   }
 
   // ─── Build <AdminShell> props ──────────────────────────────────────────────

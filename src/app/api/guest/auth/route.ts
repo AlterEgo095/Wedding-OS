@@ -21,7 +21,36 @@ import { logger } from '@/lib/logger';
 import { internalError, badRequest } from '@/lib/api-errors';
 
 export async function POST(request: NextRequest) {
-  const { context, error: tenantError } = await resolvePublicTenant(request);
+  // ─── MISSION 5.9.3 P0-1 FIX ───────────────────────────────────────────────
+  // Peek at the request body to extract `weddingSlug` BEFORE tenant resolution.
+  // The frontend SPA correctly sets the X-Wedding-Slug header on all fetches
+  // via useTenantFetch(), so header-based resolution works for SPA requests.
+  // HOWEVER, the guest-auth endpoint is also called from:
+  //   - The root URL `/?invite=TOKEN` (default wedding QR scan)
+  //   - Direct API clients (curl, third-party tools) that POST {code, weddingSlug}
+  // Without this peek, the tenant resolver falls back to DEFAULT_WEDDING_SLUG
+  // (josue-hornella) when no header is present — causing a CROSS-WEDDING AUTH
+  // LEAK where wedding B's code might authenticate a guest in the default
+  // wedding's context.
+  //
+  // We use request.clone() so the original request body remains readable
+  // for the downstream `await request.json()` call (clone is a standard Web
+  // Fetch API method that creates an independent body stream).
+  let bodySlugOverride: string | null = null;
+  try {
+    const cloned = request.clone();
+    const peekedBody = await cloned.json().catch(() => null);
+    if (peekedBody && typeof peekedBody === 'object' && 'weddingSlug' in peekedBody) {
+      const candidate = (peekedBody as { weddingSlug?: unknown }).weddingSlug;
+      if (typeof candidate === 'string' && candidate.trim()) {
+        bodySlugOverride = candidate.trim().toLowerCase();
+      }
+    }
+  } catch {
+    // Body peek is best-effort — if JSON parse fails, fall through to header/query/default.
+  }
+
+  const { context, error: tenantError } = await resolvePublicTenant(request, bodySlugOverride);
   if (tenantError || !context) {
     return NextResponse.json(
       { error: tenantError?.message ?? 'Tenant resolution failed' },
@@ -182,3 +211,4 @@ export async function POST(request: NextRequest) {
     }
   });
 }
+

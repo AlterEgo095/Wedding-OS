@@ -83,6 +83,7 @@ import { AuditTab } from './tabs/AuditTab'
 import { GuestbookTab } from './tabs/wedding/GuestbookTab'
 // P4.7 — 2FA setup modal (reusable across all admin/staff roles)
 import TwoFactorSetup from '@/components/auth/TwoFactorSetup'
+import { SkeletonAdminShell } from '@/components/design-system'
 
 // Production Studio tabs (CONS-3) — lazy-loaded.
 // Mission 6.0 P1.7 — Organizations tab (lazy-loaded).
@@ -469,14 +470,7 @@ export default function PlatformAdminPage() {
 
   // Loading skeleton during hydration / auth check.
   if (!mounted || !authChecked || !user || (user.role !== 'PLATFORM_ADMIN' && user.role !== 'SUPER_ADMIN')) {
-    return (
-      <div className="h-screen flex items-center justify-center">
-        <div className="flex flex-col items-center gap-3">
-          <Loader2 className="w-6 h-6 animate-spin text-gold" />
-          <p className="text-xs text-muted-foreground">Chargement de la plateforme…</p>
-        </div>
-      </div>
-    )
+    return <SkeletonAdminShell accent="emerald" className="min-h-screen rounded-none border-0" />
   }
 
   // ─── Build <AdminShell> props ──────────────────────────────────────────────

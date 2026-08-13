@@ -15,9 +15,10 @@
 //   8. resolveBindings      — fetch WeddingCollectionBinding (manifest) if any
 //   9. resolveCollection    — fetch the Collection (optional) + variant
 //  10. resolveProducts      — verify Entitlement grants access to bundle [P3.3]
-//  11. compileFrontend      — build the PublishedConfig JSON blob
-//  12. publishFrontend      — write publishedConfigJson to Wedding + flip status
-//  13. resolveExperience    — initialize A/B variants for active sections [P3.4]
+//  11. resolveInvitations   — compose InvitationExperienceConfig + create snapshot [5.9.2 P5]
+//  12. compileFrontend      — build the PublishedConfig JSON blob
+//  13. publishFrontend      — write publishedConfigJson to Wedding + flip status
+//  14. resolveExperience    — initialize A/B variants for active sections [P3.4]
 //
 // Trigger model:
 //   - Only SUPER_ADMIN / PLATFORM_ADMIN can deploy (enforced by the API route).
@@ -44,6 +45,26 @@ import { safeJsonParse } from '@/lib/safe-json';
 import type { WeddingManifest } from '@/lib/wedding/manifest';
 import { resolveWeddingManifest } from '@/lib/wedding/manifest';
 import { invalidateWeddingCache } from '@/lib/wedding/cache';
+// MISSION 5.9.2 P5 — resolveInvitations pipeline stage.
+import {
+  composeInvitationExperience,
+  getDefaultInvitationTemplate,
+  invalidateInvitationRegistryCache,
+} from '@/lib/invitations';
+import type {
+  InvitationExperienceContext,
+  InvitationExperienceConfig,
+  InvitationEventContext,
+  InvitationStoryEntry,
+  InvitationMediaAsset,
+  InvitationTemplateOverrides,
+} from '@/lib/invitations/types';
+// MISSION 5.9.3 P1-1 FIX — createThemeSnapshot for resolveTheme stage.
+// Mirrors the InvitationTemplateSnapshot pattern in resolveInvitations:
+// an immutable snapshot is created at publish time and pinned to the
+// wedding, so subsequent edits to the live PlatformTheme do NOT propagate
+// to already-published weddings (version pinning).
+import { createThemeSnapshot } from '@/lib/themes/snapshots';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -115,6 +136,11 @@ export const PIPELINE_STAGE_NAMES = [
   'resolveBindings',
   'resolveCollection',
   'resolveProducts',
+  // MISSION 5.9.2 P5 — new stage between resolveProducts and compileFrontend.
+  // Resolves the wedding's InvitationTemplate, composes the InvitationExperienceConfig,
+  // creates an immutable InvitationTemplateSnapshot (version pinning), and feeds the
+  // result to compileFrontend via the `invitation` accumulator.
+  'resolveInvitations',
   'compileFrontend',
   'publishFrontend',
   'resolveExperience',
@@ -173,6 +199,55 @@ export interface PublishedExperience {
   initializedVariants: number;
 }
 
+/**
+ * MISSION 5.9.2 P5 — the resolved invitation experience pinned to this build.
+ *
+ * Stored at PublishedConfig.invitation. This is the delivery record — it
+ * captures the exact InvitationTemplate + composed InvitationExperienceConfig
+ * at publish time so the public /w/[slug] invitation renderer (IdentityInvitation
+ * dispatcher → premium component) can render the SAME invitation even after
+ * the live template is later edited, bumped, or deleted (version pinning via
+ * InvitationTemplateSnapshot).
+ *
+ * Null when the wedding has no invitationTemplateId AND no default template
+ * is seeded (non-fatal — the public page falls back to legacy InvitationCard).
+ */
+export interface PublishedInvitation {
+  /** InvitationTemplate ID (FK — nullable on the source row when deleted later). */
+  templateId: string;
+  /** InvitationTemplate slug (denormalized — survives template deletion). */
+  templateSlug: string;
+  /** InvitationTemplate name (human-readable). */
+  templateName: string;
+  /** Template version at publish time (for snapshot pinning audit). */
+  templateVersion: number;
+  /** Visual category (LUXURY | EDITORIAL | BOTANICAL | CINEMATIC | CHAMPAGNE). */
+  category: string;
+  /** Visual style identifier (ROYAL_GOLD | WHITE_ROMANCE | ...). */
+  style: string;
+  /** Layout identifier. */
+  layout: string;
+  /** Identity preset slug (drives the IdentityInvitation dispatcher). */
+  identity: string | null;
+  /** Commercial tier (FREE | STANDARD | PREMIUM | EXCLUSIVE). */
+  tier: string;
+  /**
+   * Immutable snapshot ID (InvitationTemplateSnapshot row). The snapshot
+   * preserves the full configJson + assetsJson + previewJson at publish time
+   * so a wedding pinned to V3 stays on V3 even if the live template is bumped
+   * to V4. Null only if snapshot creation failed (non-fatal — the live
+   * template is then used directly, with a logged warning).
+   */
+  snapshotId: string | null;
+  /**
+   * The composed InvitationExperienceConfig — the runtime object the
+   * IdentityInvitation dispatcher reads to pick the premium component and
+   * pass it props. This is JSON-serializable (no Date objects) so it survives
+   * the unstable_cache round-trip on the public /w/[slug] page.
+   */
+  experience: InvitationExperienceConfig;
+}
+
 export interface PublishedConfig {
   schemaVersion: 1;
   weddingId: string;
@@ -183,6 +258,13 @@ export interface PublishedConfig {
   templateVersion: number;
   themeId: string;
   themeName: string;
+  /**
+   * MISSION 5.9.3 P1-1 FIX — immutable PlatformThemeSnapshot ID pinned at
+   * publish time. Null when snapshot creation failed (non-fatal — live theme
+   * is used). Downstream readers can fetch the frozen theme via this ID
+   * so published weddings remain visually stable across live theme edits.
+   */
+  themeSnapshotId: string | null;
   collectionId: string | null;
   version: string;
   compiledAt: string; // ISO timestamp
@@ -200,6 +282,13 @@ export interface PublishedConfig {
   product: PublishedProduct | null;
   /** P3.4 — Experience (post-deploy A/B variant initialization summary). */
   experience: PublishedExperience;
+  /**
+   * MISSION 5.9.2 P5 — resolved invitation experience (null when the wedding
+   * has no InvitationTemplate AND no default template is seeded). When present,
+   * the public /w/[slug] page renders the IdentityInvitation dispatcher with
+   * this config; when null, the page falls back to legacy InvitationCard.
+   */
+  invitation: PublishedInvitation | null;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -390,6 +479,9 @@ export async function runDeploymentPipeline(
     fontBody: string | null;
     status: string;
   } | null = null;
+  // MISSION 5.9.3 P1-1 FIX — theme snapshot ID (populated by resolveTheme,
+  // consumed by compileFrontend so PublishedConfig carries the pinned snapshot).
+  let themeSnapshotId: string | null = null;
   let components: Array<{
     id: string;
     slug: string;
@@ -417,6 +509,9 @@ export async function runDeploymentPipeline(
   let layout: PublishedLayout | null = null;
   let product: PublishedProduct | null = null;
   let experience: PublishedExperience = { activeSections: [], initializedVariants: 0 };
+  // MISSION 5.9.2 P5 — invitation accumulator (populated by resolveInvitations,
+  // consumed by compileFrontend). Null when the wedding has no template.
+  let invitation: PublishedInvitation | null = null;
 
   const runner: StageRunner = { ctx, deploymentId, logs };
 
@@ -520,6 +615,38 @@ export async function runDeploymentPipeline(
       if (theme!.status !== 'PUBLISHED') {
         throw new Error(`Theme ${theme!.slug} is not PUBLISHED (status=${theme!.status})`);
       }
+
+      // MISSION 5.9.3 P1-1 FIX — create an immutable PlatformThemeSnapshot and
+      // pin it to the wedding (mirrors the InvitationTemplateSnapshot pattern
+      // in resolveInvitations). Non-fatal: if snapshot creation fails, the
+      // pipeline continues with the live theme (logged as a warning).
+      //
+      // Why this matters: without a snapshot, an admin editing the live
+      // PlatformTheme AFTER a wedding has been published would visually change
+      // the already-published wedding (palette/fonts could drift). The snapshot
+      // freezes the theme at publish time so the published wedding is stable.
+      try {
+        const snapshot = await createThemeSnapshot(theme!.id, triggeredBy);
+        themeSnapshotId = snapshot.id;
+        await db.wedding.update({
+          where: { id: wedding.id },
+          data: { themeSnapshotId: snapshot.id },
+        });
+        logs.push(
+          `[resolveTheme] snapshot ${snapshot.id} created (theme v${snapshot.version} pinned to wedding)`
+        );
+      } catch (snapErr) {
+        // Non-fatal: continue with the live theme (no pinning).
+        logger.error('resolveTheme: snapshot creation failed (non-fatal)', {
+          weddingId: wedding.id,
+          themeId: theme!.id,
+          errMessage: snapErr instanceof Error ? snapErr.message : String(snapErr),
+        });
+        logs.push(
+          `[resolveTheme] WARN — snapshot creation failed: ${snapErr instanceof Error ? snapErr.message : String(snapErr)} (non-fatal — using live theme)`,
+        );
+      }
+
       logs.push(
         `[resolveTheme] ${theme!.slug} (fontDisplay=${theme!.fontDisplay ?? 'null'})`
       );
@@ -697,7 +824,329 @@ export async function runDeploymentPipeline(
       }
     });
 
-    // ── 10. compileFrontend ───────────────────────────────────────────────
+    // ── 10. resolveInvitations [MISSION 5.9.2 P5] ─────────────────────────
+    //
+    // Resolve the wedding's InvitationTemplate (wedding.invitationTemplateId
+    // → default template → null), compose the InvitationExperienceConfig via
+    // lib/invitations.composeInvitationExperience(), and create an immutable
+    // InvitationTemplateSnapshot (version pinning — a wedding published on V3
+    // stays on V3 even if the live template is later bumped to V4).
+    //
+    // NON-FATAL: a wedding without a template deploys fine (invitation = null)
+    // and the public /w/[slug] page falls back to the legacy InvitationCard.
+    // This preserves backward compat with the 7 existing weddings that were
+    // published before Phase 5.
+    //
+    // The composed InvitationExperienceConfig is the runtime object the
+    // IdentityInvitation dispatcher reads to pick the premium component
+    // (LuxuryInvitation / EditorialInvitation / BotanicalInvitation /
+    // CinematicInvitation / ChampagneInvitation) and pass it props.
+    await runStage(runner, 'resolveInvitations', async () => {
+      // Step 1: resolve the InvitationTemplate row (or null).
+      const weddingWithInvitation = await db.wedding.findUnique({
+        where: { id: wedding.id },
+        select: {
+          invitationTemplateId: true,
+          invitationConfigJson: true,
+          mediaSlotsJson: true,
+          brideName: true,
+          groomName: true,
+          coupleLabel: true,
+          weddingDate: true,
+          timezone: true,
+          venueName: true,
+          venueAddress: true,
+          venueCity: true,
+          venueLat: true,
+          venueLng: true,
+          slug: true,
+        },
+      });
+      let templateRow: {
+        id: string;
+        slug: string;
+        name: string;
+        version: number;
+        category: string;
+        style: string;
+        layout: string;
+        identity: string | null;
+        tier: string;
+        configJson: string;
+        assetsJson: string;
+        previewJson: string;
+        thumbnailUrl: string | null;
+        previewUrl: string | null;
+        themeId: string | null;
+        status: string;
+      } | null = null;
+
+      const templateId = weddingWithInvitation?.invitationTemplateId ?? null;
+      if (templateId) {
+        templateRow = await db.invitationTemplate.findUnique({
+          where: { id: templateId },
+          select: {
+            id: true,
+            slug: true,
+            name: true,
+            version: true,
+            category: true,
+            style: true,
+            layout: true,
+            identity: true,
+            tier: true,
+            configJson: true,
+            assetsJson: true,
+            previewJson: true,
+            thumbnailUrl: true,
+            previewUrl: true,
+            themeId: true,
+            status: true,
+          },
+        });
+        if (templateRow) {
+          logs.push(
+            `[resolveInvitations] wedding.invitationTemplateId=${templateRow.slug} v${templateRow.version} (${templateRow.status})`,
+          );
+        } else {
+          logs.push(
+            `[resolveInvitations] invitationTemplateId ${templateId} not found — falling back to default`,
+          );
+        }
+      }
+
+      // Step 2: fall back to the default template (registry-cached lookup).
+      if (!templateRow) {
+        const defaultTpl = await getDefaultInvitationTemplate();
+        if (defaultTpl) {
+          templateRow = {
+            id: defaultTpl.id,
+            slug: defaultTpl.slug,
+            name: defaultTpl.name,
+            version: defaultTpl.version,
+            category: defaultTpl.category,
+            style: defaultTpl.style,
+            layout: defaultTpl.layout,
+            identity: defaultTpl.identity,
+            tier: defaultTpl.tier,
+            // InvitationTemplateDetailed exposes the raw JSON strings
+            // (configJson/assetsJson/previewJson) + the parsed `config` object.
+            // For the snapshot we need the raw strings (immutable copy).
+            configJson: defaultTpl.configJson,
+            assetsJson: defaultTpl.assetsJson,
+            previewJson: defaultTpl.previewJson,
+            thumbnailUrl: defaultTpl.thumbnailUrl ?? null,
+            previewUrl: defaultTpl.previewUrl ?? null,
+            themeId: defaultTpl.themeId ?? null,
+            status: defaultTpl.status,
+          };
+          logs.push(
+            `[resolveInvitations] no template on wedding — using default "${defaultTpl.slug}" v${defaultTpl.version}`,
+          );
+        }
+      }
+
+      // Step 3: if still no template, invitation = null (non-fatal).
+      if (!templateRow) {
+        logs.push(
+          '[resolveInvitations] no InvitationTemplate available (wedding has no templateId and no default is seeded) — invitation=null (non-fatal, legacy InvitationCard will be used)',
+        );
+        invitation = null;
+        return;
+      }
+
+      // Step 4: build the InvitationExperienceContext from wedding data.
+      const w = weddingWithInvitation!;
+      const slug = w.slug;
+      const mediaSlotsRaw = safeJsonParse<Record<string, { mediaId?: string; focalPoint?: { x: number; y: number }; url?: string }>>(
+        w.mediaSlotsJson ?? '{}',
+        {},
+      );
+      // Resolve mediaIds → Media rows for URLs + alt + aspectRatio.
+      const mediaIds = Object.values(mediaSlotsRaw)
+        .map((v) => v?.mediaId)
+        .filter((m): m is string => typeof m === 'string' && m.length > 0);
+      const mediaRows = mediaIds.length
+        ? await db.media.findMany({
+            where: { id: { in: mediaIds } },
+            select: { id: true, url: true, title: true, aspectRatio: true, semanticRole: true, slotId: true },
+          })
+        : [];
+      const mediaById = new Map(mediaRows.map((m) => [m.id, m]));
+      const resolvedMediaSlots: Record<string, InvitationMediaAsset> = {};
+      for (const [slotKey, slotVal] of Object.entries(mediaSlotsRaw)) {
+        if (!slotVal?.mediaId) continue;
+        const media = mediaById.get(slotVal.mediaId);
+        if (!media) {
+          logger.warn('resolveInvitations: media not found for slot', {
+            weddingId: wedding.id,
+            slotKey,
+            mediaId: slotVal.mediaId,
+          });
+          continue;
+        }
+        resolvedMediaSlots[slotKey] = {
+          mediaId: media.id,
+          url: media.url,
+          alt: media.title ?? null,
+          aspectRatio: media.aspectRatio ?? null,
+          ...(slotVal.focalPoint ? { focalPoint: slotVal.focalPoint } : {}),
+        };
+      }
+
+      // Fetch wedding events (EventTimeline) for the events context.
+      const timelineRows = await db.eventTimeline.findMany({
+        where: { weddingId: wedding.id },
+        orderBy: { order: 'asc' },
+        take: 50,
+        select: { id: true, activity: true, time: true, location: true, description: true, icon: true },
+      });
+      const events: InvitationEventContext[] = timelineRows.map((r, i) => {
+        // Heuristic type inference from icon + order (first = ceremony, etc.)
+        const icon = (r.icon ?? '').toLowerCase();
+        let type: InvitationEventContext['type'] = 'other';
+        if (icon.includes('church') || icon.includes('ring') || i === 0) type = 'ceremony';
+        else if (icon.includes('party') || icon.includes('dance')) type = 'party';
+        else if (icon.includes('drink') || icon.includes('cocktail')) type = 'cocktail';
+        else if (icon.includes('food') || icon.includes('dinner') || icon.includes('meal')) type = 'dinner';
+        else if (icon.includes('receive')) type = 'reception';
+        return {
+          eventId: r.id,
+          type,
+          title: r.activity,
+          startTime: r.time ?? null,
+          endTime: null,
+          location: r.location ?? null,
+          address: null,
+        };
+      });
+
+      // Fetch couple stories for the stories context.
+      const storyRows = await db.coupleStory.findMany({
+        where: { weddingId: wedding.id },
+        orderBy: { order: 'asc' },
+        take: 20,
+        select: { id: true, title: true, description: true, date: true, imageUrl: true },
+      });
+      const stories: InvitationStoryEntry[] = storyRows.map((r) => ({
+        storyId: r.id,
+        title: r.title,
+        body: r.description,
+        date: r.date ?? null,
+        imageUrl: r.imageUrl ?? null,
+      }));
+
+      // Build the runtime context.
+      const overrides = safeJsonParse<InvitationTemplateOverrides>(
+        w.invitationConfigJson ?? '{}',
+        {},
+      );
+      const ctx: InvitationExperienceContext = {
+        weddingId: wedding.id,
+        weddingSlug: slug,
+        coupleLabel: w.coupleLabel || `${w.brideName} & ${w.groomName}`.trim(),
+        brideName: w.brideName,
+        groomName: w.groomName,
+        weddingDate: w.weddingDate ? w.weddingDate.toISOString() : null,
+        timezone: w.timezone || 'Africa/Kinshasa',
+        venueName: w.venueName ?? null,
+        venueAddress: w.venueAddress ?? null,
+        venueCity: w.venueCity ?? null,
+        venueLat: w.venueLat ?? null,
+        venueLng: w.venueLng ?? null,
+        rsvpUrl: `/w/${slug}#rsvp`,
+        galleryUrl: `/w/${slug}#gallery`,
+        storyUrl: `/w/${slug}#story`,
+        mapUrl:
+          w.venueLat && w.venueLng
+            ? `https://www.google.com/maps?q=${encodeURIComponent(w.venueLat)},${encodeURIComponent(w.venueLng)}`
+            : null,
+        mediaSlots: resolvedMediaSlots,
+        guest: null, // public invitation — guest context is per-access-code
+        events,
+        stories,
+        overrides,
+      };
+
+      // Step 5: compose the InvitationExperienceConfig via the registry composer.
+      const experienceConfig = await composeInvitationExperience(
+        templateRow.slug,
+        ctx,
+      );
+
+      // Step 6: create the immutable InvitationTemplateSnapshot (version pinning).
+      let snapshotId: string | null = null;
+      try {
+        const snapshot = await db.invitationTemplateSnapshot.create({
+          data: {
+            templateId: templateRow.id,
+            templateSlug: templateRow.slug,
+            version: templateRow.version,
+            name: templateRow.name,
+            description: null,
+            category: templateRow.category,
+            style: templateRow.style,
+            layout: templateRow.layout,
+            identity: templateRow.identity,
+            tier: templateRow.tier,
+            configJson: templateRow.configJson,
+            assetsJson: templateRow.assetsJson,
+            previewJson: templateRow.previewJson,
+            thumbnailUrl: templateRow.thumbnailUrl,
+            previewUrl: templateRow.previewUrl,
+            themeId: templateRow.themeId,
+            triggeredBy: triggeredBy,
+          },
+          select: { id: true },
+        });
+        snapshotId = snapshot.id;
+        // Pin the wedding to this snapshot so future reads use the frozen
+        // version (even if the live template is later edited/deleted).
+        await db.wedding.update({
+          where: { id: wedding.id },
+          data: { invitationSnapshotId: snapshotId },
+        });
+        logs.push(
+          `[resolveInvitations] snapshot ${snapshotId} created (template v${templateRow.version} pinned)`,
+        );
+      } catch (snapErr) {
+        // Non-fatal: continue without snapshot pinning (the live template is used).
+        logger.error('resolveInvitations: snapshot creation failed (non-fatal)', {
+          weddingId: wedding.id,
+          templateId: templateRow.id,
+          errMessage: snapErr instanceof Error ? snapErr.message : String(snapErr),
+        });
+        logs.push(
+          `[resolveInvitations] WARN — snapshot creation failed: ${snapErr instanceof Error ? snapErr.message : String(snapErr)} (non-fatal — using live template)`,
+        );
+      }
+
+      // Step 7: build the PublishedInvitation object for compileFrontend.
+      invitation = {
+        templateId: templateRow.id,
+        templateSlug: templateRow.slug,
+        templateName: templateRow.name,
+        templateVersion: templateRow.version,
+        category: templateRow.category,
+        style: templateRow.style,
+        layout: templateRow.layout,
+        identity: templateRow.identity,
+        tier: templateRow.tier,
+        snapshotId,
+        experience: experienceConfig,
+      };
+
+      // Bust the in-process registry cache so subsequent reads see fresh data
+      // (the composer caches templates for 5 min; a publish is a good moment
+      // to invalidate in case the admin just edited the template before deploy).
+      invalidateInvitationRegistryCache();
+
+      logs.push(
+        `[resolveInvitations] composed ${templateRow.slug} (category=${templateRow.category}, style=${templateRow.style}, identity=${templateRow.identity ?? 'null'}, sections=${experienceConfig.sections.length}, mediaSlots=${Object.keys(resolvedMediaSlots).length}, events=${events.length}, stories=${stories.length})`,
+      );
+    });
+
+    // ── 11. compileFrontend ───────────────────────────────────────────────
     await runStage(runner, 'compileFrontend', async () => {
       // Resolve the canonical manifest (sections + theme + luxury) for this
       // wedding. Uses the existing WeddingCollectionBinding manifest if set,
@@ -731,6 +1180,10 @@ export async function runDeploymentPipeline(
         templateVersion: template!.version,
         themeId: theme!.id,
         themeName: theme!.name,
+        // P1-1 FIX — pin the theme snapshot ID so the published config is
+        // self-describing (readers can fetch the frozen theme without a
+        // separate Wedding.themeSnapshotId lookup).
+        themeSnapshotId,
         collectionId: collection?.id ?? null,
         version,
         compiledAt: nowIso(),
@@ -748,13 +1201,16 @@ export async function runDeploymentPipeline(
         layout,
         product,
         experience,
+        // MISSION 5.9.2 P5 — resolved invitation experience (null when the
+        // wedding has no InvitationTemplate AND no default is seeded).
+        invitation,
       };
 
       // Stash on ctx so publishFrontend can read it without re-computing.
       (ctx as PipelineContext & { _publishedConfig?: PublishedConfig })._publishedConfig =
         publishedConfig;
       logs.push(
-        `[compileFrontend] manifest sections=${manifest!.sections.length} theme=${compiledTheme.primaryColor} components=${components.length} assets=${assets.length} brand=${brand ? brand.slug : 'none'} layout=${layout ? layout.slug : 'none'} product=${product ? product.slug : 'none'}`
+        `[compileFrontend] manifest sections=${manifest!.sections.length} theme=${compiledTheme.primaryColor} components=${components.length} assets=${assets.length} brand=${brand ? brand.slug : 'none'} layout=${layout ? layout.slug : 'none'} product=${product ? product.slug : 'none'} invitation=${invitation ? invitation.templateSlug + '@v' + invitation.templateVersion + (invitation.snapshotId ? ' (snap=' + invitation.snapshotId.slice(-8) + ')' : ' (no-snap)') : 'none'}`
       );
     });
 
@@ -1052,4 +1508,6 @@ export async function retryDeployment(
     triggeredBy,
   });
 }
+
+
 

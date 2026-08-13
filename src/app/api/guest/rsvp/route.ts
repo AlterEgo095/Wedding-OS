@@ -13,9 +13,28 @@ import { writeAuditLog } from '@/lib/audit';
 
 /**
  * RSVP API — Guest confirms or declines invitation (tenant-scoped)
+ *
+ * MISSION 5.9.3 P0-1 FIX — peek at body `weddingSlug` before tenant resolution
+ * (defense-in-depth; the guest_session cookie is already wedding-scoped, but
+ * explicit slug override prevents any ambiguity when the SPA fetch wrapper
+ * is bypassed). Mirrors the guest-auth route fix.
  */
 export async function POST(request: NextRequest) {
-  const { context, error: tenantError } = await resolvePublicTenant(request);
+  let bodySlugOverride: string | null = null;
+  try {
+    const cloned = request.clone();
+    const peekedBody = await cloned.json().catch(() => null);
+    if (peekedBody && typeof peekedBody === 'object' && 'weddingSlug' in peekedBody) {
+      const candidate = (peekedBody as { weddingSlug?: unknown }).weddingSlug;
+      if (typeof candidate === 'string' && candidate.trim()) {
+        bodySlugOverride = candidate.trim().toLowerCase();
+      }
+    }
+  } catch {
+    // Body peek is best-effort.
+  }
+
+  const { context, error: tenantError } = await resolvePublicTenant(request, bodySlugOverride);
   if (tenantError || !context) {
     return NextResponse.json(
       { error: tenantError?.message ?? 'Tenant resolution failed' },
@@ -201,3 +220,4 @@ export async function PUT(request: NextRequest) {
     return internalError();
   }
 }
+

@@ -1,21 +1,15 @@
 /**
- * Loading UI for /w/[slug]/admin/* routes (P2-PERF-18).
- *
- * Next.js App Router shows this fallback while the wedding admin shell
- * is loading.
+ * Mission 5.9.5 — Phase C
+ * Route-level loading fallback for /w/[slug]/admin.
+ * Gold accent for wedding admin context. Mirrors the post-auth admin shell.
+ * Identical to the auth-gate fallback (page.tsx:627) for a continuous skeleton.
  */
+import { SkeletonAdminShell } from '@/components/design-system'
+
 export default function Loading() {
   return (
-    <div
-      className="flex min-h-[50vh] w-full items-center justify-center"
-      role="status"
-      aria-live="polite"
-      aria-label="Chargement en cours"
-    >
-      <div
-        className="h-8 w-8 animate-spin rounded-full border-2 border-muted border-t-primary"
-        aria-hidden="true"
-      />
+    <div className="min-h-screen">
+      <SkeletonAdminShell accent="gold" className="min-h-screen rounded-none border-0" />
     </div>
-  );
+  )
 }

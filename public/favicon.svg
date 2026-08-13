@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="32" height="32" role="img" aria-label="Wedding OS">
+  <!-- W (4-stroke polyline) -->
+  <path d="M 16 32 L 24 68 L 32 48 L 40 68 L 48 32" fill="none" stroke="#D4AF37" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- / slash separator -->
+  <path d="M 40 72 L 54 28" fill="none" stroke="#D4AF37" stroke-width="6" stroke-linecap="round"/>
+  <!-- O ring (wedding band) -->
+  <circle cx="68" cy="50" r="14" fill="none" stroke="#D4AF37" stroke-width="6"/>
+</svg>

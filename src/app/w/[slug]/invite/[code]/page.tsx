@@ -29,7 +29,11 @@ export default function InviteLandingPage({ params }: { params: Promise<{ code: 
       setCode(token);
 
       try {
-        const res = await tenantFetch(`/api/guest/invite?token=${encodeURIComponent(token)}`);
+        // P5.8.12 FIX: Next.js may pass params.code already URL-encoded (e.g. %3A for ':').
+        // Decode first, then use URLSearchParams for correct single-encoding.
+        const decodedToken = decodeURIComponent(token);
+        const search = new URLSearchParams({ token: decodedToken });
+        const res = await tenantFetch(`/api/guest/invite?${search}`);
         const data = await res.json();
         if (cancelled) return;
 

@@ -1,21 +1,17 @@
 /**
- * Loading UI for /platform/admin/* routes (P2-PERF-18).
- *
- * Next.js App Router shows this fallback while the route segment's server
- * component (the 2453-line platform admin shell) is loading.
+ * Mission 5.9.5 — Phase C
+ * Route-level loading fallback for /platform/admin/*.
+ * Mirrors the post-auth admin shell with emerald accent.
+ * This makes the route-level fallback identical to the auth-gate fallback
+ * (page.tsx:470) — so the user sees ONE continuous skeleton whether the
+ * wait is server-side (RSC streaming) or client-side (auth check).
  */
+import { SkeletonAdminShell } from '@/components/design-system'
+
 export default function Loading() {
   return (
-    <div
-      className="flex min-h-[50vh] w-full items-center justify-center"
-      role="status"
-      aria-live="polite"
-      aria-label="Chargement en cours"
-    >
-      <div
-        className="h-8 w-8 animate-spin rounded-full border-2 border-muted border-t-primary"
-        aria-hidden="true"
-      />
+    <div className="min-h-screen">
+      <SkeletonAdminShell accent="emerald" className="min-h-screen rounded-none border-0" />
     </div>
-  );
+  )
 }

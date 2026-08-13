@@ -296,18 +296,49 @@ export function buildTenantContext(
  * Resolve the tenant context for a public (unauthenticated) request.
  * Falls back to default wedding if no slug is provided.
  *
+ * MISSION 5.9.3 P0-1 FIX — `slugOverride` parameter:
+ * The frontend SPA correctly sets the `X-Wedding-Slug` header on all
+ * tenant-scoped API calls (via `useTenantFetch()` in wedding-context.tsx),
+ * so SPA requests resolve to the right tenant. HOWEVER, two real-world
+ * entry points bypass the SPA fetch wrapper:
+ *
+ *   1. POST /api/guest/auth with `{ code, weddingSlug }` in the JSON body
+ *      when the guest lands on the ROOT URL (`/?invite=TOKEN`) — the
+ *      default-wedding fallback would authenticate them in the wrong tenant.
+ *   2. POST /api/guest/rsvp with `{ weddingSlug }` in the body (same issue).
+ *
+ * The `slugOverride` parameter lets the route handler peek at the body
+ * (via `request.clone().json()`) and pass the slug explicitly, taking
+ * precedence over the default-wedding fallback. Resolution priority is now:
+ *
+ *   1. slugOverride (from body — caller must explicitly pass it)
+ *   2. X-Wedding-Slug header (SPA fetch wrapper)
+ *   3. ?wedding=slug query param
+ *   4. DEFAULT_WEDDING_SLUG (legacy root URL backward compat)
+ *
  * @returns { context, wedding, error }
  *   - On success: context + wedding are set, error is null
  *   - On unknown slug: context + wedding are null, error is a 404 message
  */
 export async function resolvePublicTenant(
-  request: NextRequest
+  request: NextRequest,
+  slugOverride?: string | null
 ): Promise<{
   context: TenantContext | null;
   wedding: CachedWedding | null;
   error: { status: number; message: string } | null;
 }> {
-  const slug = extractSlugFromRequest(request) ?? DEFAULT_WEDDING_SLUG;
+  // P0-1 FIX: explicit slugOverride (from body) takes precedence over header/query.
+  // This closes the cross-wedding auth leak where a guest POSTing to /api/guest/auth
+  // from the root URL (no header) would be authenticated in the DEFAULT wedding
+  // instead of their own — potentially returning a different wedding's guest.
+  let slug: string;
+  if (slugOverride && slugOverride.trim()) {
+    slug = slugOverride.trim().toLowerCase();
+  } else {
+    const headerOrQuery = extractSlugFromRequest(request);
+    slug = headerOrQuery ?? DEFAULT_WEDDING_SLUG;
+  }
   const wedding = await resolveWeddingBySlug(slug);
 
   if (!wedding) {
@@ -572,10 +603,18 @@ type Handler<T = unknown> = (req: NextRequest, ctx: TenantContext) => Promise<Re
 /**
  * Wrap a public (unauthenticated) route handler with tenant context resolution.
  * Uses resolvePublicTenant which gates by wedding status (DRAFT/SUSPENDED).
+ *
+ * MISSION 5.9.3 P0-1 FIX — accepts an optional `slugOverride` (typically
+ * extracted from the request body by the caller) so POST routes that receive
+ * `{ weddingSlug }` in the body can resolve the correct tenant even when no
+ * `X-Wedding-Slug` header is set (e.g. guest auth from the root URL).
  */
-export function withPublicTenant<TParams = unknown>(handler: Handler): (req: NextRequest) => Promise<Response> {
+export function withPublicTenant<TParams = unknown>(
+  handler: Handler,
+  slugOverride?: string | null
+): (req: NextRequest) => Promise<Response> {
   return async (request: NextRequest): Promise<Response> => {
-    const { context, error } = await resolvePublicTenant(request);
+    const { context, error } = await resolvePublicTenant(request, slugOverride);
     if (error || !context) {
       return Response.json(
         { error: error?.message ?? 'Tenant resolution failed' },
@@ -615,3 +654,4 @@ export async function withAdminTenantHandler(
   }
   return runWithTenant(context, () => handler(request, context));
 }
+

@@ -112,6 +112,28 @@ function applyThemeData(data: ThemeData) {
   root.style.setProperty('--theme-font-display', `'${data.fontDisplay}', serif`);
   root.style.setProperty('--theme-font-body', `'${data.fontBody}', sans-serif`);
 
+  // ── P1-1 FIX (5.8.11-FIX): propagate theme to Tailwind utility classes ──
+  // The wedding frontend components use Tailwind utilities like `text-gold`,
+  // `font-serif`, `font-display` which resolve to CSS vars `--gold`,
+  // `--font-serif`, `--font-display` (defined in globals.css @theme inline).
+  // WITHOUT this propagation, those utilities resolve to the hardcoded
+  // defaults from globals.css (--gold=oklch gold ≈ not #D4AF37, --font-serif
+  // = Georgia, --font-display = Geist Sans) — ignoring the per-wedding theme.
+  // By overriding these vars here, `text-gold` follows --theme-primary,
+  // `font-serif`/`font-display` follow --theme-font-display. This is
+  // ADDITIVE — when no theme is applied, the globals.css defaults stand.
+  if (data.primaryColor) {
+    root.style.setProperty('--gold', data.primaryColor);
+    root.style.setProperty('--brand-gold', data.primaryColor);
+    // Also override --primary so `text-primary` follows the theme.
+    root.style.setProperty('--primary', data.primaryColor);
+  }
+  if (data.fontDisplay) {
+    const displayFontFamily = `'${data.fontDisplay}', serif`;
+    root.style.setProperty('--font-display', displayFontFamily);
+    root.style.setProperty('--font-serif', displayFontFamily);
+  }
+
   // ── Extended 9 tokens (set only when present in customizations) ──────────
   // These activate identity presets' dark surfaces, patterns, ambiance
   // gradients, and color variants. When absent, the CSS fallbacks in

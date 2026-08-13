@@ -249,8 +249,35 @@ model Wedding {
   themeSnapshotId    String?
   themeSnapshot      PlatformThemeSnapshot? @relation(fields: [themeSnapshotId], references: [id], onDelete: SetNull)
 
+  // ─── MISSION 5.9.2 P2 — Invitation Experience (canonical model) ──────────
+  // Couples choose an InvitationTemplate (royal-gold, royal-black,
+  // white-romance, ...) during wedding config. The composer
+  // (lib/invitations/index.ts) reads template.configJson + wedding.mediaSlotsJson
+  // + guest + venue + events and produces an InvitationExperienceConfig that
+  // the renderer (IdentityInvitation dispatcher → premium component) consumes.
+  //
+  // invitationTemplateId  → InvitationTemplate (FK; nullable for backward compat —
+  //                          existing weddings have no template → render legacy
+  //                          InvitationCard.tsx behavior).
+  // invitationSnapshotId  → InvitationTemplateSnapshot (immutable version pinning —
+  //                          a wedding published on V3 stays on V3 even if the
+  //                          live template is bumped to V4; mirrors the
+  //                          themeSnapshot pattern).
+  // invitationConfigJson  → per-wedding overrides (sections enabled/disabled,
+  //                          custom copy, custom colors override, ...).
+  // mediaSlotsJson        → semantic-role → Media.id map for fast resolution:
+  //                          { "COUPLE_HERO": { "mediaId": "cm...", "focalPoint": {"x":0.5,"y":0.4} },
+  //                            "COUPLE_STORY": { ... }, "GALLERY_01": { ... } }
+  invitationTemplateId   String?
+  invitationTemplate     InvitationTemplate? @relation(fields: [invitationTemplateId], references: [id], onDelete: SetNull)
+  invitationSnapshotId    String?
+  invitationSnapshot     InvitationTemplateSnapshot? @relation(fields: [invitationSnapshotId], references: [id], onDelete: SetNull)
+  invitationConfigJson   String   @default("{}")
+  mediaSlotsJson         String   @default("{}")
+
   @@index([organizationId])
   @@index([status, organizationId])
+  @@index([invitationTemplateId])
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -512,12 +539,23 @@ model Media {
   // shared design library asset owned by the Collection.
   collectionId    String?
   collection      Collection? @relation(fields: [collectionId], references: [id], onDelete: SetNull)
+  // ─── MISSION 5.9.2 P2 — Invitation Media Slots ───────────────────────────
+  // Semantic role + slot id + aspect ratio enable the Super Admin to declare
+  // "this is the invitation hero" vs "this is the gallery thumbnail" without
+  // overloading the `category` field (which is GALLERY/COUPLE_STORY/DOCUMENT/OTHER).
+  // The slotId matches InvitationTemplate.configJson.mediaSlots[].slotId so
+  // the invitation composer can resolve {{coupleHero}} → Media.url.
+  semanticRole    String?  // COUPLE_HERO | COUPLE_PORTRAIT | COUPLE_STORY | GALLERY_01..03 | VENUE_IMAGE | BACKGROUND_IMAGE | MONOGRAM
+  slotId          String?  // matches InvitationTemplate.configJson.mediaSlots[].slotId
+  aspectRatio     String?  // "16:9" | "4:5" | "1:1" — declared aspect (admin can adjust focal point without re-upload)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
   @@index([weddingId, category])
   @@index([weddingId, type])
   @@index([collectionId])
+  @@index([weddingId, semanticRole])
+  @@index([weddingId, slotId])
 }
 
 model EventTimeline {
@@ -1404,6 +1442,139 @@ model PlatformThemeSnapshot {
 
   @@index([platformThemeId])
   @@index([themeSlug])
+  @@index([createdAt])
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// MISSION 5.9.2 P2 — InvitationTemplate
+// ══════════════════════════════════════════════════════════════════════════════
+// Premium invitation design template. The Super Admin curates a catalog of
+// invitation designs (royal-gold, royal-black, white-romance, ...). Each
+// template declares its visual identity (category, style, layout, identity
+// preset slug), its composition (sections, components, tokens, mediaSlots,
+// dataBindings, responsiveRules, animationRules, qualityRules, supportedFormats,
+// supportedLanguages), and its commercial metadata (tier, isPremium, version).
+//
+// Cardinality: 1 InvitationTemplate → N InvitationTemplateSnapshot (one per publish).
+// Mirrors the PlatformTheme model structure for consistency.
+//
+// Rendering: the IdentityInvitation dispatcher reads `template.identity` and
+// delegates to one of LuxuryInvitation / EditorialInvitation / BotanicalInvitation
+// / CinematicInvitation / ChampagneInvitation (premium React components).
+// ══════════════════════════════════════════════════════════════════════════════
+model InvitationTemplate {
+  id              String   @id @default(cuid())
+  slug            String   @unique // e.g. "royal-gold", "white-romance", "sunset-romance"
+  name            String
+  description     String?
+  // Visual identity
+  category        String   // LUXURY | EDITORIAL | BOTANICAL | CINEMATIC | CHAMPAGNE
+  style           String   // ROYAL_GOLD | ROYAL_BLACK | WHITE_ROMANCE | CHAMPAGNE_EDITORIAL | ...
+  layout          String   // FULL_BLEED | EDITORIAL_GRID | SPLIT_SCREEN | CINEMATIC_HERO | TYPOGRAPHIC_HERO | ASYMMETRIC | CENTERED_CEREMONY | PHOTO_COLLAGE
+  identity        String?  // royal-luxury | minimal-editorial | botanical-romance | cinematic-dark | modern-champagne (matches identity-presets.ts slugs)
+  // Commercial metadata
+  tier            String   @default("PREMIUM")  // FREE | STANDARD | PREMIUM | EXCLUSIVE
+  status          String   @default("DRAFT")     // DRAFT | PUBLISHED | ARCHIVED
+  isLocked        Boolean  @default(false)
+  lockedAt        DateTime?
+  lockedBy        String?
+  approvalStatus  String   @default("DRAFT")    // DRAFT | IN_REVIEW | APPROVED | PUBLISHED | LOCKED | ARCHIVED
+  approvedAt      DateTime?
+  approvedBy      String?
+  isBuiltIn       Boolean  @default(true)
+  isPremium       Boolean  @default(true)
+  isRecommended   Boolean  @default(false)
+  isDefault       Boolean  @default(false)
+  version         Int      @default(1)  // bumped on each edit (not semver — Int for simplicity)
+  // Composition (the full InvitationExperienceConfig seed)
+  // Shape: {
+  //   sections: [{ id, type, enabled, order, props }],
+  //   components: [{ slot, componentId, props }],
+  //   tokens: { --theme-primary, --theme-accent, --inv-bg, --inv-overlay, ... },
+  //   mediaSlots: [{ slotId, semanticRole, required, acceptedTypes, aspectRatio, cropMode, fallback }],
+  //   dataBindings: { "coupleNames": "wedding.coupleLabel", "date": "wedding.weddingDate", ... },
+  //   responsiveRules: { mobile: {...}, tablet: {...}, desktop: {...} },
+  //   animationRules: { reveal: "scroll", duration: 600, ... },
+  //   qualityRules: { minImagesPerSlot: 1, ... },
+  //   supportedFormats: ["DESKTOP", "TABLET", "MOBILE", "PRINT_A5", "PRINT_A6"],
+  //   supportedLanguages: ["fr", "en"]
+  // }
+  configJson      String   @default("{}")
+  // Per-template asset URLs (background + pattern images — mirrors PlatformTheme.assetsJson)
+  // Shape: { "background": { "url": "...", "alt": "..." }, "pattern": { "url": "...", "repeat": "repeat" } }
+  assetsJson      String   @default("{}")
+  // Preview metadata (thumbnail + fullscreen preview URLs + alt text)
+  previewJson     String   @default("{}")
+  thumbnailUrl    String?
+  previewUrl      String?
+  // Optional link to a PlatformTheme (when the invitation design is paired
+  // with a specific theme — e.g. royal-gold invitation ↔ royal-gold theme)
+  themeId         String?
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  // Reverse relations
+  snapshots       InvitationTemplateSnapshot[]
+  weddings        Wedding[]
+
+  @@index([status, tier])
+  @@index([slug])
+  @@index([category])
+  @@index([isLocked])
+  @@index([approvalStatus])
+  @@index([isPremium])
+  @@index([isRecommended])
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// MISSION 5.9.2 P2 — InvitationTemplateSnapshot
+// ══════════════════════════════════════════════════════════════════════════════
+// Immutable copy of an InvitationTemplate at publish time. Created by the
+// `resolveInvitations` pipeline stage (between `resolveProducts` and
+// `compileFrontend`) when a wedding is published. Referenced by
+// `Wedding.invitationSnapshotId` so each published wedding pins to a specific
+// template version — even if the live InvitationTemplate is later edited,
+// bumped, or deleted (audit 5.9.2 F1 fix — "Invitation is a delivery record,
+// not a design" → now resolved with version pinning).
+//
+// Cardinality: 1 InvitationTemplate → N InvitationTemplateSnapshot (one per publish).
+// A snapshot is IMMUTABLE — once created, its fields never change.
+// Mirrors the PlatformThemeSnapshot model structure for consistency.
+// ══════════════════════════════════════════════════════════════════════════════
+model InvitationTemplateSnapshot {
+  id              String   @id @default(cuid())
+  // The InvitationTemplate this snapshot was created from. Nullable + SetNull
+  // so deleting a template preserves its historical snapshots.
+  templateId      String?
+  template        InvitationTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  // Denormalized slug + version — preserved so a snapshot remains identifiable
+  // even if the source template is deleted.
+  templateSlug    String
+  version         Int      @default(1)
+  // Frozen copies of all template fields.
+  name            String
+  description     String?
+  category        String
+  style           String
+  layout          String
+  identity        String?
+  tier            String   @default("PREMIUM")
+  configJson      String   @default("{}")
+  assetsJson      String   @default("{}")
+  previewJson      String   @default("{}")
+  thumbnailUrl    String?
+  previewUrl      String?
+  themeId         String?
+  // Audit trail
+  triggeredBy     String?  // admin user ID
+  createdAt       DateTime @default(now())
+
+  // Reverse relation — weddings pointing to this snapshot.
+  weddings        Wedding[]
+
+  @@index([templateId])
+  @@index([templateSlug])
   @@index([createdAt])
 }
 
