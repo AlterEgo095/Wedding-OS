@@ -700,3 +700,17 @@
 .no-scrollbar::-webkit-scrollbar {
   display: none;
 }
+
+/* ═══ Mission 5.8.13 — P2: Mobile touch target enforcement (iOS HIG 44px) ═══ */
+@media (max-width: 768px) {
+  /* Ensure all interactive buttons meet 44px minimum touch target on mobile.
+     Uses min-height (additive) — doesn't override larger buttons.
+     Excludes icon-only circles (w-8 h-8) which are decorative. */
+  button:not([data-touch-exempt]):not(.touch-exempt):not([class*="w-8 h-8"]):not([class*="w-10 h-10"]) {
+    min-height: 44px;
+  }
+  /* Pagination and filter buttons specifically */
+  button[class*="h-9"], button[class*="h-10"] {
+    min-height: 44px;
+  }
+}
