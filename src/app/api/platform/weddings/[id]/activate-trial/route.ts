@@ -89,7 +89,6 @@ export async function POST(
     const customer = await createCustomer({
       type: 'COUPLE',
       displayName: wedding.coupleLabel || `${wedding.brideName} & ${wedding.groomName}`,
-      email: null,
       country: 'CD',
       currency: 'usd',
       notes: `Auto-created by ${user?.name || 'Super Admin'} via activate-trial (5.8.16)`,
