@@ -130,8 +130,9 @@ export async function POST(
     // Audit log
     await writeAuditLog({
       action: 'WEDDING_TRIAL_ACTIVATED',
-      actorId: user!.id,
+      userId: user!.id,
       weddingId: wedding.id,
+      request,
       details: JSON.stringify({
         slug: wedding.slug,
         customerId: customer.id,
