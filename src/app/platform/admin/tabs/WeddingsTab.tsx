@@ -62,6 +62,7 @@ import {
   Archive,
   EyeOff,
   Eye,
+  Zap,
 } from 'lucide-react'
 
 import { PLAN_METADATA, type Plan, type WeddingStatus } from '@/lib/types'
@@ -314,6 +315,34 @@ export function WeddingsTab({ fetchWithAuth }: { fetchWithAuth: (url: string, in
     }
   }
 
+  // ─── 5.8.16 P1-01: Activate TRIAL wedding (no-code publish enabler) ───────
+  const handleActivateTrial = async (w: Wedding) => {
+    setStatusChangingId(w.id)
+    try {
+      const res = await fetchWithAuth(`/api/platform/weddings/${w.id}/activate-trial`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      })
+      if (!res) {
+        setStatusChangingId(null)
+        return
+      }
+      const json = await res.json().catch(() => ({}))
+      if (res.ok) {
+        toast.success(json.alreadyActive
+          ? `L'essai est déjà activé pour ${w.coupleLabel}.`
+          : `Essai activé pour ${w.coupleLabel}. Vous pouvez maintenant publier.`)
+        load(page)
+      } else {
+        toast.error(json.error || 'Activation échouée')
+      }
+    } catch {
+      toast.error('Erreur de connexion')
+    } finally {
+      setStatusChangingId(null)
+    }
+  }
+
   // ─── Duplicate wedding (Phase 3 ÉTAPE 5) ──────────────────────────────────
   const openDuplicate = (w: Wedding) => {
     setDuplicating(w)
@@ -519,6 +548,12 @@ export function WeddingsTab({ fetchWithAuth }: { fetchWithAuth: (url: string, in
 
                             {/* ─── Status quick-actions (Phase 3 ÉTAPE 5) ─── */}
                             <DropdownMenuSeparator />
+                            {w.status === 'DRAFT' && w.plan === 'TRIAL' && (
+                              <DropdownMenuItem onClick={() => handleActivateTrial(w)}>
+                                <Zap className="w-3.5 h-3.5 mr-2" />
+                                Activer l'essai
+                              </DropdownMenuItem>
+                            )}
                             {w.status === 'DRAFT' && (
                               <DropdownMenuItem onClick={() => handleStatusChange(w, 'PUBLISHED')}>
                                 <Send className="w-3.5 h-3.5 mr-2" />

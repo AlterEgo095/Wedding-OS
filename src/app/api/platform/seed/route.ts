@@ -34,6 +34,8 @@ interface SeedResult {
   componentsSkipped: number;
   assetsCreated: number;
   assetsSkipped: number;
+  layoutsCreated: number;
+  layoutsSkipped: number;
   errors: string[];
 }
 
@@ -46,7 +48,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json().catch(() => ({}));
     const what = (body?.what || 'all').toLowerCase();
 
-    if (!['all', 'products', 'components', 'assets'].includes(what)) {
+    if (!['all', 'products', 'components', 'assets', 'layouts'].includes(what)) {
       return NextResponse.json(
         { error: "`what` doit être 'all' | 'products' | 'components' | 'assets'" },
         { status: 400 }
@@ -60,6 +62,8 @@ export async function POST(request: NextRequest) {
       componentsSkipped: 0,
       assetsCreated: 0,
       assetsSkipped: 0,
+      layoutsCreated: 0,
+      layoutsSkipped: 0,
       errors: [],
     };
 
@@ -247,6 +251,69 @@ export async function POST(request: NextRequest) {
       details: JSON.stringify({ what, result }),
       request,
     }).catch((e) => logger.error('seed audit log failed', { err: e }));
+
+
+    // ─── 5.8.16 P1-03: Default Layouts (Visual Frontend Builder seed) ──────
+    if (what === 'all' || what === 'layouts') {
+      const DEFAULT_LAYOUTS = [
+        {
+          name: 'Classique',
+          slug: 'classic',
+          description: 'Hero, Couple, Galerie, Chronologie, RSVP, QR',
+          sections: ['hero','couple','gallery','timeline','rsvp','qr'],
+        },
+        {
+          name: 'Moderne',
+          slug: 'modern',
+          description: 'Hero, Countdown, Galerie, Programme, Livre d Or',
+          sections: ['hero','countdown','gallery','program','guestbook'],
+        },
+        {
+          name: 'Minimaliste',
+          slug: 'minimal',
+          description: 'Hero, Couple, Infos, RSVP',
+          sections: ['hero','couple','info','rsvp'],
+        },
+        {
+          name: 'Romantique',
+          slug: 'romantic',
+          description: 'Hero, Histoire, Galerie, Chronologie, RSVP, Livre d Or',
+          sections: ['hero','story','gallery','timeline','rsvp','guestbook'],
+        },
+        {
+          name: 'Luxe',
+          slug: 'luxury',
+          description: 'Hero, Couple, Galerie, Programme, Tables, QR, Livre d Or',
+          sections: ['hero','couple','gallery','program','tables','qr','guestbook'],
+        },
+      ];
+      for (const layout of DEFAULT_LAYOUTS) {
+        const existing = await db.layout.findUnique({ where: { slug: layout.slug } });
+        if (!existing) {
+          const sectionsJson = JSON.stringify(
+            layout.sections.map((s: string, i: number) => ({
+              id: s,
+              component: s.charAt(0).toUpperCase() + s.slice(1),
+              label: s,
+              order: i,
+              props: {},
+            }))
+          );
+          await db.layout.create({
+            data: {
+              name: layout.name,
+              slug: layout.slug,
+              description: layout.description,
+              sectionsJson,
+              propsJson: '{}',
+              status: 'PUBLISHED',
+              isBuiltIn: true,
+            },
+          });
+          result.layoutsCreated++;
+        }
+      }
+    }
 
     return withSecurityHeaders(
       NextResponse.json({

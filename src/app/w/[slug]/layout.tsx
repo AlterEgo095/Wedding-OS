@@ -140,7 +140,9 @@ export default async function WeddingLayout({
   // wedding is DRAFT (configuration), SUSPENDED (recovery), or ARCHIVED
   // (viewing historical data). Only public routes show holding/memorial pages.
   const h = await headers();
-  const pathname = h.get('x-invoke-path') || h.get('referer') || '';
+  // 5.8.16 P0-01: use x-pathname set by middleware (reliable) instead of
+  // x-invoke-path (Next.js internal, not always present on direct navigations).
+  const pathname = h.get('x-pathname') || h.get('x-invoke-path') || '';
   const isAdminRoute = pathname.includes('/admin');
 
   if (wedding.status === 'DRAFT' && !wedding.isDefault) {

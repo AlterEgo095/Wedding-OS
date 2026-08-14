@@ -368,7 +368,16 @@ export async function middleware(request: NextRequest) {
     }
   }
 
-  const response = NextResponse.next();
+  // ─── 5.8.16 P0-01: pass pathname to server components ──────────────────
+  // The layout.tsx for /w/[slug] needs to know if the current request is an
+  // admin route (/w/[slug]/admin/*) to allow DRAFT weddings through. The old
+  // x-invoke-path header is unreliable for direct navigations. We set
+  // x-pathname here so `headers().get('x-pathname')` works in server comps.
+  const requestHeaders = new Headers(request.headers);
+  requestHeaders.set('x-pathname', url.pathname);
+  const response = NextResponse.next({
+    request: { headers: requestHeaders },
+  });
 
   // ─── Defense-in-depth security headers ───────────────────────────────────
   response.headers.set('X-Content-Type-Options', 'nosniff');
