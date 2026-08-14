@@ -119,6 +119,10 @@ export async function GET(request: NextRequest) {
         });
         response.headers.set('Referrer-Policy', 'no-referrer');
         response.cookies.delete('invite_token');
+        // P0-5.8.15: Fix returning visitor auth — always set guest_session cookie
+        // so /api/guest/me works on new devices. Previously this branch returned
+        // {authenticated:true} without setting the cookie, causing 401 on /api/guest/me.
+        setGuestSessionCookie(response, existingSession.token);
         return response;
       }
 
