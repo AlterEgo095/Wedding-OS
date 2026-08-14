@@ -160,6 +160,6 @@ export async function POST(
     })
   } catch (error) {
     logger.error('activate-trial failed', { error: String(error) })
-    return internalError('Erreur lors de l\\'activation de l\\'essai')
+    return internalError(`Erreur lors de l'activation de l'essai`)
   }
 }
