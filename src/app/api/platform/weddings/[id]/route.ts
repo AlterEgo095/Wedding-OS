@@ -3,7 +3,12 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getAuthUser, requirePlatformAdmin } from '@/lib/auth';
 import { buildCoupleLabel, type Plan, type WeddingStatus } from '@/lib/types';
-import { invalidateWeddingCache } from '@/lib/tenant-context';
+// 5.8.17 Phase 3 Fix 1 — use the ASYNC invalidateWeddingCache (awaits
+// revalidateTag) so UNPUBLISH/DELETE also bust the L2 unstable_cache
+// reliably. The SYNC version in tenant-context.ts uses fire-and-forget
+// import('next/cache').then(...) which does NOT reliably bust L2 before
+// the HTTP response is sent (5-min staleness window observed in Phase 3).
+import { invalidateWeddingCache } from '@/lib/wedding/cache';
 // P5.2-2 (PRE-P5.X-AUDIT-B, HIGH-4): DNS verification for custom domains.
 import { buildDnsVerificationRecord } from '@/lib/custom-domains';
 import { buildVerificationToken } from '@/lib/dns-verification';
@@ -28,7 +33,7 @@ import { publishWeddingViaPipeline } from '@/lib/pipeline/publish-helper';
 // P2.6 — auto-transition commercialStatus PAID → LIVE when the wedding is
 // published. Idempotent: no-op if not PUBLISHED, or commercialStatus is
 // already LIVE / not in [PAID, READY, IN_PRODUCTION].
-import { autoTransitionToLive } from '@/lib/commercial-status';
+import { autoTransitionToLive, autoTransitionToPaid } from '@/lib/commercial-status';
 
 /**
  * Per-wedding operations for the platform admin.
@@ -293,12 +298,17 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
           where: { id },
           select: WEDDING_DETAIL_SELECT,
         });
-        invalidateWeddingCache(existing.slug);
+        // 5.8.17 Phase 3 Fix 1 — AWAIT the async invalidateWeddingCache so the
+        // L2 unstable_cache tag is reliably busted before the response is sent.
+        await invalidateWeddingCache(existing.slug);
+        // 5.8.17 Phase 3 Fix 3 — distinguish REPUBLISH (UNPUBLISHED → PUBLISHED)
+        // from initial PUBLISH (DRAFT → PUBLISHED) in the audit trail.
+        const isRepublish = existing.status === 'UNPUBLISHED';
         await writeAuditLog({
           weddingId: null,
           userId: user!.id,
-          action: 'PUBLISH_WEDDING',
-          details: `Published wedding ${existing.slug} via PUT (deployment ${publishResult.deploymentId}, mode ${publishResult.mode})`,
+          action: isRepublish ? 'REPUBLISH_WEDDING' : 'PUBLISH_WEDDING',
+          details: `${isRepublish ? 'Republished' : 'Published'} wedding ${existing.slug} via PUT (deployment ${publishResult.deploymentId}, mode ${publishResult.mode})`,
           request,
         });
 
@@ -348,16 +358,54 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       select: WEDDING_DETAIL_SELECT,
     });
 
-    invalidateWeddingCache(existing.slug);
+    // 5.8.17 Phase 3 Fix 1 — AWAIT the async invalidateWeddingCache so the L2
+    // unstable_cache tag is reliably busted before the response is sent. This
+    // is critical for UNPUBLISH: the public /w/[slug] page must reflect the
+    // UNPUBLISHED status (holding page) on the NEXT request, not 5 minutes
+    // later when the fallback revalidate kicks in.
+    await invalidateWeddingCache(existing.slug);
 
-    // P2-SEC-14: writeAuditLog populates ipAddress + userAgent from request.
-    await writeAuditLog({
-      weddingId: null, // platform-level event
-      userId: user!.id,
-      action: 'UPDATE_WEDDING',
-      details: `Updated wedding ${existing.slug} (fields: ${Object.keys(updateData).join(', ')})`,
-      request,
-    });
+    // 5.8.17 Phase 3 Fix 3 — distinct audit action for UNPUBLISH transitions.
+    // A generic UPDATE_WEDDING (fields: status) entry is ambiguous in the
+    // audit trail; UNPUBLISH_WEDDING makes the lifecycle event explicit.
+    const isUnpublishTransition =
+      status === 'UNPUBLISHED' && existing.status === 'PUBLISHED';
+
+    if (isUnpublishTransition) {
+      await writeAuditLog({
+        weddingId: null, // platform-level event
+        userId: user!.id,
+        action: 'UNPUBLISH_WEDDING',
+        details: `Unpublished wedding ${existing.slug} (status: ${existing.status} → UNPUBLISHED)`,
+        request,
+      });
+
+      // 5.8.17 Phase 3 Fix 2 — symmetric auto-transition LIVE → PAID on
+      // UNPUBLISH. Without this, commercialStatus stays LIVE after unpublish,
+      // and the next PUBLISH attempt (republish) is rejected by the
+      // PUBLISHED_REQUIRES_PAID guard (which requires commercialStatus='PAID').
+      // This mirrors autoTransitionToLive() (PAID → LIVE on PUBLISH) and
+      // makes the state machine reversible: PAID → LIVE → PAID → LIVE → ...
+      // Errors here MUST NOT fail the unpublish — the wedding is already
+      // unpublished in the DB. We log and continue.
+      try {
+        await autoTransitionToPaid(id, user!.id);
+      } catch (e) {
+        logger.error('PUT /api/platform/weddings/[id]: autoTransitionToPaid failed (non-blocking)', {
+          weddingId: id,
+          errMessage: e instanceof Error ? e.message : String(e),
+        });
+      }
+    } else {
+      // P2-SEC-14: writeAuditLog populates ipAddress + userAgent from request.
+      await writeAuditLog({
+        weddingId: null, // platform-level event
+        userId: user!.id,
+        action: 'UPDATE_WEDDING',
+        details: `Updated wedding ${existing.slug} (fields: ${Object.keys(updateData).join(', ')})`,
+        request,
+      });
+    }
 
     // P5.2-2: when customDomain was set/changed, return the TXT record the
     // couple must add to verify ownership. The frontend uses this to display
@@ -413,7 +461,8 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     // ─── Cascade delete (Prisma handles tenant-scoped rows automatically) ──
     await db.wedding.delete({ where: { id } });
 
-    invalidateWeddingCache(existing.slug);
+    // 5.8.17 Phase 3 Fix 1 — await async invalidateWeddingCache for consistency.
+    await invalidateWeddingCache(existing.slug);
 
     // P2-SEC-14: writeAuditLog populates ipAddress + userAgent from request.
     await writeAuditLog({

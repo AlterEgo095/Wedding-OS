@@ -647,6 +647,9 @@ function formatAction(action: string): string {
     UPDATE_WEDDING: 'Modification mariage',
     DELETE_WEDDING: 'Suppression mariage',
     PUBLISH_WEDDING: 'Publication mariage',
+    // 5.8.17 Phase 3 Fix 3 — distinct audit actions for unpublish/republish.
+    UNPUBLISH_WEDDING: 'Dépublication mariage',
+    REPUBLISH_WEDDING: 'Republication mariage',
   };
   return map[action] || action;
 }

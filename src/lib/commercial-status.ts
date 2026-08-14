@@ -41,7 +41,12 @@ const VALID_COMMERCIAL_TRANSITIONS: Record<CommercialStatus, CommercialStatus[]>
   PAID:            ['IN_PRODUCTION', 'READY', 'LIVE', 'COMPLETED', 'CANCELLED'],
   IN_PRODUCTION:   ['READY', 'LIVE', 'PAID', 'CANCELLED'], // PAID allowed for rework
   READY:           ['LIVE', 'IN_PRODUCTION', 'CANCELLED'],
-  LIVE:            ['COMPLETED', 'ARCHIVED', 'CANCELLED'],
+  // 5.8.17 — allow LIVE → PAID for autoTransitionToPaid() on UNPUBLISH
+  // (symmetric to PAID → LIVE on PUBLISH). Preserves payment invariant:
+  // unpublishing a LIVE wedding reverts it to PAID so the next publish
+  // attempt passes the PUBLISHED_REQUIRES_PAID guard without re-running
+  // the Commercial OS payment verification flow.
+  LIVE:            ['COMPLETED', 'ARCHIVED', 'CANCELLED', 'PAID'],
   COMPLETED:       ['ARCHIVED'],
   ARCHIVED:        [], // terminal
   CANCELLED:       [], // terminal
@@ -218,5 +223,46 @@ export async function autoTransitionToLive(weddingId: string, userId?: string): 
     to: 'LIVE',
     userId,
     reason: 'Auto-transition: Wedding.status flipped to PUBLISHED',
+  });
+}
+
+/**
+ * Auto-transition LIVE → PAID when Wedding.status flips to UNPUBLISHED.
+ *
+ * Mission 5.8.17 Phase 3 — symmetric counterpart to autoTransitionToLive().
+ * Called from the PUT /api/platform/weddings/[id] route when the Super Admin
+ * unpublishes a wedding (status: PUBLISHED → UNPUBLISHED). Reverts the
+ * commercialStatus from LIVE back to PAID so the next PUBLISH attempt
+ * (republish) passes the PUBLISHED_REQUIRES_PAID guard without re-running
+ * the Commercial OS payment verification flow.
+ *
+ * Idempotent: if already PAID, no-op. If wedding.status is not UNPUBLISHED,
+ * no-op. Only transitions from LIVE → PAID (the reverse of autoTransitionToLive).
+ *
+ * COMPLETED / ARCHIVED / CANCELLED are NOT auto-reverted to PAID — those
+ * represent post-event or terminal states where the commercial relationship
+ * has changed (event closed, archived, or cancelled).
+ */
+export async function autoTransitionToPaid(weddingId: string, userId?: string): Promise<void> {
+  const { db } = await import('./db');
+  const wedding = await db.wedding.findUnique({
+    where: { id: weddingId },
+    select: { commercialStatus: true, status: true },
+  });
+  if (!wedding) return;
+  if (wedding.status !== 'UNPUBLISHED') return;
+  if (wedding.commercialStatus === 'PAID') return;
+  if (wedding.commercialStatus !== 'LIVE') {
+    // Can only auto-transition from LIVE → PAID (the reverse of publish).
+    // Other states (COMPLETED, ARCHIVED, CANCELLED, LEAD, PENDING_PAYMENT,
+    // IN_PRODUCTION, READY) are left untouched — unpublish does not change
+    // their commercial semantics.
+    return;
+  }
+  await transitionCommercialStatus({
+    weddingId,
+    to: 'PAID',
+    userId,
+    reason: 'Auto-transition: Wedding.status flipped to UNPUBLISHED (5.8.17)',
   });
 }
