@@ -11,16 +11,20 @@ import { logger } from '@/lib/logger';
  *
  * GET /api/platform/qr/stats?weddingId=&status=&channel=&dateFrom=&dateTo=&page=&limit=
  *
- * Returns aggregated QR-code stats across ALL weddings:
- *   - summary.total           — count of DeliveryJob rows where channel='QR'
- *                               (each row = one QR code generated + delivered)
+ * 5.8.15 FIX — previously `summary.total` counted DeliveryJob rows with
+ * channel='QR' (which is 0 because QR codes are generated ON-DEMAND from
+ * Invitation rows, not tracked as DeliveryJob). Now the source of truth
+ * for "QR codes generated" is the Invitation table (channel='QR').
+ *
+ * Returns:
+ *   - summary.total           — count of Invitation rows where channel='QR'
+ *                               (each row = one QR code generated for a guest)
  *   - summary.byStatus        — { USED, UNUSED, EXPIRED } derived from
- *                               DeliveryJob.status + GuestAccessLog QR_SCAN presence
- *   - summary.byChannel       — platform-wide DeliveryJob channel mix
- *                               (LINK, QR, EMAIL, SMS, WHATSAPP) so admin sees
- *                               the overall delivery landscape, with QR being the
- *                               relevant slice for "QR codes generated"
- *   - summary.topWeddings     — top 10 weddings by QR-channel DeliveryJob count
+ *                               Invitation + GuestAccessLog QR_SCAN presence
+ *   - summary.byChannel       — Invitation channel distribution platform-wide
+ *                               (QR, EMAIL, SMS, WHATSAPP) — reflects how
+ *                               invitations were sent across all weddings
+ *   - summary.topWeddings     — top 10 weddings by QR-channel Invitation count
  *                               (with used count = guests with ≥1 QR_SCAN log)
  *   - recentEvents            — last 50 GuestAccessLog where action ILIKE '%qr%'
  *                               (QR_SCAN, QR_VIEW, etc.) with wedding + guest labels
@@ -28,21 +32,10 @@ import { logger } from '@/lib/logger';
  *
  * Platform-admin only (requirePlatformAdmin). Uses unsafePlatformDb to bypass
  * the tenant-scoped extension — explicit cross-tenant scan.
- *
- * NOTE: Guest has no `qrCode` column (verified in schema.prisma line 396-443).
- * Each Guest has an `invitationCode` (NOT NULL) that can be rendered as a QR,
- * and the actual QR-code generation/delivery is tracked via DeliveryJob rows
- * with channel='QR'. We use that as the source of truth for "QR codes generated".
  */
 
 const VALID_STATUSES = new Set(['USED', 'UNUSED', 'EXPIRED']);
 const VALID_CHANNELS = new Set(['LINK', 'QR', 'EMAIL', 'SMS', 'WHATSAPP']);
-
-// DeliveryJob.status values that map to "EXPIRED" QR code (no longer usable).
-const EXPIRED_DELIVERY_STATUSES = new Set(['FAILED', 'CANCELLED']);
-// DeliveryJob.status values that mean the QR was successfully delivered
-// (so it's "UNUSED" until scanned, or "USED" if a QR_SCAN log exists).
-const DELIVERED_DELIVERY_STATUSES = new Set(['SENT', 'DELIVERED', 'READ']);
 
 function parseDateParam(value: string | null): Date | null {
   if (!value) return null;
@@ -74,42 +67,24 @@ export async function GET(req: NextRequest) {
       return badRequest('Canal invalide (LINK, QR, EMAIL, SMS, WHATSAPP)');
     }
 
-    // ─── Build the shared `where` clause for DeliveryJob channel='QR' ──────
-    // Date range applies to createdAt per the task spec.
-    const qrWhere: Record<string, unknown> = { channel: 'QR' };
-    if (weddingId) qrWhere.weddingId = weddingId;
+    // ─── Build the shared `where` clause for Invitation channel='QR' ──────
+    // 5.8.15 FIX: source of truth is Invitation, not DeliveryJob.
+    const qrInvitationWhere: Record<string, unknown> = { channel: 'QR' };
+    if (weddingId) qrInvitationWhere.weddingId = weddingId;
     if (dateFrom || dateTo) {
-      qrWhere.createdAt = {
+      qrInvitationWhere.createdAt = {
         ...(dateFrom ? { gte: dateFrom } : {}),
         ...(dateTo ? { lte: dateTo } : {}),
       };
     }
 
-    // ─── 1. Total QR codes generated (DeliveryJob channel='QR') ───────────
-    const totalQrJobs = await db.deliveryJob.count({ where: qrWhere });
+    // ─── 1. Total QR codes generated (Invitation channel='QR') ───────────
+    const totalQrInvitations = await db.invitation.count({ where: qrInvitationWhere });
 
     // ─── 2. byStatus — USED / UNUSED / EXPIRED ─────────────────────────────
-    // Fetch the QR-channel DeliveryJobs grouped by raw status, then derive the
-    // USED/UNUSED/EXPIRED buckets. USED requires a GuestAccessLog QR_SCAN entry
-    // for the same guest — we resolve that with a single guestId IN (...) probe.
-    const qrJobsByRawStatus = await db.deliveryJob.groupBy({
-      by: ['status'],
-      where: qrWhere,
-      _count: { _all: true },
-    });
-
-    // Collect guestIds from SENT/DELIVERED/READ QR-channel jobs (candidates
-    // for USED status — those need a QR_SCAN log lookup).
-    // Fetch guestIds for delivered QR jobs (distinct, for the scan-log filter).
-    const deliveredQrJobs = await db.deliveryJob.findMany({
-      where: { ...qrWhere, status: { in: Array.from(DELIVERED_DELIVERY_STATUSES) } },
-      select: { guestId: true },
-      distinct: ['guestId'],
-    });
-    const candidateGuestIds: string[] = deliveredQrJobs.map((j) => j.guestId);
-
-    // Set of guestIds that have at least one QR_SCAN log (within the same
-    // weddingId filter if provided, within the same date range if provided).
+    // USED = count of distinct guests with a QR_SCAN log (within filters)
+    // UNUSED = total - USED
+    // EXPIRED = 0 (no expiration concept for on-demand QR)
     const scanLogWhere: Record<string, unknown> = {
       action: { contains: 'qr' },
     };
@@ -120,50 +95,24 @@ export async function GET(req: NextRequest) {
         ...(dateTo ? { lte: dateTo } : {}),
       };
     }
-    if (candidateGuestIds.length > 0) {
-      scanLogWhere.guestId = { in: candidateGuestIds };
-    } else {
-      // No delivered QR jobs → no candidates, skip the scan-log lookup.
-    }
-    const scannedGuestRows = candidateGuestIds.length
-      ? await db.guestAccessLog.findMany({
-          where: scanLogWhere,
-          select: { guestId: true },
-          distinct: ['guestId'],
-        })
-      : [];
-    const scannedGuestIds = new Set<string>(
-      scannedGuestRows.map((r) => r.guestId || '').filter(Boolean)
-    );
+    scanLogWhere.guestId = { not: null };
 
-    // Now compute USED / UNUSED / EXPIRED from the raw status buckets.
-    // USED = count of QR-channel DeliveryJobs where guest has a QR_SCAN log
-    //        AND the job status is in DELIVERED_DELIVERY_STATUSES.
-    // UNUSED = count of QR-channel DeliveryJobs with status in DELIVERED_DELIVERY_STATUSES
-    //          but the guest has NO QR_SCAN log.
-    // EXPIRED = count of QR-channel DeliveryJobs with status in EXPIRED_DELIVERY_STATUSES.
-    let used = 0;
-    let unused = 0;
-    let expired = 0;
-    // We need per-row guestId to know which delivered jobs are USED vs UNUSED,
-    // so re-fetch delivered jobs with guestId (not distinct) and count manually.
-    const deliveredJobsWithGuest = await db.deliveryJob.findMany({
-      where: { ...qrWhere, status: { in: Array.from(DELIVERED_DELIVERY_STATUSES) } },
+    const scannedGuestRows = await db.guestAccessLog.findMany({
+      where: scanLogWhere,
       select: { guestId: true },
+      distinct: ['guestId'],
     });
-    for (const j of deliveredJobsWithGuest) {
-      if (scannedGuestIds.has(j.guestId)) used++;
-      else unused++;
-    }
-    for (const row of qrJobsByRawStatus) {
-      if (EXPIRED_DELIVERY_STATUSES.has(row.status)) {
-        expired += row._count._all;
-      }
-    }
+    const usedCount = scannedGuestRows.length;
+    const unusedCount = Math.max(0, totalQrInvitations - usedCount);
 
-    const byStatus: Record<string, number> = { USED: used, UNUSED: unused, EXPIRED: expired };
+    const byStatus: Record<string, number> = {
+      USED: usedCount,
+      UNUSED: unusedCount,
+      EXPIRED: 0,
+    };
 
-    // ─── 3. byChannel — platform-wide DeliveryJob channel mix ─────────────
+    // ─── 3. byChannel — Invitation channel distribution platform-wide ─────
+    // 5.8.15 FIX: reflects how invitations were actually sent.
     const channelWhere: Record<string, unknown> = {};
     if (weddingId) channelWhere.weddingId = weddingId;
     if (dateFrom || dateTo) {
@@ -173,7 +122,7 @@ export async function GET(req: NextRequest) {
       };
     }
     if (channelFilter) channelWhere.channel = channelFilter;
-    const channelGroups = await db.deliveryJob.groupBy({
+    const channelGroups = await db.invitation.groupBy({
       by: ['channel'],
       where: channelWhere,
       _count: { _all: true },
@@ -186,13 +135,18 @@ export async function GET(req: NextRequest) {
       WHATSAPP: 0,
     };
     for (const g of channelGroups) {
-      byChannel[g.channel] = g._count._all;
+      if (g.channel in byChannel) {
+        byChannel[g.channel] = g._count._all;
+      } else {
+        // Unknown channel — still surface it
+        byChannel[g.channel] = g._count._all;
+      }
     }
 
-    // ─── 4. topWeddings — top 10 by QR-channel DeliveryJob count ──────────
-    const topWeddingGroups = await db.deliveryJob.groupBy({
+    // ─── 4. topWeddings — top 10 by QR-channel Invitation count ───────────
+    const topWeddingGroups = await db.invitation.groupBy({
       by: ['weddingId'],
-      where: qrWhere,
+      where: qrInvitationWhere,
       _count: { _all: true },
       orderBy: { _count: { weddingId: 'desc' } },
       take: 10,
@@ -220,25 +174,19 @@ export async function GET(req: NextRequest) {
           select: { guestId: true },
           distinct: ['guestId'],
         });
-        const usedCount = scannedCount.length;
+        const usedForWedding = scannedCount.length;
         return {
           weddingId: g.weddingId,
           coupleLabel: meta?.coupleLabel || '',
           slug: meta?.slug || '',
           qrCount: totalForWedding,
-          usedCount,
-          usageRate: totalForWedding > 0 ? Math.round((usedCount / totalForWedding) * 1000) / 10 : 0,
+          usedCount: usedForWedding,
+          usageRate: totalForWedding > 0 ? Math.round((usedForWedding / totalForWedding) * 1000) / 10 : 0,
         };
       })
     );
 
     // ─── 5. recentEvents — last N GuestAccessLog where action contains 'qr' ─
-    // Apply the same filters (weddingId, date range). status/channel don't
-    // apply directly to GuestAccessLog — but channel filter is interpreted as
-    // "show events for QR-channel deliveries" which we approximate by only
-    // filtering on action containing 'qr' (the channel='QR' concept overlaps
-    // with the QR_SCAN action). When statusFilter is set, we post-filter events
-    // to those whose guest matches the requested status bucket.
     const eventsWhere: Record<string, unknown> = {
       action: { contains: 'qr' },
     };
@@ -310,19 +258,13 @@ export async function GET(req: NextRequest) {
     });
 
     // If statusFilter is set, post-filter recentEvents by the corresponding bucket.
-    // USED → only events where the guest has a QR_SCAN log (always true here since
-    //        the action contains 'qr').
-    // UNUSED → events whose guest has a delivered QR job but no scan log — these
-    //          won't appear in the QR scan events stream by definition, so UNUSED
-    //          filter yields empty list (documented behaviour).
-    // EXPIRED — not applicable to scan events.
     if (statusFilter === 'UNUSED' || statusFilter === 'EXPIRED') {
       recentEvents = [];
     }
 
     return NextResponse.json({
       summary: {
-        total: totalQrJobs,
+        total: totalQrInvitations,
         byStatus,
         byChannel,
         topWeddings,

@@ -60,6 +60,8 @@ import {
   // Governance tab icon).
   // Phase 2E — Identity presets catalog tab.
   Sparkles,
+  // 5.8.15 — Diagnostic Center
+  Gauge,
 } from 'lucide-react'
 
 import dynamic from 'next/dynamic'
@@ -104,6 +106,9 @@ const PlatformHealthPanel = dynamic(() => import('./tabs/production/PlatformHeal
 const QRInvitationsPanel = dynamic(() => import('./tabs/production/QRInvitationsPanel').then((m) => m.QRInvitationsPanel))
 const OpsPanel = dynamic(() => import('./tabs/production/OpsPanel').then((m) => m.OpsPanel))
 
+// 5.8.15 — Diagnostic Center (No-Code Command Center)
+const DiagnosticCenterTab = dynamic(() => import('./tabs/DiagnosticCenterTab').then((m) => m.DiagnosticCenterTab))
+
 import {
   type AuthUser,
   type TabId,
@@ -138,6 +143,8 @@ const getFalse = (): boolean => false
 const NAV_ITEMS: NavItem[] = [
   // ── COMMAND CENTER ──
   { id: 'dashboard', label: "Vue d'ensemble", icon: LayoutDashboard },
+  // 5.8.15 — No-Code Diagnostic Center
+  { id: 'diagnostics', label: 'Diagnostic', icon: Gauge },
   // ── COMMERCIAL ──
   { id: 'commercial', label: 'Commercial OS', icon: TrendingUp },
   { id: 'billing', label: 'Facturation', icon: Wallet },
@@ -175,6 +182,7 @@ const NAV_ITEMS: NavItem[] = [
 // before the first item of each group. Undefined = no header (flat).
 const NAV_SECTIONS: Record<string, string> = {
   dashboard: 'COMMAND CENTER',
+  diagnostics: 'COMMAND CENTER',
   commercial: 'COMMERCIAL',
   weddings: 'EVENT OPERATIONS',
   organizations: 'ORGANIZATIONS',
@@ -406,6 +414,8 @@ export default function PlatformAdminPage() {
 
   const renderContent = (): ReactNode => {
     switch (activeTab) {
+      case 'diagnostics':
+        return <DiagnosticCenterTab fetchWithAuth={fetchWithAuth} setActiveTab={setActiveTab} />
       case 'dashboard':
         return <DashboardTab fetchWithAuth={fetchWithAuth} setActiveTab={setActiveTab} />
       case 'weddings':

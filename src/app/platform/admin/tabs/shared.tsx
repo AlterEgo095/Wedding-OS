@@ -157,6 +157,7 @@ export interface PaginatedUsers {
 // Production Studio tabs (CONS-3) are appended at the end.
 export type TabId =
   | 'dashboard'
+  | 'diagnostics'  // 5.8.15 — No-Code Diagnostic Center
   | 'weddings'
   | 'users'
   | 'audit'
