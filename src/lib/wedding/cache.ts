@@ -259,6 +259,23 @@ export async function invalidateWeddingCache(slug: string): Promise<void> {
     // Next.js 16: revalidateTag(tag, profile) — 'default' marks the tag's
     // cache entries as stale immediately.
     revalidateTag(weddingCacheTag(slug), 'default');
+
+    // 5.8.17 BLOCKER_1_CACHE — revalidateTag only MARKS cache entries stale;
+    // it does NOT delete them. With SWR, the next request serves the STALE
+    // entry and triggers a background revalidation that does NOT complete
+    // reliably within 300s (Fix 1 ineffective per Phase 3 retest #2).
+    // Add revalidatePath to force a full route cache flush so the public
+    // /w/[slug] page regenerates on the NEXT request → immediate consistency
+    // for publish / unpublish / republish transitions.
+    try {
+      const { revalidatePath } = await import('next/cache');
+      revalidatePath('/w/[slug]', 'page');
+      revalidatePath('/w/' + slug, 'page');
+      logger.info('wedding-cache.path-revalidated', { slug, path: `/w/${slug}` });
+    } catch (e) {
+      logger.error('wedding-cache.path-revalidate-failed', { slug, errMessage: e instanceof Error ? e.message : String(e) });
+    }
+
     logger.info('wedding-cache.invalidated', {
       slug,
       tag: weddingCacheTag(slug),
