@@ -46,6 +46,7 @@ import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { headers } from 'next/headers';
 import { getCachedWeddingData } from '@/lib/wedding/cache';
+import { db } from '@/lib/db';
 import { WeddingContextProvider } from './wedding-context';
 import { ThemeInjector } from '@/components/ThemeInjector';
 
@@ -127,6 +128,48 @@ export default async function WeddingLayout({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
+
+  // ─── 5.8.17-CACHE-FIX-V2 — Bypass unstable_cache for the status check ─────
+  // ROOT CAUSE (worklog 5.8.17-CACHE-FIX-COMPLETE):
+  //   `getCachedWeddingData(slug)` is wrapped in `unstable_cache` with SWR
+  //   semantics. After `revalidateTag`, the next request still serves the
+  //   STALE entry while triggering a background revalidation that does NOT
+  //   complete reliably within 60s (the holding page never appeared in the
+  //   60s probe window). `revalidatePath` is a no-op here because the route
+  //   is already DYNAMIC (page.tsx reads searchParams for the preview-token
+  //   gate, opting the route out of ISR).
+  //
+  //   Net effect: after UNPUBLISH, public visitors still saw PUBLISHED
+  //   content (couple names, theme, sections) for 60s+.
+  //
+  // SURGICAL FIX (Option 1 — bypass cache for status check only):
+  //   Do a DIRECT (uncached) Prisma query for the wedding's current
+  //   `status`, `isDefault`, and `coupleLabel` BEFORE relying on the cached
+  //   `getCachedWeddingData` result. Then OVERRIDE the cached `wedding.status`
+  //   (and friends) with these fresh values so all status gates below see
+  //   the CURRENT DB state, not the stale SWR-cached status.
+  //
+  //   - The cached `getCachedWeddingData` is still called (for theme,
+  //     manifest, publishedConfig, brideName/groomName, etc.) — performance
+  //     is preserved for the PUBLISHED hot path.
+  //   - Only the status field (the one that changes on publish/unpublish/
+  //     republish transitions) is fetched fresh every request (~2ms PK lookup
+  //     on the unique `slug` index).
+  //   - `unstable_cache` JSON-serializes its return value, so each caller
+  //     gets a fresh deserialized object — mutating `wedding.status` here
+  //     does NOT pollute the shared cache entry.
+  //   - Also acts as a more reliable existence check: if the wedding was
+  //     deleted, the direct query returns null (vs. the cached entry which
+  //     could still return stale data for up to 5 min).
+  const freshStatusRow = await db.wedding.findUnique({
+    where: { slug },
+    select: { status: true, isDefault: true, coupleLabel: true },
+  });
+
+  if (!freshStatusRow) {
+    notFound();
+  }
+
   const data = await getCachedWeddingData(slug);
 
   if (!data) {
@@ -134,6 +177,15 @@ export default async function WeddingLayout({
   }
 
   const { wedding, manifest, publishedConfig } = data;
+
+  // Override the (potentially stale) cached status fields with the fresh
+  // direct-query values. This is the KEY fix: every status gate below
+  // (DRAFT, SUSPENDED, UNPUBLISHED, ARCHIVED) now sees the CURRENT DB
+  // status, so unpublish takes effect IMMEDIATELY on the next request —
+  // no 60s SWR staleness window.
+  wedding.status = freshStatusRow.status;
+  wedding.isDefault = freshStatusRow.isDefault;
+  wedding.coupleLabel = freshStatusRow.coupleLabel;
 
   // P5.0 H-SUSP-1 + H-ARCH-2 — Compute admin-route bypass ONCE for all status
   // gates. Admin routes (/w/[slug]/admin/*) must remain accessible when the
