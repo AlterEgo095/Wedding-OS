@@ -305,10 +305,17 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
         // from initial PUBLISH (DRAFT → PUBLISHED) in the audit trail.
         const isRepublish = existing.status === 'UNPUBLISHED';
         await writeAuditLog({
-          weddingId: null,
+          // 5.8.18 P2-5 — weddingId MUST be set so the event is tenant-scoped
+          // and visible in the per-wedding audit trail (Marriage Admin dashboard).
+          // Previously null ("platform-level event") which made PUBLISH/UNPUBLISH
+          // invisible to ADMIN A viewing wedding A's audit log.
+          weddingId: id,
           userId: user!.id,
           action: isRepublish ? 'REPUBLISH_WEDDING' : 'PUBLISH_WEDDING',
           details: `${isRepublish ? 'Republished' : 'Published'} wedding ${existing.slug} via PUT (deployment ${publishResult.deploymentId}, mode ${publishResult.mode})`,
+          targetType: 'WEDDING',
+          targetResourceId: id,
+          result: 'SUCCESS',
           request,
         });
 
@@ -373,10 +380,14 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
 
     if (isUnpublishTransition) {
       await writeAuditLog({
-        weddingId: null, // platform-level event
+        // 5.8.18 P2-5 — weddingId MUST be set (was null). See PUBLISH comment above.
+        weddingId: id,
         userId: user!.id,
         action: 'UNPUBLISH_WEDDING',
         details: `Unpublished wedding ${existing.slug} (status: ${existing.status} → UNPUBLISHED)`,
+        targetType: 'WEDDING',
+        targetResourceId: id,
+        result: 'SUCCESS',
         request,
       });
 

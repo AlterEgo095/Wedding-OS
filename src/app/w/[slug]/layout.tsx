@@ -70,6 +70,49 @@ export async function generateMetadata({
   params: Promise<{ slug: string }>;
 }): Promise<Metadata> {
   const { slug } = await params;
+
+  // 5.8.18 P2-4 — Fresh status check BEFORE reading cached data.
+  // ROOT CAUSE: generateMetadata() previously called getCachedWeddingData()
+  // directly, which is wrapped in unstable_cache with SWR semantics. After
+  // UNPUBLISH, the cached entry still contained the couple's names for up
+  // to 5 minutes, leaking private metadata via <title>, <meta description>,
+  // and OpenGraph tags — even though the page BODY correctly showed the
+  // holding page (fixed in 5.8.17 commit 6cdc153).
+  //
+  // FIX: Do a direct (uncached) Prisma query for the wedding's current
+  // status + coupleLabel. If the wedding is NOT PUBLISHED, return generic
+  // holding-page metadata that reveals NO couple information. This mirrors
+  // the fresh-status-check pattern already used in the layout body below.
+  const freshMeta = await db.wedding.findUnique({
+    where: { slug },
+    select: { status: true, isDefault: true, coupleLabel: true },
+  });
+
+  if (!freshMeta) {
+    return { title: 'Mariage — Introuvable' };
+  }
+
+  // If the wedding is not PUBLISHED (and not the default demo wedding),
+  // return generic metadata. The page body will show the holding page.
+  if (freshMeta.status !== 'PUBLISHED' && !freshMeta.isDefault) {
+    return {
+      title: 'Mariage — Bientôt disponible',
+      description: 'Ce mariage n\'est pas encore en ligne. Revenez bientôt.',
+      robots: { index: false, follow: false },
+      openGraph: {
+        title: 'Mariage — Bientôt disponible',
+        description: 'Ce mariage n\'est pas encore en ligne.',
+        type: 'website',
+        locale: 'fr_FR',
+      },
+      twitter: {
+        card: 'summary',
+        title: 'Mariage — Bientôt disponible',
+        description: 'Ce mariage n\'est pas encore en ligne.',
+      },
+    };
+  }
+
   const data = await getCachedWeddingData(slug);
 
   if (!data) {
@@ -77,7 +120,8 @@ export async function generateMetadata({
   }
 
   const wedding = data.wedding;
-  const coupleLabel = wedding.coupleLabel;
+  // Use the fresh coupleLabel (not the cached one) to avoid leaking stale data
+  const coupleLabel = freshMeta.coupleLabel || wedding.coupleLabel;
   const weddingDate = wedding.weddingDate
     ? new Date(wedding.weddingDate).toLocaleDateString('fr-FR', {
         day: 'numeric',

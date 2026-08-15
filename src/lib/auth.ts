@@ -466,14 +466,34 @@ export function requireRole(
   requiredRoles: Role[]
 ): NextResponse | null {
   if (!user) {
+    // 5.8.18 P2-3 — structured RBAC error with machine-readable code.
+    // Frontend can switch on `code` to show the right UX:
+    //   AUTHENTICATION_REQUIRED → redirect to login
+    //   INSUFFICIENT_ROLE       → show "you need role X" message
+    //   WEDDING_ACCESS_DENIED   → show "you don't manage this wedding"
     return NextResponse.json(
-      { error: 'Unauthorized — authentication required' },
+      {
+        success: false,
+        error: {
+          code: 'AUTHENTICATION_REQUIRED',
+          message: 'Authentification requise. Veuillez vous connecter.',
+        },
+      },
       { status: 401 }
     );
   }
   if (!hasPermission(user.role, requiredRoles)) {
+    const requiredLabel = requiredRoles.join(' ou ');
     return NextResponse.json(
-      { error: 'Forbidden — insufficient permissions' },
+      {
+        success: false,
+        error: {
+          code: 'INSUFFICIENT_ROLE',
+          message: `Permissions insuffisantes. Rôle requis: ${requiredLabel}.`,
+          requiredRole: requiredRoles,
+          currentRole: user.role,
+        },
+      },
       { status: 403 }
     );
   }

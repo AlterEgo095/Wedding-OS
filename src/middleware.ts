@@ -296,8 +296,17 @@ export async function middleware(request: NextRequest) {
     !isCsrfExempt(url.pathname)
   ) {
     if (!verifyCsrf(request)) {
+      // 5.8.18 P2-1/P2-3 — structured CSRF error with machine-readable code.
+      // The frontend can switch on `code='CSRF_INVALID'` to silently refresh
+      // the CSRF token and retry, instead of showing a scary error.
       return NextResponse.json(
-        { error: 'Token CSRF invalide' },
+        {
+          success: false,
+          error: {
+            code: 'CSRF_INVALID',
+            message: 'Session expirée ou requête invalide. Veuillez réessayer.',
+          },
+        },
         { status: 403 }
       );
     }

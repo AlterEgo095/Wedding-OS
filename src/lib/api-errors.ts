@@ -110,6 +110,66 @@ export function conflict(msg: string): NextResponse {
   return NextResponse.json({ error: msg }, { status: 409 });
 }
 
+
+// ─── 5.8.18 P2-1 — Structured API Error helper ───────────────────────────────
+//
+// Uniform error envelope for client-facing validation failures.
+// Shape: { success: false, error: { code, message, field?, details? } }
+//
+// - `code` is a machine-readable SCREAMING_SNAKE_CASE string the frontend
+//   can switch on (e.g. VALIDATION_ERROR, SLUG_REQUIRED, DUPLICATE_SLUG,
+//   AUTHENTICATION_REQUIRED, INSUFFICIENT_ROLE, WEDDING_ACCESS_DENIED,
+//   RESOURCE_NOT_FOUND, PUBLISHED_REQUIRES_PAID).
+// - `message` is a French human-readable string safe to show end users.
+// - `field` (optional) names the offending request field (e.g. "slug",
+//   "weddingDate") so the frontend can highlight the correct input.
+// - `details` (optional) is an array of { path, message } for multi-field
+//   validation (e.g. Zod errors).
+//
+// All existing helpers (badRequest, forbidden, ...) continue to work;
+// this is the canonical helper for NEW validation code and for hardening
+// existing endpoints one at a time.
+
+export interface StructuredApiError {
+  success: false;
+  error: {
+    code: string;
+    message: string;
+    field?: string;
+    details?: Array<{ path: string; message: string }>;
+  };
+}
+
+export function structuredError(
+  code: string,
+  message: string,
+  opts?: {
+    status?: number;
+    field?: string;
+    details?: Array<{ path: string; message: string }>;
+  }
+): NextResponse {
+  const body: StructuredApiError = {
+    success: false,
+    error: {
+      code,
+      message,
+      ...(opts?.field ? { field: opts.field } : {}),
+      ...(opts?.details ? { details: opts.details } : {}),
+    },
+  };
+  return NextResponse.json(body, { status: opts?.status ?? 400 });
+}
+
+// Convenience factory for the most common validation error pattern.
+export function validationError(
+  field: string,
+  message: string,
+  code = 'VALIDATION_ERROR'
+): NextResponse {
+  return structuredError(code, message, { status: 400, field });
+}
+
 // ─── CONS-6-PIPELINE — apiSuccess / apiError helpers ──────────────────────────
 //
 // Thin wrappers around NextResponse.json for SUCCESS and structured ERROR

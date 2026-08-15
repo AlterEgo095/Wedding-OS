@@ -10,7 +10,7 @@ import { withRateLimit } from '@/lib/rate-limit';
 // P2-SEC-1: structured logger (no stack leak).
 import { logger } from '@/lib/logger';
 // P2-CQ-5: standardised API errors.
-import { internalError } from '@/lib/api-errors';
+import { internalError , structuredError, validationError } from '@/lib/api-errors';
 // P2-SEC-14: writeAuditLog populates ipAddress + userAgent from request.
 import { writeAuditLog } from '@/lib/audit';
 // P5.2-1 — unified provisioning: creates Wedding + Settings + Theme + CoupleStory
@@ -142,8 +142,9 @@ export async function createPlatformWeddingHandler(request: NextRequest) {
 
     const body = await request.json().catch(() => null); // P2-CQ-6
     if (!body) {
-      return NextResponse.json(
-        { error: 'Corps de requête invalide' },
+      return structuredError(
+        'INVALID_BODY',
+        'Corps de requête invalide ou mal formé.',
         { status: 400 }
       );
     }
@@ -173,48 +174,64 @@ export async function createPlatformWeddingHandler(request: NextRequest) {
 
     // ─── Validation ────────────────────────────────────────────────────────
     if (!slug || typeof slug !== 'string') {
-      return NextResponse.json(
-        { error: 'Slug is required' },
-        { status: 400 }
-      );
+      return validationError('slug', 'Le slug est obligatoire.', 'SLUG_REQUIRED');
     }
     const normalizedSlug = slug.toLowerCase().trim();
     if (!isValidSlug(normalizedSlug)) {
-      return NextResponse.json(
-        {
-          error:
-            'Invalid slug. Use 3-32 lowercase alphanumeric characters or hyphens. Reserved words are not allowed.',
-        },
-        { status: 400 }
+      return validationError(
+        'slug',
+        'Slug invalide. Utilisez 3 à 32 caractères alphanumériques minuscules ou tirets. Les mots réservés ne sont pas autorisés.',
+        'SLUG_INVALID_FORMAT'
       );
     }
 
     if (brideName === undefined || groomName === undefined) {
-      return NextResponse.json(
-        { error: 'brideName and groomName are required' },
-        { status: 400 }
+      return structuredError(
+        'NAMES_REQUIRED',
+        'Le nom de la mariée et du marié sont obligatoires.',
+        { status: 400, details: [
+          { path: 'brideName', message: 'champ obligatoire' },
+          { path: 'groomName', message: 'champ obligatoire' },
+        ] }
       );
     }
     if (typeof brideName !== 'string' || typeof groomName !== 'string') {
-      return NextResponse.json(
-        { error: 'brideName and groomName must be strings' },
+      return structuredError(
+        'NAMES_INVALID_TYPE',
+        'Le nom de la mariée et du marié doivent être des chaînes de caractères.',
         { status: 400 }
       );
     }
 
     if (status && !VALID_STATUSES.includes(status as WeddingStatus)) {
-      return NextResponse.json(
-        { error: `Invalid status. Must be one of: ${VALID_STATUSES.join(', ')}` },
-        { status: 400 }
+      return validationError(
+        'status',
+        `Statut invalide. Valeurs acceptées: ${VALID_STATUSES.join(', ')}.`,
+        'STATUS_INVALID'
       );
     }
 
     if (plan && !VALID_PLANS.includes(plan as Plan)) {
-      return NextResponse.json(
-        { error: `Invalid plan. Must be one of: ${VALID_PLANS.join(', ')}` },
-        { status: 400 }
+      return validationError(
+        'plan',
+        `Plan invalide. Valeurs acceptées: ${VALID_PLANS.join(', ')}.`,
+        'PLAN_INVALID'
       );
     }
+    // 5.8.18 P2-1 — weddingDate validation (must be a valid date string).
+    // Previously an invalid date string was passed to `new Date()` which
+    // returns Invalid Date, causing Prisma to throw → 500 internal error.
+    if (weddingDate !== undefined && weddingDate !== null) {
+      const parsed = new Date(weddingDate as string);
+      if (isNaN(parsed.getTime())) {
+        return validationError(
+          'weddingDate',
+          'Date de mariage invalide. Format attendu: AAAA-MM-JJ.',
+          'WEDDING_DATE_INVALID'
+        );
+      }
+    }
+
 
     // P5.2-1 — optional admin fields validation (only when adminEmail is provided).
     let normalizedAdminEmail: string | undefined;
@@ -270,9 +287,10 @@ export async function createPlatformWeddingHandler(request: NextRequest) {
       select: { id: true },
     });
     if (existing) {
-      return NextResponse.json(
-        { error: `Wedding with slug "${normalizedSlug}" already exists` },
-        { status: 409 }
+      return structuredError(
+        'DUPLICATE_SLUG',
+        `Le slug "${normalizedSlug}" existe déjà. Choisissez un autre slug.`,
+        { status: 409, field: 'slug' }
       );
     }
     if (normalizedCustomDomain) {
@@ -281,9 +299,10 @@ export async function createPlatformWeddingHandler(request: NextRequest) {
         select: { id: true },
       });
       if (existingDomain) {
-        return NextResponse.json(
-          { error: `Wedding with customDomain "${normalizedCustomDomain}" already exists` },
-          { status: 409 }
+        return structuredError(
+          'DUPLICATE_CUSTOM_DOMAIN',
+          `Le domaine "${normalizedCustomDomain}" est déjà utilisé par un autre mariage.`,
+          { status: 409, field: 'customDomain' }
         );
       }
     }
@@ -293,9 +312,10 @@ export async function createPlatformWeddingHandler(request: NextRequest) {
         select: { id: true },
       });
       if (existingAdmin) {
-        return NextResponse.json(
-          { error: `AdminUser with email "${normalizedAdminEmail}" already exists` },
-          { status: 409 }
+        return structuredError(
+          'DUPLICATE_ADMIN_EMAIL',
+          `Un administrateur avec l'email "${normalizedAdminEmail}" existe déjà.`,
+          { status: 409, field: 'adminEmail' }
         );
       }
     }
