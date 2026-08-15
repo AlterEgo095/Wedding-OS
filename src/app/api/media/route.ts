@@ -82,7 +82,21 @@ async function uploadMediaHandler(request: NextRequest): Promise<NextResponse> {
       const mediaCategory = (formData.get('category') as string) || 'GALLERY';
       const order = parseInt(formData.get('order') as string) || 0;
 
-      if (!file) return NextResponse.json({ error: 'No file provided' }, { status: 400 });
+      if (!file) {
+        return NextResponse.json(
+          { error: 'Aucun fichier fourni', code: 'NO_FILE' },
+          { status: 400 }
+        );
+      }
+      // 5.8.17 FIX-P0-P1 (FIX 1): reject empty (0-byte) files. Previously a
+      // 0-byte upload was silently accepted with sizeBytes=0 and stored as
+      // type=PHOTO, corrupting the gallery and breaking <img> rendering.
+      if (file.size === 0) {
+        return NextResponse.json(
+          { error: 'Le fichier est vide', code: 'EMPTY_FILE' },
+          { status: 400 }
+        );
+      }
       if (file.size > MAX_FILE_SIZE) {
         return NextResponse.json({ error: `File size exceeds maximum limit of ${MAX_FILE_SIZE / 1024 / 1024}MB` }, { status: 400 });
       }
@@ -104,6 +118,38 @@ async function uploadMediaHandler(request: NextRequest): Promise<NextResponse> {
 
       const bytes = await file.arrayBuffer();
       const buffer = Buffer.from(bytes);
+
+      // 5.8.17 FIX-P0-P1 (FIX 1): magic-byte validation. Previously a
+      // truncated/garbage file with a .jpg extension was silently accepted
+      // (HTTP 201), written to /uploads/, and stored as type=PHOTO with
+      // sizeBytes=N — but the file would fail to decode in <img>, breaking
+      // the gallery. This checks the first few bytes against the canonical
+      // magic signatures for each allowed image + PDF type. Videos (mp4,
+      // webm) have container-specific signatures that vary by encoder, so
+      // we trust the extension + MIME check above for those (the player
+      // surfaces decode errors gracefully).
+      const MAGIC_BYTES: Record<string, Array<[number, number]>> = {
+        '.jpg': [[0, 0xff], [1, 0xd8], [2, 0xff]],
+        '.jpeg': [[0, 0xff], [1, 0xd8], [2, 0xff]],
+        '.png': [[0, 0x89], [1, 0x50], [2, 0x4e], [3, 0x47], [4, 0x0d], [5, 0x0a], [6, 0x1a], [7, 0x0a]],
+        '.gif': [[0, 0x47], [1, 0x49], [2, 0x46], [3, 0x38]],
+        '.webp': [[0, 0x52], [1, 0x49], [2, 0x46], [3, 0x46], [8, 0x57], [9, 0x45], [10, 0x42], [11, 0x50]],
+        '.pdf': [[0, 0x25], [1, 0x50], [2, 0x44], [3, 0x46]],
+      };
+      const expectedMagic = MAGIC_BYTES[ext];
+      if (expectedMagic) {
+        for (const [offset, byte] of expectedMagic) {
+          if (buffer[offset] !== byte) {
+            return NextResponse.json(
+              {
+                error: `Le fichier ne correspond pas à son extension "${ext}" (signature invalide). Le fichier est peut-être corrompu ou renommé.`,
+                code: 'CORRUPTED_FILE',
+              },
+              { status: 400 }
+            );
+          }
+        }
+      }
 
       // ─── Plan limit enforcement (Phase 3 ÉTAPE 5) ─────────────────────────
       // Block NEW media uploads when the wedding has reached its plan's

@@ -262,8 +262,13 @@ export function WeddingsTab({ fetchWithAuth }: { fetchWithAuth: (url: string, in
     if (!deleting) return
     setSaving(true)
     try {
+      // 5.8.17 FIX-P0-P1 (FIX 4): send {confirm: true} in the body so the
+      // server-side CONFIRMATION_REQUIRED guard on DELETE
+      // /api/platform/weddings/{id} passes. The UI dialog is already shown
+      // (setShowDeleteDialog), this is the matching server-side check.
       const res = await fetchWithAuth(`/api/platform/weddings/${deleting.id}`, {
         method: 'DELETE',
+        body: JSON.stringify({ confirm: true }),
       })
       if (!res) {
         setSaving(false)

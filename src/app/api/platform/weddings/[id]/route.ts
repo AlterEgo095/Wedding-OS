@@ -436,6 +436,25 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
 
     const { id } = await params;
 
+    // 5.8.17 FIX-P0-P1 (FIX 4): server-side confirmation for destructive
+    // DELETE. Previously the endpoint accepted any authenticated
+    // requirePlatformAdmin request — a malicious actor with a stolen session
+    // cookie could DELETE via direct API call, bypassing the client-side
+    // confirm() dialog in WeddingsTab.tsx. Now the request body MUST contain
+    // {confirm: true}. The UI (WeddingsTab.tsx handleDelete) was updated to
+    // send this field; direct API callers must include it explicitly.
+    const body = await request.json().catch(() => ({}));
+    if (!body || body.confirm !== true) {
+      return NextResponse.json(
+        {
+          error: 'Confirmation requise pour supprimer ce mariage',
+          code: 'CONFIRMATION_REQUIRED',
+          hint: "Passez {confirm: true} dans le corps de la requête pour confirmer.",
+        },
+        { status: 400 }
+      );
+    }
+
     const existing = await db.wedding.findUnique({
       where: { id },
       select: { id: true, slug: true, isDefault: true, coupleLabel: true },

@@ -170,7 +170,23 @@ async function createHandler(request: NextRequest) {
 
     const parsed = createThemeSchema.safeParse(body);
     if (!parsed.success) {
-      return badRequest(parsed.error.issues[0]?.message || 'Données invalides');
+      // 5.8.17 FIX-P0-P1 (FIX 3): wrap Zod errors in a structured response
+      // identical to /api/guests/route.ts. Previously we returned only the
+      // first Zod issue's raw message verbatim ("Invalid input: expected
+      // string, received undefined") with NO field name — clients had no
+      // way to know WHICH field was missing. Now we return the full list of
+      // issues, each with its path + message, under a French top-level
+      // "Données invalides" label.
+      return NextResponse.json(
+        {
+          error: 'Données invalides',
+          details: parsed.error.issues.map((i) => ({
+            path: i.path.join('.'),
+            message: i.message,
+          })),
+        },
+        { status: 400 }
+      );
     }
     const data = parsed.data;
 
