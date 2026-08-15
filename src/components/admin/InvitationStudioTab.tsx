@@ -81,6 +81,7 @@ interface TemplateCard {
   mediaSlotsCount: number;
   dataBindingsCount: number;
   guestBindingsCount: number;
+  mediaSlots?: MediaSlotDecl[];
 }
 
 interface MediaRow {
@@ -456,10 +457,10 @@ export function InvitationStudioTab({
                   key={tpl.id}
                   onClick={() => {
                     setSelectedTemplateId(tpl.id);
-                    setSlotDecls(tpl.config?.mediaSlots || []);
+                    setSlotDecls(tpl.mediaSlots || []);
                     // Clear slot assignments that don't match the new template's slots.
                     setSlotAssignments((prev) => {
-                      const newDecls = tpl.config?.mediaSlots || [];
+                      const newDecls = tpl.mediaSlots || [];
                       const validRoles = new Set(newDecls.map((s: MediaSlotDecl) => s.semanticRole));
                       const filtered: Record<string, SlotAssignment> = {};
                       for (const [k, v] of Object.entries(prev)) {

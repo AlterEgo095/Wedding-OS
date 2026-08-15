@@ -41,9 +41,7 @@ import { safeJsonParse } from '@/lib/safe-json';
 import { invalidateWeddingCache } from '@/lib/wedding/cache';
 import { publishWeddingViaPipeline } from '@/lib/pipeline/publish-helper';
 import {
-  listInvitationTemplates,
   getInvitationTemplateById,
-  type InvitationTemplateSummary,
   type InvitationTemplateDetailed,
 } from '@/lib/invitations';
 import type { MediaSlot } from '@/lib/invitations/types';
@@ -94,9 +92,19 @@ export async function GET(
       return NextResponse.json({ error: 'Wedding not found' }, { status: 404 });
     }
 
-    // Fetch the full PUBLISHED template catalog (15 templates).
-    const templates: InvitationTemplateSummary[] = await listInvitationTemplates({
-      status: 'PUBLISHED',
+    // Fetch the full PUBLISHED template catalog (15 templates) with configJson
+    // so we can extract media slot declarations for the UI card grid.
+    const templateRows = await db.invitationTemplate.findMany({
+      where: { status: 'PUBLISHED' },
+      select: {
+        id: true, slug: true, name: true, description: true,
+        category: true, style: true, layout: true, identity: true,
+        tier: true, status: true, isPremium: true, isRecommended: true,
+        isDefault: true, isBuiltIn: true, version: true,
+        thumbnailUrl: true, previewUrl: true, themeId: true,
+        configJson: true,
+      },
+      orderBy: [{ isDefault: 'desc' }, { isRecommended: 'desc' }, { name: 'asc' }],
     });
 
     // Fetch the wedding's media (photos with semanticRole/slotId).
@@ -161,28 +169,33 @@ export async function GET(
         mediaSlotsJson,
         invitationConfigJson,
       },
-      templates: templates.map((t) => ({
-        id: t.id,
-        slug: t.slug,
-        name: t.name,
-        description: t.description,
-        category: t.category,
-        style: t.style,
-        layout: t.layout,
-        identity: t.identity,
-        tier: t.tier,
-        status: t.status,
-        isPremium: t.isPremium,
-        isRecommended: t.isRecommended,
-        isDefault: t.isDefault,
-        version: t.version,
-        thumbnailUrl: t.thumbnailUrl,
-        previewUrl: t.previewUrl,
-        sectionsCount: t.sectionsCount,
-        mediaSlotsCount: t.mediaSlotsCount,
-        dataBindingsCount: t.dataBindingsCount,
-        guestBindingsCount: t.guestBindingsCount,
-      })),
+      templates: templateRows.map((t) => {
+        const parsedConfig = safeJsonParse<{ sections?: unknown[]; mediaSlots?: MediaSlot[] }>(
+          t.configJson,
+          { sections: [], mediaSlots: [] },
+        );
+        return {
+          id: t.id,
+          slug: t.slug,
+          name: t.name,
+          description: t.description,
+          category: t.category,
+          style: t.style,
+          layout: t.layout,
+          identity: t.identity,
+          tier: t.tier,
+          status: t.status,
+          isPremium: t.isPremium,
+          isRecommended: t.isRecommended,
+          isDefault: t.isDefault,
+          version: t.version,
+          thumbnailUrl: t.thumbnailUrl,
+          previewUrl: t.previewUrl,
+          sectionsCount: Array.isArray(parsedConfig.sections) ? parsedConfig.sections.length : 0,
+          mediaSlotsCount: Array.isArray(parsedConfig.mediaSlots) ? parsedConfig.mediaSlots.length : 0,
+          mediaSlots: Array.isArray(parsedConfig.mediaSlots) ? parsedConfig.mediaSlots : [],
+        };
+      }),
       media,
       currentTemplate: currentTemplate
         ? {

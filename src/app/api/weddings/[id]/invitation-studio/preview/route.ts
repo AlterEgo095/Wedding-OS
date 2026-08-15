@@ -32,6 +32,7 @@ import {
   composeInvitationExperience,
   getInvitationTemplateById,
   getDefaultInvitationTemplate,
+  type InvitationTemplateDetailed,
 } from '@/lib/invitations';
 import type {
   InvitationExperienceContext,
@@ -100,7 +101,7 @@ export async function POST(
     }
 
     // ── 2. Resolve the template (override > wedding's > default) ──────────────
-    let templateRow = null;
+    let templateRow: InvitationTemplateDetailed | null = null;
     const effectiveTemplateId = overrideTemplateId !== undefined
       ? overrideTemplateId
       : w.invitationTemplateId;
