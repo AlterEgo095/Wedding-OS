@@ -269,7 +269,7 @@ export function AssetsLibrary({ csrfToken }: { csrfToken: string }) {
 
   const uploadAllQueued = async () => {
     // TODO(P3.10+): replace with real bulk-upload POST once the endpoint exists.
-    toast.warning('Endpoint /api/platform/assets/bulk-upload non implémenté. (TODO)')
+    toast.info('Le téléchargement multiple sera bientôt disponible. Utilisez le téléchargement individuel pour le moment.')
   }
 
   return (
@@ -339,8 +339,8 @@ export function AssetsLibrary({ csrfToken }: { csrfToken: string }) {
             </p>
             <p className="text-[10px] text-amber-400/80 mt-1 flex items-center justify-center gap-1">
               <FileWarning className="w-3 h-3" />
-              Endpoint <code>/api/platform/assets/bulk-upload</code> non implémenté —
-              les fichiers sont uniquement mis en file d&apos;attente localement (TODO).
+              Le téléchargement multiple sera bientôt disponible —
+              les fichiers sont uniquement mis en file d&apos;attente localement pour le moment.
             </p>
           </div>
 
@@ -366,7 +366,7 @@ export function AssetsLibrary({ csrfToken }: { csrfToken: string }) {
                     title="Endpoint bulk-upload à implémenter (P3.10+)"
                   >
                     <Upload className="w-3 h-3 mr-1" />
-                    Upload all (TODO)
+                    Télécharger tout
                   </Button>
                 </div>
               </div>
