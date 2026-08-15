@@ -132,7 +132,7 @@ import {
 } from '@/lib/wedding/cache';
 import { logger } from '@/lib/logger';
 import { verifyPreviewToken } from '@/lib/preview-token';
-import { unsafePlatformDb } from '@/lib/db';
+import { unsafePlatformDb, db } from '@/lib/db';
 import { safeJsonParse } from '@/lib/safe-json';
 import WeddingPageClient from './WeddingPageClient';
 
@@ -227,6 +227,28 @@ export default async function WeddingLandingPage({
       adminId: decoded.admin,
       exp: decoded.exp,
     });
+  }
+
+  // ─── 5.9.0 NO_STALE_PUBLIC_CONTENT — Fresh status check BEFORE fetching page data.
+  // ROOT CAUSE: page.tsx fetched getCachedWeddingPageData (CoupleStory, Timeline,
+  // Settings, Music) regardless of wedding status. Even though the layout returns
+  // a holding page for UNPUBLISHED/SUSPENDED/ARCHIVED (without rendering {children}),
+  // the page's RSC output was still serialized into the flight payload, leaking
+  // couple names via CoupleStory.description ("L'histoire de Stella & Marco...").
+  //
+  // FIX: Reuse the layout's fresh-status-check pattern (direct DB query for
+  // status + isDefault, bypassing unstable_cache). If the wedding is NOT
+  // PUBLISHED (and not the default demo), return null so this page component
+  // doesn't fetch or serialize any couple-specific data into the RSC payload.
+  // The layout already renders the appropriate holding page (DRAFT→notFound,
+  // UNPUBLISHED→holding, SUSPENDED→holding, ARCHIVED→holding).
+  const freshStatus = await db.wedding.findUnique({
+    where: { slug },
+    select: { status: true, isDefault: true },
+  });
+  if (!freshStatus) notFound();
+  if (freshStatus.status !== 'PUBLISHED' && !freshStatus.isDefault) {
+    return null;
   }
 
   // Fetch the wedding identity + manifest (cached) so we can 404 early if
