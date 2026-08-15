@@ -56,6 +56,11 @@ import Footer from '@/components/Footer';
 import PWAInstall from '@/components/PWAInstall';
 import { GuestAuthProvider, useGuestAuth } from '@/components/GuestAuthProvider';
 import GuestPersonalSpace from '@/components/GuestPersonalSpace';
+// MISSION 5.9.2 — Premium Invitation Factory: wire the IdentityInvitation dispatcher
+// so authenticated guests see the premium 12-section invitation experience when
+// the wedding has a published InvitationExperienceConfig (publishedConfig.invitation.experience).
+// Falls back to SectionRenderer when no template is configured (backward compat).
+import { IdentityInvitation } from '@/components/wedding/IdentityInvitation';
 import { GuestbookWidget } from '@/components/GuestbookWidget';
 import AmbientMusicPlayer from '@/components/AmbientMusicPlayer';
 // ─── Phase 4 (MISSION 5.9.1 P4-1) — consolidated ambient effects + dividers ────
@@ -247,6 +252,15 @@ function WeddingPageContent({
   // snapshot) over the binding-based manifest. Preview draft still wins.
   const activeManifest: WeddingManifest =
     previewManifest || wedding.publishedConfig?.manifest || wedding.manifest;
+
+  // MISSION 5.9.2 — Premium Invitation Factory: extract the published
+  // InvitationExperienceConfig. When present, authenticated guests see the
+  // premium 12-section IdentityInvitation (cover/countdown/couple-intro/story/
+  // gallery/ceremony/reception/venue/rsvp/qr-access/footer) instead of the
+  // manifest sections. Per-guest personalization (name, table, access code) is
+  // injected at render time from the authenticated guest session.
+  const invitationExperience =
+    ((wedding.publishedConfig as any)?.invitation?.experience) ?? null;
 
   // ─── GLOBAL FETCH INTERCEPTOR (§11 cross-wedding leak fix) ────────────────
   // Wraps window.fetch so every /api/* call gets the X-Wedding-Slug header
@@ -522,12 +536,54 @@ function WeddingPageContent({
         ) : authenticated && guest ? (
           /* ─── AUTHENTICATED: Hero (from manifest) + personal space ─── */
           <>
-            <SectionRenderer
-              manifest={activeManifest}
-              data={sectionData}
-              extras={sectionExtras}
-              identity={identityOverride}
-            />
+            {/* MISSION 5.9.2 — Premium Invitation Factory: when the wedding has
+                a published InvitationExperienceConfig, render the premium
+                12-section IdentityInvitation (cover/countdown/story/gallery/
+                ceremony/reception/venue/rsvp/qr-access/footer) INSTEAD of the
+                manifest sections. The guest's per-invitation data (name, table,
+                access code) is injected into the config for personalization.
+                Falls back to SectionRenderer when no template is configured. */}
+            {invitationExperience ? (
+              <IdentityInvitation
+                config={{
+                  ...invitationExperience,
+                  // Inject the authenticated guest for per-invitation personalization
+                  wedding: invitationExperience.wedding
+                    ? {
+                        ...invitationExperience.wedding,
+                        guest: guest
+                          ? {
+                              guestId: guest.id,
+                              firstName: guest.firstName,
+                              lastName: guest.lastName,
+                              displayName: guest.displayName || `${guest.firstName} ${guest.lastName}`,
+                              name: guest.displayName || `${guest.firstName} ${guest.lastName}`,
+                              tableLabel: guest.table
+                                ? `Table ${guest.table.number} — ${guest.table.name}`
+                                : '',
+                              tableNumber: guest.table?.number,
+                              tableName: guest.table?.name,
+                              accessCode: guest.invitationCode,
+                              invitationCode: guest.invitationCode,
+                              category: guest.category,
+                              seats: guest.seats,
+                              rsvpStatus: guest.status,
+                            }
+                          : null,
+                      }
+                    : invitationExperience.wedding,
+                }}
+                weddingSlug={wedding.slug}
+                __debug__={false}
+              />
+            ) : (
+              <SectionRenderer
+                manifest={activeManifest}
+                data={sectionData}
+                extras={sectionExtras}
+                identity={identityOverride}
+              />
+            )}
             {/* Phase 4 (P4-1) — decorative divider between the manifest-driven
                 section block and the guest personal space. 'line' preset =
                 thin gold line that grows from 0→60% width on reveal. */}

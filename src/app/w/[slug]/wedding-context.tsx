@@ -44,6 +44,11 @@ export interface PublishedConfigSnapshot {
   themeName: string;
   version: string;
   compiledAt: string;
+  // MISSION 5.9.2 — the published InvitationExperienceConfig (template +
+  // sections + tokens + resolvedBindings + mediaSlots + wedding data).
+  // Present when the wedding has an InvitationTemplate assigned + published.
+  // Null/absent for legacy weddings without a template (backward compat).
+  invitation?: any;
 }
 
 export interface WeddingContextValue {

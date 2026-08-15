@@ -61,6 +61,10 @@ export interface PublishedConfigSnapshot {
   themeName: string;
   version: string;
   compiledAt: string;
+  // MISSION 5.9.2 — the published InvitationExperienceConfig (template +
+  // sections + tokens + resolvedBindings + mediaSlots + wedding data).
+  // Present when the wedding has an InvitationTemplate assigned + published.
+  invitation?: any;
 }
 
 export interface CachedWeddingData {
@@ -146,6 +150,9 @@ export async function getCachedWeddingData(
             themeName?: string;
             version?: string;
             compiledAt?: string;
+            // MISSION 5.9.2 — pass through the invitation experience config
+            // so IdentityInvitation can render the premium 12-section invitation.
+            invitation?: any;
           } | null>(publishedRow.publishedConfigJson, null);
           if (parsed && parsed.manifest && parsed.theme) {
             publishedConfig = {
@@ -155,6 +162,8 @@ export async function getCachedWeddingData(
               themeName: parsed.themeName ?? '',
               version: parsed.version ?? publishedRow.publishedVersion ?? '',
               compiledAt: parsed.compiledAt ?? '',
+              // MISSION 5.9.2 — pass through the invitation experience config
+              invitation: parsed.invitation ?? null,
             };
           }
         }

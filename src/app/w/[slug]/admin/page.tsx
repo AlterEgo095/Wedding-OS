@@ -47,6 +47,8 @@ import {
 import { toast } from 'sonner';
 import dynamic from 'next/dynamic';
 import { isPlatformAdmin } from '@/lib/types';
+// MISSION 5.9.2-B/C: Invitation Studio tab — no-code template selector + photo studio.
+const InvitationStudioTab = dynamic(() => import('@/components/admin/InvitationStudioTab').then(m => m.InvitationStudioTab), { ssr: false });
 import { useWedding } from '../wedding-context';
 // Phase 4D — WhatsApp share button (used in the admin sidebar footer so the
 // organizer can share the public wedding URL directly from the admin).
@@ -102,7 +104,7 @@ interface AuthUser {
   weddingId?: string | null
 }
 
-type TabId = 'dashboard' | 'designer' | 'guests' | 'families' | 'groups' | 'invitations' | 'qrcodes' | 'check-in' | 'tables' | 'gifts' | 'media' | 'music' | 'timeline' | 'program' | 'dietary' | 'story' | 'stats' | 'users' | 'settings' | 'access-logs' | 'appearance' | 'theme' | 'realtime'
+type TabId = 'dashboard' | 'designer' | 'invitation-studio' | 'guests' | 'families' | 'groups' | 'invitations' | 'qrcodes' | 'check-in' | 'tables' | 'gifts' | 'media' | 'music' | 'timeline' | 'program' | 'dietary' | 'story' | 'stats' | 'users' | 'settings' | 'access-logs' | 'appearance' | 'theme' | 'realtime'
 
 interface NavItem {
   id: TabId
@@ -116,6 +118,8 @@ const NAV_ITEMS: NavItem[] = [
   // P4.8 — Realtime dashboard (live stats + check-in feed)
   { id: 'realtime', label: 'Temps réel', icon: Activity },
   { id: 'designer', label: 'Designer', icon: LayoutTemplate },
+  // MISSION 5.9.2-B/C: Premium Invitation Studio — template selector + photo studio + live preview.
+  { id: 'invitation-studio', label: 'Invitation Studio', icon: Crown },
   { id: 'guests', label: 'Invités', icon: Users },
   // CONS-5-CLIENT-BACKEND — organizer guest-grouping tabs.
   { id: 'families', label: 'Familles', icon: Heart },
@@ -172,7 +176,7 @@ const NAV_SECTION_DEFS: NavSectionDef[] = [
   { id: 'inv', label: 'INVITÉS', stripeColor: 'emerald', itemIds: ['guests', 'families', 'groups', 'tables', 'dietary'] },
   { id: 'evt', label: 'ÉVÉNEMENT', stripeColor: 'rose', itemIds: ['timeline', 'program', 'music', 'story', 'gifts', 'media'] },
   { id: 'invts', label: 'INVITATIONS', stripeColor: 'violet', itemIds: ['invitations', 'qrcodes', 'check-in'] },
-  { id: 'dsg', label: 'DESIGN', stripeColor: 'gold', itemIds: ['designer', 'theme', 'appearance'] },
+  { id: 'dsg', label: 'DESIGN', stripeColor: 'gold', itemIds: ['designer', 'invitation-studio', 'theme', 'appearance'] },
   { id: 'sys', label: 'SYSTÈME', stripeColor: 'slate', itemIds: ['users', 'settings', 'access-logs'] },
 ]
 
@@ -553,6 +557,16 @@ export default function PerWeddingAdminPage() {
         // bypasses the platform-admin wedding picker and scopes all /api/theme
         // calls to this wedding via the fetch interceptor installed above.
         return <ThemeCustomizer slug={slug} />
+      case 'invitation-studio':
+        // MISSION 5.9.2-B/C: Premium Invitation Studio — no-code template + photo + preview.
+        return (
+          <InvitationStudioTab
+            weddingId={wedding.id}
+            weddingSlug={slug}
+            csrfToken={getCsrfTokenFromCookie()}
+            onSessionExpired={handleSessionExpired}
+          />
+        )
       case 'designer':
         // Slice 2: Real Experience Builder — controls sections, theme, collection.
         // Phase 4B: pass userRole (for the quality gate override button) +

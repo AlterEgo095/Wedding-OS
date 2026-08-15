@@ -97,6 +97,12 @@ async function uploadMediaHandler(request: NextRequest): Promise<NextResponse> {
       const mediaType = (formData.get('type') as string) || 'PHOTO';
       const mediaCategory = (formData.get('category') as string) || 'GALLERY';
       const order = parseInt(formData.get('order') as string) || 0;
+      // MISSION 5.9.2-B/C: semantic role + slotId for Couple Photo Studio.
+      // Allows the upload to auto-tag the media with its semantic role
+      // (COUPLE_HERO, BRIDE_PORTRAIT, etc.) so the Invitation Studio can
+      // auto-assign it to the correct template slot.
+      const semanticRole = (formData.get('semanticRole') as string) || null;
+      const slotId = (formData.get('slotId') as string) || null;
 
       if (!file) {
         return NextResponse.json(
@@ -130,6 +136,20 @@ async function uploadMediaHandler(request: NextRequest): Promise<NextResponse> {
       const validCategories = ['GALLERY', 'COUPLE_STORY', 'DOCUMENT', 'OTHER'];
       if (!validCategories.includes(mediaCategory)) {
         return NextResponse.json({ error: 'Invalid media category' }, { status: 400 });
+      }
+      // MISSION 5.9.2-B/C: validate semanticRole against the canonical list.
+      const VALID_SEMANTIC_ROLES = [
+        'COUPLE_HERO', 'COUPLE_PORTRAIT', 'COUPLE_STORY',
+        'BRIDE_PORTRAIT', 'GROOM_PORTRAIT',
+        'GALLERY_01', 'GALLERY_02', 'GALLERY_03',
+        'STORY_IMAGE_01', 'STORY_IMAGE_02',
+        'VENUE_IMAGE', 'BACKGROUND_IMAGE', 'MONOGRAM',
+      ];
+      if (semanticRole && !VALID_SEMANTIC_ROLES.includes(semanticRole)) {
+        return NextResponse.json(
+          { error: `Rôle sémantique invalide: ${semanticRole}` },
+          { status: 400 },
+        );
       }
 
       const bytes = await file.arrayBuffer();
@@ -225,6 +245,9 @@ async function uploadMediaHandler(request: NextRequest): Promise<NextResponse> {
           order,
           sizeBytes: buffer.byteLength, // persisted for plan-limit enforcement (Phase 3 ÉTAPE 5)
           mime: file.type || null,
+          // MISSION 5.9.2-B/C: semantic role + slotId for Couple Photo Studio.
+          semanticRole: semanticRole || null,
+          slotId: slotId || null,
         },
       });
 
