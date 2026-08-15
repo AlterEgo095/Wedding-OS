@@ -74,7 +74,23 @@ async function uploadMediaHandler(request: NextRequest): Promise<NextResponse> {
     }
 
     return await withAdminTenantHandler(request, user, async (_req, ctx) => {
-      const formData = await request.formData();
+      // 5.8.17 FIX-P0-P1 (FIX 2): previously, when the request had NO file
+      // field (or a non-multipart Content-Type), `request.formData()` threw
+      // a TypeError ("Content-Type was not one of multipart/form-data..."),
+      // which bubbled up to the outer catch → HTTP 500 "Erreur interne du
+      // serveur". Now we wrap the formData parse in a try/catch and return
+      // a clean 400 NO_FILE. This handles: (a) empty body, (b) wrong
+      // Content-Type (e.g. application/json sent by mistake), (c) malformed
+      // multipart body — all become 400 instead of 500.
+      let formData: FormData;
+      try {
+        formData = await request.formData();
+      } catch {
+        return NextResponse.json(
+          { error: 'Aucun fichier fourni', code: 'NO_FILE' },
+          { status: 400 }
+        );
+      }
       const file = formData.get('file') as File | null;
       const title = formData.get('title') as string | null;
       const description = formData.get('description') as string | null;
