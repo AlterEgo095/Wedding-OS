@@ -268,6 +268,7 @@ export function WeddingsTab({ fetchWithAuth }: { fetchWithAuth: (url: string, in
       // (setShowDeleteDialog), this is the matching server-side check.
       const res = await fetchWithAuth(`/api/platform/weddings/${deleting.id}`, {
         method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ confirm: true }),
       })
       if (!res) {
