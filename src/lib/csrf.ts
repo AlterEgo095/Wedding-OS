@@ -194,4 +194,9 @@ export const CSRF_EXEMPT_PATHS: readonly string[] = [
   // (slug/email availability) is also CSRF-exempt because it's read-only.
   '/api/org/signup',
   '/api/org/login', // P1.8 — org login (pre-auth, no CSRF token yet)
+  // Mission 5.9.4 — Charow webhook (server-to-server callback). Authenticated
+  // by HMAC-SHA256 signature (x-charow-signature header), NOT by CSRF cookie.
+  // Charow's servers cannot hold a CSRF token, so the double-submit pattern
+  // cannot apply. The signature check in the route is the real auth control.
+  '/api/webhooks/charow',
 ] as const;
