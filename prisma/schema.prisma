@@ -1993,4 +1993,85 @@ model ExperienceReport {
   @@index([weddingId, periodStart])
 }
 
+// ══════════════════════════════════════════════════════════════════════════════
+// MISSION 5.9.5 — COMMERCIAL PRICING ENGINE & INVITATION QUOTA ARCHITECTURE
+// Schema additions: PricingConfig (no-code admin pricing) + CreditReservation
+// (in-flight credit reservations with idempotency + expiry).
+// APPEND this block to the end of prisma/schema.prisma.
+// ══════════════════════════════════════════════════════════════════════════════
+
+// ─── M5.9.5 — PricingConfig (no-code admin pricing) ──────────────────────────
+// Replaces hardcoded PRICE_PER_INVITATION_USD_CENTS (70) and CREDIT_PRICES_USD_CENTS
+// in src/lib/constants.ts. The admin can configure pricing per (customerType,
+// creditType) pair from /api/admin/pricing without code changes or rebuild.
+//
+// Pricing models:
+//   FLAT   → flatPriceCents applies to any quantity
+//   TIERED → tiersJson holds an ordered array of { upTo: number|null, priceCents: number }
+//            Example (standard invitation): [{upTo:250,priceCents:70},{upTo:null,priceCents:50}]
+//            → $0.70/inv for the first 250, $0.50/inv above 250 (marginal tiered).
+//
+// Customer types:
+//   STANDARD        → regular B2C couples (tiered: $0.70 ≤250, $0.50 >250)
+//   AGENCY          → wedding agencies (flat $0.50/inv)
+//   RESELLER        → white-label resellers (flat $0.50/inv)
+//   WEDDING_PLANNER → independent planners (flat $0.50/inv)
+//
+// Server is single source of truth: the browser NEVER sends a price. The
+// /api/checkout/charow and meterInvitationUsage flows look up the active
+// PricingConfig row server-side and compute the total.
+model PricingConfig {
+  id              String   @id @default(cuid())
+  code            String   @unique // 'INVITATION_STANDARD' | 'INVITATION_AGENCY' | 'SMS_STANDARD' ...
+  name            String
+  customerType    String   @default("STANDARD") // STANDARD | AGENCY | RESELLER | WEDDING_PLANNER
+  creditType      String   @default("INVITATION") // INVITATION | SMS | WHATSAPP | QR | EXPORT
+  pricingModel    String   @default("TIERED") // FLAT | TIERED
+  flatPriceCents  Int      @default(70)
+  tiersJson       String   @default("[]") // [{upTo:250,priceCents:70},{upTo:null,priceCents:50}]
+  currency        String   @default("usd")
+  status          String   @default("ACTIVE") // DRAFT | ACTIVE | ARCHIVED
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([customerType, creditType, status])
+  @@index([creditType, status])
+}
+
+// ─── M5.9.5 — CreditReservation (in-flight credit holds) ────────────────────
+// Tracks credits that are RESERVED (held) but not yet CONSUMED or RELEASED.
+// This is the ledger entry for the reserve → consume | release lifecycle:
+//
+//   1. reserveCredits() → creates a CreditReservation(status=RESERVED) and
+//      increments Credit.reserved by `quantity` (atomic, with idempotencyKey).
+//   2. consumeCredits(reservationId) → sets status=CONSUMED, decrements
+//      Credit.reserved AND Credit.balance by `quantity`, writes a
+//      CreditTransaction(delta=-quantity, reason=CONSUMPTION).
+//   3. releaseCredits(reservationId) → sets status=RELEASED, decrements
+//      Credit.reserved by `quantity` (balance untouched), writes a
+//      CreditTransaction(delta=0, reason=RELEASE) for traceability.
+//   4. Expired reservations (expiresAt < now) are auto-released by a sweeper.
+//
+// Idempotency: the `idempotencyKey` column has a unique constraint. Re-calling
+// reserveCredits with the same key returns the existing reservation instead of
+// creating a duplicate. This makes bulk invitation generation crash-safe.
+model CreditReservation {
+  id              String    @id @default(cuid())
+  weddingId       String
+  creditType      String    // INVITATION | SMS | WHATSAPP | QR | EXPORT
+  quantity        Int
+  status          String    @default("RESERVED") // RESERVED | CONSUMED | RELEASED | EXPIRED
+  jobId           String?   // link to DeliveryJob or bulk operation (traceability)
+  idempotencyKey  String?   @unique // dedup key (e.g. `bulk:${weddingId}:${batchId}`)
+  source          String    @default("METER") // METER | MANUAL | WEBHOOK
+  note            String?
+  reservedAt      DateTime  @default(now())
+  consumedAt      DateTime?
+  releasedAt      DateTime?
+  expiresAt      DateTime?  // auto-release after N minutes if not consumed
+
+  @@index([weddingId, creditType, status])
+  @@index([idempotencyKey])
+  @@index([status, expiresAt])
+}
 

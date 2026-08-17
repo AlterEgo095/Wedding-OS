@@ -5,6 +5,8 @@ import { db } from '@/lib/db'
 import { logger } from '@/lib/logger'
 import { PRICE_PER_INVITATION_USD_CENTS } from '@/lib/constants'
 import { autoTransitionToLive, transitionCommercialStatus } from '@/lib/commercial-status'
+// MISSION 5.9.5 — pricing engine + credit ledger integration
+import { computeInvitationPriceForWedding, grantCreditsFromOrder } from '@/lib/commercial/pricing-integration'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 export type CustomerType = 'INDIVIDUAL' | 'COUPLE' | 'BUSINESS' | 'AGENCY' | 'ORGANIZATION'
@@ -275,6 +277,15 @@ export async function provisionFromOrder(orderId: string, provisionedById: strin
     await autoTransitionToLive(order.weddingId, provisionedById)
   }
 
+  // MISSION 5.9.5 — Grant credits from the order (PER_INVITATION items +
+  // plan base allotments). Idempotent on (sourceOrderId, creditType, reason='PURCHASE').
+  if (order.weddingId) {
+    try {
+      await grantCreditsFromOrder(orderId, order.weddingId)
+    } catch (err) {
+      logger.error('provisionFromOrder: grantCredits failed (non-blocking)', { error: String(err), orderId })
+    }
+  }
   logger.info('provisionFromOrder: complete', { orderId, entitlements: entitlements.length })
   return { provisioned: entitlements.length, entitlements }
 }
@@ -463,13 +474,17 @@ export async function meterInvitationUsage(weddingId: string, count: number): Pr
     });
   }
 
-  // Create the OrderItem — 1 row per bulk batch, quantity = N
-  const unitPrice = PRICE_PER_INVITATION_USD_CENTS; // 70 cents = $0.70
-  const total = count * unitPrice;
+  // MISSION 5.9.5 — Use the pricing engine (tiered + customer-type aware)
+  // SERVER-SIDE: the price is computed from the Customer.type, never trusted
+  // from the browser. STANDARD = tiered ($0.70 ≤250, $0.50 >250); AGENCY/
+  // RESELLER/WEDDING_PLANNER = flat $0.50.
+  const { quote, customerTier } = await computeInvitationPriceForWedding(weddingId, count);
+  const unitPrice = quote.unitPriceCents; // weighted average
+  const total = quote.totalCents;
   const orderItem = await db.orderItem.create({
     data: {
       orderId: order.id,
-      description: `Invitations électroniques x${count} (${new Date().toISOString().slice(0, 10)})`,
+      description: `Invitations électroniques x${count} (${new Date().toISOString().slice(0, 10)}) — ${customerTier}`,
       planId: 'PER_INVITATION',
       quantity: count,
       unitPrice,

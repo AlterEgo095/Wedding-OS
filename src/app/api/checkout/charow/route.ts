@@ -1,24 +1,33 @@
 /**
- * Mission 5.9.4 — WAVE 3: CHAROW CHECKOUT (VPS-adapted)
+ * MISSION 5.9.5 — CHAROW CHECKOUT (VPS-adapted, pricing-engine integrated)
  * POST /api/checkout/charow
  *
- * The server:
- *   1. authenticates the user (AdminUser session)
- *   2. receives ONLY { planId, currency? } from the browser
- *   3. looks up the plan + price from the DB (NEVER trusts a browser price)
- *   4. finds or creates the Customer (linked by email)
- *   5. creates CommercialOrder + OrderItem via the commercial module
- *   6. creates a unique reference (idempotency key)
- *   7. resolves the Charow product ID for the plan
- *   8. calls Charow via the adapter (real API or sandbox)
- *   9. creates a Payment row (status AWAITING_VERIFICATION)
- *  10. returns ONLY the checkout URL + sale id
+ * Two checkout modes:
+ *   1. PLAN — body: { mode: 'PLAN', planId, currency? }
+ *      Buys a subscription plan (TRIAL/ESSENTIEL/PREMIUM/ELITE). Price from DB.
+ *   2. INVITATION_PACK — body: { mode: 'INVITATION_PACK', quantity, currency? }
+ *      Buys N invitation credits. Price computed server-side by the pricing
+ *      engine (tiered for STANDARD, flat $0.50 for AGENCY/RESELLER/WEDDING_PLANNER).
+ *
+ * SECURITY:
+ *   - The browser NEVER sends a price. The server resolves the price from the
+ *     DB (PLAN) or the pricing engine (INVITATION_PACK).
+ *   - The customer tier is resolved from the Customer row linked to the user's
+ *     wedding — the browser can't spoof the tier.
+ *   - The OrderItem is created with the SERVER-computed unitPrice + total.
+ *
+ * Idempotency:
+ *   - Each checkout gets a unique reference (WOS-{orderId}-{random}).
+ *   - Re-calling with the same body creates a NEW order (intentional — the user
+ *     may retry after a failed payment). The Payment.reference dedupes webhook
+ *     delivery at the verify step.
  */
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getServerAuthUser } from '@/lib/auth'
 import { charowProvider, resolveCharowProductId } from '@/lib/payment/charow'
 import { createOrder, addOrderItem, recalculateOrderTotals, createPayment } from '@/lib/commercial'
+import { computeInvitationPriceForWedding } from '@/lib/commercial/pricing-integration'
 import { randomBytes } from 'crypto'
 
 export const dynamic = 'force-dynamic'
@@ -31,22 +40,46 @@ export async function POST(req: Request) {
   }
 
   const body = await req.json().catch(() => ({}))
-  const planId = String(body.planId ?? '')
+  const mode = body.mode === 'INVITATION_PACK' ? 'INVITATION_PACK' : 'PLAN'
   const currency = (body.currency === 'fcfa' ? 'fcfa' : 'usd') as 'usd' | 'fcfa'
-  if (!planId) {
-    return NextResponse.json({ error: 'planId requis.' }, { status: 400 })
-  }
 
-  // ── 2. Look up plan + price FROM THE DB ──────────────────────────────
-  const dbPlan = await db.plan.findUnique({ where: { id: planId } })
-  if (!dbPlan || dbPlan.status !== 'ACTIVE') {
-    return NextResponse.json({ error: 'Plan invalide.' }, { status: 400 })
-  }
+  // ── 2. Resolve the amount + description based on mode ────────────────
+  let amount = 0
+  let description = ''
+  let planCode: string | null = null
+  let unitPrice = 0
+  let quantity = 1
 
-  // SERVER determines the price. Browser never sends an amount.
-  const amount = currency === 'fcfa' ? dbPlan.priceFcfa : dbPlan.priceUsdCents
-  if (amount === 0) {
-    return NextResponse.json({ error: 'Ce plan est gratuit. Aucun paiement requis.' }, { status: 400 })
+  if (mode === 'PLAN') {
+    const planId = String(body.planId ?? '')
+    if (!planId) {
+      return NextResponse.json({ error: 'planId requis (mode PLAN).' }, { status: 400 })
+    }
+    const dbPlan = await db.plan.findUnique({ where: { id: planId } })
+    if (!dbPlan || dbPlan.status !== 'ACTIVE') {
+      return NextResponse.json({ error: 'Plan invalide.' }, { status: 400 })
+    }
+    amount = currency === 'fcfa' ? dbPlan.priceFcfa : dbPlan.priceUsdCents
+    if (amount === 0) {
+      return NextResponse.json({ error: 'Ce plan est gratuit. Aucun paiement requis.' }, { status: 400 })
+    }
+    description = `Wedding OS — Offre ${dbPlan.name}`
+    planCode = dbPlan.code
+  } else {
+    // INVITATION_PACK mode
+    quantity = Math.max(1, Math.floor(Number(body.quantity) || 0))
+    if (quantity <= 0) {
+      return NextResponse.json({ error: 'quantity doit etre > 0 (mode INVITATION_PACK).' }, { status: 400 })
+    }
+    if (!user.weddingId) {
+      return NextResponse.json({ error: 'Aucun mariage associé à votre compte. Impossible d\'acheter un pack d\'invitations.' }, { status: 400 })
+    }
+    // Compute the price server-side via the pricing engine
+    const { quote, customerTier } = await computeInvitationPriceForWedding(user.weddingId, quantity)
+    amount = quote.totalCents
+    unitPrice = quote.unitPriceCents
+    description = `Wedding OS — Pack ${quantity} invitations (${customerTier})`
+    planCode = 'PER_INVITATION'
   }
 
   // ── 3. Find or create Customer (linked by email) ─────────────────────
@@ -69,17 +102,16 @@ export async function POST(req: Request) {
     weddingId: user.weddingId || undefined,
     currency,
   })
-  // Set status to PENDING_CONFIRMATION (createOrder defaults to DRAFT)
   await db.commercialOrder.update({
     where: { id: order.id },
     data: { status: 'PENDING_CONFIRMATION', subtotal: amount, total: amount },
   })
 
   await addOrderItem(order.id, {
-    description: `Offre ${dbPlan.name}`,
-    planId: dbPlan.code, // store the plan CODE (provisionFromOrder checks code)
-    quantity: 1,
-    unitPrice: amount,
+    description,
+    planId: planCode || undefined,
+    quantity,
+    unitPrice: mode === 'PLAN' ? amount : unitPrice,
   })
   await recalculateOrderTotals(order.id)
 
@@ -87,10 +119,11 @@ export async function POST(req: Request) {
   const reference = `WOS-${order.id}-${randomBytes(4).toString('hex')}`
 
   // ── 6. Resolve Charow product ID ─────────────────────────────────────
-  const productId = resolveCharowProductId(dbPlan.code)
+  const productId = mode === 'PLAN'
+    ? resolveCharowProductId(planCode!)
+    : (process.env.CHAROW_PRODUCT_INVITATION_PACK || undefined)
 
   // ── 7. Call Charow via the adapter ───────────────────────────────────
-  // Build origin from forwarded headers (behind nginx reverse proxy)
   const fwdHost = req.headers.get('x-forwarded-host') || req.headers.get('host') || new URL(req.url).host
   const fwdProto = req.headers.get('x-forwarded-proto') || 'https'
   const origin = `${fwdProto}://${fwdHost}`
@@ -100,7 +133,7 @@ export async function POST(req: Request) {
       reference,
       amount,
       currency,
-      description: `Wedding OS — Offre ${dbPlan.name}`,
+      description,
       customerEmail: customer.email ?? user.email,
       customerName: customer.displayName,
       customerPhone: customer.phone ?? undefined,
@@ -138,22 +171,19 @@ export async function POST(req: Request) {
       action: 'CHECKOUT_CREATED',
       details: JSON.stringify({
         orderId: order.id,
-        plan: dbPlan.code,
+        mode,
+        plan: planCode,
+        quantity,
         amount,
         currency,
         saleId: checkout.saleId,
         customer: customer.id,
-        mode: charowProvider.mode,
+        providerMode: charowProvider.mode,
       }),
     },
   }).catch(() => null)
 
   // ── 10. Return ONLY the checkout URL + sale id ───────────────────────
-  // Replace the {SALE_ID} placeholder in the success URL with the real sale id
-  const finalSuccessUrl = checkout.checkoutUrl.includes('chariow.com') || checkout.checkoutUrl.startsWith('http')
-    ? undefined // real Charow URL — the redirect_url was already sent to Charow
-    : checkout.checkoutUrl
-
   return NextResponse.json({
     checkoutUrl: checkout.checkoutUrl,
     saleId: checkout.saleId,
@@ -161,5 +191,6 @@ export async function POST(req: Request) {
     reference,
     mode: charowProvider.mode,
     productId: productId || null,
+    pricing: { mode, quantity, unitPriceCents: unitPrice, totalCents: amount, currency },
   })
 }
