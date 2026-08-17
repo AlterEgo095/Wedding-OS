@@ -13,20 +13,25 @@ export type Plan = 'TRIAL' | 'ESSENTIEL' | 'PREMIUM' | 'ELITE';
  * -1 means unlimited.
  */
 export const PLAN_LIMITS: Record<Plan, { guests: number; mediaBytes: number; admins: number; customDomain: boolean }> = {
-  TRIAL:     { guests: 20,   mediaBytes: 100 * 1024 * 1024,   admins: 1,  customDomain: false },
-  ESSENTIEL: { guests: 200,  mediaBytes: 1 * 1024 * 1024 * 1024, admins: 2, customDomain: false },
+  TRIAL:     { guests: 50,   mediaBytes: 100 * 1024 * 1024,   admins: 1,  customDomain: false },
+  ESSENTIEL: { guests: 300,  mediaBytes: 1 * 1024 * 1024 * 1024, admins: 2, customDomain: false },
   PREMIUM:   { guests: 500,  mediaBytes: 5 * 1024 * 1024 * 1024, admins: 5, customDomain: true },
   ELITE:     { guests: -1,   mediaBytes: -1,                    admins: 10, customDomain: true },
 };
 
 /**
  * Plan display metadata for UI.
+ *
+ * NOTE: The public marketing surface exposes 3 plans (Starter / Pro / Studio)
+ * matching the homepage PricingSection. PREMIUM is kept for backward
+ * compatibility with existing subscriptions but is NOT surfaced publicly.
+ * Currency display is EUR (€) — priceEur is numerically equal to priceUsd (1:1).
  */
-export const PLAN_METADATA: Record<Plan, { label: string; priceFcfa: number; priceUsd: number }> = {
-  TRIAL:     { label: 'Essai Libre',  priceFcfa: 0,      priceUsd: 0 },
-  ESSENTIEL: { label: 'Essentiel',    priceFcfa: 30000,  priceUsd: 49 },
-  PREMIUM:   { label: 'Premium',      priceFcfa: 60000,  priceUsd: 99 },
-  ELITE:     { label: 'Élite',        priceFcfa: 120000, priceUsd: 199 },
+export const PLAN_METADATA: Record<Plan, { label: string; priceFcfa: number; priceUsd: number; priceEur: number }> = {
+  TRIAL:     { label: 'Starter',  priceFcfa: 0,      priceUsd: 0,   priceEur: 0 },
+  ESSENTIEL: { label: 'Pro',      priceFcfa: 30000,  priceUsd: 49,  priceEur: 49 },
+  PREMIUM:   { label: 'Premium',  priceFcfa: 60000,  priceUsd: 99,  priceEur: 99 },
+  ELITE:     { label: 'Studio',   priceFcfa: 120000, priceUsd: 199, priceEur: 199 },
 };
 
 /**

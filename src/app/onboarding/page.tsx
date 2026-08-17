@@ -48,67 +48,64 @@ interface PlanPreview {
   label: string
   priceFcfa: number
   priceUsd: number
+  priceEur: number
   tagline: string
   services: string[]
   popular?: boolean
 }
 
+// 3 public plans aligned with homepage PricingSection (Starter / Pro / Studio).
+// PREMIUM is intentionally omitted from the public surface (kept in backend
+// for existing subscriptions only). Prices displayed in EUR (€).
 const PLANS_PREVIEW: PlanPreview[] = [
   {
     key: 'TRIAL',
-    label: 'Essai Libre',
+    label: 'Starter',
     priceFcfa: 0,
     priceUsd: 0,
-    tagline: 'Pour découvrir la plateforme',
+    priceEur: 0,
+    tagline: 'Pour les mariages intimes',
     services: [
-      "Jusqu'à 20 invités",
+      "Jusqu'à 50 invités",
       '100 Mo de médias',
       '1 compte staff',
-      'Invitation digitale de base',
-      'Sans domaine personnalisé',
+      'Thème de base',
+      'Invitations digitales',
     ],
   },
   {
     key: 'ESSENTIEL',
-    label: 'Essentiel',
+    label: 'Pro',
     priceFcfa: 30000,
     priceUsd: 49,
-    tagline: 'Pour les mariages intimes',
+    priceEur: 49,
+    tagline: 'Pour la plupart des couples',
     services: [
-      "Jusqu'à 200 invités",
-      '1 Go de médias',
-      '2 comptes staff',
-      'Invitation digitale complète',
-      'QR code check-in',
-    ],
-  },
-  {
-    key: 'PREMIUM',
-    label: 'Premium',
-    priceFcfa: 60000,
-    priceUsd: 99,
-    tagline: 'Le plus populaire',
-    services: [
-      "Jusqu'à 500 invités",
-      '5 Go de médias',
-      '5 comptes staff',
-      'Invitation digitale de luxe',
-      'Domaine personnalisé inclus',
+      '1 mariage',
+      "Jusqu'à 300 invités",
+      'Tous les thèmes premium',
+      'QR codes & check-in',
+      'Livre d’or numérique',
+      'Galerie photos illimitée',
+      'Support prioritaire',
     ],
     popular: true,
   },
   {
     key: 'ELITE',
-    label: 'Élite',
+    label: 'Studio',
     priceFcfa: 120000,
     priceUsd: 199,
-    tagline: 'Sans aucune limite',
+    priceEur: 199,
+    tagline: 'Pour les wedding planners',
     services: [
+      'Mariages illimités',
       'Invités illimités',
-      'Médias illimités',
-      '10 comptes staff',
-      'Expérience sur mesure',
-      'Domaine personnalisé + support dédié',
+      'Thèmes exclusifs + white-label',
+      'Multi-organisation',
+      'API & intégrations',
+      'Account manager dédié',
+      'Support 24/7',
     ],
   },
 ]
@@ -169,20 +166,20 @@ const leadSchema = z.object({
 type LeadFormValues = z.infer<typeof leadSchema>
 
 const PLAN_LABELS: Record<LeadFormValues['plan'], string> = {
-  TRIAL: 'Essai Libre',
-  ESSENTIEL: 'Essentiel',
+  TRIAL: 'Starter',
+  ESSENTIEL: 'Pro',
   PREMIUM: 'Premium',
-  ELITE: 'Élite',
+  ELITE: 'Studio',
 }
 
-function formatPrice(usd: number, fcfa: number): string {
-  if (usd === 0) return 'Gratuit'
-  return `$${usd}`
+function formatPrice(eur: number, fcfa: number): string {
+  if (eur === 0) return 'Gratuit'
+  return `${eur} €`
 }
 
-function formatUsd(n: number): string {
+function formatEur(n: number): string {
   if (n === 0) return ''
-  return `$${n}`
+  return `${n} €`
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -207,7 +204,7 @@ export default function OnboardingLeadPage() {
       venueCity: '',
       email: '',
       phone: '',
-      plan: 'PREMIUM',
+      plan: 'ESSENTIEL',
       message: '',
     },
   })
@@ -400,7 +397,7 @@ export default function OnboardingLeadPage() {
             </p>
           </motion.div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 max-w-5xl mx-auto">
             {PLANS_PREVIEW.map((plan, idx) => (
               <motion.div
                 key={plan.key}
@@ -435,11 +432,11 @@ export default function OnboardingLeadPage() {
                   <CardContent className="flex flex-col flex-1">
                     <div className="text-center mb-4">
                       <div className="font-serif text-3xl font-bold gold-gradient">
-                        {formatPrice(plan.priceUsd, plan.priceFcfa)}
+                        {formatPrice(plan.priceEur, plan.priceFcfa)}
                       </div>
-                      {plan.priceUsd > 0 && (
+                      {plan.priceEur > 0 && (
                         <div className="text-xs text-muted-foreground font-display mt-1">
-                          ≈ {formatUsd(plan.priceUsd)} / mois
+                          {formatEur(plan.priceEur)} / mois
                         </div>
                       )}
                     </div>
@@ -790,7 +787,7 @@ export default function OnboardingLeadPage() {
                             <SelectItem key={p.key} value={p.key}>
                               {p.label}
                               {p.priceFcfa > 0
-                                ? ` — ${formatUsd(p.priceUsd)}`
+                                ? ` — ${formatEur(p.priceEur)}`
                                 : ' — Gratuit'}
                             </SelectItem>
                           ))}
