@@ -48,64 +48,67 @@ interface PlanPreview {
   label: string
   priceFcfa: number
   priceUsd: number
-  priceEur: number
   tagline: string
   services: string[]
   popular?: boolean
 }
 
-// 3 public plans aligned with homepage PricingSection (Starter / Pro / Studio).
-// PREMIUM is intentionally omitted from the public surface (kept in backend
-// for existing subscriptions only). Prices displayed in EUR (€).
 const PLANS_PREVIEW: PlanPreview[] = [
   {
     key: 'TRIAL',
-    label: 'Starter',
+    label: 'Essai Libre',
     priceFcfa: 0,
     priceUsd: 0,
-    priceEur: 0,
-    tagline: 'Pour les mariages intimes',
+    tagline: 'Pour découvrir la plateforme',
     services: [
-      "Jusqu'à 50 invités",
+      "Jusqu'à 20 invités",
       '100 Mo de médias',
       '1 compte staff',
-      'Thème de base',
-      'Invitations digitales',
+      'Invitation digitale de base',
+      'Sans domaine personnalisé',
     ],
   },
   {
     key: 'ESSENTIEL',
-    label: 'Pro',
+    label: 'Essentiel',
     priceFcfa: 30000,
     priceUsd: 49,
-    priceEur: 49,
-    tagline: 'Pour la plupart des couples',
+    tagline: 'Pour les mariages intimes',
     services: [
-      '1 mariage',
-      "Jusqu'à 300 invités",
-      'Tous les thèmes premium',
-      'QR codes & check-in',
-      'Livre d’or numérique',
-      'Galerie photos illimitée',
-      'Support prioritaire',
+      "Jusqu'à 200 invités",
+      '1 Go de médias',
+      '2 comptes staff',
+      'Invitation digitale complète',
+      'QR code check-in',
+    ],
+  },
+  {
+    key: 'PREMIUM',
+    label: 'Premium',
+    priceFcfa: 60000,
+    priceUsd: 99,
+    tagline: 'Le plus populaire',
+    services: [
+      "Jusqu'à 500 invités",
+      '5 Go de médias',
+      '5 comptes staff',
+      'Invitation digitale de luxe',
+      'Domaine personnalisé inclus',
     ],
     popular: true,
   },
   {
     key: 'ELITE',
-    label: 'Studio',
+    label: 'Élite',
     priceFcfa: 120000,
     priceUsd: 199,
-    priceEur: 199,
-    tagline: 'Pour les wedding planners',
+    tagline: 'Sans aucune limite',
     services: [
-      'Mariages illimités',
       'Invités illimités',
-      'Thèmes exclusifs + white-label',
-      'Multi-organisation',
-      'API & intégrations',
-      'Account manager dédié',
-      'Support 24/7',
+      'Médias illimités',
+      '10 comptes staff',
+      'Expérience sur mesure',
+      'Domaine personnalisé + support dédié',
     ],
   },
 ]
@@ -138,6 +141,88 @@ const WHY_US = [
 ]
 
 // ══════════════════════════════════════════════════════════════════════════════
+// Invitation Packs — tiered per-invitation pricing (Mission 5.9.5)
+// $0.70/invitation for ≤250, $0.50/invitation for >250
+// ══════════════════════════════════════════════════════════════════════════════
+interface InvitationPack {
+  tier: string
+  unitPrice: number
+  range: string
+  example: string
+  exampleTotal: string
+  highlight?: boolean
+}
+
+const INVITATION_PACKS: InvitationPack[] = [
+  {
+    tier: 'Pack Standard',
+    unitPrice: 0.7,
+    range: '1 — 250 invitations',
+    example: 'Exemple : 200 invitations',
+    exampleTotal: '$140',
+    highlight: true,
+  },
+  {
+    tier: 'Pack Volume',
+    unitPrice: 0.5,
+    range: '251 invitations et plus',
+    example: 'Exemple : 500 invitations',
+    exampleTotal: '$250',
+  },
+]
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Reseller / Agency / Wedding Planner packages — flat $0.50/invitation
+// ══════════════════════════════════════════════════════════════════════════════
+interface ResellerPackage {
+  type: string
+  label: string
+  unitPrice: number
+  perks: string[]
+  highlight?: boolean
+}
+
+const RESELLER_PACKAGES: ResellerPackage[] = [
+  {
+    type: 'AGENCY',
+    label: 'Agence',
+    unitPrice: 0.5,
+    perks: [
+      'Tarif flat $0.50 / invitation',
+      'Multi-organisation',
+      'White-label inclus',
+      'Account manager dédié',
+      'API & intégrations',
+    ],
+    highlight: true,
+  },
+  {
+    type: 'RESELLER',
+    label: 'Revendeur',
+    unitPrice: 0.5,
+    perks: [
+      'Tarif flat $0.50 / invitation',
+      'Revente à vos clients',
+      'Tableau de bord revendeur',
+      'Commission sur abonnements',
+      'Support prioritaire',
+    ],
+  },
+  {
+    type: 'WEDDING_PLANNER',
+    label: 'Wedding Planner',
+    unitPrice: 0.5,
+    perks: [
+      'Tarif flat $0.50 / invitation',
+      'Gestion de plusieurs mariages',
+      'Outils de planification',
+      'Coordination des invités',
+      'Support 24/7',
+    ],
+  },
+]
+
+// ══════════════════════════════════════════════════════════════════════════════
 // Form schema — zod validation
 // ══════════════════════════════════════════════════════════════════════════════
 const leadSchema = z.object({
@@ -166,20 +251,20 @@ const leadSchema = z.object({
 type LeadFormValues = z.infer<typeof leadSchema>
 
 const PLAN_LABELS: Record<LeadFormValues['plan'], string> = {
-  TRIAL: 'Starter',
-  ESSENTIEL: 'Pro',
+  TRIAL: 'Essai Libre',
+  ESSENTIEL: 'Essentiel',
   PREMIUM: 'Premium',
-  ELITE: 'Studio',
+  ELITE: 'Élite',
 }
 
-function formatPrice(eur: number, fcfa: number): string {
-  if (eur === 0) return 'Gratuit'
-  return `${eur} €`
+function formatPrice(usd: number, fcfa: number): string {
+  if (usd === 0) return 'Gratuit'
+  return `$${usd}`
 }
 
-function formatEur(n: number): string {
+function formatUsd(n: number): string {
   if (n === 0) return ''
-  return `${n} €`
+  return `$${n}`
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -204,7 +289,7 @@ export default function OnboardingLeadPage() {
       venueCity: '',
       email: '',
       phone: '',
-      plan: 'ESSENTIEL',
+      plan: 'PREMIUM',
       message: '',
     },
   })
@@ -397,7 +482,7 @@ export default function OnboardingLeadPage() {
             </p>
           </motion.div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 max-w-5xl mx-auto">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
             {PLANS_PREVIEW.map((plan, idx) => (
               <motion.div
                 key={plan.key}
@@ -432,11 +517,11 @@ export default function OnboardingLeadPage() {
                   <CardContent className="flex flex-col flex-1">
                     <div className="text-center mb-4">
                       <div className="font-serif text-3xl font-bold gold-gradient">
-                        {formatPrice(plan.priceEur, plan.priceFcfa)}
+                        {formatPrice(plan.priceUsd, plan.priceFcfa)}
                       </div>
-                      {plan.priceEur > 0 && (
+                      {plan.priceUsd > 0 && (
                         <div className="text-xs text-muted-foreground font-display mt-1">
-                          {formatEur(plan.priceEur)} / mois
+                          ≈ {formatUsd(plan.priceUsd)} / mois
                         </div>
                       )}
                     </div>
@@ -473,6 +558,200 @@ export default function OnboardingLeadPage() {
           <p className="text-center text-xs text-muted-foreground mt-8 font-display">
             💡 Tous les plans incluent une page de mariage personnalisable,
             l&apos;envoi d&apos;invitations et le suivi RSVP.
+          </p>
+        </div>
+      </section>
+
+      {/* ─── INVITATION PACKS (tiered per-invitation pricing) ──────────── */}
+      <section id="invitations" className="relative py-16 md:py-24 px-4 sm:px-6 lg:px-8 bg-gradient-to-b from-champagne/10 via-transparent to-champagne/10">
+        <div className="max-w-7xl mx-auto">
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ duration: 0.6 }}
+            className="text-center mb-12 md:mb-16"
+          >
+            <div className="section-divider max-w-md mx-auto mb-6">
+              <span className="flourish text-sm">✉</span>
+            </div>
+            <h2 className="font-serif text-3xl sm:text-4xl md:text-5xl font-bold gold-gradient mb-4">
+              Packs d&apos;invitations
+            </h2>
+            <p className="text-muted-foreground font-display text-sm sm:text-base max-w-2xl mx-auto">
+              Ajoutez des invitations à la carte. Prix dégressifs selon le volume —
+              plus vous invitez, moins cher par invitation.
+            </p>
+          </motion.div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 max-w-4xl mx-auto">
+            {INVITATION_PACKS.map((pack, idx) => (
+              <motion.div
+                key={pack.tier}
+                initial={{ opacity: 0, y: 30 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true }}
+                transition={{ duration: 0.5, delay: idx * 0.1 }}
+              >
+                <Card
+                  className={`card-premium relative h-full bg-card/80 backdrop-blur-sm ${
+                    pack.highlight
+                      ? 'border-gold/50 shadow-lg shadow-gold/10 gold-border'
+                      : 'border-border/60'
+                  }`}
+                >
+                  {pack.highlight && (
+                    <div className="absolute -top-3 left-1/2 -translate-x-1/2">
+                      <Badge className="bg-gradient-gold text-white border-0 px-3 py-1 text-xs font-display tracking-wide shadow-md shadow-gold/30">
+                        <Heart className="size-3 fill-white" />
+                        Le plus demandé
+                      </Badge>
+                    </div>
+                  )}
+                  <CardHeader className="text-center pb-2">
+                    <CardTitle className="font-serif text-2xl font-bold text-foreground">
+                      {pack.tier}
+                    </CardTitle>
+                    <CardDescription className="text-muted-foreground text-xs">
+                      {pack.range}
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="flex flex-col items-center">
+                    <div className="text-center mb-6">
+                      <div className="font-serif text-4xl font-bold gold-gradient">
+                        ${pack.unitPrice.toFixed(2)}
+                      </div>
+                      <div className="text-xs text-muted-foreground font-display mt-1">
+                        par invitation
+                      </div>
+                    </div>
+                    <div className="w-full text-center p-3 rounded-lg bg-gold/5 border border-gold/20 mb-4">
+                      <p className="text-xs text-muted-foreground font-display">
+                        {pack.example}
+                      </p>
+                      <p className="font-serif text-xl font-bold gold-gradient mt-1">
+                        {pack.exampleTotal}
+                      </p>
+                    </div>
+                    <Button
+                      onClick={scrollToForm}
+                      variant={pack.highlight ? 'default' : 'outline'}
+                      className={`w-full rounded-full ${
+                        pack.highlight
+                          ? 'bg-gradient-gold text-white hover:opacity-90'
+                          : 'border-gold/40 text-gold hover:bg-gold/5'
+                      }`}
+                    >
+                      Commander
+                    </Button>
+                  </CardContent>
+                </Card>
+              </motion.div>
+            ))}
+          </div>
+
+          <p className="text-center text-xs text-muted-foreground mt-6 font-display">
+            💡 Facturation au prorata — payez uniquement pour les invitations envoyées.
+          </p>
+        </div>
+      </section>
+
+      {/* ─── RESELLER / AGENCY / WEDDING PLANNER PACKAGES ──────────────── */}
+      <section id="resellers" className="relative py-16 md:py-24 px-4 sm:px-6 lg:px-8 bg-gradient-to-b from-transparent via-champagne/10 to-transparent">
+        <div className="max-w-7xl mx-auto">
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ duration: 0.6 }}
+            className="text-center mb-12 md:mb-16"
+          >
+            <div className="section-divider max-w-md mx-auto mb-6">
+              <span className="flourish text-sm">★</span>
+            </div>
+            <h2 className="font-serif text-3xl sm:text-4xl md:text-5xl font-bold gold-gradient mb-4">
+              Forfaits Reseller
+            </h2>
+            <p className="text-muted-foreground font-display text-sm sm:text-base max-w-2xl mx-auto">
+              Pour les agences, revendeurs et wedding planners — tarif flat
+              $0.50 / invitation, sans palier.
+            </p>
+          </motion.div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+            {RESELLER_PACKAGES.map((pkg, idx) => (
+              <motion.div
+                key={pkg.type}
+                initial={{ opacity: 0, y: 30 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true }}
+                transition={{ duration: 0.5, delay: idx * 0.1 }}
+              >
+                <Card
+                  className={`card-premium relative h-full bg-card/80 backdrop-blur-sm ${
+                    pkg.highlight
+                      ? 'border-gold/50 shadow-lg shadow-gold/10 gold-border lg:-translate-y-2'
+                      : 'border-border/60'
+                  }`}
+                >
+                  {pkg.highlight && (
+                    <div className="absolute -top-3 left-1/2 -translate-x-1/2">
+                      <Badge className="bg-gradient-gold text-white border-0 px-3 py-1 text-xs font-display tracking-wide shadow-md shadow-gold/30">
+                        <Sparkles className="size-3" />
+                        Recommandé
+                      </Badge>
+                    </div>
+                  )}
+                  <CardHeader className="text-center pb-2">
+                    <CardTitle className="font-serif text-2xl font-bold text-foreground">
+                      {pkg.label}
+                    </CardTitle>
+                    <CardDescription className="text-muted-foreground text-xs">
+                      {pkg.type === 'AGENCY' && 'Pour les agences événementielles'}
+                      {pkg.type === 'RESELLER' && 'Pour la revente à vos clients'}
+                      {pkg.type === 'WEDDING_PLANNER' && 'Pour les planificateurs de mariages'}
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="flex flex-col flex-1">
+                    <div className="text-center mb-4">
+                      <div className="font-serif text-3xl font-bold gold-gradient">
+                        ${pkg.unitPrice.toFixed(2)}
+                      </div>
+                      <div className="text-xs text-muted-foreground font-display mt-1">
+                        par invitation — tarif flat
+                      </div>
+                    </div>
+                    <ul className="space-y-2 text-sm flex-1 mb-5">
+                      {pkg.perks.map((perk) => (
+                        <li
+                          key={perk}
+                          className="flex items-start gap-2 text-foreground/80"
+                        >
+                          <CheckCircle2 className="size-4 text-gold mt-0.5 shrink-0" />
+                          <span>{perk}</span>
+                        </li>
+                      ))}
+                    </ul>
+                    <Button
+                      onClick={scrollToForm}
+                      variant={pkg.highlight ? 'default' : 'outline'}
+                      className={`w-full rounded-full ${
+                        pkg.highlight
+                          ? 'bg-gradient-gold text-white hover:opacity-90'
+                          : 'border-gold/40 text-gold hover:bg-gold/5'
+                      }`}
+                    >
+                      Devenir {pkg.label}
+                    </Button>
+                  </CardContent>
+                </Card>
+              </motion.div>
+            ))}
+          </div>
+
+          <p className="text-center text-xs text-muted-foreground mt-6 font-display">
+            💡 Les forfaits reseller incluent un tableau de bord dédié et la gestion
+            multi-organisation.
           </p>
         </div>
       </section>
@@ -787,7 +1066,7 @@ export default function OnboardingLeadPage() {
                             <SelectItem key={p.key} value={p.key}>
                               {p.label}
                               {p.priceFcfa > 0
-                                ? ` — ${formatEur(p.priceEur)}`
+                                ? ` — ${formatUsd(p.priceUsd)}`
                                 : ' — Gratuit'}
                             </SelectItem>
                           ))}
@@ -878,3 +1157,4 @@ export default function OnboardingLeadPage() {
     </div>
   )
 }
+

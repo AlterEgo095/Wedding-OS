@@ -32,14 +32,14 @@ export interface PlanDefinition {
 export const PLANS: Record<PlanId, PlanDefinition> = {
   TRIAL: {
     id: 'TRIAL',
-    label: 'Starter',
-    tagline: 'Pour les mariages intimes',
+    label: 'Essai Libre',
+    tagline: 'Découvrez la plateforme, sans engagement',
     priceMonthly: 0,
     priceAnnual: 0,
-    currency: 'eur',
+    currency: 'usd',
     priceMonthlyFcfa: 0,
     limits: {
-      maxGuests: 50,
+      maxGuests: 20,
       maxMediaBytes: 100 * 1024 * 1024,
       maxAdmins: 1,
       customDomain: false,
@@ -52,14 +52,14 @@ export const PLANS: Record<PlanId, PlanDefinition> = {
   },
   ESSENTIEL: {
     id: 'ESSENTIEL',
-    label: 'Pro',
-    tagline: 'Pour la plupart des couples',
+    label: 'Essentiel',
+    tagline: "Tout l'essentiel pour un mariage réussi",
     priceMonthly: 4900,
     priceAnnual: 49000,
-    currency: 'eur',
+    currency: 'usd',
     priceMonthlyFcfa: 30000,
     limits: {
-      maxGuests: 300,
+      maxGuests: 200,
       maxMediaBytes: 1024 * 1024 * 1024,
       maxAdmins: 2,
       customDomain: false,
@@ -69,7 +69,6 @@ export const PLANS: Record<PlanId, PlanDefinition> = {
       galleryVideos: false,
     },
     trialDays: 0,
-    popular: true,
   },
   PREMIUM: {
     id: 'PREMIUM',
@@ -90,15 +89,15 @@ export const PLANS: Record<PlanId, PlanDefinition> = {
       galleryVideos: true,
     },
     trialDays: 0,
-    // PREMIUM is NOT publicly surfaced — kept for backward compatibility.
+    popular: true,
   },
   ELITE: {
     id: 'ELITE',
-    label: 'Studio',
-    tagline: 'Pour les wedding planners',
+    label: 'Élite',
+    tagline: 'Le summum, sans limites, sans watermark',
     priceMonthly: 19900,
     priceAnnual: 199000,
-    currency: 'eur',
+    currency: 'usd',
     priceMonthlyFcfa: 120000,
     limits: {
       maxGuests: -1,

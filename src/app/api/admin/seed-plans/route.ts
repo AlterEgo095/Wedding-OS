@@ -1,15 +1,9 @@
 /**
- * Mission 5.9.5 — PLAN SEED
+ * Mission 5.9.4 — PLAN SEED
  * POST /api/admin/seed-plans
  *
- * Seeds the Wedding OS plans into the database. Idempotent — uses upsert.
- *
- * Public surface: 3 plans (Starter / Pro / Studio) matching the homepage
- * PricingSection. PREMIUM is kept for backward compatibility with existing
- * subscriptions but is NOT public (isPublic=false, status=INACTIVE).
- *
- * Currency: EUR (€). priceUsdCents field stores EUR cents numerically
- * (4900 = €49.00, 19900 = €199.00). The `currency` column is set to 'eur'.
+ * Seeds the 4 Wedding OS plans (TRIAL, ESSENTIEL, PREMIUM, ELITE) into the
+ * database if they don't already exist. Idempotent — uses upsert.
  *
  * Protected by PLATFORM_ADMIN auth.
  */
@@ -22,12 +16,12 @@ export const dynamic = 'force-dynamic'
 const PLANS = [
   {
     code: 'TRIAL',
-    name: 'Starter',
-    description: "Pour les mariages intimes — jusqu'à 50 invités, thème de base.",
+    name: 'Essai Gratuit',
+    description: 'Découvrez Wedding OS sans engagement — 14 jours, 50 invités.',
     sortOrder: 0,
     priceUsdCents: 0,
     priceFcfa: 0,
-    currency: 'eur',
+    currency: 'usd',
     maxGuests: 50,
     maxMediaBytes: 104857600, // 100 MB
     maxAdmins: 1,
@@ -36,18 +30,16 @@ const PLANS = [
     checkInAllowed: true,
     designerAllowed: true,
     premiumCollectionsAllowed: false,
-    isPublic: true,
-    status: 'ACTIVE',
   },
   {
     code: 'ESSENTIEL',
-    name: 'Pro',
-    description: "Pour la plupart des couples — 1 mariage, jusqu'à 300 invités, thèmes premium, QR codes & check-in.",
+    name: 'Essentiel',
+    description: 'Pour les mariages intimes — jusqu\'à 200 invités, invitations en masse.',
     sortOrder: 1,
-    priceUsdCents: 4900, // €49
-    priceFcfa: 30000, // 30 000 FCFA
-    currency: 'eur',
-    maxGuests: 300,
+    priceUsdCents: 4900, // $49
+    priceFcfa: 29000, // 29 000 FCFA
+    currency: 'usd',
+    maxGuests: 200,
     maxMediaBytes: 1073741824, // 1 GB
     maxAdmins: 2,
     customDomainAllowed: false,
@@ -55,16 +47,14 @@ const PLANS = [
     checkInAllowed: true,
     designerAllowed: true,
     premiumCollectionsAllowed: false,
-    isPublic: true,
-    status: 'ACTIVE',
   },
   {
     code: 'PREMIUM',
     name: 'Premium',
-    description: "L'expérience complète — 500 invités, domaine personnalisé, collections premium. (Plan hérité — non public)",
+    description: 'L\'expérience complète — 500 invités, domaine personnalisé, collections premium.',
     sortOrder: 2,
-    priceUsdCents: 9900, // €99
-    priceFcfa: 60000, // 60 000 FCFA
+    priceUsdCents: 9900, // $99
+    priceFcfa: 59000, // 59 000 FCFA
     currency: 'usd',
     maxGuests: 500,
     maxMediaBytes: 5368709120, // 5 GB
@@ -74,17 +64,15 @@ const PLANS = [
     checkInAllowed: true,
     designerAllowed: true,
     premiumCollectionsAllowed: true,
-    isPublic: false,
-    status: 'INACTIVE',
   },
   {
     code: 'ELITE',
-    name: 'Studio',
-    description: "Pour les wedding planners — mariages illimités, invités illimités, white-label, API & intégrations.",
+    name: 'Élite',
+    description: 'Sans limites — invités illimités, tout inclus, support prioritaire.',
     sortOrder: 3,
-    priceUsdCents: 19900, // €199
-    priceFcfa: 120000, // 120 000 FCFA
-    currency: 'eur',
+    priceUsdCents: 19900, // $199
+    priceFcfa: 119000, // 119 000 FCFA
+    currency: 'usd',
     maxGuests: -1, // unlimited
     maxMediaBytes: -1, // unlimited
     maxAdmins: 20,
@@ -93,8 +81,6 @@ const PLANS = [
     checkInAllowed: true,
     designerAllowed: true,
     premiumCollectionsAllowed: true,
-    isPublic: true,
-    status: 'ACTIVE',
   },
 ]
 
@@ -125,8 +111,8 @@ export async function POST() {
           checkInAllowed: plan.checkInAllowed,
           designerAllowed: plan.designerAllowed,
           premiumCollectionsAllowed: plan.premiumCollectionsAllowed,
-          status: plan.status,
-          isPublic: plan.isPublic,
+          status: 'ACTIVE',
+          isPublic: true,
         },
       })
       results.push({ code: plan.code, action: 'updated', id: updated.id })
