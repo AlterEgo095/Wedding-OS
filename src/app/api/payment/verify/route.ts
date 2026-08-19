@@ -108,7 +108,7 @@ export async function GET(req: Request) {
     if (payment.order.status !== 'CONFIRMED') {
       await confirmOrder(payment.orderId)
     }
-    await verifyPayment(payment.id, payment.verifiedById || 'charow-callback')
+    await verifyPayment(payment.id, payment.verifiedById || null)
   } catch (err) {
     console.error('[payment/verify GET] provisioning error:', err)
     return NextResponse.redirect(new URL('/?view=payment-failed&reason=provisioning', origin))

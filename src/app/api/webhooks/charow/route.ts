@@ -126,7 +126,7 @@ export async function POST(req: Request) {
     if (payment.order.status !== 'CONFIRMED') {
       await confirmOrder(payment.orderId)
     }
-    await verifyPayment(payment.id, payment.verifiedById || 'charow-webhook')
+    await verifyPayment(payment.id, payment.verifiedById || null)
   } catch (err) {
     console.error('[webhooks/charow] Provisioning error:', err)
     return NextResponse.json({ ok: false, error: 'Provisioning failed' }, { status: 500 })

@@ -164,7 +164,11 @@ export async function createPayment(data: {
   return payment
 }
 
-export async function verifyPayment(paymentId: string, verifiedById: string) {
+// P595B-fix: verifiedById is nullable (sandbox/webhook flows have no human verifier).
+// Payment.verifiedById is a nullable FK to AdminUser.id. Passing null is safe
+// (Prisma skips FK validation for null values) and preserves the audit trail
+// via the AuditLog table (also nullable userId).
+export async function verifyPayment(paymentId: string, verifiedById: string | null) {
   // Idempotent: if already verified, return as-is
   const existing = await db.payment.findUnique({ where: { id: paymentId } })
   if (!existing) throw new Error('Payment not found')
@@ -175,12 +179,12 @@ export async function verifyPayment(paymentId: string, verifiedById: string) {
     data: {
       status: 'VERIFIED',
       verifiedAt: new Date(),
-      verifiedById,
+      verifiedById: verifiedById ?? null,
     },
   })
 
   // Auto-provision entitlements from the verified payment's order
-  await provisionFromOrder(existing.orderId, verifiedById)
+  await provisionFromOrder(existing.orderId, verifiedById ?? null)
 
   return payment
 }
@@ -206,7 +210,7 @@ export async function listPayments() {
 }
 
 // ─── Provisioning & Entitlements ──────────────────────────────────────────────
-export async function provisionFromOrder(orderId: string, provisionedById: string) {
+export async function provisionFromOrder(orderId: string, provisionedById: string | null) {
   const order = await db.commercialOrder.findUnique({
     where: { id: orderId },
     include: { items: true },
