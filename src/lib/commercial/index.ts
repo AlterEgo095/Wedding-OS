@@ -321,14 +321,14 @@ export async function provisionFromOrder(orderId: string, provisionedById: strin
     await transitionCommercialStatus({
       weddingId: order.weddingId,
       to: 'PAID',
-      userId: provisionedById,
+      userId: provisionedById ?? undefined,
       reason: `Order ${orderId} provisioned`,
     })
 
     // P2.6 — If the wedding is already PUBLISHED, auto-flip PAID → LIVE.
     // Idempotent: no-op if status is not PUBLISHED or commercialStatus is
     // already LIVE / not in [PAID, READY, IN_PRODUCTION].
-    await autoTransitionToLive(order.weddingId, provisionedById)
+    await autoTransitionToLive(order.weddingId, provisionedById ?? undefined)
   }
 
   // MISSION 5.9.5 — Grant credits from the order (PER_INVITATION items +
