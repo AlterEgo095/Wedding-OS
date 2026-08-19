@@ -55,7 +55,13 @@ export async function POST(req: Request) {
     if (!planId) {
       return NextResponse.json({ error: 'planId requis (mode PLAN).' }, { status: 400 })
     }
-    const dbPlan = await db.plan.findUnique({ where: { id: planId } })
+    // P595B-P1-5.1 — Accept Plan.id (cuid) OR Plan.code (ESSENTIEL/PREMIUM/ELITE).
+    // The frontend CheckoutButton passes the code (more readable + stable across
+    // DB reseeds). We try code first, then fall back to id for backward compat.
+    let dbPlan = await db.plan.findUnique({ where: { code: planId } })
+    if (!dbPlan) {
+      dbPlan = await db.plan.findUnique({ where: { id: planId } })
+    }
     if (!dbPlan || dbPlan.status !== 'ACTIVE') {
       return NextResponse.json({ error: 'Plan invalide.' }, { status: 400 })
     }
