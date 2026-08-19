@@ -15,7 +15,7 @@ import {
   InsufficientCreditsError,
 } from '@/lib/credits';
 // P2.9 — plan-level invitation quota (exported by plan-limits.ts)
-import { checkInvitationLimit } from '@/lib/plan-limits';
+import { checkInvitationLimit, getEntitlementOverride } from '@/lib/plan-limits';
 // P2.8 — org-level invitation quota (added by another agent)
 import { checkOrgInvitationLimit } from '@/lib/org-quotas';
 // P2.3 — auto-generate an OrderItem for usage-based billing
@@ -154,6 +154,25 @@ export async function POST(
             limit: invitationQuota.limit,
             plan: invitationQuota.plan,
             additional: guestIds.length,
+          },
+          { status: 402 }
+        );
+      }
+
+      // ─── P595B-P1-2 — Enforce BULK_INVITATIONS entitlement ──────────────
+      // A wedding whose plan was downgraded (e.g. ESSENTIEL → TRIAL) after
+      // provisioning must not be able to bulk-send invitations even if the
+      // commercial lock is PAID/LIVE/COMPLETED. The BULK_INVITATIONS
+      // entitlement is provisioned by provisionFromOrder() for ESSENTIEL+.
+      // If the entitlement row is missing entirely (null), we fall back to
+      // the legacy behavior (allow — the wedding predates entitlements).
+      // If it is explicitly `false`, we reject with 402.
+      const bulkEntitled = await getEntitlementOverride(ctx.weddingId, 'BULK_INVITATIONS');
+      if (bulkEntitled === false) {
+        return NextResponse.json(
+          {
+            error: 'Votre formule ne permet pas l\'envoi en masse d\'invitations. Passez à Essentiel ou supérieur.',
+            entitlement: 'BULK_INVITATIONS',
           },
           { status: 402 }
         );
@@ -313,6 +332,13 @@ export async function POST(
       // If consumeCredit throws InsufficientCreditsError here, we return 402
       // BUT keep the already-created invitations (idempotency contract: the
       // client may retry without double-creating — see dedupe via existingByGuestId).
+      //
+      // P595B-P1 (Phase 1.6) — Track whether consumeCredit succeeded so we can
+      // SKIP meterInvitationUsage below. Pre-paid Charow INVITATION_PACK credits
+      // must NOT trigger a second, spurious Stripe Payment for the same
+      // invitations. The legacy Stripe usage-billing path (meterInvitationUsage)
+      // remains for weddings WITHOUT pre-paid credits.
+      let creditsConsumed = false;
       if (generated.length > 0) {
         try {
           await consumeCredit({
@@ -322,6 +348,8 @@ export async function POST(
             note: `Bulk invitation generation (${generated.length} guests)`,
             createdBy: user.id,
           });
+          // P595B-P1 — Consume succeeded → flag set so we skip meterInvitationUsage.
+          creditsConsumed = true;
         } catch (e) {
           if (e instanceof InsufficientCreditsError) {
             logger.warn('Bulk invitation: credit race condition', {
@@ -349,16 +377,25 @@ export async function POST(
         // meterInvitationUsage creates an OrderItem on the wedding's active
         // CommercialOrder (or creates a new order if none exists). This is
         // usage-based billing: 1 invitation = $0.70 (PRICE_PER_INVITATION_USD_CENTS).
-        try {
-          await meterInvitationUsage(ctx.weddingId, generated.length);
-        } catch (e) {
-          // Metering failure must NOT block the response — the invitations are
-          // already created and credits consumed. Log + continue.
-          logger.error('meterInvitationUsage failed (non-blocking)', {
-            weddingId: ctx.weddingId,
-            count: generated.length,
-            errMessage: e instanceof Error ? e.message : String(e),
-          });
+        //
+        // P595B-P1 (Phase 1.6): Skip meterInvitationUsage when credits were
+        // consumed (pre-paid Charow path). The legacy Stripe usage-billing
+        // path remains for weddings without pre-paid credits — those weddings
+        // would have thrown InsufficientCreditsError above (and we'd never
+        // reach this branch) OR they don't use the credit system at all and
+        // the credit balance stays at 0 with no InsufficientCreditsError.
+        if (!creditsConsumed) {
+          try {
+            await meterInvitationUsage(ctx.weddingId, generated.length);
+          } catch (e) {
+            // Metering failure must NOT block the response — the invitations are
+            // already created and credits consumed. Log + continue.
+            logger.error('meterInvitationUsage failed (non-blocking)', {
+              weddingId: ctx.weddingId,
+              count: generated.length,
+              errMessage: e instanceof Error ? e.message : String(e),
+            });
+          }
         }
 
         // ─── P2.4 — Increment usage counter (dashboard stats) ───────────

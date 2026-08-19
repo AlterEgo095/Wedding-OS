@@ -17,8 +17,15 @@
 //     to keep copywriter freedom and decouple marketing from backend renames.
 //
 // Server Component (no 'use client'). Uses the `.premium-card` reveal class
-// on block headers (respects prefers-reduced-motion). All CTAs are <Link>
+// on block headers (respects prefers-reduced-motion). Most CTAs are <Link>
 // pointing to /onboarding (the wizard pre-selects PREMIUM by default).
+// Mission 5.9.5-B Phase 2.1: the 3 paid subscription tiers (Essentiel,
+// Premium, Élite) and the 2 invitation packs (Standard, Volume) now render
+// a <CheckoutButton> Client Component that calls POST /api/checkout/charow
+// and redirects to the Charow checkoutUrl. The Trial tier and the 3 reseller
+// packages stay on the /onboarding lead-gen path (Trial is free; reseller
+// is B2B manual). Server Components can import Client Components — no
+// conversion of PricingSection itself is required.
 //
 // Currency: USD everywhere — no € symbol anywhere in this file.
 // ══════════════════════════════════════════════════════════════════════════════
@@ -29,6 +36,14 @@ import {
   Check, Crown, Sparkles, Heart, Diamond, Building2, Store,
   CalendarHeart, Users, ArrowRight, Info,
 } from 'lucide-react'
+// Mission 5.9.5-B Phase 2.1 — Client-side checkout CTA. Imported here so the
+// Server-Component cards can render a Client Component for the checkout
+// buttons (Next.js allows Server Components to import Client Components).
+// The `ctaMode` field on each plan/pack data row decides whether CtaLink
+// renders a plain <Link> (lead-gen → /onboarding) or a <CheckoutButton>
+// (real Charow checkout via POST /api/checkout/charow). The Trial plan and
+// all reseller packages stay on the /onboarding lead-gen path.
+import { CheckoutButton } from './CheckoutButton'
 
 // ══════════════════════════════════════════════════════════════════════════════
 // DATA — SUBSCRIPTION PLANS
@@ -46,6 +61,17 @@ interface SubscriptionPlan {
   ctaLabel: string
   ctaHref: string
   ctaPrimary: boolean
+  /**
+   * Mission 5.9.5-B Phase 2.1 — CTA wiring mode.
+   *   - 'link'          → render <Link href=ctaHref> (lead-gen /onboarding). Default.
+   *   - 'checkout-plan' → render <CheckoutButton mode="PLAN" planId=...> (real Charow checkout).
+   * The Trial plan stays on 'link' (it's free — no payment). The 3 paid tiers
+   * (Essentiel, Premium, Élite) use 'checkout-plan'. The browser sends NO
+   * price; the server resolves it from the Plan row in DB.
+   */
+  ctaMode?: 'link' | 'checkout-plan'
+  /** Required when ctaMode='checkout-plan'. Maps to a Plan.id in the DB. */
+  planId?: string
 }
 
 const SUBSCRIPTION_PLANS: readonly SubscriptionPlan[] = [
@@ -85,6 +111,9 @@ const SUBSCRIPTION_PLANS: readonly SubscriptionPlan[] = [
     ctaLabel: 'Choisir Essentiel',
     ctaHref: '/onboarding',
     ctaPrimary: false,
+    // Mission 5.9.5-B Phase 2.1 — wire to real Charow checkout (PLAN mode).
+    ctaMode: 'checkout-plan',
+    planId: 'ESSENTIEL',
   },
   {
     id: 'premium',
@@ -106,6 +135,9 @@ const SUBSCRIPTION_PLANS: readonly SubscriptionPlan[] = [
     ctaLabel: 'Choisir Premium',
     ctaHref: '/onboarding',
     ctaPrimary: true,
+    // Mission 5.9.5-B Phase 2.1 — wire to real Charow checkout (PLAN mode).
+    ctaMode: 'checkout-plan',
+    planId: 'PREMIUM',
   },
   {
     id: 'elite',
@@ -125,6 +157,9 @@ const SUBSCRIPTION_PLANS: readonly SubscriptionPlan[] = [
     ctaLabel: 'Choisir Élite',
     ctaHref: '/onboarding',
     ctaPrimary: false,
+    // Mission 5.9.5-B Phase 2.1 — wire to real Charow checkout (PLAN mode).
+    ctaMode: 'checkout-plan',
+    planId: 'ELITE',
   },
 ] as const
 
@@ -144,6 +179,17 @@ interface InvitationPack {
   ctaLabel: string
   ctaHref: string
   ctaPrimary: boolean
+  /**
+   * Mission 5.9.5-B Phase 2.1 — CTA wiring mode.
+   *   - 'link'           → render <Link href=ctaHref> (lead-gen /onboarding). Default.
+   *   - 'checkout-pack'  → render <CheckoutButton mode="INVITATION_PACK" quantity=...> (real Charow checkout).
+   * Both packs wire to checkout-pack. The browser sends only the quantity;
+   * the server computes the unit price + total via the pricing engine
+   * (FLAT_TIER rule preserved — no client-side pricing replication).
+   */
+  ctaMode?: 'link' | 'checkout-pack'
+  /** Required when ctaMode='checkout-pack'. Pack Standard=200, Pack Volume=500. */
+  quantity?: number
 }
 
 const INVITATION_PACKS: readonly InvitationPack[] = [
@@ -168,6 +214,10 @@ const INVITATION_PACKS: readonly InvitationPack[] = [
     ctaLabel: 'Demander ce pack',
     ctaHref: '/onboarding',
     ctaPrimary: false,
+    // Mission 5.9.5-B Phase 2.1 — wire to real Charow checkout (INVITATION_PACK mode).
+    // Pack Standard = 200 invitations (default Standard-tier quantity).
+    ctaMode: 'checkout-pack',
+    quantity: 200,
   },
   {
     id: 'volume',
@@ -191,6 +241,10 @@ const INVITATION_PACKS: readonly InvitationPack[] = [
     ctaLabel: 'Demander ce pack',
     ctaHref: '/onboarding',
     ctaPrimary: true,
+    // Mission 5.9.5-B Phase 2.1 — wire to real Charow checkout (INVITATION_PACK mode).
+    // Pack Volume = 500 invitations (Volume-tier quantity — >250 triggers $0.50/inv).
+    ctaMode: 'checkout-pack',
+    quantity: 500,
   },
 ] as const
 
@@ -490,11 +544,52 @@ function CtaLink({
   href,
   label,
   primary,
+  ctaMode = 'link',
+  planId,
+  quantity,
 }: {
   href: string
   label: string
   primary: boolean
+  /**
+   * Mission 5.9.5-B Phase 2.1 — when set to 'checkout-plan' or
+   * 'checkout-pack', render a <CheckoutButton> instead of a <Link>. The
+   * button calls POST /api/checkout/charow and redirects the browser to
+   * the Charow checkoutUrl. The browser sends NO price field; the server
+   * resolves it from the Plan DB row (PLAN) or the pricing engine
+   * (INVITATION_PACK). This preserves the FLAT_TIER rule (Mission 5.9.5-A).
+   */
+  ctaMode?: 'link' | 'checkout-plan' | 'checkout-pack'
+  /** Required when ctaMode='checkout-plan'. */
+  planId?: string
+  /** Required when ctaMode='checkout-pack'. */
+  quantity?: number
 }) {
+  // ── Real Charow checkout (PLAN) — paid subscription tiers ──
+  if (ctaMode === 'checkout-plan' && planId) {
+    return (
+      <CheckoutButton
+        mode="PLAN"
+        planId={planId}
+        currency="usd"
+        label={label}
+        variant={primary ? 'default' : 'outline'}
+      />
+    )
+  }
+  // ── Real Charow checkout (INVITATION_PACK) — invitation credits ──
+  if (ctaMode === 'checkout-pack' && quantity && quantity > 0) {
+    return (
+      <CheckoutButton
+        mode="INVITATION_PACK"
+        quantity={quantity}
+        currency="usd"
+        label={label}
+        variant={primary ? 'default' : 'outline'}
+      />
+    )
+  }
+  // ── Default: lead-gen Link to /onboarding (Trial + reseller packages) ──
   return (
     <Link
       href={href}
@@ -583,7 +678,16 @@ function PlanCard({ plan }: { plan: SubscriptionPlan }) {
 
       <FeatureList features={plan.features} isHighlighted={isPopular} />
 
-      <CtaLink href={plan.ctaHref} label={plan.ctaLabel} primary={plan.ctaPrimary} />
+      <CtaLink
+        href={plan.ctaHref}
+        label={plan.ctaLabel}
+        primary={plan.ctaPrimary}
+        // Mission 5.9.5-B Phase 2.1 — pass through ctaMode + planId so the
+        // 3 paid tiers (Essentiel/Premium/Élite) render a real CheckoutButton.
+        // Trial stays on 'link' (ctaMode is undefined → defaults to 'link').
+        ctaMode={plan.ctaMode}
+        planId={plan.planId}
+      />
     </div>
   )
 }
@@ -636,7 +740,17 @@ function PackCard({ pack }: { pack: InvitationPack }) {
 
       <FeatureList features={pack.features} isHighlighted={isHighlighted} />
 
-      <CtaLink href={pack.ctaHref} label={pack.ctaLabel} primary={pack.ctaPrimary} />
+      <CtaLink
+        href={pack.ctaHref}
+        label={pack.ctaLabel}
+        primary={pack.ctaPrimary}
+        // Mission 5.9.5-B Phase 2.1 — pass through ctaMode + quantity so the
+        // 2 invitation packs (Standard=200 inv, Volume=500 inv) render a real
+        // CheckoutButton. The server computes the unit price + total via the
+        // pricing engine (FLAT_TIER rule preserved).
+        ctaMode={pack.ctaMode}
+        quantity={pack.quantity}
+      />
     </div>
   )
 }

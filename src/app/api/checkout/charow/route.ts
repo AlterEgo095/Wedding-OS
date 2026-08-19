@@ -139,7 +139,16 @@ export async function POST(req: Request) {
       customerPhone: customer.phone ?? undefined,
       customerCountryCode: customer.country || 'CD',
       productId,
-      successUrl: `${origin}/?view=payment-success&sale={SALE_ID}`,
+      // Mission 5.9.5-B Phase 3.2 — successUrl uses `orderId` (which we know
+      // BEFORE the createCheckout call) instead of the literal `{SALE_ID}`
+      // placeholder (which Charow may or may not substitute — untested).
+      // The browser lands on /?view=payment-success&orderId=<orderId> after
+      // the customer pays on Charow. The webhook (/api/webhooks/charow) is
+      // the canonical provisioning trigger — the successUrl is just UX
+      // feedback (PaymentStatusBanner). In sandbox, the GET /api/payment/verify
+      // redirect still appends `sale=<saleId>` (which we know after the
+      // sandbox ledger mutation), so the banner can re-verify server-side.
+      successUrl: `${origin}/?view=payment-success&orderId=${order.id}`,
       cancelUrl: `${origin}/?view=plans&checkout=cancelled`,
       webhookUrl: `${origin}/api/webhooks/charow`,
     })

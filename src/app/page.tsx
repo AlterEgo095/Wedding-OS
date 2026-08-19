@@ -34,6 +34,13 @@ import { db } from '@/lib/db'
 import type { Plan } from '@/lib/types'
 import Link from 'next/link'
 import { Building2, ArrowRight } from 'lucide-react'
+// Mission 5.9.5-B Phase 2.4 — post-payment feedback banner (Client Component).
+// Mounted inside a <Suspense> boundary at the top of <main> so it can read
+// useSearchParams() for ?view=payment-success|failed|pending. The Server
+// Component renders the Suspense boundary; the Client Component does the
+// searchParams reading + the idempotent POST /api/payment/verify recheck.
+import { Suspense } from 'react'
+import { PaymentStatusBanner } from '@/components/marketing/PaymentStatusBanner'
 import MarketingHero from '@/components/marketing/MarketingHero'
 import ProductPromise from '@/components/marketing/ProductPromise'
 import RealCapabilities from '@/components/marketing/RealCapabilities'
@@ -264,6 +271,16 @@ export default async function MarketingHome() {
 
   return (
     <main id="main" className="min-h-screen bg-background text-foreground">
+      {/* ── Mission 5.9.5-B Phase 2.4 — Post-payment feedback banner ─────────── */}
+      {/* Reads ?view=payment-success|failed|pending and renders a banner with
+          the result of the Charow redirect. The Suspense boundary is required
+          because PaymentStatusBanner uses useSearchParams() (Client Component).
+          fallback={null} so the page renders normally while the banner is
+          hydrating — the user doesn't see a layout shift. */}
+      <Suspense fallback={null}>
+        <PaymentStatusBanner />
+      </Suspense>
+
       {/* ── Mission 6.0 P1.9 — Espace Agences banner (top strip) ─────────────── */}
       {/* Thin top-of-page strip inviting agencies to sign up. Placed ABOVE the
           hero so it's prominent on first paint without breaking the existing

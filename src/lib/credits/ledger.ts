@@ -338,14 +338,71 @@ export async function releaseCredits(reservationId: string, opts?: { createdBy?:
 // ─── refundCredits ─────────────────────────────────────────────────────────────
 // Adds N credits back to the balance (post-consumption refund). Writes a REFUND
 // CreditTransaction. For pre-consumption cancellations, use releaseCredits.
+//
+// P595B-P3-5 (Phase 4.4) — Idempotency on `idempotencyKey` (optional, backward-
+// compatible). If two callers pass the same key, the second call is a no-op
+// returning the current balance (skipped=true). The CreditTransaction model
+// has NO `idempotencyKey` column (unlike CreditReservation), so the key is
+// encoded in the `note` field as a `[idem:KEY] ` prefix and the dedup lookup
+// uses `note: { contains: '[idem:KEY]' }`. This is robust because:
+//   - the prefix is deterministic and unambiguous
+//   - the lookup is scoped to (weddingId, creditType, reason='REFUND')
+//   - the marker is unique enough that a false-positive collision would
+//     require an operator to manually craft a note starting with the exact
+//     marker string for the same weddingId+creditType — vanishingly unlikely
 export async function refundCredits(params: {
   weddingId: string
   creditType: CreditTypeCode
   quantity: number
   note?: string
   createdBy?: string
-}): Promise<{ refunded: number; balance: number }> {
+  idempotencyKey?: string
+}): Promise<{ refunded: number; balance: number; skipped?: boolean }> {
   if (params.quantity <= 0) return { refunded: 0, balance: 0 }
+
+  // P595B-P3-5 — Idempotency guard. Look up a prior REFUND CreditTransaction
+  // whose note carries the same `[idem:KEY]` marker. If found, return early.
+  if (params.idempotencyKey) {
+    const marker = `[idem:${params.idempotencyKey}]`
+    try {
+      const existing = await db.creditTransaction.findFirst({
+        where: {
+          weddingId: params.weddingId,
+          creditType: params.creditType,
+          reason: 'REFUND',
+          note: { contains: marker },
+        },
+        select: { id: true, delta: true },
+      })
+      if (existing) {
+        logger.info('ledger.refundCredits: idempotent skip', {
+          weddingId: params.weddingId,
+          creditType: params.creditType,
+          idempotencyKey: params.idempotencyKey,
+          existingDelta: existing.delta,
+        })
+        const credit = await getBalance(params.weddingId, params.creditType)
+        return { refunded: 0, balance: credit?.balance || 0, skipped: true }
+      }
+    } catch (err) {
+      // Look-up failure is non-fatal: proceed without the idempotency guard.
+      // Better to double-refund (operator can roll back via DB) than to crash
+      // a refund path that may be called from a webhook.
+      logger.warn('ledger.refundCredits: idempotency check failed, proceeding without guard', {
+        error: String(err),
+        weddingId: params.weddingId,
+      })
+    }
+  }
+
+  // Build the note: prepend the idempotency marker so future calls can dedup.
+  // When no idempotencyKey is provided, the original note (or default string)
+  // is used unchanged — preserves the pre-P595B wire format for old callers.
+  const baseNote = params.note || `Refunded ${params.quantity} ${params.creditType} credits`
+  const noteWithMarker = params.idempotencyKey
+    ? `[idem:${params.idempotencyKey}] ${baseNote}`
+    : baseNote
+
   const [credit, ,] = await db.$transaction([
     db.credit.update({
       where: { weddingId_type: { weddingId: params.weddingId, type: params.creditType } },
@@ -364,7 +421,7 @@ export async function refundCredits(params: {
         creditType: params.creditType,
         delta: params.quantity,
         reason: 'REFUND',
-        note: params.note || `Refunded ${params.quantity} ${params.creditType} credits`,
+        note: noteWithMarker,
         createdBy: params.createdBy || null,
       },
     }),
@@ -374,13 +431,55 @@ export async function refundCredits(params: {
 
 // ─── expireCredits ─────────────────────────────────────────────────────────────
 // Removes N credits from the balance (e.g. expired trial credits).
+//
+// P595B-P3-5 (Phase 4.4) — Idempotency on `idempotencyKey` (optional, backward-
+// compatible). Same approach as refundCredits: encode the key in `note` as
+// `[idem:KEY] ` and look up prior ADJUSTMENT rows carrying the marker.
 export async function expireCredits(params: {
   weddingId: string
   creditType: CreditTypeCode
   quantity: number
   note?: string
-}): Promise<{ expired: number; balance: number }> {
+  idempotencyKey?: string
+}): Promise<{ expired: number; balance: number; skipped?: boolean }> {
   if (params.quantity <= 0) return { expired: 0, balance: 0 }
+
+  // P595B-P3-5 — Idempotency guard. Same note-marker approach as refundCredits.
+  if (params.idempotencyKey) {
+    const marker = `[idem:${params.idempotencyKey}]`
+    try {
+      const existing = await db.creditTransaction.findFirst({
+        where: {
+          weddingId: params.weddingId,
+          creditType: params.creditType,
+          reason: 'ADJUSTMENT',
+          note: { contains: marker },
+        },
+        select: { id: true, delta: true },
+      })
+      if (existing) {
+        logger.info('ledger.expireCredits: idempotent skip', {
+          weddingId: params.weddingId,
+          creditType: params.creditType,
+          idempotencyKey: params.idempotencyKey,
+          existingDelta: existing.delta,
+        })
+        const credit = await getBalance(params.weddingId, params.creditType)
+        return { expired: 0, balance: credit?.balance || 0, skipped: true }
+      }
+    } catch (err) {
+      logger.warn('ledger.expireCredits: idempotency check failed, proceeding without guard', {
+        error: String(err),
+        weddingId: params.weddingId,
+      })
+    }
+  }
+
+  const baseNote = params.note || `Expired ${params.quantity} ${params.creditType} credits`
+  const noteWithMarker = params.idempotencyKey
+    ? `[idem:${params.idempotencyKey}] ${baseNote}`
+    : baseNote
+
   const [credit, ,] = await db.$transaction([
     db.credit.update({
       where: { weddingId_type: { weddingId: params.weddingId, type: params.creditType } },
@@ -396,7 +495,7 @@ export async function expireCredits(params: {
         creditType: params.creditType,
         delta: -params.quantity,
         reason: 'ADJUSTMENT',
-        note: params.note || `Expired ${params.quantity} ${params.creditType} credits`,
+        note: noteWithMarker,
       },
     }),
   ])

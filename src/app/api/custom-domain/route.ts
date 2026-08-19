@@ -8,6 +8,8 @@ import { buildVerificationToken } from '@/lib/dns-verification';
 import { getClientInfo } from '@/lib/guest-auth';
 import { badRequest, internalError } from '@/lib/api-errors';
 import { logger } from '@/lib/logger';
+// P595B-P1 (Phase 9): entitlement lookup for the CUSTOM_DOMAIN feature flag.
+import { getEntitlementOverride } from '@/lib/plan-limits';
 
 // GET /api/custom-domain — public, returns the custom domain config for the resolved wedding
 export const GET = withPublicTenant(async (_req, ctx) => {
@@ -54,9 +56,33 @@ export async function PUT(request: NextRequest) {
         where: { id: ctx.weddingId },
         select: { plan: true },
       });
-      if (!planSupportsCustomDomain(wedding?.plan ?? ctx.plan)) {
+
+      // ─── P595B-P1-4 — Entitlement override short-circuit (Phase 9) ────
+      // If the wedding has a provisioned CUSTOM_DOMAIN Entitlement with
+      // value='true', honour it EVEN IF the static plan doesn't normally
+      // include custom domains. This supports manual grants / promotions:
+      // a TRIAL wedding can be granted a CUSTOM_DOMAIN Entitlement by the
+      // platform admin without upgrading the plan.
+      //
+      // getEntitlementOverride returns:
+      //   - true   → explicitly granted → SKIP plan check
+      //   - false  → explicitly denied  → reject (the row exists and says no)
+      //   - null   → no row              → fall back to plan-based check
+      // The override takes precedence over the plan; if no override exists,
+      // the legacy planSupportsCustomDomain(plan) check runs unchanged.
+      const customDomainEntitled = await getEntitlementOverride(ctx.weddingId, 'CUSTOM_DOMAIN');
+      if (customDomainEntitled === true) {
+        // Override granted — skip the plan-based check.
+        // (Fall through to validateCustomDomain below.)
+      } else if (customDomainEntitled === false) {
+        // Explicit denial — reject even if the plan would allow it.
         return NextResponse.json(
-          { error: 'Votre plan ne supporte pas les domaines personnalisés. Passez à Premium ou Élite.' },
+          { error: 'Votre formule ne supporte pas les domaines personnalisés. Passez à Premium ou supérieur.', plan: wedding?.plan ?? ctx.plan, entitlement: 'CUSTOM_DOMAIN' },
+          { status: 403 }
+        );
+      } else if (!planSupportsCustomDomain(wedding?.plan ?? ctx.plan)) {
+        return NextResponse.json(
+          { error: 'Votre formule ne supporte pas les domaines personnalisés. Passez à Premium ou supérieur.' },
           { status: 403 }
         );
       }

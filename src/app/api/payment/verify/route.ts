@@ -80,6 +80,29 @@ export async function GET(req: Request) {
     return NextResponse.redirect(new URL('/?view=payment-failed&reason=amount_mismatch', origin))
   }
 
+  // ── P595B-P2-1 — Currency cross-check (GET path) ──────────────────
+  // Mirrors the POST path: if Charow reports a currency different from the
+  // Payment row, the customer may have been charged in a different currency
+  // than the platform recorded — refuse to provision.
+  if (sale.currency && payment.currency && sale.currency !== payment.currency) {
+    console.error(`[payment/verify GET] Currency mismatch: sale=${sale.currency} payment=${payment.currency} saleId=${saleId}`)
+    await db.auditLog.create({
+      data: {
+        weddingId: payment.order.weddingId || null,
+        userId: null,
+        action: 'PAYMENT_REJECTED',
+        details: JSON.stringify({
+          reason: 'currency_mismatch_get',
+          saleId,
+          saleCurrency: sale.currency,
+          paymentCurrency: payment.currency,
+          paymentId: payment.id,
+        }),
+      },
+    }).catch(() => null)
+    return NextResponse.redirect(new URL('/?view=payment-failed&reason=currency_mismatch', origin))
+  }
+
   // PAID → confirm + verify (auto-provision)
   try {
     if (payment.order.status !== 'CONFIRMED') {
@@ -168,6 +191,28 @@ export async function POST(req: Request) {
       },
     }).catch(() => null)
     return NextResponse.json({ error: 'Écart de montant détecté. Paiement rejeté.' }, { status: 400 })
+  }
+
+  // ── P595B-P2-1 — Currency cross-check (POST path) ───────────────────
+  // Refuse to provision if the currency reported by Charow differs from the
+  // Payment row. A mismatch could indicate the customer was charged in a
+  // different currency than the platform expected, or a Charow payload bug.
+  if (sale.currency && payment.currency && sale.currency !== payment.currency) {
+    await rejectPayment(payment.id, `CURRENCY_MISMATCH expected=${payment.currency} got=${sale.currency}`)
+    await db.auditLog.create({
+      data: {
+        weddingId: payment.order.weddingId || null,
+        userId: user.id,
+        action: 'PAYMENT_REJECTED',
+        details: JSON.stringify({
+          paymentId: payment.id,
+          reason: 'CURRENCY_MISMATCH',
+          expected: payment.currency,
+          got: sale.currency,
+        }),
+      },
+    }).catch(() => null)
+    return NextResponse.json({ error: 'Écart de devise détecté. Paiement rejeté.' }, { status: 400 })
   }
 
   // ── 6. PAID → confirm order + verify payment (auto-provisions) ──────

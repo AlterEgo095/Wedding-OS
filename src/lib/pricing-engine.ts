@@ -244,7 +244,21 @@ export async function computePrice(params: {
 }): Promise<PriceQuote> {
   const customerType = (params.customerType || 'STANDARD') as CustomerTier
   const creditType = (params.creditType || 'INVITATION') as CreditTypeCode
-  const quantity = Math.max(0, Math.floor(params.quantity))
+  // P595B-P3-3 (Phase 1.7) — Cap quantity at 100000 to prevent the Infinity
+  // edge case: a malicious client could send quantity=Infinity, and since
+  // Math.floor(Infinity) === Infinity, the downstream arithmetic would
+  // produce NaN/Infinity totals (e.g. computeFlatTier's
+  // `quantity * selectedTier.priceCents` → Infinity × 50 = Infinity).
+  // The cap is well above any realistic bulk-generation request (the bulk
+  // route itself enforces a 500/guestIds cap), so legitimate traffic is
+  // unaffected. Also falls back to 0 when params.quantity is non-numeric.
+  //
+  // NOTE: This is the ONLY behavioural change to computePrice for Mission
+  // 5.9.5-B. The FLAT_TIER rule (computeFlatTier), TIERED marginal logic
+  // (computeTiered), the DEFAULT_CONFIG seeding, and the cache are
+  // ABSOLUTELY UNCHANGED — the Mission 5.9.5-A VERROU COMMERCIAL lock is
+  // preserved (250→$175, 251→$125.50 etc. all still hold).
+  const quantity = Math.min(Math.max(0, Math.floor(Number(params.quantity) || 0)), 100000)
 
   const config = await loadActiveConfig()
   const rule: LoadedRule = config.get(`${customerType}|${creditType}`)

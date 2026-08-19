@@ -259,6 +259,56 @@ export async function provisionFromOrder(orderId: string, provisionedById: strin
       })
     }
 
+    // P595B-P1-8 — Subscription provisioning for plan items (ESSENTIEL/PREMIUM/ELITE).
+    // Idempotent: upsert on weddingId (unique). If a Subscription already exists
+    // (e.g. created manually by admin or by Stripe webhook), update its plan +
+    // status + paidAt. If not, create one.
+    //
+    // NOTE on `source` field: the Subscription model does NOT have a `source`
+    // column (verified in prisma/schema.prisma). Only `paymentMethod` is set
+    // here ('CHAROW') so we can tell apart Charow-paid vs Stripe-paid
+    // subscriptions via the existing column.
+    const planItem = order.items.find((it) => it.planId && it.planId !== 'PER_INVITATION')
+    if (planItem && planItem.planId) {
+      const planCode = planItem.planId as 'ESSENTIEL' | 'PREMIUM' | 'ELITE'
+      // Look up the Plan row to get the authoritative priceUsdCents (so the
+      // amountAgreed reflects the platform's price, not whatever the customer
+      // was charged — a discrepancy is a billing issue, not a provisioning
+      // issue, and is surfaced elsewhere).
+      const planRow = await db.plan.findUnique({ where: { id: planCode } }).catch(() => null)
+      const amountAgreed = planRow?.priceUsdCents ?? 0
+      await db.subscription.upsert({
+        where: { weddingId: order.weddingId },
+        update: {
+          plan: planCode,
+          status: 'ACTIVE',
+          amountAgreed,
+          currency: order.currency,
+          billingCycle: 'ONE_TIME',
+          paidAt: new Date(),
+          activatedAt: new Date(),
+          paymentMethod: 'CHAROW',
+        },
+        create: {
+          weddingId: order.weddingId,
+          plan: planCode,
+          status: 'ACTIVE',
+          amountAgreed,
+          currency: order.currency,
+          billingCycle: 'ONE_TIME',
+          currentPeriodStart: new Date(),
+          paidAt: new Date(),
+          activatedAt: new Date(),
+          paymentMethod: 'CHAROW',
+        },
+      }).catch((err) => {
+        // Non-blocking: subscription provisioning failure must not roll back
+        // the entitlements + commercialStatus writes above. The admin can
+        // manually create/repair the Subscription row via the platform route.
+        logger.error('provisionFromOrder: subscription upsert failed (non-blocking)', { error: String(err), orderId, planCode })
+      })
+    }
+
     // P2.6 — Route the commercialStatus='PAID' write through the state
     // machine (transitionCommercialStatus) instead of a direct db update.
     // This (a) validates the transition is legal (e.g. PENDING_PAYMENT → PAID

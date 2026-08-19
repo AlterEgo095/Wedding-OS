@@ -11,6 +11,8 @@ import { z } from 'zod';
 import { checkRateLimitAsync, getRateLimitKey } from '@/lib/rate-limit'; // P0.7
 // P2.4: usage metering (QR_SCANS counter increment after successful check-in).
 import { incrementUsage } from '@/lib/usage';
+// P595B-P1 (Phase 9): entitlement lookup for the CHECK_IN feature flag.
+import { getEntitlementOverride } from '@/lib/plan-limits';
 
 /**
  * POST /api/check-in
@@ -37,6 +39,14 @@ import { incrementUsage } from '@/lib/usage';
  * returns null. This is the fail-closed multi-tenant guarantee.
  *
  * Auth: CONTROLLER+ (reception staff can check in guests).
+ *
+ * P595B-P1-3 (Phase 9) — CHECK_IN entitlement enforcement:
+ *   In addition to role + tenant scope, the wedding must hold a CHECK_IN
+ *   entitlement (provisioned by provisionFromOrder for ESSENTIEL+). A wedding
+ *   that was downgraded after provisioning (e.g. PREMIUM → TRIAL with the
+ *   entitlement row explicitly set to value='false') is rejected with 402
+ *   before the QR scan is processed. This closes the "STORED_ONLY" gap
+ *   identified in Mission 5.9.5-B ENTITLEMENT-MATRIX.
  */
 
 // CONS-7 task 5 — Zod schema for check-in.
@@ -66,6 +76,31 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { error: tenantError?.message },
         { status: tenantError?.status ?? 500 }
+      );
+    }
+
+    // ─── P595B-P1-3 — Enforce CHECK_IN entitlement ───────────────────────
+    // A wedding whose plan was downgraded (e.g. ESSENTIEL → TRIAL) must not
+    // be able to scan QR codes on event day if the CHECK_IN entitlement is
+    // gone. provisionFromOrder writes value='true' for ESSENTIEL/PREMIUM/ELITE
+    // plans; if a downgrade flips the row to value='false' (or the row is
+    // missing entirely), we reject with 402.
+    //
+    // Semantics: `getEntitlementOverride` returns
+    //   - true    → explicitly granted (value='true')
+    //   - false   → explicitly denied  (value='false')
+    //   - number  → numeric limit (not applicable to CHECK_IN)
+    //   - null    → no row → wedding predates entitlements (legacy compat:
+    //               allow the scan; the wedding's commercial status is the
+    //               only gate that applies)
+    const checkInEntitled = await getEntitlementOverride(context.weddingId, 'CHECK_IN');
+    if (checkInEntitled === false) {
+      return NextResponse.json(
+        {
+          error: 'Votre formule ne permet pas le check-in des invités. Passez à Essentiel ou supérieur.',
+          entitlement: 'CHECK_IN',
+        },
+        { status: 402 }
       );
     }
 

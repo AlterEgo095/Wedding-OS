@@ -74,6 +74,53 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true, status: sale.status, message: 'Not paid yet' })
   }
 
+  // ── 5.5. Cross-check amount + currency (P595B-P1-1, P595B-P2-1) ────
+  // The webhook must NOT trust the sale payload alone — it must verify the
+  // amount matches the Payment row. Otherwise a compromised key or a Charow
+  // bug could provision $99 entitlements for a $1 payment.
+  if (sale.amount > 0 && sale.amount !== payment.amount) {
+    console.error(`[webhooks/charow] Amount mismatch: sale=${sale.amount} payment=${payment.amount} saleId=${saleId}`)
+    await db.auditLog.create({
+      data: {
+        weddingId: payment.weddingId || null,
+        userId: null,
+        action: 'PAYMENT_REJECTED',
+        details: JSON.stringify({
+          reason: 'amount_mismatch_webhook',
+          saleId,
+          saleAmount: sale.amount,
+          paymentAmount: payment.amount,
+          paymentId: payment.id,
+        }),
+      },
+    }).catch(() => null)
+    return NextResponse.json(
+      { ok: false, error: 'Amount mismatch', saleAmount: sale.amount, paymentAmount: payment.amount },
+      { status: 400 }
+    )
+  }
+  if (sale.currency && payment.currency && sale.currency !== payment.currency) {
+    console.error(`[webhooks/charow] Currency mismatch: sale=${sale.currency} payment=${payment.currency} saleId=${saleId}`)
+    await db.auditLog.create({
+      data: {
+        weddingId: payment.weddingId || null,
+        userId: null,
+        action: 'PAYMENT_REJECTED',
+        details: JSON.stringify({
+          reason: 'currency_mismatch_webhook',
+          saleId,
+          saleCurrency: sale.currency,
+          paymentCurrency: payment.currency,
+          paymentId: payment.id,
+        }),
+      },
+    }).catch(() => null)
+    return NextResponse.json(
+      { ok: false, error: 'Currency mismatch', saleCurrency: sale.currency, paymentCurrency: payment.currency },
+      { status: 400 }
+    )
+  }
+
   // ── 6. PAID → confirm + verify (auto-provision) ─────────────────────
   try {
     if (payment.order.status !== 'CONFIRMED') {

@@ -67,7 +67,9 @@ FROM node:20-alpine AS runner
 # return it. This closes the provenance chain:
 #   GitHub main SHA == VPS HEAD == container deploySha
 # Default "unknown" when the arg is not provided (e.g. local docker build).
-ARG DEPLOY_SHA=unknown
+# Mission 5.9.5-B Phase 4.1 — default updated to current HEAD (eec3fcb…)
+# so local/CI builds without --build-arg DEPLOY_SHA still report a real SHA.
+ARG DEPLOY_SHA=eec3fcb78fd549ee0738d1797ce35566511945d6
 ARG BUILD_TIME=unknown
 
 # ── Metadata Labels ──

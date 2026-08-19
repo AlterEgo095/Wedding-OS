@@ -780,10 +780,19 @@ export async function runDeploymentPipeline(
     // When a product is found, we verify that every collectionId in its bundle
     // is accessible (i.e. the wedding's collectionId matches one of them, OR
     // the wedding has an entitlement granting access).
+    //
+    // P595B-P2-7 (Phase 9, tightening) — the previous query matched ANY
+    // Entitlement row with a productId (any type). That worked in practice
+    // because only PREMIUM_COLLECTIONS rows ever carry a productId, but it
+    // was brittle: if another type ever gained a productId (e.g. a future
+    // ADD_ON module entitlement), the gate would silently widen. Now the
+    // query explicitly filters type='PREMIUM_COLLECTIONS' so the gate is
+    // self-documenting and cannot accidentally widen.
     await runStage(runner, 'resolveProducts', async () => {
       const productEntitlement = await db.entitlement.findFirst({
         where: {
           weddingId: wedding.id,
+          type: 'PREMIUM_COLLECTIONS',
           productId: { not: null },
         },
         orderBy: { createdAt: 'desc' },
@@ -1508,6 +1517,5 @@ export async function retryDeployment(
     triggeredBy,
   });
 }
-
 
 

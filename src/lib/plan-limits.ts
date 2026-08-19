@@ -44,7 +44,11 @@ import { PLAN_LIMITS, isPlatformAdmin, type Plan } from './types';
  * MAX_MEDIA_BYTES so that checkAdminLimit, checkMediaLimit, and the new
  * checkInvitationLimit all share the same override-lookup path.
  */
-async function getEntitlementOverride(
+// P595B-P1 (Phase 9) — Exported so route handlers (check-in, custom-domain,
+// bulk invitations) can re-use the same override-lookup path instead of
+// duplicating the Entitlement query. Previously private; this is the only
+// change required to wire the stored-but-unenforced entitlements.
+export async function getEntitlementOverride(
   weddingId: string,
   type:
     | 'MAX_GUESTS'
