@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { revalidatePath } from 'next/cache';
 import { db, tenantDb } from '@/lib/db';
 import { getAuthUser, hasPermission } from '@/lib/auth';
-import { withPublicTenant, withAdminTenantHandler } from '@/lib/tenant-context';
+import { withPublicTenant, withAdminTenantHandler, invalidateWeddingCache } from '@/lib/tenant-context';
 // P2-SEC-1: structured logger (no stack leak).
 import { logger } from '@/lib/logger';
 // P2-CQ-5: standardised API errors.
@@ -96,6 +96,10 @@ export async function PUT(request: NextRequest) {
       revalidatePath('/w/[slug]', 'page');
       revalidatePath('/w/[slug]/invite/[code]', 'page');
       revalidatePath('/');
+      // V4.7 F-03 — bust the unstable_cache({ tags: ['wedding-{slug}'] })
+      // data layer too. revalidatePath busts the route cache; invalidateWeddingCache
+      // busts the in-memory L1 + the Next.js ISR L2 via revalidateTag.
+      invalidateWeddingCache(ctx.slug);
 
       const updatedSettings = await tenantDb.settings.findMany({ orderBy: { key: 'asc' } });
       const settingsMap: Record<string, string> = {};

@@ -68,6 +68,11 @@ export default function GuestSearch({ initialCode }: { initialCode?: string }) {
   const [results, setResults] = useState<GuestResult[]>([])
   const [loading, setLoading] = useState(false)
   const [searched, setSearched] = useState(false)
+  // V4.8 F-05 — couple photos are now tenant-scoped via /api/settings.
+  // Hardcoded '/uploads/couple-photo-{1,2}.jpeg' fallback removed.
+  const [settings, setSettings] = useState<Record<string, string>>({})
+  const couplePhoto1 = settings.couple_photo_1 || ''
+  const couplePhoto2 = settings.couple_photo_2 || ''
   const [qrDialogOpen, setQrDialogOpen] = useState(false)
   const [qrData, setQrData] = useState<QRData | null>(null)
   const [qrLoading, setQrLoading] = useState(false)
@@ -75,6 +80,25 @@ export default function GuestSearch({ initialCode }: { initialCode?: string }) {
   const [selectedGuest, setSelectedGuest] = useState<GuestResult | null>(null)
   const [selectedQrCodeUrl, setSelectedQrCodeUrl] = useState<string | undefined>(undefined)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // V4.8 F-05 — fetch tenant settings on mount to populate couple photos.
+  // /api/settings is tenant-scoped via the X-Wedding-Slug header set by
+  // the WeddingContext provider, so each wedding renders its own photos.
+  useEffect(() => {
+    let cancelled = false
+    fetch('/api/settings').then(r => r.ok ? r.json() : null).then(data => {
+      if (cancelled) return
+      const raw = data?.settings
+      if (!raw) return
+      const obj: Record<string, string> = {}
+      if (Array.isArray(raw)) {
+        for (const item of raw) obj[item.key] = item.value
+      } else {
+        Object.assign(obj, raw)
+      }
+      setSettings(obj)
+    }).catch(() => {})
+    return () => { cancelled = true }
+  }, [])
   const sectionRef = useRef<HTMLDivElement>(null)
   const isInView = useInView(sectionRef, { once: true, margin: '-100px' })
 
@@ -157,7 +181,7 @@ export default function GuestSearch({ initialCode }: { initialCode?: string }) {
       <div className="absolute inset-0 pointer-events-none overflow-hidden">
         <div className="absolute -top-20 -left-20 w-72 h-72 rounded-full opacity-[0.04]">
           <img
-            src="/uploads/couple-photo-1.jpeg"
+            src={couplePhoto1}
             alt=""
             className="w-full h-full object-cover rounded-full"
             aria-hidden="true"
@@ -165,7 +189,7 @@ export default function GuestSearch({ initialCode }: { initialCode?: string }) {
         </div>
         <div className="absolute -bottom-20 -right-20 w-72 h-72 rounded-full opacity-[0.04]">
           <img
-            src="/uploads/couple-photo-2.jpeg"
+            src={couplePhoto2}
             alt=""
             className="w-full h-full object-cover rounded-full"
             aria-hidden="true"
@@ -190,7 +214,7 @@ export default function GuestSearch({ initialCode }: { initialCode?: string }) {
               className="w-16 h-16 sm:w-20 sm:h-20 rounded-full overflow-hidden gold-border shadow-lg shadow-gold/10"
             >
               <img
-                src="/uploads/couple-photo-1.jpeg"
+                src={couplePhoto1}
                 alt="Marié"
                 className="w-full h-full object-cover"
               />
@@ -212,7 +236,7 @@ export default function GuestSearch({ initialCode }: { initialCode?: string }) {
               className="w-16 h-16 sm:w-20 sm:h-20 rounded-full overflow-hidden gold-border shadow-lg shadow-gold/10"
             >
               <img
-                src="/uploads/couple-photo-2.jpeg"
+                src={couplePhoto2}
                 alt="Mariée"
                 className="w-full h-full object-cover"
               />
@@ -313,7 +337,7 @@ export default function GuestSearch({ initialCode }: { initialCode?: string }) {
                       <div className="shrink-0 hidden sm:block">
                         <div className="w-12 h-12 rounded-full overflow-hidden gold-border shadow-sm">
                           <img
-                            src="/uploads/couple-photo-1.jpeg"
+                            src={couplePhoto1}
                             alt=""
                             className="w-full h-full object-cover"
                             aria-hidden="true"
@@ -433,7 +457,7 @@ export default function GuestSearch({ initialCode }: { initialCode?: string }) {
               <div className="flex items-center justify-center gap-3 mb-6">
                 <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-full overflow-hidden gold-border shadow-lg shadow-gold/10">
                   <img
-                    src="/uploads/couple-photo-1.jpeg"
+                    src={couplePhoto1}
                     alt="Marié"
                     className="w-full h-full object-cover"
                   />
@@ -446,7 +470,7 @@ export default function GuestSearch({ initialCode }: { initialCode?: string }) {
                 </motion.div>
                 <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-full overflow-hidden gold-border shadow-lg shadow-gold/10">
                   <img
-                    src="/uploads/couple-photo-2.jpeg"
+                    src={couplePhoto2}
                     alt="Mariée"
                     className="w-full h-full object-cover"
                   />

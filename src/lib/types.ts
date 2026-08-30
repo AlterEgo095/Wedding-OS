@@ -246,7 +246,7 @@ export function isValidSlug(slug: string): boolean {
 /**
  * Default wedding slug — the legacy client served at root "/".
  */
-export const DEFAULT_WEDDING_SLUG = 'josue-hornella';
+export const DEFAULT_WEDDING_SLUG: string | null = null; // V4.8 F-04 — no real wedding default; tenant resolver now fails closed.
 
 /**
  * Generate a unique slug from a couple's names.

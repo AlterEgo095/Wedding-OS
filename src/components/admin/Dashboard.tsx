@@ -72,8 +72,8 @@ export default function Dashboard({ token, onSessionExpired }: DashboardProps) {
   const siteSubtitle = settings.site_subtitle || ''
   const brideName = settings.bride_name || ''
   const groomName = settings.groom_name || ''
-  const couplePhoto1 = settings.couple_photo_1 || '/uploads/couple-photo-1.jpeg'
-  const couplePhoto2 = settings.couple_photo_2 || '/uploads/couple-photo-2.jpeg'
+  const couplePhoto1 = settings.couple_photo_1 || ''  // V4.8 F-05 - no leak of default wedding photos
+  const couplePhoto2 = settings.couple_photo_2 || ''  // V4.8 F-05 - no leak of default wedding photos
 
   const fetchDashboard = async () => {
     try {

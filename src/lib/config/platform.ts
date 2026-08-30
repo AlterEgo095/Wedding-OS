@@ -16,7 +16,7 @@ export const PLATFORM = {
   currencies: ['usd', 'eur', 'fcfa'] as const,
 } as const;
 
-export const DEFAULT_WEDDING_SLUG = 'josue-hornella';
+export const DEFAULT_WEDDING_SLUG: string | null = null; // V4.8 F-04 — multi-tenant safety: NO real wedding default.
 
 export const WEDDING_STATUS = {
   DRAFT: 'DRAFT',

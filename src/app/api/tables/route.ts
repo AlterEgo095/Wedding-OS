@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { revalidatePath } from 'next/cache';
 import { db, tenantDb } from '@/lib/db';
 import { getAuthUser, hasPermission } from '@/lib/auth';
-import { withAdminTenantHandler } from '@/lib/tenant-context';
+import { withAdminTenantHandler, invalidateWeddingCache } from '@/lib/tenant-context';
 // P2-SEC-1: structured logger (no stack leak).
 import { logger } from '@/lib/logger';
 // P2-CQ-5: standardised API errors.
@@ -30,7 +30,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Forbidden — insufficient permissions' }, { status: 403 });
     }
 
-    return withAdminTenantHandler(request, user, async (_req, _ctx) => {
+    return withAdminTenantHandler(request, user, async (_req, ctx) => {
       const tables = await tenantDb.table.findMany({
         include: { _count: { select: { guests: true } } },
         orderBy: { number: 'asc' },
@@ -111,6 +111,10 @@ export async function POST(request: NextRequest) {
       revalidatePath('/w/[slug]', 'page');
       revalidatePath('/w/[slug]/invite/[code]', 'page');
       revalidatePath('/');
+      // V4.7 F-03 — bust the unstable_cache({ tags: ['wedding-{slug}'] })
+      // data layer too. revalidatePath busts the route cache; invalidateWeddingCache
+      // busts the in-memory L1 + the Next.js ISR L2 via revalidateTag.
+      invalidateWeddingCache(ctx.slug);
 
       return NextResponse.json({ table }, { status: 201 });
     });
@@ -171,6 +175,10 @@ export async function PUT(request: NextRequest) {
       revalidatePath('/w/[slug]', 'page');
       revalidatePath('/w/[slug]/invite/[code]', 'page');
       revalidatePath('/');
+      // V4.7 F-03 — bust the unstable_cache({ tags: ['wedding-{slug}'] })
+      // data layer too. revalidatePath busts the route cache; invalidateWeddingCache
+      // busts the in-memory L1 + the Next.js ISR L2 via revalidateTag.
+      invalidateWeddingCache(ctx.slug);
 
       return NextResponse.json({ table });
     });
@@ -224,6 +232,10 @@ export async function DELETE(request: NextRequest) {
       revalidatePath('/w/[slug]', 'page');
       revalidatePath('/w/[slug]/invite/[code]', 'page');
       revalidatePath('/');
+      // V4.7 F-03 — bust the unstable_cache({ tags: ['wedding-{slug}'] })
+      // data layer too. revalidatePath busts the route cache; invalidateWeddingCache
+      // busts the in-memory L1 + the Next.js ISR L2 via revalidateTag.
+      invalidateWeddingCache(ctx.slug);
 
       return NextResponse.json({ message: 'Table deleted successfully' });
     });

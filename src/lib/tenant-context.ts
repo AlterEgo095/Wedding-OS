@@ -20,7 +20,7 @@
 
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { NextRequest } from 'next/server';
-import { DEFAULT_WEDDING_SLUG, isPlatformAdmin, isOrgRole } from './types';
+import { isPlatformAdmin, isOrgRole } from './types';
 
 // ─── Lazy db getter (breaks circular import) ─────────────────────────────────
 // Cycle was: db.ts → tenant-scoped.ts → tenant-context.ts → db.ts
@@ -197,14 +197,13 @@ export async function resolveWeddingBySlug(slug: string): Promise<CachedWedding 
  * Cached like any other wedding.
  */
 export async function resolveDefaultWedding(): Promise<CachedWedding> {
-  const wedding = await resolveWeddingBySlug(DEFAULT_WEDDING_SLUG);
-  if (!wedding) {
-    throw new Error(
-      `Default wedding "${DEFAULT_WEDDING_SLUG}" not found in DB. ` +
-      'Run `bun run scripts/migrate-phase1.ts` to create it.'
-    );
-  }
-  return wedding;
+  // V4.8 F-04 - DEFAULT_WEDDING_SLUG is now null. The legacy "default wedding"
+  // concept is removed to prevent any real wedding from being implicitly
+  // selected for unscoped requests. Callers must pass an explicit slug.
+  throw new Error(
+    'Default wedding disabled (V4.8 F-04). ' +
+    'All tenant resolution requires an explicit slug via header, query, or body.'
+  );
 }
 
 /**
@@ -337,7 +336,21 @@ export async function resolvePublicTenant(
     slug = slugOverride.trim().toLowerCase();
   } else {
     const headerOrQuery = extractSlugFromRequest(request);
-    slug = headerOrQuery ?? DEFAULT_WEDDING_SLUG;
+    // V4.8 F-04 - fail closed when no explicit slug is provided.
+    // Previously fell back to DEFAULT_WEDDING_SLUG ('josue-hornella'), which
+    // caused unscoped requests (e.g. root URL with no header) to silently
+    // authenticate against the wrong (real) wedding.
+    if (!headerOrQuery) {
+      return {
+        context: null,
+        wedding: null,
+        error: {
+          status: 404,
+          message: 'No wedding specified. Provide X-Wedding-Slug header, ?wedding= query, or weddingSlug in body.',
+        },
+      };
+    }
+    slug = headerOrQuery;
   }
   const wedding = await resolveWeddingBySlug(slug);
 
@@ -446,7 +459,16 @@ export async function resolveAdminTenant(
 }> {
   // ─── Path 1: Platform admin ────────────────────────────────────────────
   if (isPlatformAdmin(user.role)) {
-    const slug = extractSlugFromRequest(request) ?? DEFAULT_WEDDING_SLUG;
+    // V4.8 F-04 - platform admin must pass an explicit slug. No default.
+    const extractedSlug = extractSlugFromRequest(request);
+    if (!extractedSlug) {
+      return {
+        context: null,
+        wedding: null,
+        error: { status: 400, message: 'X-Wedding-Slug header required for platform admin requests.' },
+      };
+    }
+    const slug = extractedSlug;
     const wedding = await resolveWeddingBySlug(slug);
     if (!wedding) {
       return {

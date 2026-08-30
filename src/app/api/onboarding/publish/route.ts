@@ -1,7 +1,9 @@
 export const dynamic = 'force-dynamic';
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { getAuthUser, requirePlatformAdmin } from '@/lib/auth';
+import { getAuthUser, assertWeddingAccessAsync } from '@/lib/auth';
+// V4.7 F-01 — capability matrix is the single source of truth for who can publish.
+import { hasCapability } from '@/lib/types';
 import { invalidateWeddingCache } from '@/lib/tenant-context';
 // Phase 3 ÉTAPE 6: use the shared lifecycle matrix so this route can no
 // longer bypass the transition rules (e.g. it used to allow
@@ -20,7 +22,13 @@ import { autoTransitionToLive } from '@/lib/commercial-status';
 import { logger } from '@/lib/logger';
 
 /**
- * POST /api/onboarding/publish    (PLATFORM_ADMIN)
+ * POST /api/onboarding/publish    (ORGANIZER | ORG_ADMIN | PLATFORM_ADMIN)
+ *
+ * V4.7 F-01 — ORGANIZER PUBLICATION
+ * The publish action is gated by the `wedding:publish` capability (defined in
+ * CAPABILITY_MATRIX, src/lib/types.ts) AND by tenant isolation: an organizer
+ * may ONLY publish their OWN wedding. Cross-tenant publish attempts return
+ * 404 (no enumeration leak).
  *
  * Publish a previously-drafted wedding created via the onboarding wizard.
  * Sets status='PUBLISHED' + publishedAt=now() + invalidates the slug cache so
@@ -47,8 +55,42 @@ interface PublishBody {
 export async function POST(request: NextRequest) {
   try {
     const user = await getAuthUser(request);
-    const denied = requirePlatformAdmin(user);
-    if (denied) return denied;
+    if (!user) {
+      // Unauthenticated → 401 (no enumeration leak).
+      return NextResponse.json(
+        {
+          success: false,
+          error: {
+            code: 'AUTHENTICATION_REQUIRED',
+            message: 'Authentification requise. Veuillez vous connecter.',
+          },
+        },
+        { status: 401 },
+      );
+    }
+    // V4.7 F-01 — ORGANIZER PUBLICATION
+    // Allow any role holding the `wedding:publish` capability to publish:
+    //   - PLATFORM_ADMIN (capabilities '*')
+    //   - ORG_ADMIN
+    //   - ORGANIZER
+    // ORG_MEMBER / RECEPTION / CONTROLLER do NOT have this capability and are
+    // rejected here with 403 INSUFFICIENT_ROLE. Tenant isolation (organizer
+    // can only publish their OWN wedding) is enforced AFTER the wedding
+    // lookup via assertWeddingAccessAsync — see below.
+    if (!hasCapability(user.role, 'wedding:publish')) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: {
+            code: 'INSUFFICIENT_ROLE',
+            message: 'Permissions insuffisantes pour publier un mariage.',
+            requiredCapability: 'wedding:publish',
+            currentRole: user.role,
+          },
+        },
+        { status: 403 },
+      );
+    }
 
     const body = (await request.json().catch(() => null)) as PublishBody | null;
     if (!body || typeof body !== 'object') {
@@ -71,6 +113,19 @@ export async function POST(request: NextRequest) {
       select: { id: true, slug: true, status: true, publishedAt: true, commercialStatus: true, isDefault: true },
     });
     if (!wedding) {
+      return NextResponse.json(
+        { error: 'Mariage introuvable.' },
+        { status: 404 },
+      );
+    }
+
+    // V4.7 F-01 — TENANT ISOLATION
+    // Organizer may ONLY publish their OWN wedding. PLATFORM_ADMIN passes
+    // through (any wedding); ORG_ADMIN requires same organization; ORGANIZER
+    // requires same weddingId. We return 404 (not 403) so a cross-tenant
+    // attacker cannot enumerate wedding IDs by observing the response shape.
+    const hasAccess = await assertWeddingAccessAsync(user, wedding.id);
+    if (!hasAccess) {
       return NextResponse.json(
         { error: 'Mariage introuvable.' },
         { status: 404 },

@@ -46,6 +46,9 @@
     "skills",
     "archive",
     "seed.ts",
-    "sync-official-data.ts"
+    "sync-official-data.ts",
+    "tests",
+    "playwright.config.ts",
+    "vitest.config.ts"
   ]
 }

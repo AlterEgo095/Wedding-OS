@@ -1,3 +1,25 @@
-# Run daily SQLite backup at 02:00 — adjust path to your repo
-# Install: crontab -e → paste this line (adjust paths)
-0 2 * * * cd /opt/wedding-platform && /opt/wedding-platform/scripts/backup-db.sh >> /var/log/wedding-backup.log 2>&1
+# Wedding OS — B1 : cron backup quotidien (mécanisme réellement installé par V4.2)
+# ══════════════════════════════════════════════════════════════════════════════
+# INSTALLÉ PAR V4.2 LE 2026-08-27 (fichier /etc/cron.d/wedding-backup, 644 root:root) :
+#
+#   SHELL=/bin/bash
+#   PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+#   0 2 * * * root /opt/wedding-platform/scripts/backup-db.sh >> /var/log/wedding-backup.log 2>&1
+#
+# POURQUOI /etc/cron.d (et pas « crontab -e » comme indiqué auparavant) :
+#   - la DB vivante est dans le volume Docker, lisible uniquement par root ;
+#     un cron utilisateur aenews échouerait silencieusement sur les permissions ;
+#   - convention déjà utilisée sur ce serveur (aenewsb-backup, market-backup,
+#     ged-isipa-backup) ;
+#   - un seul fichier autonome, rollback en une commande.
+#
+# Fuseau : Africa/Kinshasa (WAT, UTC+1) — exécution 02:00 locale (serveur).
+#
+# ROLLBACK B1 (désactive le backup automatique, NE SUPPRIME AUCUN backup) :
+#   sudo rm /etc/cron.d/wedding-backup
+#
+# VÉRIFICATION :
+#   cat /etc/cron.d/wedding-backup
+#   tail -20 /var/log/wedding-backup.log
+#   ls -la /opt/wedding-platform/backups/
+#   bash /opt/wedding-platform/scripts/restore-test.sh

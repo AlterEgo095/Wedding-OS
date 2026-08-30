@@ -6,7 +6,7 @@
 // ran global deleteMany() was removed in Phase 1). It is multi-tenant-safe:
 //
 //   1. Platform admin credentials come from env vars — NEVER hardcoded:
-//        - PLATFORM_ADMIN_EMAIL (default: admin@josue-hornella.wedding)
+//        - PLATFORM_ADMIN_EMAIL (default: admin@demo.wedding)
 //        - PLATFORM_ADMIN_PASSWORD (REQUIRED in production — throws if unset)
 //      In dev, a clearly-marked dev-only password is used as a fallback.
 //
@@ -25,9 +25,16 @@
 
 import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
-import { DEFAULT_WEDDING_SLUG, buildCoupleLabel } from '../src/lib/types';
+import { buildCoupleLabel } from '../src/lib/types';
 
 const prisma = new PrismaClient();
+
+// V4.8 F-04 — DEMO_WEDDING_SLUG is a literal string used ONLY by this
+// dev/test seed. It is NOT exported, NOT used at runtime, and NOT a real
+// couple's slug. The runtime DEMO_WEDDING_SLUG is now null (no implicit
+// real-wedding selection). This seed fixture creates an obviously-demo
+// wedding with slug 'demo-wedding' for first-run development only.
+const DEMO_WEDDING_SLUG = 'demo-wedding';
 
 // ─── Platform admin bootstrap credentials (env-driven) ───────────────────────
 // In production: PLATFORM_ADMIN_PASSWORD MUST be set — the seed throws
@@ -35,7 +42,7 @@ const prisma = new PrismaClient();
 // In dev: a clearly-marked dev-only password is used as a fallback so the
 // first-run experience still works out-of-the-box.
 const PLATFORM_ADMIN_EMAIL =
-  process.env.PLATFORM_ADMIN_EMAIL || 'admin@josue-hornella.wedding';
+  process.env.PLATFORM_ADMIN_EMAIL || 'admin@demo.wedding';
 
 function resolvePlatformAdminPassword(): string {
   const env = process.env.PLATFORM_ADMIN_PASSWORD;
@@ -65,10 +72,19 @@ function resolvePlatformAdminPassword(): string {
 // set to "1" or "true" to seed them — otherwise the prod DB starts empty
 // (only the platform admin is created).
 function shouldSeedDemoData(): boolean {
+  // V4.7 F-06 — PRODUCTION HARD BLOCK.
+  // Even if SEED_DEMO_DATA=1 is set in production, we refuse to seed demo
+  // data. This closes the P0 finding (F-06.3): production DB must NEVER
+  // contain demo-wedding data (fake couple, fake guests, fake timeline).
+  // An operator who needs to seed a real wedding must use the onboarding
+  // flow (REGISTER → CREATE WEDDING → PUBLISH), NOT the seed script.
+  if (process.env.NODE_ENV === 'production') {
+    return false;
+  }
   const flag = process.env.SEED_DEMO_DATA;
   if (flag === undefined || flag === '') {
-    // Default: seed in dev, skip in prod.
-    return process.env.NODE_ENV !== 'production';
+    // Default: seed in dev (no PII concern — these are demo fixtures).
+    return true;
   }
   return flag === '1' || flag.toLowerCase() === 'true';
 }
@@ -128,23 +144,26 @@ async function main() {
   }
 
   // ─── Create or update the default wedding (Phase 1 multi-tenant) ────────
-  const coupleLabel = buildCoupleLabel('Hornella', 'Josué');
+  const coupleLabel = buildCoupleLabel('Demo Bride', 'Demo Groom');
   let wedding = await prisma.wedding.findFirst({
-    where: { slug: DEFAULT_WEDDING_SLUG },
+    where: { slug: DEMO_WEDDING_SLUG },
   });
   if (!wedding) {
     wedding = await prisma.wedding.create({
       data: {
-        slug: DEFAULT_WEDDING_SLUG,
-        brideName: 'Hornella',
-        groomName: 'Josué',
+        // V4.7 F-06 — DEMO COUPLE (no real PII).
+        // These fixtures are for first-run development only. They are
+        // hard-blocked from production by shouldSeedDemoData() above.
+        slug: DEMO_WEDDING_SLUG,
+        brideName: 'Demo Bride',
+        groomName: 'Demo Groom',
         coupleLabel,
-        weddingDate: new Date('2026-06-26T21:30:00+01:00'),
-        timezone: 'Africa/Kinshasa',
-        venueName: 'Salle Polyvalente – Grand Palais Kinshasa',
-        venueAddress: '21 / 22 Avenue Bobozo',
-        venueCity: 'Kinshasa',
-        venueReference: 'Réf. Hôpital AKRAM, à la diagonale du Centre TELEMA',
+        weddingDate: new Date('2026-12-31T18:00:00+00:00'), // stable demo date
+        timezone: 'UTC',
+        venueName: 'Demo Venue Hall',
+        venueAddress: '123 Demo Street',
+        venueCity: 'Demo City',
+        venueReference: 'Demo reference point (replace with real value in production)',
         status: 'PUBLISHED',
         plan: 'ELITE',
         isDefault: true,
@@ -159,23 +178,24 @@ async function main() {
 
   // Create default settings (scoped to default wedding)
   const defaultSettings = [
-    { key: 'groom_name', value: 'Josué' },
-    { key: 'bride_name', value: 'Hornella' },
-    { key: 'wedding_date', value: '2026-06-26' },
-    { key: 'wedding_time', value: '21:30' },
-    { key: 'site_title', value: 'Mariage Josué & Hornella' },
-    { key: 'site_subtitle', value: 'Vendredi 26 Juin 2026' },
-    { key: 'venue_name', value: 'Salle Polyvalente – Grand Palais Kinshasa' },
-    { key: 'venue_address', value: '21 / 22 Avenue Bobozo' },
-    { key: 'venue_reference', value: 'Réf. Hôpital AKRAM, à la diagonale du Centre TELEMA' },
-    { key: 'venue_city', value: 'Kinshasa' },
-    { key: 'venue_lat', value: '-4.3250' },
-    { key: 'venue_lng', value: '15.3222' },
+    // V4.7 F-06 — DEMO SETTINGS (no real PII).
+    { key: 'groom_name', value: 'Demo Groom' },
+    { key: 'bride_name', value: 'Demo Bride' },
+    { key: 'wedding_date', value: '2026-12-31' },
+    { key: 'wedding_time', value: '18:00' },
+    { key: 'site_title', value: 'Mariage Démo' },
+    { key: 'site_subtitle', value: 'Jeudi 31 Décembre 2026' },
+    { key: 'venue_name', value: 'Demo Venue Hall' },
+    { key: 'venue_address', value: '123 Demo Street' },
+    { key: 'venue_reference', value: 'Demo reference point (replace with real value in production)' },
+    { key: 'venue_city', value: 'Demo City' },
+    { key: 'venue_lat', value: '0.0000' },
+    { key: 'venue_lng', value: '0.0000' },
     { key: 'venue_parking', value: 'Parking disponible sur place' },
-    { key: 'venue_time', value: '21H30' },
-    { key: 'invitation_message', value: 'Josué & Hornella ont l\'honneur de vous inviter à leur célébration de mariage.' },
-    { key: 'hashtag', value: '#JosueEtHornella2026' },
-    { key: 'welcome_message', value: 'Bienvenue sur la plateforme du mariage de Josué & Hornella' },
+    { key: 'venue_time', value: '18H00' },
+    { key: 'invitation_message', value: 'Demo Bride & Demo Groom ont l\'honneur de vous inviter à leur célébration de mariage.' },
+    { key: 'hashtag', value: '#DemoWedding2026' },
+    { key: 'welcome_message', value: 'Bienvenue sur la plateforme du mariage de démo' },
     { key: 'thank_you_message', value: 'Merci d\'être présent pour célébrer notre union' },
     { key: 'primary_color', value: '#D4A853' },
     { key: 'accent_color', value: '#C8785A' },
@@ -271,7 +291,7 @@ async function main() {
       { time: '14:00', activity: 'Cérémonie de mariage', location: 'Salle principale', description: 'Échange des vœux et bénédiction nuptiale', order: 2 },
       { time: '15:00', activity: 'Séance photo', location: 'Jardin', description: 'Photos de groupe et du couple', order: 3 },
       { time: '16:00', activity: 'Cocktail de réception', location: 'Terrasse', description: 'Cocktail et amuse-bouches', order: 4 },
-      { time: '17:00', activity: 'Entrée du couple', location: 'Salle de réception', description: 'Entrée triomphale de Josué & Hornella', order: 5 },
+      { time: '17:00', activity: 'Entrée du couple', location: 'Salle de réception', description: 'Entrée triomphale du couple démo', order: 5 },
       { time: '17:30', activity: 'Repas de fête', location: 'Salle de réception', description: 'Dîner somptueux en l\'honneur des mariés', order: 6 },
       { time: '19:00', activity: 'Coupe du gâteau', location: 'Salle de réception', description: 'Cérémonie de la coupe du gâteau de mariage', order: 7 },
       { time: '19:30', activity: 'Soirée dansante', location: 'Piste de danse', description: 'DJ et soirée dansante jusqu\'au bout de la nuit', order: 8 },
@@ -298,7 +318,7 @@ async function main() {
       },
       {
         title: 'Le Premier « Je t\'aime »',
-        description: 'Les mots les plus doux ont été murmurés sous les étoiles de Kinshasa. Un moment gravé dans nos cœurs pour l\'éternité.',
+        description: 'Les mots les plus doux ont été murmurés sous les étoiles de la ville de démo. Un moment gravé dans nos cœurs pour l\'éternité.',
         date: '2022',
         imageUrl: '/upload/couple-photo-2.png',
         order: 2,
