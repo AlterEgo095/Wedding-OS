@@ -29,6 +29,9 @@ export async function GET(
     const { code } = await params;
     const clientInfo = getClientInfo(request);
 
+    // Sprint P0-5 (audit 2026-09-01): opt-in server-side PNG rendering.
+    const wantsPng = new URL(request.url).searchParams.get('format') === 'png';
+
     if (!code) return NextResponse.json({ error: 'Invitation code is required' }, { status: 400 });
 
     // Resolve tenant — admin or public (for guest sessions)
@@ -131,6 +134,26 @@ export async function GET(
         details: `QR code generated for ${guest.firstName} ${guest.lastName}`,
         ...clientInfo,
       });
+
+      // Sprint P0-5 (audit 2026-09-01): serve a REAL PNG when ?format=png.
+      // The QR manager previously fetched this endpoint and saved the JSON
+      // response body as a .png file - producing invalid images (bug F-4,
+      // checklist rule F-4). Server-side rendering closes that gap; the JSON
+      // contract (qrCode data URL) remains the default for the <img> path.
+      if (wantsPng) {
+        const png = await QRCode.toBuffer(qrUrl, {
+          width: 600, margin: 2,
+          color: { dark: '#000000', light: '#FFFFFF' },
+        });
+        return new NextResponse(new Uint8Array(png), {
+          status: 200,
+          headers: {
+            'Content-Type': 'image/png',
+            'Content-Disposition': `inline; filename="qr-${guest.invitationCode}.png"`,
+            'Cache-Control': 'no-store',
+          },
+        });
+      }
 
       return NextResponse.json({
         guest: {

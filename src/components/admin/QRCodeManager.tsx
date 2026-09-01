@@ -99,7 +99,7 @@ export default function QRCodeManager({ weddingId, weddingSlug }: Props) {
   }, [fetchGuests])
 
   /** Build the QR code URL for a guest (admin-authenticated via cookie). */
-  const qrUrl = (code: string) => `/api/guests/qrcode/${encodeURIComponent(code)}?wedding=${encodeURIComponent(weddingSlug)}`
+  const qrUrl = (code: string) => `/api/guests/qrcode/${encodeURIComponent(code)}?wedding=${encodeURIComponent(weddingSlug)}&format=png`
 
   /** Download a single QR code as a PNG file. */
   const downloadOne = async (g: Guest) => {
