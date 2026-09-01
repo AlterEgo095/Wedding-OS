@@ -21,6 +21,11 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { NextRequest } from 'next/server';
 import { isPlatformAdmin, isOrgRole } from './types';
+// P1-7 (sprint P2): admin-authenticated DRAFT fallback in resolvePublicTenant.
+// NOTE: getAuthUser is imported DYNAMICALLY inside resolvePublicTenant — a
+// static import of ./auth here would recreate the module cycle
+// auth → db → tenant-scoped → tenant-context (the same cycle the lazy db
+// getter below already had to break).
 
 // ─── Lazy db getter (breaks circular import) ─────────────────────────────────
 // Cycle was: db.ts → tenant-scoped.ts → tenant-context.ts → db.ts
@@ -365,8 +370,30 @@ export async function resolvePublicTenant(
     };
   }
 
-  // Gate by status — DRAFT weddings are only visible to authenticated admins
+  // Gate by status — DRAFT weddings are only visible to authenticated admins.
+  // P1-7 (sprint P2): this rule existed as intent-only — the 404 below was
+  // unconditional, which left every admin tab that reads through public GETs
+  // (Settings via /api/settings, Timeline via /api/timeline, Couple Story via
+  // /api/couple-story, Media via /api/media) with EMPTY forms on a DRAFT
+  // wedding: data was saved through admin PUTs but never rendered back
+  // (LIVE-WEDDING-CHECKLIST golden rule #1 — "publish first, configure after").
+  // Authenticated admins now fall through to resolveAdminTenant, which enforces
+  // real access scoping (platform slug header / org membership / weddingId
+  // ownership). The returned context is a wedding-scope context built from the
+  // same DRAFT wedding, so handlers see exactly the data they would serve once
+  // published. Anonymous and guest callers still receive the identical 404 —
+  // no public surface change.
   if (wedding.status === 'DRAFT' && !wedding.isDefault) {
+    // Dynamic import: breaks the static module cycle auth → db → tenant-scoped
+    // → tenant-context (auth.ts imports db at top level).
+    const { getAuthUser } = await import('./auth');
+    const user = await getAuthUser(request).catch(() => null);
+    if (user) {
+      const adminCheck = await resolveAdminTenant(request, user);
+      if (!adminCheck.error && adminCheck.context) {
+        return { context: buildTenantContext(wedding), wedding, error: null };
+      }
+    }
     return {
       context: null,
       wedding: null,
