@@ -1,4 +1,4 @@
-# LIVE-WEDDING-CHECKLIST.md — V5.0 (post sprints P0+P1, 2026-09-01)
+# LIVE-WEDDING-CHECKLIST.md — V5.1 (post sprint P2, 2026-09-01)
 ## Checklist opérable pour livrer un mariage réel avec Wedding OS
 **Usage** : un opérateur peut suivre cette checklist demain. Chaque élément : `[ ] TODO` / `[x] DONE` / `[!] BLOCKED`
 
@@ -8,10 +8,15 @@
 > téléchargé est désormais un vrai PNG (7cab107). Les photos et la musique sont
 > visibles immédiatement après upload, sans restart.
 >
-> ⚠️ **UNE SEULE SUBSISTE — règle n°1 (DRAFT)** : pendant le statut DRAFT, les
-> onglets Paramètres/Histoire/Chronologie/Médias affichent des formulaires vides
-> (données sauvées mais invisibles). **Publiez dès la création, puis configurez.**
-> (Fix planifié : P1-7, flux DRAFT.)
+> ✅ **MISE À JOUR SPRINT P2 (2026-09-01) — DERNIÈRE RÈGLE D'OR LEVÉE** — La règle
+> n°1 (DRAFT = formulaires vides dans Paramètres/Histoire/Chronologie/Médias) est
+> **réparée** (commit cf861b6, P1-7) : un mariage en DRAFT est désormais pleinement
+> éditable par ses organisateurs — configurez AVANT de publier, dans l'ordre que
+> vous voulez. Le site public d'un DRAFT reste invisible (404) jusqu'à la
+> publication : aucun changement côté invités.
+> Autres chantiers P2 : l'onglet « Temps réel » (widgets live orphelins) a été
+> retiré de l'admin (P1-9) et l'alias d'API `/api/invitations` supprimé (P1-10,
+> utiliser `/api/collections`).
 
 ---
 
@@ -35,7 +40,7 @@
 - [ ] Se connecter : `/org/[slug-org]/admin/login`
 - [ ] Ouvrir le mariage → `/w/[slug-mariage]/admin`
 - [ ] Onglet **Designer** → choisir la collection de design (Royal Gold / Royal Black / Royal Emerald / White Romance…)
-- [ ] **Publier** (bouton « Publier ») — le site public devient accessible ⚠️ RÈGLE n°1 (DRAFT = formulaires vides)
+- [ ] **Publier** (bouton « Publier ») — le site public devient accessible *(le DRAFT est désormais pleinement éditable — P1-7 ; publier tôt reste possible mais n'est plus obligatoire)*
 - [ ] Onglet **Paramètres** → bride_name, groom_name, site_title, site_subtitle
 - [ ] wedding_date, venue_name, venue_address, venue_city, venue_time
 - [ ] contact_email, contact_phone, hashtag
@@ -123,7 +128,7 @@
 ## Signaler un problème pendant la livraison
 | Symptôme | Cause connue | Action |
 |----------|--------------|--------|
-| Formulaires vides dans l'admin | Mariage DRAFT (règle n°1) | Publier via Designer |
+| Formulaires vides dans l'admin | *(réparé P1-7)* — si réapparition | Se reconnecter ; vérifier le statut du mariage ; signaler |
 | Bouton « Créer un mariage » → erreur 404 | *(réparé P0-1)* — si réapparition | Vérifier deploySha = HEAD git, sinon signaler infra |
 | QR téléchargé illisible | *(réparé P0-5)* — si réapparition | Réessayer ?format=png, sinon copier l'invitationUrl |
 | Envoi masse refusé (402) | Verrou commercial | Compléter le paiement |
