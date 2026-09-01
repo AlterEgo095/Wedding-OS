@@ -390,7 +390,15 @@ export async function resolvePublicTenant(
     const user = await getAuthUser(request).catch(() => null);
     if (user) {
       const adminCheck = await resolveAdminTenant(request, user);
-      if (!adminCheck.error && adminCheck.context) {
+      // weddingId equality guard: Path 3 (per-wedding roles) locks to
+      // user.weddingId and IGNORES the X-Wedding-Slug header — without this
+      // guard an ORGANIZER of wedding A requesting ?wedding=<B-draft> would
+      // be served wedding A's data against wedding B's request context.
+      if (
+        !adminCheck.error &&
+        adminCheck.context &&
+        adminCheck.context.weddingId === wedding.id
+      ) {
         return { context: buildTenantContext(wedding), wedding, error: null };
       }
     }
