@@ -126,3 +126,15 @@ db-guests.js
 backfill_media.js
 rebuild-5.8.12.sh
 
+
+# ═══ Sprint P0 (audit 2026-09-01) — bruit de missions, jamais tracker ═══
+*.pre-v*
+*.pre-*
+.backups/
+prisma/test-*.db*
+tenant_audit*
+tenant_audit*.py
+tenant_audit*.sh
+worklog-v*.md
+wedding-os-*.pdf
+migration/
