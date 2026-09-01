@@ -1,4 +1,7 @@
 // Sprint P1 (P1-1) : shim de compat — la route vit désormais sous
-// /api/platform/pricing/route.ts. Ce fichier ne fait que ré-exporter pour que les
-// appelants historiques (scripts, bookmarks) continuent de fonctionner.
-export { GET, PUT, dynamic } from '@/app/api/platform/pricing/route.ts';
+// /api/platform/pricing/route. Ce fichier ne fait que ré-exporter les handlers
+// pour que les appelants historiques (scripts, bookmarks) fonctionnent.
+// NB: la config de segment (dynamic) doit être déclarée LOCALEMENT —
+// Next.js interdit de la ré-exporter (route-segment-config).
+export { GET, PUT } from '@/app/api/platform/pricing/route';
+export const dynamic = 'force-dynamic';
