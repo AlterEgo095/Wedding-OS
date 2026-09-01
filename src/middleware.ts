@@ -63,28 +63,37 @@ async function checkWeddingSlug(
     return { exists: cached.exists, status: cached.status, isDefault: cached.isDefault };
   }
 
-  try {
-    const baseUrl = process.env.NEXTAUTH_URL || 'http://localhost:3000';
-    const res = await fetch(
-      `${baseUrl}/api/public/wedding-status?slug=${encodeURIComponent(slug)}`,
-      { cache: 'no-store' }
-    );
-    const data = (await res.json()) as {
-      exists: boolean;
-      status: string | null;
-      isDefault: boolean;
-    };
-    slugCache.set(slug, {
-      exists: data.exists,
-      status: data.status,
-      isDefault: data.isDefault,
-      expires: Date.now() + SLUG_CACHE_TTL,
-    });
-    return data;
-  } catch {
-    // On fetch failure, fail open (let the layout handle it)
-    return { exists: true, status: 'PUBLISHED', isDefault: false };
+  // P1-3 (sprint P1): 2 tentatives (absorbe les blips transitoires), puis
+  // FAIL-CLOSED. Le comportement précédent mentait en cas d'échec interne
+  // ("exists: true, status: PUBLISHED"), ce qui rouvrait le trou du soft-404
+  // et pouvait servir publiquement un mariage DRAFT pendant un incident.
+  // Un échec persistant renvoie désormais exists:false -> vraie 404.
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const baseUrl = process.env.NEXTAUTH_URL || 'http://localhost:3000';
+      const res = await fetch(
+        `${baseUrl}/api/public/wedding-status?slug=${encodeURIComponent(slug)}`,
+        { cache: 'no-store' }
+      );
+      const data = (await res.json()) as {
+        exists: boolean;
+        status: string | null;
+        isDefault: boolean;
+      };
+      slugCache.set(slug, {
+        exists: data.exists,
+        status: data.status,
+        isDefault: data.isDefault,
+        expires: Date.now() + SLUG_CACHE_TTL,
+      });
+      return data;
+    } catch {
+      if (attempt === 0) {
+        await new Promise((r) => setTimeout(r, 100));
+      }
+    }
   }
+  return { exists: false, status: null, isDefault: false };
 }
 
 const NOT_FOUND_HTML = `<!DOCTYPE html>

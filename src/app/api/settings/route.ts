@@ -24,6 +24,23 @@ export const GET = withPublicTenant(async (_req, ctx) => {
     const settingsMap: Record<string, string> = {};
     for (const s of settings) settingsMap[s.key] = s.value;
 
+    // P1-4 (sprint P1): guestAccessCode est un secret de contrôle d'accès —
+    // il ne sort JAMAIS en réponse publique (le GET est anonyme). Les admins
+    // (même permission que le PUT) reçoivent la valeur réelle pour pouvoir
+    // l'afficher/modifier dans le formulaire Paramètres ; tout le monde
+    // recoit l'indicateur guestAccessCodeConfigured ('true'/'false').
+    const accessCode = settingsMap['guestAccessCode'] ?? '';
+    delete settingsMap['guestAccessCode'];
+    settingsMap['guestAccessCodeConfigured'] = accessCode ? 'true' : 'false';
+    try {
+      const requester = await getAuthUser(_req);
+      if (requester && hasPermission(requester.role, ['SUPER_ADMIN', 'ORGANIZER'])) {
+        settingsMap['guestAccessCode'] = accessCode;
+      }
+    } catch {
+      // pas de session valide -> reste masqué (comportement public par défaut)
+    }
+
     return NextResponse.json({ settings: settingsMap, wedding: { slug: ctx.slug, isDefault: ctx.isDefault, status: ctx.status, plan: ctx.plan } });
   } catch (error) {
     // P2-SEC-1: never log error.stack.

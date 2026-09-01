@@ -2,7 +2,7 @@ export const dynamic = 'force-dynamic';
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { generateResetToken, buildMailtoResetLink, buildResetUrl, sendResetEmail } from '@/lib/password-reset';
-import { getRateLimitKey, checkRateLimit, withSecurityHeaders } from '@/lib/rate-limit';
+import { getRateLimitKey, checkRateLimitAsync, withSecurityHeaders } from '@/lib/rate-limit';
 import { logger } from '@/lib/logger';
 import { internalError, badRequest } from '@/lib/api-errors';
 import { writeAuditLog } from '@/lib/audit';
@@ -35,7 +35,7 @@ export async function POST(request: NextRequest) {
   try {
     // IP rate-limit: 5 requests per 15 minutes per IP.
     const rateLimitKey = getRateLimitKey(request);
-    if (!checkRateLimit(`pwreset-request-${rateLimitKey}`, 5, 15 * 60 * 1000)) {
+    if (!(await checkRateLimitAsync(`pwreset-request-${rateLimitKey}`, 5, 15 * 60 * 1000)).allowed) {
       return NextResponse.json(
         { error: 'Trop de requêtes. Veuillez réessayer dans un instant.' },
         { status: 429 }

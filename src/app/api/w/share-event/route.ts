@@ -65,7 +65,7 @@ export const dynamic = 'force-dynamic';
 
 import { NextRequest, NextResponse } from 'next/server';
 import { resolvePublicTenant, runWithTenant } from '@/lib/tenant-context';
-import { checkRateLimit, getRateLimitKey } from '@/lib/rate-limit';
+import { checkRateLimitAsync, getRateLimitKey } from '@/lib/rate-limit';
 import { writeAuditLog } from '@/lib/audit';
 import { logger } from '@/lib/logger';
 import { badRequest, internalError } from '@/lib/api-errors';
@@ -118,7 +118,7 @@ export async function POST(request: NextRequest) {
       // below) derives IP + User-Agent from the request itself, and the rate
       // limit key uses the dedicated getRateLimitKey helper.
       const rateLimitKey = getRateLimitKey(request);
-      if (!checkRateLimit(`share-event-${rateLimitKey}`, RATE_LIMIT_MAX, RATE_LIMIT_WINDOW_MS)) {
+      if (!(await checkRateLimitAsync(`share-event-${rateLimitKey}`, RATE_LIMIT_MAX, RATE_LIMIT_WINDOW_MS)).allowed) {
         return NextResponse.json(
           { error: 'Trop de partages. Veuillez réessayer dans un instant.' },
           { status: 429, headers: { 'Retry-After': '60' } }

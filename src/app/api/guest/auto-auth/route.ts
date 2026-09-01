@@ -12,7 +12,7 @@ import {
   setGuestSessionCookie,
   consumeLookupToken, // P2-SEC-12 — replaces module-scope usedLookupTokens Set
 } from '@/lib/guest-auth';
-import { checkRateLimit, getRateLimitKey } from '@/lib/rate-limit';
+import { checkRateLimitAsync, getRateLimitKey } from '@/lib/rate-limit';
 import { resolvePublicTenant, runWithTenant } from '@/lib/tenant-context';
 import { logger } from '@/lib/logger'; // P2-SEC-1 — never log error.stack
 import { internalError, badRequest, unauthorized } from '@/lib/api-errors'; // P2-CQ-5
@@ -77,7 +77,7 @@ export async function POST(request: NextRequest) {
       // the sync in-memory `checkRateLimit` (not Redis-backed); a future
       // hardening pass could swap it for `checkRateLimitAsync` for multi-
       // instance parity, but the per-IP gate is already in place.
-      if (!checkRateLimit(`auto-auth-${rateLimitKey}`, 5, 60 * 1000)) {
+      if (!(await checkRateLimitAsync(`auto-auth-${rateLimitKey}`, 5, 60 * 1000)).allowed) {
         await logGuestAccess({ action: 'AUTH_RATE_LIMITED', details: `Auto-auth rate limited: ${rateLimitKey}`, ...clientInfo });
         return NextResponse.json({ error: 'Trop de tentatives. Veuillez réessayer dans un instant.' }, { status: 429 });
       }

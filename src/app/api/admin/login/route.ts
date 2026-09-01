@@ -2,7 +2,7 @@ export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { verifyPassword, generateToken, checkLoginRateLimitAsync, resetLoginRateLimitAsync, setAuthCookie } from '@/lib/auth';
-import { getRateLimitKey, checkRateLimit, withSecurityHeaders } from '@/lib/rate-limit';
+import { getRateLimitKey, checkRateLimitAsync, withSecurityHeaders } from '@/lib/rate-limit';
 // P2-SEC-1: structured logger (no stack leak).
 import { logger } from '@/lib/logger';
 // P2-CQ-5: standardised API errors.
@@ -21,7 +21,7 @@ import { generateChallengeToken } from '@/lib/two-factor';
 export async function POST(request: NextRequest) {
   try {
     const rateLimitKey = getRateLimitKey(request);
-    if (!checkRateLimit(`login-${rateLimitKey}`, 10, 15 * 60 * 1000)) {
+    if (!(await checkRateLimitAsync(`login-${rateLimitKey}`, 10, 15 * 60 * 1000)).allowed) {
       return NextResponse.json(
         { error: 'Too many login attempts. Please try again later.' },
         { status: 429 }

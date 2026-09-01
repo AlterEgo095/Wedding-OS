@@ -41,6 +41,10 @@ export default function GuestAuthForm({ onLoginByLookupToken, onLoginWithLinkTok
   const [showAutoAuth, setShowAutoAuth] = useState(!!initialInviteToken)
   const [error, setError] = useState<string | null>(null)
   const [autoAuthDone, setAutoAuthDone] = useState(false)
+  // P1-4 (sprint P1): code d'accès famille — champ masqué tant que le
+  // serveur ne l'exige pas (mariage protégé), révélé sur 401 accessCodeRequired.
+  const [accessCode, setAccessCode] = useState('')
+  const [needAccessCode, setNeedAccessCode] = useState(false)
 
   const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -80,12 +84,20 @@ export default function GuestAuthForm({ onLoginByLookupToken, onLoginWithLinkTok
     searchTimeoutRef.current = setTimeout(async () => {
       setLookupLoading(true)
       try {
-        const res = await fetch(`/api/guest/lookup?q=${encodeURIComponent(searchQuery.trim())}`)
+        const lookupUrl = new URL('/api/guest/lookup', window.location.origin)
+        lookupUrl.searchParams.set('q', searchQuery.trim())
+        if (accessCode.trim()) lookupUrl.searchParams.set('accessCode', accessCode.trim())
+        const res = await fetch(lookupUrl.toString())
         const data = await res.json()
         if (res.ok) {
           setLookupResults(data.results || [])
         } else if (res.status === 403 && data?.searchLocked) {
           setError('Vous êtes déjà connecté à votre espace personnel.')
+        } else if (res.status === 401 && data?.accessCodeRequired) {
+          // P1-4: mariage protégé — révèle le champ code d'accès
+          setNeedAccessCode(true)
+          setLookupResults([])
+          setError(data?.error || "Code d'accès requis.")
         } else if (!res.ok) {
           setError(data?.error || 'Erreur lors de la recherche. Veuillez réessayer.')
         }
@@ -101,7 +113,7 @@ export default function GuestAuthForm({ onLoginByLookupToken, onLoginWithLinkTok
         clearTimeout(searchTimeoutRef.current)
       }
     }
-  }, [searchQuery])
+  }, [searchQuery, accessCode])
 
   // Auto-authenticate when user selects their name
   const handleLookupSelect = async (result: LookupResult) => {
@@ -282,6 +294,24 @@ export default function GuestAuthForm({ onLoginByLookupToken, onLoginWithLinkTok
                       )}
                     </div>
                   </div>
+
+                  {/* P1-4 (sprint P1): code d'accès famille — révélé uniquement
+                      quand le mariage est protégé (401 accessCodeRequired) */}
+                  {needAccessCode && (
+                    <div className="space-y-2">
+                      <label className="text-sm font-display font-bold tracking-wide text-foreground/80 uppercase">
+                        Code d&apos;accès
+                      </label>
+                      <Input
+                        type="text"
+                        value={accessCode}
+                        onChange={(e) => setAccessCode(e.target.value)}
+                        placeholder="Code fourni par les organisateurs"
+                        className="h-14 text-lg font-display glass-card gold-border rounded-xl focus:border-gold focus:ring-gold/30"
+                        autoComplete="off"
+                      />
+                    </div>
+                  )}
 
                   {/* Search Results */}
                   <AnimatePresence>

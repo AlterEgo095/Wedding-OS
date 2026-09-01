@@ -118,7 +118,7 @@ export async function runCommercialCron(): Promise<{
           await db.auditLog.create({
             data: {
               weddingId: sub.weddingId,
-              userId: 'system',
+              userId: null, // P1-8: 'system' violait la FK AdminUser,
               action: 'COMMERCIAL_STATUS_TRANSITION',
               details: 'PAID/LIVE/IN_PRODUCTION/READY → PENDING_PAYMENT (cron: subscription suspended after 7d)',
               ipAddress: null,
@@ -163,7 +163,7 @@ export async function runCommercialCron(): Promise<{
           await db.auditLog.create({
             data: {
               weddingId: sub.weddingId,
-              userId: 'system',
+              userId: null, // P1-8: 'system' violait la FK AdminUser,
               action: 'COMMERCIAL_STATUS_TRANSITION',
               details: 'PAID/LIVE/IN_PRODUCTION/READY → PENDING_PAYMENT (cron: subscription suspended after 3d PAST_DUE)',
               ipAddress: null,
@@ -218,7 +218,7 @@ export async function runCommercialCron(): Promise<{
           await db.auditLog.create({
             data: {
               weddingId: sub.weddingId,
-              userId: 'system',
+              userId: null, // P1-8: 'system' violait la FK AdminUser,
               action: 'COMMERCIAL_STATUS_TRANSITION',
               details: '→ CANCELLED (cron: 30 days suspended — entitlements revoked)',
               ipAddress: null,

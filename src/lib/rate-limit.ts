@@ -4,6 +4,21 @@ import { getRedis } from './redis';
 // ─── In-memory Rate Limiting ───
 const rateLimits = new Map<string, { count: number; resetTime: number }>();
 
+// P1-2 (sprint P1): lazy TTL sweep. The Map previously grew forever — one
+// entry per unique key per window (IP churn, guest lookups, share events)
+// with no eviction. Sweep every 60 s, or immediately once the Map exceeds
+// 5 000 entries, dropping expired records so the fallback store stays
+// bounded. The Redis path (checkRateLimitAsync) never touches this Map.
+let lastSweep = 0;
+function sweepExpiredRecords(now: number): void {
+  if (now - lastSweep > 60_000 || rateLimits.size > 5_000) {
+    lastSweep = now;
+    for (const [k, v] of rateLimits) {
+      if (now > v.resetTime) rateLimits.delete(k);
+    }
+  }
+}
+
 export function getRateLimitKey(request: NextRequest): string {
   const forwarded = request.headers.get('x-forwarded-for');
   return forwarded ? forwarded.split(',')[0].trim() : request.headers.get('x-real-ip') || 'unknown';
@@ -11,6 +26,7 @@ export function getRateLimitKey(request: NextRequest): string {
 
 export function checkRateLimit(key: string, maxRequests: number, windowMs: number): boolean {
   const now = Date.now();
+  sweepExpiredRecords(now);
   const record = rateLimits.get(key);
 
   if (!record || now > record.resetTime) {

@@ -61,6 +61,18 @@ export async function GET(
       );
     }
 
+    // P1-3 (sprint P1): status gate — la config publiée n'est servie que
+    // pour les mariages PUBLISHED. Auparavant, tout mariage possédant un
+    // publishedConfigJson (UNPUBLISHED après retrait, brouillon showcase…)
+    // exposait sa config ici. La page publique est gated par middleware/layout ;
+    // cette route ne doit pas devenir un canal parallèle.
+    if (wedding.status !== 'PUBLISHED') {
+      return NextResponse.json(
+        { published: false, weddingId: wedding.id, reason: 'not-published' },
+        { status: 200, headers: CACHE_HEADERS }
+      );
+    }
+
     if (!wedding.publishedConfigJson) {
       // No deployment yet — return a not-published sentinel. Still 200 so
       // the client can branch on `published` without try/catch.

@@ -10,7 +10,7 @@ import {
 } from '@/lib/guest-auth';
 import { cleanGuestName } from '@/lib/guest-utils';
 import { resolvePublicTenant, runWithTenant } from '@/lib/tenant-context';
-import { checkRateLimit, getRateLimitKey } from '@/lib/rate-limit';
+import { checkRateLimitAsync, getRateLimitKey } from '@/lib/rate-limit';
 import { logger } from '@/lib/logger';
 
 /**
@@ -42,7 +42,7 @@ export async function GET(request: NextRequest) {
 
       // P0-SEC-5: Rate limit guest lookups to prevent PII enumeration.
       // 5 searches/minute per IP — same ceiling as auto-auth.
-      if (!checkRateLimit(`guest-lookup-${rateLimitKey}`, 5, 60 * 1000)) {
+      if (!(await checkRateLimitAsync(`guest-lookup-${rateLimitKey}`, 5, 60 * 1000)).allowed) {
         await logGuestAccess({
           action: 'LOOKUP_RATE_LIMITED',
           details: `Guest lookup rate limited: ${rateLimitKey}`,
@@ -83,6 +83,27 @@ export async function GET(request: NextRequest) {
         return NextResponse.json(
           { error: 'La recherche doit contenir au moins 2 caractères' },
           { status: 400 }
+        );
+      }
+
+      // P1-4 (sprint P1): code d'accès famille. Quand le mariage définit un
+      // guestAccessCode (Settings), la recherche par nom L'EXIGE — cela ferme
+      // le trou d'énumération PII où taper le nom d'un invité révélait la
+      // liste complète (et permettait l'auto-auth via lookupToken). Sans code
+      // configuré, comportement inchangé (déploiement progressif par mariage).
+      const accessCode = (searchParams.get('accessCode') || '').trim();
+      const accessSetting = await tenantDb.settings.findFirst({
+        where: { key: 'guestAccessCode' },
+        select: { value: true },
+      });
+      const requiredCode = (accessSetting?.value || '').trim();
+      if (requiredCode && accessCode.toLowerCase() !== requiredCode.toLowerCase()) {
+        return NextResponse.json(
+          {
+            error: "Ce mariage est protégé par un code d'accès. Demandez-le aux organisateurs.",
+            accessCodeRequired: true,
+          },
+          { status: 401 }
         );
       }
 

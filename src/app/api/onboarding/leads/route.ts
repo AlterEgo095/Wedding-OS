@@ -2,7 +2,7 @@ export const dynamic = 'force-dynamic';
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getAuthUser, requirePlatformAdmin } from '@/lib/auth';
-import { getRateLimitKey, checkRateLimit } from '@/lib/rate-limit';
+import { getRateLimitKey, checkRateLimitAsync } from '@/lib/rate-limit';
 import { buildCoupleLabel, type Plan } from '@/lib/types';
 // P2-CQ-1 + P2-SEC-2: shared EMAIL_REGEX from @/lib/constants.
 import { EMAIL_REGEX } from '@/lib/constants';
@@ -70,7 +70,7 @@ export async function POST(request: NextRequest) {
   try {
     // ─── IP-based rate limit (5 submissions / 15 min) ──────────────────────
     const ipKey = `onboarding-lead-ip:${getRateLimitKey(request)}`;
-    if (!checkRateLimit(ipKey, 5, 15 * 60 * 1000)) {
+    if (!(await checkRateLimitAsync(ipKey, 5, 15 * 60 * 1000)).allowed) {
       return NextResponse.json(
         { error: 'Trop de demandes. Réessayez dans quelques minutes.' },
         { status: 429 },

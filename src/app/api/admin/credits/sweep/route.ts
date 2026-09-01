@@ -1,24 +1,4 @@
-/**
- * MISSION 5.9.5 — CREDITS SWEEP (expired reservations)
- * POST /api/admin/credits/sweep
- *
- * Auto-releases any RESERVED reservations whose expiresAt is in the past.
- * Can be called manually or by a cron job. Returns the count of swept
- * reservations.
- *
- * Protected by PLATFORM_ADMIN auth.
- */
-import { NextResponse } from 'next/server'
-import { getServerAuthUser, requirePlatformAdmin } from '@/lib/auth'
-import { sweepExpiredReservations } from '@/lib/credits/ledger'
-
-export const dynamic = 'force-dynamic'
-
-export async function POST() {
-  const user = await getServerAuthUser()
-  const adminCheck = requirePlatformAdmin(user)
-  if (adminCheck) return adminCheck
-
-  const swept = await sweepExpiredReservations()
-  return NextResponse.json({ ok: true, swept })
-}
+// Sprint P1 (P1-1) : shim de compat — la route vit désormais sous
+// /api/platform/credits/sweep/route.ts. Ce fichier ne fait que ré-exporter pour que les
+// appelants historiques (scripts, bookmarks) continuent de fonctionner.
+export { POST, dynamic } from '@/app/api/platform/credits/sweep/route.ts';

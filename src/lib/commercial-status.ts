@@ -139,7 +139,7 @@ export async function transitionCommercialStatus(params: {
       await db.auditLog.create({
         data: {
           weddingId: params.weddingId,
-          userId: params.userId || 'system',
+          userId: params.userId || null, // P1-8: 'system' violait la FK AdminUser (entrée d'audit perdue)
           action: 'COMMERCIAL_STATUS_TRANSITION',
           details: `${params.to} → ${params.to} (no-op${params.reason ? `: ${params.reason}` : ''})`,
           ipAddress: null,
@@ -174,7 +174,7 @@ export async function transitionCommercialStatus(params: {
     await db.auditLog.create({
       data: {
         weddingId: params.weddingId,
-        userId: params.userId || 'system',
+        userId: params.userId || null, // P1-8: 'system' violait la FK AdminUser (entrée d'audit perdue)
         action: 'COMMERCIAL_STATUS_TRANSITION',
         details: `${from || 'null'} → ${params.to}${params.reason ? ` (${params.reason})` : ''}`,
         ipAddress: null,

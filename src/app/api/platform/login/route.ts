@@ -8,7 +8,7 @@ import {
   resetLoginRateLimitAsync,
   setAuthCookie,
 } from '@/lib/auth';
-import { getRateLimitKey, checkRateLimit, withSecurityHeaders } from '@/lib/rate-limit';
+import { getRateLimitKey, checkRateLimitAsync, withSecurityHeaders } from '@/lib/rate-limit';
 import { isPlatformAdmin } from '@/lib/types';
 // P2-SEC-1: structured logger (no stack leak).
 import { logger } from '@/lib/logger';
@@ -38,7 +38,7 @@ export async function POST(request: NextRequest) {
   try {
     // ─── IP-based rate limit (10 attempts / 15 min) ────────────────────────
     const rateLimitKey = getRateLimitKey(request);
-    if (!checkRateLimit(`platform-login-${rateLimitKey}`, 10, 15 * 60 * 1000)) {
+    if (!(await checkRateLimitAsync(`platform-login-${rateLimitKey}`, 10, 15 * 60 * 1000)).allowed) {
       return NextResponse.json(
         { error: 'Too many login attempts. Please try again later.' },
         { status: 429 }

@@ -8,7 +8,7 @@ import {
   checkLoginRateLimitAsync,
   resetLoginRateLimitAsync,
 } from '@/lib/auth';
-import { getRateLimitKey, checkRateLimit, withSecurityHeaders } from '@/lib/rate-limit';
+import { getRateLimitKey, checkRateLimitAsync, withSecurityHeaders } from '@/lib/rate-limit';
 import {
   verifyChallengeToken,
   verifyToken,
@@ -68,7 +68,7 @@ export const POST = withRateLimit(10, 60_000)(
     try {
       // ─── IP rate-limit (10/min, defense-in-depth on top of withRateLimit) ──
       const rateLimitKey = getRateLimitKey(request);
-      if (!checkRateLimit(`auth-2fa-login-${rateLimitKey}`, 10, 15 * 60 * 1000)) {
+      if (!(await checkRateLimitAsync(`auth-2fa-login-${rateLimitKey}`, 10, 15 * 60 * 1000)).allowed) {
         return apiError('Trop de tentatives. Veuillez réessayer plus tard.', 429);
       }
 

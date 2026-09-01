@@ -59,6 +59,7 @@ const SETTINGS_GROUPS = [
       { key: 'contact_phone', label: 'Téléphone de Contact' },
       { key: 'rsvp_deadline', label: 'Date Limite RSVP', type: 'date' },
       { key: 'rsvp_message', label: 'Message RSVP' },
+      { key: 'guestAccessCode', label: "Code d'accès invités (optionnel — protège la recherche d'invités)", type: 'text' },
     ],
   },
   {

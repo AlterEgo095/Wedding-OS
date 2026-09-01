@@ -4,6 +4,7 @@ export const runtime = "nodejs";
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { logger } from "@/lib/logger"; // P2-SEC-8
+import { getRedis } from "@/lib/redis"; // P1-2 (sprint P1)
 
 /**
  * Health check endpoint (P1-PROD-1).
@@ -46,6 +47,21 @@ export async function GET() {
       errMessage: err instanceof Error ? err.message : String(err),
       errName: err instanceof Error ? err.name : "Unknown",
     });
+  }
+
+  // ─── Redis connectivity (P1-2, sprint P1) ──────────────────────────────
+  // Non-fatal: si Redis est down, le rate-limiting retombe en mémoire et la
+  // santé globale reste 200. La sonde rend l'état observable par les ops.
+  try {
+    const redis = await getRedis();
+    if (redis) {
+      const t0 = Date.now();
+      await redis.ping();
+      checks.redis = { status: "ok", latencyMs: Date.now() - t0 };
+    }
+    // Redis non configuré -> clé absente (comportement historique préservé)
+  } catch {
+    checks.redis = { status: "fail", error: "redis unreachable" };
   }
 
   // ─── Required env vars ────────────────────────────────────────────────────

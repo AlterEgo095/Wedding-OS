@@ -13,7 +13,7 @@ import {
   validateGuestSession,
   setGuestSessionCookie, // P2-SEC-4 + P2-CQ-21
 } from '@/lib/guest-auth';
-import { checkRateLimit, checkRateLimitAsync, getRateLimitKey } from '@/lib/rate-limit';
+import { checkRateLimitAsync, getRateLimitKey } from '@/lib/rate-limit';
 import { resolvePublicTenant, runWithTenant } from '@/lib/tenant-context';
 // P2-SEC-1: structured logger (no stack leak).
 import { logger } from '@/lib/logger';
@@ -111,7 +111,7 @@ export async function POST(request: NextRequest) {
       }
 
       // Rate limit
-      if (!checkRateLimit(`guest-auth-${rateLimitKey}`, 10, 60 * 1000)) {
+      if (!(await checkRateLimitAsync(`guest-auth-${rateLimitKey}`, 10, 60 * 1000)).allowed) {
         await logGuestAccess({
           action: 'AUTH_RATE_LIMITED',
           details: `Rate limited: ${rateLimitKey}`,

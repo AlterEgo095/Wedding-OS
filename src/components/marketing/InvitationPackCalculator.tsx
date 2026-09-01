@@ -6,7 +6,7 @@
 // WHAT THE USER DOES:
 //   1. Types a quantity (or picks a preset: 100, 250, 251, 500, 1000).
 //   2. The component fetches a live price quote from the server-side pricing
-//      engine (POST /api/admin/pricing/compute — server-authoritative).
+//      engine (POST /api/platform/pricing/compute — server-authoritative).
 //   3. The total is displayed in real time.
 //   4. Clicking "Payer ..." calls <CheckoutButton> which POSTs to
 //      /api/checkout/charow and redirects to Charow's hosted checkout.
@@ -64,7 +64,7 @@ export function InvitationPackCalculator() {
   const [unavailable, setUnavailable] = useState<boolean>(false)
 
   // ── Live preview: call the server-side pricing engine ──
-  // NOTE: /api/admin/pricing/compute is PLATFORM_ADMIN-gated. For non-admin
+  // NOTE: /api/platform/pricing/compute is PLATFORM_ADMIN-gated. For non-admin
   // authenticated customers, this will return 401. We degrade gracefully:
   // hide the live total; the real total is computed at checkout time.
   const fetchQuote = useCallback(async (qty: number) => {
@@ -77,7 +77,7 @@ export function InvitationPackCalculator() {
     setUnavailable(false)
     try {
       const csrfToken = await getCsrfToken()
-      const res = await fetch('/api/admin/pricing/compute', {
+      const res = await fetch('/api/platform/pricing/compute', {
         method: 'POST',
         credentials: 'include',
         headers: {

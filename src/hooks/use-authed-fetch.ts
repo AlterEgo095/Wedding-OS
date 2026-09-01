@@ -11,7 +11,6 @@ import { toast } from 'sonner';
  *
  *   - src/app/platform/admin/page.tsx          (usePlatformFetch)
  *   - src/app/w/[slug]/admin/page.tsx          (inline fetch)
- *   - src/components/admin/LoginForm.tsx       (inline fetch)
  *   - src/components/admin/GuestManager.tsx    (inline fetch)
  *
  * Behaviour:

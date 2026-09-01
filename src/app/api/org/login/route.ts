@@ -9,7 +9,7 @@ import {
   resetLoginRateLimitAsync,
   setAuthCookie,
 } from '@/lib/auth';
-import { getRateLimitKey, checkRateLimit, withSecurityHeaders } from '@/lib/rate-limit';
+import { getRateLimitKey, checkRateLimitAsync, withSecurityHeaders } from '@/lib/rate-limit';
 import { isPlatformAdmin, isOrgRole } from '@/lib/types';
 import { logger } from '@/lib/logger';
 import { internalError } from '@/lib/api-errors';
@@ -50,7 +50,7 @@ export async function POST(request: NextRequest) {
   try {
     // ─── IP-based rate limit (10 attempts / 15 min) ────────────────────────
     const rateLimitKey = getRateLimitKey(request);
-    if (!checkRateLimit(`org-login-${rateLimitKey}`, 10, 15 * 60 * 1000)) {
+    if (!(await checkRateLimitAsync(`org-login-${rateLimitKey}`, 10, 15 * 60 * 1000)).allowed) {
       return NextResponse.json(
         { error: 'Trop de tentatives. Veuillez réessayer plus tard.' },
         { status: 429 }

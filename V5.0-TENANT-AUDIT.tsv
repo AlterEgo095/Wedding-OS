@@ -1,0 +1,201 @@
+# Audited 199 route files
+file	methods	imports	tenant_calls	platform_calls	weddingId	orgId	slug	helper	runWithTenant	risk
+src/app/api/admin/credits/[weddingId]/route.ts	GET		0	0	10	0	0	2	0	LOW
+src/app/api/admin/credits/[weddingId]/transactions/route.ts	GET		0	0	7	0	0	2	0	LOW
+src/app/api/admin/credits/consume/route.ts	POST	db	0	1	0	0	0	2	0	LOW_PLATFORM_AUDITLOG
+src/app/api/admin/credits/release/route.ts	POST	db	0	1	0	0	0	2	0	LOW_PLATFORM_AUDITLOG
+src/app/api/admin/credits/reserve/route.ts	POST	db	0	1	8	0	0	2	0	LOW_PLATFORM_AUDITLOG
+src/app/api/admin/credits/sweep/route.ts	POST		0	0	0	0	0	2	0	LOW
+src/app/api/admin/dashboard/route.ts	GET	db,tenantDb	7	1	5	0	2	4	1	OK_TENANT_SCOPED
+src/app/api/admin/login/route.ts	POST	db	0	1	9	0	0	0	0	LOW_PLATFORM
+src/app/api/admin/logout/route.ts	POST		0	0	2	0	0	0	0	LOW
+src/app/api/admin/preview-invitation/route.ts	GET	db,tenantDb	3	1	12	0	2	2	0	OK_TENANT_SCOPED
+src/app/api/admin/pricing/compute/route.ts	POST		0	0	0	0	0	2	0	LOW
+src/app/api/admin/pricing/route.ts	GET,PUT	db	0	3	1	0	0	3	0	LOW_PLATFORM_AUDITLOG
+src/app/api/admin/pricing/seed/route.ts	POST	db	0	4	1	0	0	2	0	LOW_PLATFORM_AUDITLOG
+src/app/api/admin/seed-plans/route.ts	POST	db	0	3	0	0	0	2	0	LOW_PLATFORM
+src/app/api/admin/usage/[weddingId]/route.ts	GET	db	3	5	13	1	3	2	0	MEDIUM_TENANT_MODEL_WITH_RAW_CLIENT_MANUAL_WED
+src/app/api/admin/users/route.ts	GET,POST,PUT,DELETE	db	0	10	30	0	0	2	0	LOW_PLATFORM_AUDITLOG
+src/app/api/auth/2fa/backup-codes/regenerate/route.ts	NONE	db	0	2	2	0	0	0	0	LOW_PLATFORM
+src/app/api/auth/2fa/disable/route.ts	NONE	db	0	2	2	0	0	0	0	LOW_PLATFORM
+src/app/api/auth/2fa/login/route.ts	NONE	db	0	3	7	5	0	0	0	LOW_PLATFORM
+src/app/api/auth/2fa/setup/route.ts	NONE	db	0	2	2	0	0	0	0	LOW_PLATFORM
+src/app/api/auth/2fa/verify/route.ts	NONE	db	0	3	2	0	0	0	0	LOW_PLATFORM
+src/app/api/charow/sandbox-sale/route.ts	GET		0	0	0	0	0	0	0	LOW
+src/app/api/charow/simulate/route.ts	POST		0	0	0	0	0	0	0	LOW
+src/app/api/charow/status/route.ts	GET		0	0	0	0	0	0	0	LOW
+src/app/api/check-in/route.ts	POST	db,tenantDb	2	0	9	0	0	4	1	OK_TENANT_SCOPED
+src/app/api/checkout/charow/route.ts	POST	db	0	6	8	0	0	0	0	LOW_PLATFORM_AUDITLOG
+src/app/api/collections/[id]/route.ts	PUT,DELETE	db	0	4	4	0	2	0	0	LOW_PLATFORM
+src/app/api/collections/[id]/transition/route.ts	NONE	db,unsafePlatformDb	0	3	4	0	3	2	0	LOW_PLATFORM_AUDITLOG
+src/app/api/collections/apply/route.ts	POST		0	0	2	0	0	0	0	LOW
+src/app/api/collections/route.ts	POST		0	4	2	0	11	0	0	LOW_PLATFORM
+src/app/api/couple-story/route.ts	POST,PUT,DELETE	db,tenantDb	6	0	9	0	12	0	0	OK_TENANT_SCOPED
+src/app/api/csrf-token/route.ts	GET		0	0	0	0	0	0	0	LOW
+src/app/api/custom-domain/route.ts	PUT,DELETE	db	0	7	12	0	0	0	0	LOW_PLATFORM_AUDITLOG
+src/app/api/guest/access-logs/route.ts	GET	db,tenantDb	18	0	1	0	0	4	1	OK_TENANT_SCOPED
+src/app/api/guest/auth/route.ts	POST	db,tenantDb	2	0	0	0	5	2	1	OK_TENANT_SCOPED
+src/app/api/guest/auto-auth/route.ts	POST	db,tenantDb	2	0	0	0	0	2	1	OK_TENANT_SCOPED
+src/app/api/guest/invite/route.ts	GET,POST	db,tenantDb	4	0	0	0	0	5	2	OK_TENANT_SCOPED
+src/app/api/guest/logout/route.ts	POST	db,tenantDb	1	0	0	0	0	2	1	OK_TENANT_SCOPED
+src/app/api/guest/lookup/route.ts	GET	db,tenantDb	2	0	0	0	0	2	1	OK_TENANT_SCOPED
+src/app/api/guest/me/dietary/route.ts	GET	db,tenantDb	3	0	3	0	1	3	2	OK_TENANT_SCOPED
+src/app/api/guest/me/export/route.ts	NONE	db,tenantDb,unsafePlatformDb	5	1	5	0	0	2	1	OK_TENANT_SCOPED
+src/app/api/guest/me/forget-me/route.ts	NONE	db,tenantDb,unsafePlatformDb	4	0	2	0	0	2	1	OK_TENANT_SCOPED
+src/app/api/guest/me/route.ts	GET		0	0	0	0	2	2	1	LOW
+src/app/api/guest/rsvp/route.ts	POST,GET,PUT	db,tenantDb	9	0	5	0	5	7	3	OK_TENANT_SCOPED
+src/app/api/guests/[id]/invitation/route.ts	POST	db,tenantDb	4	0	7	0	5	4	1	OK_TENANT_SCOPED
+src/app/api/guests/[id]/route.ts	GET,PUT,DELETE	db,tenantDb	8	0	4	0	0	9	4	OK_TENANT_SCOPED
+src/app/api/guests/export/route.ts	GET	db,tenantDb	1	0	1	0	3	4	1	OK_TENANT_SCOPED
+src/app/api/guests/import-docx/route.ts	NONE	db,tenantDb	8	0	27	0	0	5	1	OK_TENANT_SCOPED
+src/app/api/guests/import/route.ts	NONE	db,tenantDb	3	0	2	0	0	4	1	OK_TENANT_SCOPED
+src/app/api/guests/qrcode/[code]/route.ts	GET	db,tenantDb	1	0	0	0	3	4	1	OK_TENANT_SCOPED
+src/app/api/guests/route.ts	GET,POST,PUT,DELETE	db,tenantDb	9	0	12	0	0	10	4	OK_TENANT_SCOPED
+src/app/api/guests/search/route.ts	GET	db,tenantDb	1	0	0	0	0	4	1	OK_TENANT_SCOPED
+src/app/api/health/route.ts	GET	db	0	0	0	0	0	0	0	LOW
+src/app/api/invitations/route.ts	NONE		0	0	0	0	0	0	0	LOW
+src/app/api/me/route.ts	GET		0	0	3	0	1	0	0	LOW
+src/app/api/media/route.ts	DELETE	db,tenantDb	4	0	9	0	8	0	0	OK_TENANT_SCOPED
+src/app/api/music/file/route.ts	NONE	db	1	0	5	0	4	0	0	MEDIUM_TENANT_MODEL_WITH_RAW_CLIENT_MANUAL_WED
+src/app/api/music/route.ts	PUT,DELETE	db,tenantDb	2	0	12	0	2	0	0	OK_TENANT_SCOPED
+src/app/api/onboarding/create-wedding/route.ts	NONE	db	0	7	14	0	15	2	0	LOW_PLATFORM_AUDITLOG
+src/app/api/onboarding/leads/[id]/convert/route.ts	POST	db	0	4	8	0	2	2	0	LOW_PLATFORM_AUDITLOG
+src/app/api/onboarding/leads/[id]/route.ts	PATCH	db	0	2	0	0	0	2	0	LOW_PLATFORM
+src/app/api/onboarding/leads/route.ts	POST,GET	db	0	4	0	0	0	2	0	LOW_PLATFORM
+src/app/api/onboarding/publish/route.ts	POST	db	0	2	13	0	7	0	0	LOW_PLATFORM
+src/app/api/org/[slug]/credits/route.ts	GET	db	0	5	4	5	7	0	0	LOW_PLATFORM
+src/app/api/org/[slug]/members/[memberId]/route.ts	PATCH,DELETE	db	0	8	2	4	20	0	0	LOW_PLATFORM_AUDITLOG
+src/app/api/org/[slug]/members/route.ts	GET,POST	db	0	9	1	4	20	0	0	LOW_PLATFORM_AUDITLOG
+src/app/api/org/[slug]/quotas/route.ts	GET	db	0	2	0	4	5	0	0	LOW_PLATFORM
+src/app/api/org/[slug]/route.ts	GET,PATCH	db	2	9	1	8	24	0	0	MEDIUM_TENANT_MODEL_WITH_RAW_CLIENT_MANUAL_WED
+src/app/api/org/[slug]/weddings/route.ts	GET,POST	db	0	8	1	5	31	0	0	LOW_PLATFORM_AUDITLOG
+src/app/api/org/login/route.ts	POST	db	0	4	13	9	9	0	0	LOW_PLATFORM
+src/app/api/org/signup/route.ts	GET,POST	db	0	13	9	9	50	0	0	LOW_PLATFORM_AUDITLOG
+src/app/api/payment/verify/route.ts	GET,POST	db	0	7	10	0	0	0	0	LOW_PLATFORM_AUDITLOG
+src/app/api/plans/route.ts	GET	db	0	1	0	0	0	0	0	LOW_PLATFORM
+src/app/api/platform/2fa/disable/route.ts	POST	db	0	2	1	0	0	2	0	LOW_PLATFORM
+src/app/api/platform/2fa/login/route.ts	POST	db	0	2	6	0	0	0	0	LOW_PLATFORM
+src/app/api/platform/2fa/setup/route.ts	POST	db	0	2	0	0	0	3	0	LOW_PLATFORM
+src/app/api/platform/2fa/verify/route.ts	POST	db	0	3	1	0	0	2	0	LOW_PLATFORM
+src/app/api/platform/assets/[id]/route.ts	NONE	db,unsafePlatformDb	0	3	1	0	0	2	0	LOW_PLATFORM_AUDITLOG
+src/app/api/platform/assets/route.ts	NONE	db,unsafePlatformDb	0	4	1	0	0	3	0	LOW_PLATFORM_AUDITLOG
+src/app/api/platform/audit/route.ts	GET	db,unsafePlatformDb	0	3	12	0	1	3	0	LOW_PLATFORM_AUDITLOG
+src/app/api/platform/billing/weddings/route.ts	GET	db	0	2	0	0	6	2	0	LOW_PLATFORM
+src/app/api/platform/brands/[id]/route.ts	GET	db,unsafePlatformDb	0	7	2	0	5	4	0	LOW_PLATFORM_AUDITLOG
+src/app/api/platform/brands/route.ts	NONE	db,unsafePlatformDb	0	5	1	0	12	3	0	LOW_PLATFORM_AUDITLOG
+src/app/api/platform/collections/[id]/governance/route.ts	PATCH	db	0	2	1	0	3	2	0	LOW_PLATFORM
+src/app/api/platform/collections/[id]/lock/route.ts	NONE	db,unsafePlatformDb	0	3	1	0	3	2	0	LOW_PLATFORM_AUDITLOG
+src/app/api/platform/collections/[id]/unlock/route.ts	NONE	db,unsafePlatformDb	0	3	1	0	3	2	0	LOW_PLATFORM_AUDITLOG
+src/app/api/platform/collections/route.ts	GET	db	0	1	0	0	3	2	0	LOW_PLATFORM
+src/app/api/platform/commercial/converge/route.ts	POST	db	0	14	13	0	16	2	0	LOW_PLATFORM
+src/app/api/platform/commercial/route.ts	GET,POST	db	0	1	13	0	0	3	0	LOW_PLATFORM
+src/app/api/platform/components/[id]/route.ts	GET	db,unsafePlatformDb	0	7	2	0	5	4	0	LOW_PLATFORM_AUDITLOG
+src/app/api/platform/components/route.ts	NONE	db,unsafePlatformDb	0	5	1	0	10	3	0	LOW_PLATFORM_AUDITLOG
+src/app/api/platform/dashboard/route.ts	GET	db	5	20	1	0	3	2	0	MEDIUM_TENANT_MODEL_WITH_RAW_CLIENT_MANUAL_WED
+src/app/api/platform/deployments/[id]/approve/route.ts	NONE	db,unsafePlatformDb	0	6	12	0	0	2	0	LOW_PLATFORM
+src/app/api/platform/deployments/[id]/canary/route.ts	NONE	db,unsafePlatformDb	0	5	15	0	0	2	0	LOW_PLATFORM
+src/app/api/platform/deployments/[id]/config/route.ts	NONE		0	0	0	0	0	2	0	LOW
+src/app/api/platform/deployments/[id]/promote-staging/route.ts	NONE	db,unsafePlatformDb	0	4	14	0	10	2	0	LOW_PLATFORM
+src/app/api/platform/deployments/[id]/reject/route.ts	NONE	db,unsafePlatformDb	0	2	5	0	0	2	0	LOW_PLATFORM
+src/app/api/platform/deployments/[id]/retry/route.ts	NONE		0	0	1	0	0	2	0	LOW
+src/app/api/platform/deployments/[id]/rollback/route.ts	NONE		0	0	2	0	0	2	0	LOW
+src/app/api/platform/deployments/[id]/route.ts	GET		0	0	2	0	0	2	0	LOW
+src/app/api/platform/deployments/route.ts	GET	db,unsafePlatformDb	0	2	7	0	3	2	0	LOW_PLATFORM
+src/app/api/platform/deployments/trigger/route.ts	NONE	db	0	1	25	0	7	2	0	LOW_PLATFORM
+src/app/api/platform/diagnostics/route.ts	GET	db	6	12	3	0	0	2	0	MEDIUM_TENANT_MODEL_WITH_RAW_CLIENT_MANUAL_WED
+src/app/api/platform/experience/track/route.ts	OPTIONS,POST	db,unsafePlatformDb	0	2	4	0	12	0	0	LOW_PLATFORM
+src/app/api/platform/experience/weddings/[id]/events/route.ts	NONE	db,unsafePlatformDb	0	2	4	0	0	0	0	LOW_PLATFORM
+src/app/api/platform/experience/weddings/[id]/reports/route.ts	NONE	db,unsafePlatformDb	0	4	14	0	0	0	0	LOW_PLATFORM
+src/app/api/platform/experience/weddings/[id]/variants/[variantId]/route.ts	NONE	db,unsafePlatformDb	0	4	11	0	0	0	0	LOW_PLATFORM
+src/app/api/platform/experience/weddings/[id]/variants/route.ts	NONE	db,unsafePlatformDb	0	7	18	0	0	0	0	LOW_PLATFORM
+src/app/api/platform/health/route.ts	GET	db	1	4	0	0	0	3	0	MEDIUM_TENANT_MODEL_WITH_RAW_CLIENT_HELPER
+src/app/api/platform/impersonate/route.ts	POST	db	0	2	12	0	6	3	0	LOW_PLATFORM
+src/app/api/platform/impersonate/status/route.ts	GET		0	0	0	0	0	0	0	LOW
+src/app/api/platform/impersonate/stop/route.ts	POST		0	0	1	0	0	1	0	LOW
+src/app/api/platform/invitations/[id]/route.ts	GET	db,unsafePlatformDb	0	7	2	0	5	4	0	LOW_PLATFORM_AUDITLOG
+src/app/api/platform/invitations/route.ts	NONE	db,unsafePlatformDb	0	5	1	0	12	4	0	LOW_PLATFORM_AUDITLOG
+src/app/api/platform/invitations/stats/route.ts	GET	db,unsafePlatformDb	6	5	26	0	5	3	0	MEDIUM_TENANT_MODEL_WITH_RAW_CLIENT_MANUAL_WED
+src/app/api/platform/invoices/[id]/route.ts	PUT	db	0	7	7	0	2	2	0	LOW_PLATFORM
+src/app/api/platform/invoices/route.ts	GET	db	0	3	3	0	3	2	0	LOW_PLATFORM
+src/app/api/platform/layouts/[id]/route.ts	GET	db,unsafePlatformDb	0	7	2	0	5	4	0	LOW_PLATFORM_AUDITLOG
+src/app/api/platform/layouts/route.ts	NONE	db,unsafePlatformDb	0	5	1	0	12	3	0	LOW_PLATFORM_AUDITLOG
+src/app/api/platform/login/route.ts	POST	db	0	2	9	0	0	0	0	LOW_PLATFORM
+src/app/api/platform/logout/route.ts	POST		0	0	1	0	0	0	0	LOW
+src/app/api/platform/ops/route.ts	GET	db	0	5	0	0	3	3	0	LOW_PLATFORM_AUDITLOG
+src/app/api/platform/organizations/[id]/activate/route.ts	POST	db	0	3	1	0	3	2	0	LOW_PLATFORM_AUDITLOG
+src/app/api/platform/organizations/[id]/limits/route.ts	PATCH	db	0	5	1	2	3	2	0	LOW_PLATFORM_AUDITLOG
+src/app/api/platform/organizations/[id]/members/[memberId]/route.ts	PATCH,DELETE	db	0	7	2	3	3	3	0	LOW_PLATFORM_AUDITLOG
+src/app/api/platform/organizations/[id]/members/route.ts	GET,POST	db	0	9	1	4	2	3	0	LOW_PLATFORM_AUDITLOG
+src/app/api/platform/organizations/[id]/route.ts	GET,PATCH,DELETE	db	0	11	3	2	10	4	0	LOW_PLATFORM_AUDITLOG
+src/app/api/platform/organizations/[id]/suspend/route.ts	POST	db	0	3	1	0	3	2	0	LOW_PLATFORM_AUDITLOG
+src/app/api/platform/organizations/[id]/weddings/route.ts	POST	db	0	5	1	2	16	2	0	LOW_PLATFORM_AUDITLOG
+src/app/api/platform/organizations/route.ts	NONE	db	0	7	1	0	12	3	0	LOW_PLATFORM_AUDITLOG
+src/app/api/platform/organizations/stats/route.ts	GET	db	0	10	0	3	1	2	0	LOW_PLATFORM
+src/app/api/platform/password-reset/confirm/route.ts	POST	db	0	2	1	0	0	0	0	LOW_PLATFORM
+src/app/api/platform/password-reset/request/route.ts	POST	db	0	0	1	0	0	0	0	LOW
+src/app/api/platform/plans/route.ts	GET,POST	db	0	6	3	0	0	3	0	LOW_PLATFORM
+src/app/api/platform/preview-token/[slug]/route.ts	GET	db	0	1	13	0	22	5	0	LOW_PLATFORM
+src/app/api/platform/products/[id]/route.ts	GET	db,unsafePlatformDb	0	7	2	0	4	4	0	LOW_PLATFORM_AUDITLOG
+src/app/api/platform/products/route.ts	NONE	db,unsafePlatformDb	0	5	1	0	12	3	0	LOW_PLATFORM_AUDITLOG
+src/app/api/platform/qr/stats/route.ts	GET	db,unsafePlatformDb	8	2	29	0	5	3	0	MEDIUM_TENANT_MODEL_WITH_RAW_CLIENT_MANUAL_WED
+src/app/api/platform/quality/[slug]/auto-fix/route.ts	POST	db	1	2	13	0	17	3	0	MEDIUM_TENANT_MODEL_WITH_RAW_CLIENT_MANUAL_WED
+src/app/api/platform/quality/[slug]/route.ts	GET,POST	db	0	1	4	0	19	3	0	LOW_PLATFORM
+src/app/api/platform/seed/route.ts	POST,GET	db	0	11	1	0	37	3	0	LOW_PLATFORM
+src/app/api/platform/templates/[id]/route.ts	GET	db,unsafePlatformDb	0	7	2	0	4	4	0	LOW_PLATFORM_AUDITLOG
+src/app/api/platform/templates/route.ts	NONE	db,unsafePlatformDb	0	5	1	0	12	3	0	LOW_PLATFORM_AUDITLOG
+src/app/api/platform/themes/[id]/apply/route.ts	NONE	db,unsafePlatformDb	1	3	15	0	13	2	0	MEDIUM_TENANT_MODEL_WITH_RAW_CLIENT_MANUAL_WED
+src/app/api/platform/themes/[id]/assets/route.ts	NONE	db,unsafePlatformDb	0	3	1	0	3	2	0	LOW_PLATFORM_AUDITLOG
+src/app/api/platform/themes/[id]/lock/route.ts	NONE	db,unsafePlatformDb	0	3	1	0	3	2	0	LOW_PLATFORM_AUDITLOG
+src/app/api/platform/themes/[id]/quality/route.ts	GET	db,unsafePlatformDb	0	1	0	0	3	2	0	LOW_PLATFORM
+src/app/api/platform/themes/[id]/route.ts	GET	db,unsafePlatformDb	0	7	2	0	5	4	0	LOW_PLATFORM_AUDITLOG
+src/app/api/platform/themes/[id]/snapshot/route.ts	NONE	db,unsafePlatformDb	0	3	1	0	2	3	0	LOW_PLATFORM_AUDITLOG
+src/app/api/platform/themes/[id]/transition/route.ts	NONE	db,unsafePlatformDb	0	4	1	0	3	2	0	LOW_PLATFORM_AUDITLOG
+src/app/api/platform/themes/[id]/unlock/route.ts	NONE	db,unsafePlatformDb	0	3	1	0	3	2	0	LOW_PLATFORM_AUDITLOG
+src/app/api/platform/themes/route.ts	NONE	db,unsafePlatformDb	0	5	1	0	12	3	0	LOW_PLATFORM_AUDITLOG
+src/app/api/platform/users/[id]/route.ts	PUT,DELETE	db	0	7	20	0	1	3	0	LOW_PLATFORM
+src/app/api/platform/users/[id]/suspend/route.ts	PATCH	db	0	3	1	0	0	2	0	LOW_PLATFORM
+src/app/api/platform/users/route.ts	GET,POST	db	0	6	23	0	2	3	0	LOW_PLATFORM_AUDITLOG
+src/app/api/platform/weddings/[id]/activate-trial/route.ts	POST	db	0	1	15	0	8	2	0	LOW_PLATFORM
+src/app/api/platform/weddings/[id]/duplicate/route.ts	POST	db	5	3	7	0	11	2	0	MEDIUM_TENANT_MODEL_WITH_RAW_CLIENT_MANUAL_WED
+src/app/api/platform/weddings/[id]/invoices/route.ts	GET,POST	db	0	7	7	0	2	3	0	LOW_PLATFORM
+src/app/api/platform/weddings/[id]/portfolio/route.ts	PATCH	db	0	2	4	0	3	2	0	LOW_PLATFORM
+src/app/api/platform/weddings/[id]/route.ts	GET,PUT,DELETE	db	0	7	8	0	12	5	0	LOW_PLATFORM
+src/app/api/platform/weddings/[id]/subscription/route.ts	GET,PUT	db	0	7	6	0	3	3	0	LOW_PLATFORM
+src/app/api/platform/weddings/[id]/subscription/whatsapp/route.ts	POST	db	0	4	4	0	3	2	0	LOW_PLATFORM
+src/app/api/platform/weddings/[id]/verify-domain/route.ts	GET,POST	db	0	3	3	0	4	3	0	LOW_PLATFORM
+src/app/api/platform/weddings/route.ts	GET	db	0	6	4	4	17	4	0	LOW_PLATFORM
+src/app/api/public/wedding-status/route.ts	GET	db	0	1	0	0	8	0	0	LOW_PLATFORM
+src/app/api/resolve-domain/route.ts	GET	db	0	2	0	0	24	0	0	LOW_PLATFORM
+src/app/api/seed/route.ts	POST,GET	db	0	3	0	0	0	0	0	LOW_PLATFORM
+src/app/api/settings/route.ts	PUT	db,tenantDb	3	0	8	0	6	0	0	OK_TENANT_SCOPED
+src/app/api/simulate/charow-callback/route.ts	GET		0	0	0	0	0	0	0	LOW
+src/app/api/stripe/checkout/route.ts	POST	db	0	2	0	11	4	0	0	LOW_PLATFORM
+src/app/api/stripe/portal/route.ts	POST	db	0	3	0	10	2	0	0	LOW_PLATFORM
+src/app/api/stripe/webhook/route.ts	POST	db	0	14	14	11	1	0	0	LOW_PLATFORM_AUDITLOG
+src/app/api/tables/route.ts	GET,POST,PUT,DELETE	db,tenantDb	8	0	10	0	12	0	0	OK_TENANT_SCOPED
+src/app/api/theme/apply-template/route.ts	POST	db	1	1	6	0	6	0	0	MEDIUM_TENANT_MODEL_WITH_RAW_CLIENT_MANUAL_WED
+src/app/api/theme/route.ts	PUT	db,tenantDb	2	0	8	0	2	0	0	OK_TENANT_SCOPED
+src/app/api/timeline/route.ts	POST,PUT,DELETE	db	6	0	18	0	13	0	0	MEDIUM_TENANT_MODEL_WITH_RAW_CLIENT_MANUAL_WED
+src/app/api/w/share-event/route.ts	POST		0	0	5	0	8	2	1	LOW
+src/app/api/webhooks/charow/route.ts	POST	db	0	3	4	0	0	0	0	LOW_PLATFORM_AUDITLOG
+src/app/api/weddings/[id]/design/route.ts	GET,PUT,POST,DELETE	db	1	10	30	0	18	0	0	MEDIUM_TENANT_MODEL_WITH_RAW_CLIENT_MANUAL_WED
+src/app/api/weddings/[id]/families/[familyId]/route.ts	PUT	db	6	2	14	0	0	0	0	MEDIUM_TENANT_MODEL_WITH_RAW_CLIENT_MANUAL_WED
+src/app/api/weddings/[id]/families/route.ts	NONE	db	3	1	14	0	0	1	0	MEDIUM_TENANT_MODEL_WITH_RAW_CLIENT_MANUAL_WED
+src/app/api/weddings/[id]/gifts/[giftId]/route.ts	PUT	db	4	2	13	0	0	0	0	MEDIUM_TENANT_MODEL_WITH_RAW_CLIENT_MANUAL_WED
+src/app/api/weddings/[id]/gifts/route.ts	NONE	db	2	1	12	0	0	0	0	MEDIUM_TENANT_MODEL_WITH_RAW_CLIENT_MANUAL_WED
+src/app/api/weddings/[id]/groups/[groupId]/route.ts	PUT	db	6	2	14	0	0	0	0	MEDIUM_TENANT_MODEL_WITH_RAW_CLIENT_MANUAL_WED
+src/app/api/weddings/[id]/groups/route.ts	NONE	db	3	1	13	0	0	0	0	MEDIUM_TENANT_MODEL_WITH_RAW_CLIENT_MANUAL_WED
+src/app/api/weddings/[id]/guestbook/[entryId]/route.ts	NONE	db,tenantDb	0	1	14	2	1	3	2	LOW_PLATFORM
+src/app/api/weddings/[id]/guestbook/route.ts	GET	db,tenantDb	1	2	12	1	2	4	2	OK_TENANT_SCOPED
+src/app/api/weddings/[id]/guestbook/stats/route.ts	GET	db,tenantDb	5	1	10	1	1	2	1	OK_TENANT_SCOPED
+src/app/api/weddings/[id]/guests/dietary-stats/route.ts	GET	db	3	1	8	0	0	0	0	MEDIUM_TENANT_MODEL_WITH_RAW_CLIENT_MANUAL_WED
+src/app/api/weddings/[id]/invitation-studio/preview/route.ts	POST	db	3	1	9	0	10	0	0	MEDIUM_TENANT_MODEL_WITH_RAW_CLIENT_MANUAL_WED
+src/app/api/weddings/[id]/invitation-studio/route.ts	GET,PUT,POST	db	2	4	18	0	12	0	0	MEDIUM_TENANT_MODEL_WITH_RAW_CLIENT_MANUAL_WED
+src/app/api/weddings/[id]/invitations/bulk/route.ts	POST	db,tenantDb	4	1	27	7	5	0	0	OK_TENANT_SCOPED
+src/app/api/weddings/[id]/program/[itemId]/route.ts	NONE	db	4	0	16	0	0	0	0	MEDIUM_TENANT_MODEL_WITH_RAW_CLIENT_MANUAL_WED
+src/app/api/weddings/[id]/program/migrate/route.ts	NONE	db,tenantDb	1	1	15	0	1	4	1	OK_TENANT_SCOPED
+src/app/api/weddings/[id]/program/route.ts	NONE	db	2	2	18	0	0	1	0	MEDIUM_TENANT_MODEL_WITH_RAW_CLIENT_MANUAL_WED
+src/app/api/weddings/[id]/published-config/route.ts	GET	db	0	1	8	0	4	0	0	LOW_PLATFORM
+src/app/api/weddings/[id]/quotas/route.ts	GET		0	0	6	0	0	0	0	LOW
+src/app/api/weddings/[id]/stats/route.ts	GET	db	15	0	20	0	0	0	0	MEDIUM_TENANT_MODEL_WITH_RAW_CLIENT_MANUAL_WED
+src/app/api/weddings/[id]/verify-domain/route.ts	GET,POST	db	0	5	15	0	5	0	0	LOW_PLATFORM_AUDITLOG

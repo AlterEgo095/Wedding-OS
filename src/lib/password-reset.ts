@@ -235,6 +235,38 @@ export async function sendResetEmail(email: string, rawToken: string): Promise<b
   const fromAddr = process.env.SMTP_FROM || 'noreply@heureux-mariage.local';
   const from = `"${fromName}" <${fromAddr}>`;
 
+  // ─── Resend HTTP transport (P1-5, sprint P1) ─────────────────────────────
+  // Chemin provider SANS dépendance : RESEND_API_KEY (+ RESEND_FROM optionnel,
+  // sinon SMTP_FROM/SMTP_FROM_NAME). Vérifié AVANT SMTP. En cas d'échec on
+  // chute vers SMTP puis vers le stub log (l'URL reste récupérable par l'opérateur).
+  if (process.env.RESEND_API_KEY) {
+    try {
+      const res = await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          from: process.env.RESEND_FROM || `${fromName} <${fromAddr}>`,
+          to: email,
+          subject,
+          text: textBody,
+        }),
+      });
+      if (res.ok) {
+        logger.info('Password reset email sent via Resend', { to: email });
+        return true;
+      }
+      logger.error('Resend API rejected the reset email', { status: res.status });
+    } catch (err) {
+      logger.error('Resend send failed — trying SMTP fallback', {
+        errMessage: err instanceof Error ? err.message : String(err),
+        errName: err instanceof Error ? err.name : 'Unknown',
+      });
+    }
+  }
+
   // ─── Real SMTP transport (only if configured + nodemailer installed) ────
   // nodemailer is NOT a declared dependency — we lazy-require it so the
   // production build does not fail when the operator hasn't installed it.
