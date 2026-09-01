@@ -35,8 +35,6 @@ import {
   Heart, Tag, Gift, CalendarDays, BarChart3,
   // P4.2 — Dietary preferences tab icon
   Utensils,
-  // P4.8 — Realtime tab icon
-  Activity,
   // P4.7 — 2FA setup button (sidebar footer)
   ShieldCheck,
   // Phase 2F — context banner icons (Users already imported above; Calendar /
@@ -91,9 +89,8 @@ const QRCodeManager = dynamic(() => import('@/components/admin/QRCodeManager'), 
 import { DietaryStatsCard } from '@/components/admin/DietaryStatsCard'
 // P4.7 — 2FA setup modal (reusable across all admin/staff roles)
 import TwoFactorSetup from '@/components/auth/TwoFactorSetup'
-// P4.8 — Real-time UI widgets (LiveStatsWidget + LiveCheckInFeed)
-import { LiveStatsWidget } from '@/components/realtime/LiveStatsWidget'
-import { LiveCheckInFeed } from '@/components/realtime/LiveCheckInFeed'
+// P1-9 (sprint P2): realtime widgets removed — the realtime mini-service was
+// orphaned (pushRealtimeEvent had zero callers) and is being decommissioned.
 import { SkeletonAdminShell } from '@/components/design-system'
 
 interface AuthUser {
@@ -104,7 +101,7 @@ interface AuthUser {
   weddingId?: string | null
 }
 
-type TabId = 'dashboard' | 'designer' | 'invitation-studio' | 'guests' | 'families' | 'groups' | 'invitations' | 'qrcodes' | 'check-in' | 'tables' | 'gifts' | 'media' | 'music' | 'timeline' | 'program' | 'dietary' | 'story' | 'stats' | 'users' | 'settings' | 'access-logs' | 'appearance' | 'theme' | 'realtime'
+type TabId = 'dashboard' | 'designer' | 'invitation-studio' | 'guests' | 'families' | 'groups' | 'invitations' | 'qrcodes' | 'check-in' | 'tables' | 'gifts' | 'media' | 'music' | 'timeline' | 'program' | 'dietary' | 'story' | 'stats' | 'users' | 'settings' | 'access-logs' | 'appearance' | 'theme'
 
 interface NavItem {
   id: TabId
@@ -115,8 +112,6 @@ interface NavItem {
 
 const NAV_ITEMS: NavItem[] = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  // P4.8 — Realtime dashboard (live stats + check-in feed)
-  { id: 'realtime', label: 'Temps réel', icon: Activity },
   { id: 'designer', label: 'Designer', icon: LayoutTemplate },
   // MISSION 5.9.2-B/C: Premium Invitation Studio — template selector + photo studio + live preview.
   { id: 'invitation-studio', label: 'Invitation Studio', icon: Crown },
@@ -150,7 +145,7 @@ const NAV_ITEMS: NavItem[] = [
 // The 23 wedding-admin nav items are grouped into 6 sections per the audit's
 // IA proposal. Each section has a distinct color stripe for visual scanning:
 //
-//   TABLEAU DE BORD (gold)     — Dashboard, Temps réel, Statistiques
+//   TABLEAU DE BORD (gold)     — Dashboard, Statistiques (realtime tab removed P1-9)
 //   INVITÉS       (emerald)    — Invités, Familles, Groupes, Tables, Préf. alimentaires
 //   ÉVÉNEMENT     (rose)       — Chronologie, Programme, Musique, Histoire, Cadeaux, Médias
 //   INVITATIONS   (violet)     — Invitations, QR Codes, Réception
@@ -172,7 +167,7 @@ interface NavSectionDef {
 }
 
 const NAV_SECTION_DEFS: NavSectionDef[] = [
-  { id: 'tb', label: 'TABLEAU DE BORD', stripeColor: 'gold', itemIds: ['dashboard', 'realtime', 'stats'] },
+  { id: 'tb', label: 'TABLEAU DE BORD', stripeColor: 'gold', itemIds: ['dashboard', 'stats'] },
   { id: 'inv', label: 'INVITÉS', stripeColor: 'emerald', itemIds: ['guests', 'families', 'groups', 'tables', 'dietary'] },
   { id: 'evt', label: 'ÉVÉNEMENT', stripeColor: 'rose', itemIds: ['timeline', 'program', 'music', 'story', 'gifts', 'media'] },
   { id: 'invts', label: 'INVITATIONS', stripeColor: 'violet', itemIds: ['invitations', 'qrcodes', 'check-in'] },
@@ -534,12 +529,10 @@ export default function PerWeddingAdminPage() {
           </div>
         )
       case 'check-in':
-        // P4.8 FIX-P4-REALTIME — LiveCheckInFeed rendered above CheckInManager so
-        // reception staff see live QR-scan arrivals in real time, alongside the
-        // manual check-in interface.
+        // P1-9 (sprint P2): the LiveCheckInFeed that used to sit above
+        // CheckInManager was removed with the orphaned realtime pipeline.
         return (
           <div className="space-y-6">
-            <LiveCheckInFeed weddingId={wedding.id} />
             <CheckInManager weddingSlug={slug} csrfToken={getCsrfTokenFromCookie()} />
             <NextActionCta
               label="Prochaine étape: Voir les statistiques"
@@ -619,16 +612,6 @@ export default function PerWeddingAdminPage() {
               icon={<QrCode className="w-4 h-4" />}
               onClick={() => handleTabChange('check-in')}
             />
-          </div>
-        )
-      // P4.8 FIX-P4-REALTIME — dedicated "Temps réel" tab combining the live
-      // stats widget (top) with the live check-in feed (bottom) so wedding
-      // organizers can monitor arrivals in real time.
-      case 'realtime':
-        return (
-          <div className="space-y-6 p-4">
-            <LiveStatsWidget weddingId={wedding.id} />
-            <LiveCheckInFeed weddingId={wedding.id} maxHeight="520px" />
           </div>
         )
       default:

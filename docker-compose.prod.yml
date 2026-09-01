@@ -21,8 +21,9 @@ services:
     environment:
       DEPLOY_SHA: ${DEPLOY_SHA:-unknown}
       BUILD_TIME: ${BUILD_TIME:-unknown}
-      REALTIME_PUSH_TOKEN: 91dbaf2dd4197e9274e258ef2a9933a45bbe309c06ed587bb11c2cd360118eea
-      REALTIME_SERVICE_URL: http://host.docker.internal:3006/internal/push
+      # P1-9 (sprint P2): REALTIME_PUSH_TOKEN / REALTIME_SERVICE_URL removed —
+      # the realtime mini-service is decommissioned (pushRealtimeEvent had zero
+      # callers; the leaked token is voided by stopping wedding-realtime.service).
     ports:
       - "127.0.0.1:3080:3000"
     volumes:
@@ -31,11 +32,6 @@ services:
       - wedding-logs:/app/logs
     networks:
       - wedding-network
-    # P4.8 FIX-P4-REALTIME: allow container to reach host port 3006 (realtime
-    # mini-service running under systemd on the host). On Linux, host-gateway
-    # resolves to the docker bridge gateway so host.docker.internal works.
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     depends_on:
       redis:
         condition: service_healthy
