@@ -1,8 +1,10 @@
 export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from 'next/server';
+// Sprint P0-4 (audit 2026-09-01): bust ISR route cache on music mutations.
+import { revalidatePath } from 'next/cache';
 import { db, tenantDb } from '@/lib/db';
 import { getAuthUser, hasPermission } from '@/lib/auth';
-import { withPublicTenant, withAdminTenantHandler, TenantContext } from '@/lib/tenant-context';
+import { withPublicTenant, withAdminTenantHandler, TenantContext, invalidateWeddingCache } from '@/lib/tenant-context';
 // CONS-2-SECURITY (Fix 5): rate-limit HOF for upload endpoints.
 import { withRateLimit } from '@/lib/rate-limit';
 import { writeFile, unlink, mkdir } from 'fs/promises';
@@ -44,6 +46,14 @@ async function setMusicSetting(ctx: TenantContext, key: string, value: string) {
     update: { value },
     create: { weddingId: ctx.weddingId, key, value },
   });
+
+  // Sprint P0-4 (audit 2026-09-01): music settings feed the cached public
+  // page (getCachedWeddingPageData -> musicSettings). Bust L1+L2 caches so
+  // changes are visible without a container restart. Idempotent + cheap
+  // (setMusicSetting is called 1-3x per mutation).
+  invalidateWeddingCache(ctx.slug);
+  revalidatePath('/w/[slug]', 'page');
+  revalidatePath('/w/[slug]/invite/[code]', 'page');
 }
 
 /** GET — Retrieve music settings (public, no auth required) */

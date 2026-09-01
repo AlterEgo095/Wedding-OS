@@ -1,8 +1,10 @@
 export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from 'next/server';
+// Sprint P0-4 (audit 2026-09-01): bust ISR route cache on media mutations.
+import { revalidatePath } from 'next/cache';
 import { db, tenantDb } from '@/lib/db';
 import { getAuthUser, hasPermission } from '@/lib/auth';
-import { withPublicTenant, withAdminTenantHandler } from '@/lib/tenant-context';
+import { withPublicTenant, withAdminTenantHandler, invalidateWeddingCache } from '@/lib/tenant-context';
 import { checkMediaLimit } from '@/lib/plan-limits';
 import { writeFile, unlink, mkdir } from 'fs/promises';
 import path from 'path';
@@ -265,6 +267,15 @@ async function uploadMediaHandler(request: NextRequest): Promise<NextResponse> {
       // for consistency with the plan-limit check above.
       await incrementUsage(ctx.weddingId, 'MEDIA_BYTES', buffer.byteLength).catch(() => {});
 
+      // Sprint P0-4 (audit 2026-09-01): media mutations never invalidated
+      // the L1 weddingCache + L2 unstable_cache ISR layers, so new photos
+      // stayed invisible until a container restart (documented workaround
+      // 'règle n°3' of LIVE-WEDDING-CHECKLIST). Bust both layers here —
+      // same proven pattern as the settings route.
+      invalidateWeddingCache(ctx.slug);
+      revalidatePath('/w/[slug]', 'page');
+      revalidatePath('/w/[slug]/invite/[code]', 'page');
+
       return NextResponse.json({ media }, { status: 201 });
     }) as unknown as NextResponse;
   } catch (error) {
@@ -306,6 +317,11 @@ export async function DELETE(request: NextRequest) {
       }
 
       await tenantDb.media.delete({ where: { id } });
+
+      // Sprint P0-4 (audit 2026-09-01): bust L1+L2 caches on delete too.
+      invalidateWeddingCache(ctx.slug);
+      revalidatePath('/w/[slug]', 'page');
+      revalidatePath('/w/[slug]/invite/[code]', 'page');
 
       // P2-SEC-14: writeAuditLog populates ipAddress + userAgent from request.
       await writeAuditLog({
