@@ -43,7 +43,7 @@ cp .env.example .env
 #   NODE_ENV=production
 
 # 3. Configure Caddy/Nginx reverse proxy
-#    (see Caddyfile for the wedding.hpph.net config)
+#    (see Caddyfile for the wedding.aenews.store config)
 
 # 4. Deploy
 ./scripts/deploy-production.sh
