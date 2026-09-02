@@ -122,6 +122,9 @@ import {
   type AdminShellUser,
   type AdminShellBreadcrumb,
 } from '@/components/admin/AdminShell'
+// P4-FUSION — fused-section sub-navigation + pinned wedding context selector.
+import { SectionTabBar } from '@/components/admin/SectionTabBar'
+import { WeddingContextSelector } from '@/components/admin/WeddingContextSelector'
 
 // useSyncExternalStore subscribe placeholder — we only need the getServerSnapshot
 // vs getSnapshot split to detect "are we hydrated yet?" without triggering the
@@ -180,51 +183,46 @@ const NAV_ITEMS: NavItem[] = [
 
 // Maps each tab id to a section label. The sidebar renders a section header
 // before the first item of each group. Undefined = no header (flat).
-const NAV_SECTIONS: Record<string, string> = {
-  dashboard: 'COMMAND CENTER',
-  diagnostics: 'COMMAND CENTER',
-  commercial: 'COMMERCIAL',
-  weddings: 'EVENT OPERATIONS',
-  organizations: 'ORGANIZATIONS',
-  collections: 'PRODUCTION STUDIO',
-  templates: 'PRODUCTION STUDIO',
-  themes: 'PRODUCTION STUDIO',
-  identities: 'PRODUCTION STUDIO',
-  'components-registry': 'PRODUCTION STUDIO',
-  assets: 'PRODUCTION STUDIO',
-  deployments: 'PRODUCTION STUDIO',
-  governance: 'PRODUCTION STUDIO',
-  // Mission 6.0 P3 — new Production Studio tabs
-  brands: 'PRODUCTION STUDIO',
-  layouts: 'PRODUCTION STUDIO',
-  products: 'PRODUCTION STUDIO',
-  experience: 'PRODUCTION STUDIO',
-  'platform-health': 'PRODUCTION STUDIO',
-  'qr-invitations': 'PRODUCTION STUDIO',
-  ops: 'PRODUCTION STUDIO',
-  users: 'SYSTEM',
+// P4-FUSION — 8-section IA (audit ADMIN-MAP §4).
+//
+// The former 25-item / 6-section sidebar is fused into 8 top-level sections.
+// The PRODUCTION STUDIO catch-all (13 tabs mixing 4 concept families) is
+// split per the audit finding:
+//   CATALOGUE      — client-facing content (collections, templates, themes,
+//                    identities, qr-invitations)
+//   DESIGN SYSTÈME — design infrastructure (components-registry, assets,
+//                    brands, layouts, products, experience)
+//   OPÉRATIONS     — run concerns (deployments, platform-health, ops)
+//
+// Contract preserved:
+//   - TabId SSOT unchanged (all ids intact, none renamed) — DashboardTab /
+//     DiagnosticCenterTab setActiveTab callers keep working. The sub-tab
+//     state IS activeTab; the section is derived from it.
+//   - Zero tab component touched — sections only regroup them.
+//   - 'appearance' / 'marketing' (legacy deep-link-only ids, not in
+//     NAV_ITEMS) fall back to the overview section.
+
+interface PlatformSectionDef {
+  id: string
+  label: string
+  stripeColor: 'gold' | 'emerald' | 'rose' | 'violet' | 'slate'
+  icon: React.ComponentType<{ className?: string }>
+  itemIds: TabId[]
 }
 
-// Phase 2F — section color stripes (audit §20.4). Each section gets a
-// distinct 2px left color stripe for visual scanning. Mirrors the
-// wedding-admin's 6-section IA pattern. Colors:
-//   COMMAND CENTER     → gold
-//   COMMERCIAL         → emerald
-//   EVENT OPERATIONS   → rose
-//   ORGANIZATIONS      → violet
-//   PRODUCTION STUDIO  → gold
-//   SYSTEM             → slate
-const SECTION_STRIPE_COLOR: Record<
-  string,
-  'gold' | 'emerald' | 'rose' | 'violet' | 'slate'
-> = {
-  'COMMAND CENTER': 'gold',
-  COMMERCIAL: 'emerald',
-  'EVENT OPERATIONS': 'rose',
-  ORGANIZATIONS: 'violet',
-  'PRODUCTION STUDIO': 'gold',
-  SYSTEM: 'slate',
-}
+const PLATFORM_SECTION_DEFS: PlatformSectionDef[] = [
+  { id: 'overview', label: "Vue d'ensemble", stripeColor: 'gold', icon: LayoutDashboard, itemIds: ['dashboard', 'diagnostics'] },
+  { id: 'commercial', label: 'Commercial', stripeColor: 'emerald', icon: TrendingUp, itemIds: ['commercial', 'billing', 'onboarding'] },
+  { id: 'weddings', label: 'Mariages', stripeColor: 'rose', icon: Heart, itemIds: ['weddings', 'guestbook'] },
+  { id: 'organizations', label: 'Organisations', stripeColor: 'violet', icon: Building2, itemIds: ['organizations'] },
+  { id: 'catalogue', label: 'Catalogue', stripeColor: 'violet', icon: Crown, itemIds: ['collections', 'templates', 'themes', 'identities', 'qr-invitations'] },
+  { id: 'design-system', label: 'Design Système', stripeColor: 'gold', icon: Boxes, itemIds: ['components-registry', 'assets', 'brands', 'layouts', 'products', 'experience'] },
+  { id: 'ops', label: 'Opérations', stripeColor: 'slate', icon: Cloud, itemIds: ['deployments', 'platform-health', 'ops'] },
+  { id: 'system', label: 'Système', stripeColor: 'slate', icon: ShieldCheck, itemIds: ['users', 'governance', 'audit'] },
+]
+
+// P4-FUSION — section color vocabulary: gold / emerald / rose / violet / slate
+// (see stripeColor field of PLATFORM_SECTION_DEFS).
 
 // ════════════════════════════════════════════════════════════════════════════
 // usePlatformFetch — wraps fetch with cookie auth + session-expiry handling
@@ -412,6 +410,19 @@ export default function PlatformAdminPage() {
 
   const activeNavItem = NAV_ITEMS.find((item) => item.id === activeTab)
 
+  // ─── P4-FUSION — derived section state ──────────────────────────────
+  // The section is DERIVED from activeTab (no parallel state to desync).
+  // Fallback guarantees a defined section for any TabId (covers the legacy
+  // deep-link-only ids 'appearance' / 'marketing').
+  const activeSectionDef =
+    PLATFORM_SECTION_DEFS.find((s) => s.itemIds.includes(activeTab)) ??
+    PLATFORM_SECTION_DEFS[0]
+
+  const handleSectionChange = useCallback((sectionId: string) => {
+    const def = PLATFORM_SECTION_DEFS.find((s) => s.id === sectionId)
+    if (def) setActiveTab(def.itemIds[0])
+  }, [])
+
   const renderContent = (): ReactNode => {
     switch (activeTab) {
       case 'diagnostics':
@@ -484,60 +495,39 @@ export default function PlatformAdminPage() {
   }
 
   // ─── Build <AdminShell> props ──────────────────────────────────────────────
-  // Phase 1D: chrome extracted into the reusable <AdminShell> primitive. The
-  // 23 NAV_ITEMS are grouped into 6 sections using the existing NAV_SECTIONS
-  // map (COMMAND CENTER, COMMERCIAL, EVENT OPERATIONS, ORGANIZATIONS,
-  // PRODUCTION STUDIO, SYSTEM). Items without an explicit NAV_SECTIONS entry
-  // (billing, onboarding, guestbook, audit) inherit the previous item's
-  // section so they remain grouped with their logical siblings.
-  //
-  // Phase 2F: each section gets a distinct color stripe via
-  // SECTION_STRIPE_COLOR (audit §20.4).
+  // Phase 1D: chrome extracted into the reusable <AdminShell> primitive.
+  // P4-FUSION: the sidebar renders the 8 top-level sections as a flat nav
+  // (one item per section — no section headers). Sub-navigation lives in the
+  // content area via <SectionTabBar>.
 
-  const sections: AdminShellSection[] = (() => {
-    const result: AdminShellSection[] = []
-    let currentSectionLabel: string | undefined
-    let currentSectionId = 'section-0'
-    let idx = 0
-    for (const item of NAV_ITEMS) {
-      const itemSectionLabel = NAV_SECTIONS[item.id]
-      // Start a new section when this item has an explicit section label
-      // that differs from the current one. Items without an explicit label
-      // stay in the current section (preserves the visual grouping of
-      // billing/onboarding under COMMERCIAL, audit under SYSTEM, etc.).
-      const startsNewSection =
-        itemSectionLabel !== undefined && itemSectionLabel !== currentSectionLabel
-      if (result.length === 0 || startsNewSection) {
-        currentSectionLabel = itemSectionLabel
-        currentSectionId = `section-${idx++}`
-        result.push({
-          id: currentSectionId,
-          label: itemSectionLabel, // undefined → no header rendered
-          stripeColor: itemSectionLabel
-            ? SECTION_STRIPE_COLOR[itemSectionLabel]
-            : undefined,
-          items: [],
-        })
-      }
-      result[result.length - 1].items.push({
-        href: `#${item.id}`,
-        label: item.label,
-        icon: <item.icon className="w-4 h-4 shrink-0" />,
-        active: activeTab === item.id,
-        onNavigate: () => handleTabChange(item.id),
-      })
-    }
-    return result
-  })()
+  const sections: AdminShellSection[] = PLATFORM_SECTION_DEFS.map((sectionDef) => ({
+    id: `sec-${sectionDef.id}`,
+    label: undefined, // flat top-level nav — no section header
+    stripeColor: sectionDef.stripeColor,
+    items: [
+      {
+        href: `#sec-${sectionDef.id}`,
+        label: sectionDef.label,
+        icon: <sectionDef.icon className="w-4 h-4 shrink-0" />,
+        active: activeSectionDef.id === sectionDef.id,
+        onNavigate: () => handleSectionChange(sectionDef.id),
+      },
+    ],
+  }))
 
-  // ─── Breadcrumbs (Phase 2F) ─────────────────────────────────────────────
-  // Plateforme (link to /platform/admin) > Section label (intermediate) >
-  // Page label (current). The last item is rendered with text-gold (no link).
-  const activeSectionLabel = NAV_SECTIONS[activeTab as string]
+  // ─── Breadcrumbs (updated P4-FUSION)
+  // Plateforme (link to /platform/admin) > Section label > Sub-tab label
+  // (only when the section has >1 sub-tabs — for single-sub-tab sections the
+  // section label IS the page). The last item is rendered with text-gold (no
+  // link).
   const breadcrumbs: AdminShellBreadcrumb[] = [
     { label: 'Plateforme', href: '/platform/admin' },
-    ...(activeSectionLabel ? [{ label: activeSectionLabel }] : []),
-    { label: activeNavItem?.label || '' },
+    ...(activeSectionDef.itemIds.length > 1
+      ? [
+          { label: activeSectionDef.label },
+          { label: activeNavItem?.label || activeSectionDef.label },
+        ]
+      : [{ label: activeSectionDef.label }]),
   ]
 
   const brand = (
@@ -587,18 +577,18 @@ export default function PlatformAdminPage() {
 
   const mobileBottomBar = (
     <nav className="md:hidden shrink-0 flex items-center border-t border-white/10 bg-white/[0.02] safe-area-pb">
-      {NAV_ITEMS.slice(0, 6).map((item) => {
-        const isActive = activeTab === item.id
+      {PLATFORM_SECTION_DEFS.slice(0, 5).map((def) => {
+        const isActive = activeSectionDef.id === def.id
         return (
           <button
-            key={item.id}
-            onClick={() => handleTabChange(item.id)}
+            key={def.id}
+            onClick={() => handleSectionChange(def.id)}
             className={`flex-1 flex flex-col items-center gap-1 py-2 text-xs transition-colors ${
               isActive ? 'text-gold' : 'text-muted-foreground'
             }`}
           >
-            <item.icon className="w-5 h-5" />
-            <span className="truncate text-[10px]">{item.label}</span>
+            <def.icon className="w-5 h-5" />
+            <span className="truncate text-[10px]">{def.label}</span>
           </button>
         )
       })}
@@ -607,6 +597,11 @@ export default function PlatformAdminPage() {
 
   const topBarRight = (
     <>
+      {/* P4-FUSION — pinned wedding context selector (audit ADMIN-MAP §2:
+          "What wedding am I managing ?" was unanswered on the platform
+          console). Persists the selected slug in localStorage and exposes
+          direct jumps to the wedding console + Preview Lab. */}
+      <WeddingContextSelector fetchWithAuth={fetchWithAuth} />
       <Link
         href="/"
         className="hidden sm:flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors px-2"
@@ -637,10 +632,13 @@ export default function PlatformAdminPage() {
     </>
   )
 
-  const pageTitle = activeNavItem && (
+  // P4-FUSION: the page title shows the SECTION (the stable top-level place),
+  // not the sub-tab — the sub-tab bar below (when present) carries the
+  // in-section position.
+  const pageTitle = (
     <>
-      <activeNavItem.icon className="w-4 h-4 text-gold" />
-      <h1 className="font-semibold text-sm">{activeNavItem.label}</h1>
+      <activeSectionDef.icon className="w-4 h-4 text-gold" />
+      <h1 className="font-semibold text-sm">{activeSectionDef.label}</h1>
     </>
   )
 
@@ -665,6 +663,18 @@ export default function PlatformAdminPage() {
         topBarRight={topBarRight}
         mobileBottomBar={mobileBottomBar}
       >
+        {/* P4-FUSION — sub-tab bar for multi-manager sections (rendered
+            OUTSIDE AnimatePresence so switching sub-tabs doesn't remount
+            the bar itself). Single-sub-tab sections render no bar. */}
+        <SectionTabBar
+          consoleId="platform"
+          items={activeSectionDef.itemIds.map((id) => ({
+            id,
+            label: NAV_ITEMS.find((n) => n.id === id)?.label || id,
+          }))}
+          activeId={activeTab}
+          onChange={handleTabChange}
+        />
         <AnimatePresence mode="wait">
           <motion.div
             key={activeTab}

@@ -58,6 +58,8 @@ import {
   type AdminShellBreadcrumb,
 } from '@/components/admin/AdminShell';
 import { NextActionCta } from '@/components/admin/NextActionCta';
+// P4-FUSION — sub-navigation bar rendered inside fused sections (23 tabs → 10).
+import { SectionTabBar } from '@/components/admin/SectionTabBar';
 // Phase 4C — Impersonation banner (shown when a PLATFORM_ADMIN is
 // impersonating the wedding admin via /api/platform/impersonate).
 import { ImpersonationBanner } from '@/components/admin/ImpersonationBanner';
@@ -139,23 +141,23 @@ const NAV_ITEMS: NavItem[] = [
   { id: 'settings', label: 'Paramètres', icon: Settings, superAdminOnly: true },
 ]
 
-// ════════════════════════════════════════════════════════════════════════════
-// Phase 2F — 6-section IA grouping (audit §17.3).
-// ════════════════════════════════════════════════════════════════════════════
-// The 23 wedding-admin nav items are grouped into 6 sections per the audit's
-// IA proposal. Each section has a distinct color stripe for visual scanning:
+// P4-FUSION — 10-section IA (audit ADMIN-MAP §4).
 //
-//   TABLEAU DE BORD (gold)     — Dashboard, Statistiques (realtime tab removed P1-9)
-//   INVITÉS       (emerald)    — Invités, Familles, Groupes, Tables, Préf. alimentaires
-//   ÉVÉNEMENT     (rose)       — Chronologie, Programme, Musique, Histoire, Cadeaux, Médias
-//   INVITATIONS   (violet)     — Invitations, QR Codes, Réception
-//   DESIGN        (gold)       — Designer, Thème, Apparence
-//   SYSTÈME       (slate)      — Utilisateurs, Paramètres, Accès
+// The former 23-item / 6-meta-section sidebar is fused into 10 top-level
+// sections following the audit's target IA:
 //
-// All 23 items are preserved — none removed, none renamed, no tab id changed.
-// The superAdminOnly filter (users + settings) still applies for non-platform
-// admins (the SYSTÈME section collapses to just the access-logs entry for
-// ORGANIZER users).
+//   VUE D'ENSEMBLE · CONTENU · DESIGN · INVITÉS · RSVP · ÉVÉNEMENT ·
+//   MÉDIAS · LIVRAISON · ANALYTIQUE · PARAMÈTRES
+//
+// Contract preserved:
+//   - TabId SSOT unchanged (all 23 ids intact, none renamed) — NextActionCta,
+//     Dashboard CTAs and every setActiveTab caller keep working. The sub-tab
+//     state IS activeTab; the section is derived from it.
+//   - Zero manager component touched — sections only regroup them.
+//   - superAdminOnly gating preserved (visibleNavItems filter still applies;
+//     sections that would be empty after filtering are skipped).
+// Sections with >1 sub-tabs render <SectionTabBar> above the content;
+// single-sub-tab sections render their manager directly (zero extra chrome).
 
 type SectionStripeColor = 'gold' | 'emerald' | 'rose' | 'violet' | 'slate';
 
@@ -163,16 +165,21 @@ interface NavSectionDef {
   id: string;
   label: string;
   stripeColor: SectionStripeColor;
+  icon: React.ComponentType<{ className?: string }>;
   itemIds: TabId[];
 }
 
-const NAV_SECTION_DEFS: NavSectionDef[] = [
-  { id: 'tb', label: 'TABLEAU DE BORD', stripeColor: 'gold', itemIds: ['dashboard', 'stats'] },
-  { id: 'inv', label: 'INVITÉS', stripeColor: 'emerald', itemIds: ['guests', 'families', 'groups', 'tables', 'dietary'] },
-  { id: 'evt', label: 'ÉVÉNEMENT', stripeColor: 'rose', itemIds: ['timeline', 'program', 'music', 'story', 'gifts', 'media'] },
-  { id: 'invts', label: 'INVITATIONS', stripeColor: 'violet', itemIds: ['invitations', 'qrcodes', 'check-in'] },
-  { id: 'dsg', label: 'DESIGN', stripeColor: 'gold', itemIds: ['designer', 'invitation-studio', 'theme', 'appearance'] },
-  { id: 'sys', label: 'SYSTÈME', stripeColor: 'slate', itemIds: ['users', 'settings', 'access-logs'] },
+const SECTION_DEFS: NavSectionDef[] = [
+  { id: 'overview', label: "Vue d'ensemble", stripeColor: 'gold', icon: LayoutDashboard, itemIds: ['dashboard'] },
+  { id: 'content', label: 'Contenu', stripeColor: 'rose', icon: BookOpen, itemIds: ['story', 'timeline', 'program', 'music', 'gifts'] },
+  { id: 'design', label: 'Design', stripeColor: 'violet', icon: Palette, itemIds: ['designer', 'theme', 'appearance', 'invitation-studio'] },
+  { id: 'guests', label: 'Invités', stripeColor: 'emerald', icon: Users, itemIds: ['guests', 'families', 'groups', 'dietary'] },
+  { id: 'rsvp', label: 'RSVP', stripeColor: 'violet', icon: Mail, itemIds: ['invitations'] },
+  { id: 'event', label: 'Événement', stripeColor: 'rose', icon: CalendarDays, itemIds: ['tables', 'check-in'] },
+  { id: 'media', label: 'Médias', stripeColor: 'emerald', icon: ImageIcon, itemIds: ['media'] },
+  { id: 'delivery', label: 'Livraison', stripeColor: 'gold', icon: QrCode, itemIds: ['qrcodes'] },
+  { id: 'analytics', label: 'Analytique', stripeColor: 'slate', icon: BarChart3, itemIds: ['stats', 'access-logs'] },
+  { id: 'settings', label: 'Paramètres', stripeColor: 'slate', icon: Settings, itemIds: ['settings', 'users'] },
 ]
 
 // Generic couple-photo fallback (exists in /public for every deployment).
@@ -486,6 +493,25 @@ export default function PerWeddingAdminPage() {
     (item) => !item.superAdminOnly || isPlatformAdmin(user?.role || '')
   )
 
+  // ─── P4-FUSION — derived section state ──────────────────────────────
+  // The section is DERIVED from activeTab (no parallel state to desync).
+  // Fallback guarantees a defined section for any TabId.
+  const activeSectionDef =
+    SECTION_DEFS.find((s) => s.itemIds.includes(activeTab)) ?? SECTION_DEFS[0]
+
+  const handleSectionChange = useCallback(
+    (sectionId: string) => {
+      const def = SECTION_DEFS.find((s) => s.id === sectionId)
+      if (!def) return
+      // Land on the first VISIBLE sub-tab (superAdminOnly gating-aware).
+      const firstVisible = def.itemIds.find((id) =>
+        visibleNavItems.some((v) => v.id === id)
+      )
+      if (firstVisible) setActiveTab(firstVisible)
+    },
+    [visibleNavItems]
+  )
+
   const renderContent = () => {
     if (!user) return null
 
@@ -635,30 +661,33 @@ export default function PerWeddingAdminPage() {
 
   // ─── Build <AdminShell> props ──────────────────────────────────────────────
   // Phase 1D: chrome extracted into the reusable <AdminShell> primitive.
-  // Phase 2F: 23 NAV_ITEMS grouped into 6 sections (TABLEAU DE BORD / INVITÉS /
-  // ÉVÉNEMENT / INVITATIONS / DESIGN / SYSTÈME) per audit §17.3. Each section
-  // has a distinct color stripe for visual scanning. The visibleNavItems
-  // filter (superAdminOnly gating for non-platform-admins) is preserved —
-  // sections that would be empty after filtering are skipped.
+  // P4-FUSION: the sidebar renders the 10 top-level sections as a flat nav
+  // (one item per section — no section headers). Sub-navigation lives in the
+  // content area via <SectionTabBar>. The visibleNavItems filter
+  // (superAdminOnly gating for non-platform-admins) is preserved — sections
+  // that would be empty after filtering are skipped.
 
-  const sections: AdminShellSection[] = NAV_SECTION_DEFS.map((sectionDef) => {
+  const sections: AdminShellSection[] = SECTION_DEFS.map((sectionDef): AdminShellSection | null => {
     const sectionItems = sectionDef.itemIds
       .map((id) => visibleNavItems.find((item) => item.id === id))
       .filter((item): item is NavItem => item !== undefined)
+    if (sectionItems.length === 0) return null
     return {
-      id: sectionDef.id,
-      label: sectionDef.label,
+      id: `sec-${sectionDef.id}`,
+      label: undefined, // flat top-level nav — no section header
       stripeColor: sectionDef.stripeColor,
-      items: sectionItems.map((item) => ({
-        href: `#${item.id}`,
-        label: item.label,
-        icon: <item.icon className="w-4 h-4 shrink-0" />,
-        active: activeTab === item.id,
-        onNavigate: () => handleTabChange(item.id),
-        superAdminOnly: item.superAdminOnly,
-      })),
+      items: [
+        {
+          href: `#sec-${sectionDef.id}`,
+          label: sectionDef.label,
+          icon: <sectionDef.icon className="w-4 h-4 shrink-0" />,
+          active: activeSectionDef.id === sectionDef.id,
+          onNavigate: () => handleSectionChange(sectionDef.id),
+          superAdminOnly: sectionItems.every((item) => item.superAdminOnly),
+        },
+      ],
     }
-  }).filter((section) => section.items.length > 0)
+  }).filter((section): section is AdminShellSection => section !== null)
 
   const brand = (
     <div className="p-4 flex items-center gap-3">
@@ -732,14 +761,22 @@ export default function PerWeddingAdminPage() {
     </div>
   )
 
-  // ─── Breadcrumbs (Phase 2F) ─────────────────────────────────────────────
-  // CoupleLabel (link) > Section label (intermediate) > Page label (current).
-  // The last item is the current page — rendered with text-gold (no link).
-  const activeSectionDef = NAV_SECTION_DEFS.find((s) => s.itemIds.includes(activeTab))
+  // ─── Breadcrumbs (updated P4-FUSION) ─────────────────────────────────────────────
+  // CoupleLabel (link) > Section label > Sub-tab label (only when the section
+  // has >1 visible sub-tabs — for single-sub-tab sections the section label
+  // IS the page). The last breadcrumb is the current page — rendered with
+  // text-gold (no link).
+  const visibleSubTabs = activeSectionDef.itemIds.filter((id) =>
+    visibleNavItems.some((v) => v.id === id)
+  )
   const breadcrumbs: AdminShellBreadcrumb[] = [
     { label: coupleLabel, href: `/w/${slug}/admin` },
-    ...(activeSectionDef ? [{ label: activeSectionDef.label }] : []),
-    { label: activeNavItem?.label || '' },
+    ...(visibleSubTabs.length > 1
+      ? [
+          { label: activeSectionDef.label },
+          { label: activeNavItem?.label || activeSectionDef.label },
+        ]
+      : [{ label: activeSectionDef.label }]),
   ]
 
   // Phase 4D — Pre-format the wedding date + venue for the WhatsAppShare
@@ -821,18 +858,18 @@ export default function PerWeddingAdminPage() {
 
   const mobileBottomBar = (
     <nav className="md:hidden shrink-0 flex items-center border-t border-white/10 bg-white/[0.02] safe-area-pb">
-      {visibleNavItems.slice(0, 5).map((item) => {
-        const isActive = activeTab === item.id
+      {SECTION_DEFS.slice(0, 5).map((def) => {
+        const isActive = activeSectionDef.id === def.id
         return (
           <button
-            key={item.id}
-            onClick={() => handleTabChange(item.id)}
+            key={def.id}
+            onClick={() => handleSectionChange(def.id)}
             className={`flex-1 flex flex-col items-center gap-1 py-2 text-xs transition-colors ${
               isActive ? 'text-gold' : 'text-muted-foreground'
             }`}
           >
-            <item.icon className="w-5 h-5" />
-            <span className="truncate text-[10px]">{item.label}</span>
+            <def.icon className="w-5 h-5" />
+            <span className="truncate text-[10px]">{def.label}</span>
           </button>
         )
       })}
@@ -853,10 +890,13 @@ export default function PerWeddingAdminPage() {
     </Button>
   )
 
-  const pageTitle = activeNavItem && (
+  // P4-FUSION: the page title shows the SECTION (the stable top-level place),
+  // not the sub-tab — the sub-tab bar below (when present) carries the
+  // in-section position.
+  const pageTitle = (
     <>
-      <activeNavItem.icon className="w-4 h-4 text-gold shrink-0" />
-      <h1 className="font-semibold text-sm truncate">{activeNavItem.label}</h1>
+      <activeSectionDef.icon className="w-4 h-4 text-gold shrink-0" />
+      <h1 className="font-semibold text-sm truncate">{activeSectionDef.label}</h1>
     </>
   )
 
@@ -904,6 +944,18 @@ export default function PerWeddingAdminPage() {
           topBarRight={topBarRight}
           mobileBottomBar={mobileBottomBar}
         >
+          {/* P4-FUSION — sub-tab bar for multi-manager sections (rendered
+              OUTSIDE AnimatePresence so switching sub-tabs doesn't remount
+              the bar itself). Single-sub-tab sections render no bar. */}
+          <SectionTabBar
+            consoleId="wedding"
+            items={visibleSubTabs.map((id) => ({
+              id,
+              label: NAV_ITEMS.find((n) => n.id === id)?.label || id,
+            }))}
+            activeId={activeTab}
+            onChange={handleTabChange}
+          />
           <AnimatePresence mode="wait">
             <motion.div
               key={activeTab}
