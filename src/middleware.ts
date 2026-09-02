@@ -96,6 +96,49 @@ async function checkWeddingSlug(
   return { exists: false, status: null, isDefault: false };
 }
 
+// ─── P3-UX — Organization slug validation cache (public page only) ───────────
+// Same soft-404 fix as CB-1, extended to the white-label org page
+// (/org/{slug}, exact path): Next.js 16 renders notFound() content with an
+// HTTP 200 status, so archived/suspended/unknown orgs were soft-404s.
+// Mirrors the wedding resolver: 30s in-memory cache, 2 attempts, then
+// FAIL-CLOSED (real 404) — the page keeps its own gate as handler of last
+// resort. Admin routes and /org/signup are never gated here.
+interface CachedOrgStatus {
+  exists: boolean;
+  status: string | null;
+  expires: number;
+}
+const orgCache = new Map<string, CachedOrgStatus>();
+
+async function checkOrgSlug(slug: string): Promise<{ exists: boolean; status: string | null }> {
+  const cached = orgCache.get(slug);
+  if (cached && cached.expires > Date.now()) {
+    return { exists: cached.exists, status: cached.status };
+  }
+
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const baseUrl = process.env.NEXTAUTH_URL || 'http://localhost:3000';
+      const res = await fetch(
+        `${baseUrl}/api/public/org-status?slug=${encodeURIComponent(slug)}`,
+        { cache: 'no-store' }
+      );
+      const data = (await res.json()) as { exists: boolean; status: string | null };
+      orgCache.set(slug, {
+        exists: data.exists,
+        status: data.status,
+        expires: Date.now() + SLUG_CACHE_TTL,
+      });
+      return data;
+    } catch {
+      if (attempt === 0) {
+        await new Promise((r) => setTimeout(r, 100));
+      }
+    }
+  }
+  return { exists: false, status: null };
+}
+
 const NOT_FOUND_HTML = `<!DOCTYPE html>
 <html lang="fr">
 <head>
@@ -285,6 +328,20 @@ export async function middleware(request: NextRequest) {
     // — the middleware only blocks non-existent and DRAFT-public. This keeps
     // the middleware fast (no admin auth check needed) while the layout
     // handles the richer status-based UX.
+  }
+
+  // ─── P3-UX — Organization public page: real 404 for unknown / non-ACTIVE ──
+  // Exact single-segment match: /org/{slug} ONLY. /org/signup, /org/{slug}/admin/*
+  // and other sub-routes pass untouched (operators are never locked out), and
+  // custom-domain rewrites already returned earlier (white-label path).
+  const orgMatch = url.pathname.match(/^\/org\/([^/]+)$/);
+  if (orgMatch) {
+    const slug = decodeURIComponent(orgMatch[1]);
+    const orgInfo = await checkOrgSlug(slug);
+
+    if (!orgInfo.exists || orgInfo.status !== 'ACTIVE') {
+      return notFoundResponse();
+    }
   }
 
   // ─── P1-SEC-10: HTTPS redirect in production ──────────────────────────────
