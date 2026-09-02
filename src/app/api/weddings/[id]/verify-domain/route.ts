@@ -92,7 +92,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       customDomainVerified: wedding.customDomainVerified,
       plan: wedding.plan,
       dnsVerification: dnsRecord,
-      cnameTarget: 'wedding.hpph.net',
+      cnameTarget: 'wedding.aenews.store',
       propagationHint: 'La propagation DNS peut prendre de quelques minutes à 24h.',
     });
   } catch (error) {

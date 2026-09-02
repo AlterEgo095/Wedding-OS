@@ -82,7 +82,7 @@ export async function POST(request: NextRequest) {
 
     const stripe = getStripe();
     const baseUrl =
-      process.env.NEXTAUTH_URL || 'https://wedding.hpph.net';
+      process.env.NEXTAUTH_URL || 'https://wedding.aenews.store';
     const session = await stripe.billingPortal.sessions.create({
       customer: org.stripeCustomerId,
       return_url: `${baseUrl}/org/${org.slug}/admin/buy-credits`,

@@ -399,7 +399,7 @@ export function OrgSettings({ org: initialOrg }: OrgSettingsProps) {
               <p className="font-medium">Configuration DNS requise</p>
               <p>Après avoir défini votre domaine ici, vous devez :</p>
               <ol className="list-decimal ml-4 space-y-0.5">
-                <li>Créer un enregistrement CNAME pointant vers <code className="font-mono">wedding.hpph.net</code></li>
+                <li>Créer un enregistrement CNAME pointant vers <code className="font-mono">wedding.aenews.store</code></li>
                 <li>Contacter l&apos;équipe plateforme pour activer le certificat SSL</li>
                 <li>Attendre la propagation DNS (10-60 minutes)</li>
               </ol>

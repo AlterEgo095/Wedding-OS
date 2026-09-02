@@ -10,7 +10,7 @@ export const PLATFORM = {
   name: 'Heureux Mariage',
   codename: 'AENEWS Wedding OS',
   studio: 'AENEWS',
-  productionDomain: 'wedding.hpph.net',
+  productionDomain: 'wedding.aenews.store',
   locale: 'fr',
   defaultTimezone: 'Africa/Kinshasa',
   currencies: ['usd', 'eur', 'fcfa'] as const,

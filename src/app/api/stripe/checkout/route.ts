@@ -144,7 +144,7 @@ export async function POST(request: NextRequest) {
     // a success/cancel banner. {CHECKOUT_SESSION_ID} is a Stripe placeholder
     // that's replaced in the redirect URL.
     const baseUrl =
-      process.env.NEXTAUTH_URL || 'https://wedding.hpph.net';
+      process.env.NEXTAUTH_URL || 'https://wedding.aenews.store';
     const finalSuccessUrl =
       successUrl ||
       `${baseUrl}/org/${org.slug}/admin/buy-credits?status=success&session_id={CHECKOUT_SESSION_ID}`;

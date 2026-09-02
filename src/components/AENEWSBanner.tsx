@@ -37,10 +37,12 @@ const AENEWS_URL = 'https://aenews.net'
 //     platform domain (~1 tick after hydration). Acceptable: the banner is
 //     below the fold, and the alternative (SSR-render then hide) would flash
 //     the AENEWS logo on white-label domains for ~1 frame.
-const PLATFORM_DOMAIN_SUFFIXES = ['.aenews.net', '.hpph.net']
+const PLATFORM_DOMAIN_SUFFIXES = ['.aenews.net', '.hpph.net', '.aenews.store']
 const PLATFORM_HOSTS = new Set([
   'wedding.hpph.net',
   'www.wedding.hpph.net',
+  'wedding.aenews.store',
+  'www.wedding.aenews.store',
   'localhost',
   '127.0.0.1',
 ])

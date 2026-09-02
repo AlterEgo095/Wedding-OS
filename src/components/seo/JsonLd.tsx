@@ -15,7 +15,7 @@
 
 import React from 'react';
 
-const BASE_URL = 'https://wedding.hpph.net';
+const BASE_URL = 'https://wedding.aenews.store';
 const LOGO_URL = `${BASE_URL}/icons/icon-512x512.png`;
 const OG_IMAGE_URL = `${BASE_URL}/og-banner.png`;
 
@@ -45,7 +45,7 @@ const organizationSchema = {
   ],
   knowsLanguage: ['fr', 'en'],
   sameAs: [
-    'https://wedding.hpph.net',
+    'https://wedding.aenews.store',
   ],
   contactPoint: {
     '@type': 'ContactPoint',

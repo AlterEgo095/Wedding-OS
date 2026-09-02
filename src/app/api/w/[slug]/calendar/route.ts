@@ -155,7 +155,7 @@ export async function GET(
       'CALSCALE:GREGORIAN',
       'METHOD:PUBLISH',
       'BEGIN:VEVENT',
-      icsFold(`UID:${wedding.slug}@wedding.hpph.net`),
+      icsFold(`UID:${wedding.slug}@wedding.aenews.store`),
       icsFold(`DTSTAMP:${toIcsUtc(new Date())}`),
       icsFold(`DTSTART:${toIcsUtc(start)}`),
       icsFold(`DTEND:${toIcsUtc(end)}`),
@@ -164,7 +164,7 @@ export async function GET(
         ? [icsFold(`LOCATION:${icsEscape(locationParts.join(', '))}`)]
         : []),
       icsFold(`DESCRIPTION:${icsEscape(description)}`),
-      icsFold(`URL:https://wedding.hpph.net/w/${wedding.slug}`),
+      icsFold(`URL:https://wedding.aenews.store/w/${wedding.slug}`),
       'END:VEVENT',
       'END:VCALENDAR',
     ].join('\r\n');

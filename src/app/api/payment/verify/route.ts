@@ -35,7 +35,7 @@ export const dynamic = 'force-dynamic'
  */
 export async function GET(req: Request) {
   // Build origin from forwarded headers (behind nginx reverse proxy)
-  const fwdHost = req.headers.get('x-forwarded-host') || req.headers.get('host') || 'wedding.hpph.net'
+  const fwdHost = req.headers.get('x-forwarded-host') || req.headers.get('host') || 'wedding.aenews.store'
   const fwdProto = req.headers.get('x-forwarded-proto') || 'https'
   const origin = `${fwdProto}://${fwdHost}`
   const url = new URL(req.url)

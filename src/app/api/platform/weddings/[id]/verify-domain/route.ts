@@ -84,7 +84,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       customDomain: wedding.customDomain,
       customDomainVerified: wedding.customDomainVerified,
       dnsVerification: dnsRecord,
-      cnameTarget: 'wedding.hpph.net',
+      cnameTarget: 'wedding.aenews.store',
       // Hint for the frontend: how long DNS propagation typically takes.
       propagationHint: 'La propagation DNS peut prendre de quelques minutes à 24h.',
     });

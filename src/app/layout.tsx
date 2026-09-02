@@ -57,7 +57,7 @@ export const viewport: Viewport = {
 //   ✅ Title localized: RDC, Kinshasa, Afrique — geo focus for FR-Africa market
 //   ✅ Description: 158 chars (optimal 150-160) with geo + service keywords
 //   ✅ Keywords: added RDC, Kinshasa, Congo, Afrique, mariage Kinshasa
-//   ✅ canonical URL: https://wedding.hpph.net/
+//   ✅ canonical URL: https://wedding.aenews.store/
 //   ✅ openGraph.url: set explicitly (was missing)
 //   ✅ openGraph.images: 1200x630 banner (was 512x512 icon)
 //   ✅ twitter.images: 1200x630 banner (was 512x512 icon)
@@ -66,7 +66,7 @@ export const viewport: Viewport = {
 //   ✅ alternates.canonical: prevents duplicate-content penalty
 // ══════════════════════════════════════════════════════════════════════════════
 
-const SITE_URL = process.env.NEXT_PUBLIC_BASE_URL || "https://wedding.hpph.net";
+const SITE_URL = process.env.NEXT_PUBLIC_BASE_URL || "https://wedding.aenews.store";
 const GOOGLE_SITE_VERIFICATION = process.env.GOOGLE_SITE_VERIFICATION || "";
 
 export const metadata: Metadata = {

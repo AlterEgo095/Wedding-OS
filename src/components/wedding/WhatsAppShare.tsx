@@ -68,7 +68,7 @@ export interface WhatsAppShareProps {
   label?: string;
 }
 
-const SHARE_BASE_URL = 'https://wedding.hpph.net/w';
+const SHARE_BASE_URL = 'https://wedding.aenews.store/w';
 
 export function WhatsAppShare({
   weddingSlug,

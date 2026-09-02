@@ -37,6 +37,8 @@ import { PLAN_LIMITS, type Plan } from './types';
 const PLATFORM_DOMAINS = [
   'wedding.hpph.net',
   'www.wedding.hpph.net',
+  'wedding.aenews.store',
+  'www.wedding.aenews.store',
   'localhost',
   '127.0.0.1',
 ];
@@ -52,6 +54,7 @@ export function isCustomDomainRequest(host: string): boolean {
   // If it ends with the platform domain, it's a subdomain, not custom
   if (normalized.endsWith('.aenews.net')) return false;
   if (normalized.endsWith('.hpph.net')) return false;
+  if (normalized.endsWith('.aenews.store')) return false;
   return true;
 }
 
@@ -90,6 +93,7 @@ export function validateCustomDomain(domain: string): { valid: boolean; error?: 
   if (PLATFORM_DOMAINS.includes(d)) return { valid: false, error: 'Ce domaine est réservé à la plateforme' };
   if (d.endsWith('.aenews.net')) return { valid: false, error: 'Les sous-domaines aenews.net ne sont pas personnalisables' };
   if (d.endsWith('.hpph.net')) return { valid: false, error: 'Les sous-domaines hpph.net ne sont pas personnalisables' };
+  if (d.endsWith('.aenews.store')) return { valid: false, error: 'Les sous-domaines aenews.store ne sont pas personnalisables' };
 
   // Validate each label
   const labels = d.split('.');
@@ -154,5 +158,5 @@ export function buildDnsVerificationRecord(
  * Get the CNAME target a couple should point their custom domain to.
  */
 export function getCnameTarget(): string {
-  return 'wedding.hpph.net';
+  return 'wedding.aenews.store';
 }

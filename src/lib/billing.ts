@@ -217,7 +217,7 @@ export function buildWhatsAppMessage(input: WhatsAppMessageInput): string {
     billingCycle,
     currency = 'usd',
     weddingSlug,
-    publicBaseUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'https://wedding.hpph.net',
+    publicBaseUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'https://wedding.aenews.store',
     notes,
   } = input;
 
