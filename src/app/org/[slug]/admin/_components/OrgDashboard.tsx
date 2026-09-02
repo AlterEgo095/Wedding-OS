@@ -259,12 +259,22 @@ export function OrgDashboard({
             {weddings.length} mariage{weddings.length > 1 ? 's' : ''} sous {org.name}
           </p>
         </div>
-        <Button asChild className="bg-gradient-gold hover:opacity-90 text-white">
-          <Link href={`/org/${org.slug}/admin/weddings/new`}>
-            <Plus className="w-4 h-4 mr-2" />
-            Créer un mariage
-          </Link>
-        </Button>
+        <div className="flex items-center gap-2">
+          {/* P3-UX PX-8 — the org now has a public white-label page; give the
+              operator a visible, copyable entry point to it. */}
+          <Button asChild variant="outline" className="border-white/15 bg-white/5 hover:bg-white/10">
+            <Link href={`/org/${org.slug}`} target="_blank" rel="noopener">
+              <ExternalLink className="w-4 h-4 mr-2" />
+              Page publique
+            </Link>
+          </Button>
+          <Button asChild className="bg-gradient-gold hover:opacity-90 text-white">
+            <Link href={`/org/${org.slug}/admin/weddings/new`}>
+              <Plus className="w-4 h-4 mr-2" />
+              Créer un mariage
+            </Link>
+          </Button>
+        </div>
       </section>
 
       {/* ─── Wedding table ──────────────────────────────────────────────── */}
