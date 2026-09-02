@@ -32,7 +32,7 @@
 
 ## 2. WEDDING (création)
 - [ ] Depuis le dashboard org (`/org/[slug-org]/admin`) → bouton **« Créer un mariage »** → formulaire `/org/[slug-org]/admin/weddings/new` *(réparé sprint P0-1)*
-- [ ] Alternative : `https://wedding.hpph.net/org/signup` (nouvelle org + 1er mariage)
+- [ ] Alternative : `https://wedding.aenews.store/org/signup` (nouvelle org + 1er mariage)
 - [ ] Saisir le mariage (noms couple, date, lieu) → le slug est auto-généré
 - [ ] Note : le mot de passe organisateur = SEUL accès du couple (jamais d'identifiants admin/plateforme)
 
@@ -91,7 +91,7 @@
 - [ ] ⚠️ Envoi en MASSE : nécessite le PAIEMENT du mariage (verrou commercial)
 
 ## 11. PREVIEW / VALIDATION
-- [ ] Ouvrir la page publique en navigation privée : `https://wedding.hpph.net/w/[slug]`
+- [ ] Ouvrir la page publique en navigation privée : `https://wedding.aenews.store/w/[slug]`
 - [ ] Vérifier : noms couple, date, lieu, photos, histoire, programme, section RSVP
 - [ ] Vérifier sur mobile (téléphone réel de préférence)
 - [ ] Faire valider la page par le client (envoi du lien en preview)
@@ -110,7 +110,7 @@
 - [ ] Vérifier que le site est accessible publiquement sans connexion
 
 ## 15. LIVRAISON (ce qui est envoyé au client)
-- [ ] **URL publique** : `https://wedding.hpph.net/w/[slug]` (à envoyer au couple)
+- [ ] **URL publique** : `https://wedding.aenews.store/w/[slug]` (à envoyer au couple)
 - [ ] **Liens invités individuels** : invitationUrl par invité (WhatsApp/SMS)
 - [ ] Identifiants organisateur (email + mot de passe) — UNIQUEMENT au couple/organisateur
 - [ ] Si code d'accès activé : le communiquer aux invités avec l'invitation

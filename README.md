@@ -2,7 +2,7 @@
 
 > Multi-tenant SaaS platform for premium wedding design, deployment and
 > day-of-event operations. Built and operated by **AENEWS**, deployed in
-> production at [wedding.hpph.net](https://wedding.hpph.net).
+> production at [wedding.hpph.net](https://wedding.aenews.store).
 
 ---
 
