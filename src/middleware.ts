@@ -261,7 +261,14 @@ export async function middleware(request: NextRequest) {
   const wMatch = url.pathname.match(/^\/w\/([^/]+)/);
   if (wMatch && !url.pathname.startsWith('/api/')) {
     const slug = decodeURIComponent(wMatch[1]);
-    const isAdminRoute = url.pathname.includes('/admin');
+    // P3-UX: /setup (guided setup wizard, PX-2/PX-6) is a configuration
+    // surface like /admin/* — the P2 creation flow redirects fresh DRAFT
+    // weddings straight into it. Without this exception the middleware
+    // 404'd the wizard's first step for every new wedding (caught live by
+    // the P3 E2E). The wizard shell enforces auth client-side and every
+    // data API it calls keeps its own gate — fail-closed posture preserved.
+    const isAdminRoute =
+      url.pathname.includes('/admin') || url.pathname.endsWith('/setup');
     const weddingInfo = await checkWeddingSlug(slug);
 
     if (!weddingInfo.exists) {
