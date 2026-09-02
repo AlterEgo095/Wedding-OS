@@ -235,11 +235,16 @@ export default async function WeddingLayout({
   // gates. Admin routes (/w/[slug]/admin/*) must remain accessible when the
   // wedding is DRAFT (configuration), SUSPENDED (recovery), or ARCHIVED
   // (viewing historical data). Only public routes show holding/memorial pages.
+  // P3-UX FIX (sprint premium tranche 2): /w/[slug]/setup (the guided setup
+  // wizard, PX-2/PX-6) is an admin CONFIGURATION surface too — the P2
+  // creation flow redirects fresh DRAFT weddings straight into it. Without
+  // this, every new wedding 404'd at its first premium step (caught live by
+  // the P3 E2E: DRAFT wedding + /setup → 404).
   const h = await headers();
   // 5.8.16 P0-01: use x-pathname set by middleware (reliable) instead of
   // x-invoke-path (Next.js internal, not always present on direct navigations).
   const pathname = h.get('x-pathname') || h.get('x-invoke-path') || '';
-  const isAdminRoute = pathname.includes('/admin');
+  const isAdminRoute = pathname.includes('/admin') || pathname.endsWith('/setup');
 
   if (wedding.status === 'DRAFT' && !wedding.isDefault) {
     // Mission 5.3.1: Allow admin routes (/w/[slug]/admin/*) for DRAFT weddings
