@@ -331,11 +331,13 @@ export async function middleware(request: NextRequest) {
   }
 
   // ─── P3-UX — Organization public page: real 404 for unknown / non-ACTIVE ──
-  // Exact single-segment match: /org/{slug} ONLY. /org/signup, /org/{slug}/admin/*
-  // and other sub-routes pass untouched (operators are never locked out), and
-  // custom-domain rewrites already returned earlier (white-label path).
+  // Exact single-segment match: /org/{slug} ONLY. /org/signup (reserved static
+  // segment — caught live by the P3 E2E: the slug check 404'd the signup
+  // page), /org/{slug}/admin/* and other sub-routes pass untouched (operators
+  // are never locked out), and custom-domain rewrites already returned earlier
+  // (white-label path).
   const orgMatch = url.pathname.match(/^\/org\/([^/]+)$/);
-  if (orgMatch) {
+  if (orgMatch && orgMatch[1] !== 'signup') {
     const slug = decodeURIComponent(orgMatch[1]);
     const orgInfo = await checkOrgSlug(slug);
 
