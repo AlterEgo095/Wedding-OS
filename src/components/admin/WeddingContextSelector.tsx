@@ -72,14 +72,23 @@ export function WeddingContextSelector({ fetchWithAuth }: WeddingContextSelector
   const rootRef = useRef<HTMLDivElement>(null)
   const searchRef = useRef<HTMLInputElement>(null)
 
-  // Restore the persisted context on mount (no fetch — display only).
+  // Restore the persisted context on mount. When a slug was saved in a
+  // previous session, resolve its coupleLabel immediately (single lazy fetch)
+  // so the pinned selector shows the wedding name WITHOUT requiring the
+  // operator to open the dropdown first (premium: the context is visible at
+  // a glance, not hidden behind an interaction).
   useEffect(() => {
     try {
       const saved = window.localStorage.getItem(STORAGE_KEY)
-      if (saved) setSelectedSlug(saved)
+      if (saved) {
+        setSelectedSlug(saved)
+        loadWeddings()
+      }
     } catch {
       /* private mode — context simply not restored */
     }
+    // loadWeddings is a stable useCallback — mount-only intent.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // Close on outside click / Escape.
