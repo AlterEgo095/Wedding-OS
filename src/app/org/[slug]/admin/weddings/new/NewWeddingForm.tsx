@@ -79,14 +79,21 @@ export function NewWeddingForm({ org, canCreate }: NewWeddingFormProps) {
       });
 
       const data = (await res.json().catch(() => null)) as
-        | { wedding?: { coupleLabel?: string | null }; error?: string }
+        | { wedding?: { slug?: string; coupleLabel?: string | null }; error?: string }
         | null;
 
       if (res.status === 201 && data?.wedding) {
         toast.success(
           `Mariage « ${data.wedding.coupleLabel ?? 'nouveau'} » créé avec succès`,
         );
-        router.push(`/org/${org.slug}/admin`);
+        // P2-UX (sprint premium) — the journey continues immediately: new
+        // weddings land in the guided setup wizard (5 steps) instead of
+        // bouncing back to the org dashboard with an empty admin.
+        if (data.wedding.slug) {
+          router.push(`/w/${data.wedding.slug}/setup`);
+        } else {
+          router.push(`/org/${org.slug}/admin`);
+        }
         router.refresh();
         return;
       }

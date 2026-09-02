@@ -50,7 +50,7 @@
 import { useState, useCallback, useRef } from 'react';
 import { motion, useInView, useReducedMotion } from 'framer-motion';
 import { toast } from 'sonner';
-import { Check, X, Loader2, Heart, ShieldCheck, UserCircle2 } from 'lucide-react';
+import { Check, X, Loader2, Heart, ShieldCheck, UserCircle2, CalendarPlus } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -350,6 +350,15 @@ export default function RsvpSection() {
         animate: isInView ? { opacity: 1, y: 0 } : { opacity: 0, y: 30 },
       };
 
+  // P2-UX (sprint premium) — "Ajouter au calendrier" : le slug est déduit de
+  // l'URL publique (/w/{slug}) — zéro couplage au contexte, rendu conditionnel
+  // si la page n'est pas un site mariage. L'ICS est servi par
+  // /api/w/[slug]/calendar (gate PUBLISHED côté serveur).
+  const calendarSlug =
+    typeof window !== 'undefined'
+      ? window.location.pathname.match(/^\/w\/([^/?#]+)/)?.[1] ?? null
+      : null;
+
   return (
     <section
       ref={sectionRef}
@@ -384,6 +393,18 @@ export default function RsvpSection() {
           <div className="section-divider max-w-xs mx-auto mt-6">
             <span className="flourish text-sm">✦</span>
           </div>
+          {/* P2-UX — Ajouter au calendrier (.ics) */}
+          {calendarSlug && (
+            <motion.div {...fadeUp} transition={{ duration: 0.6, delay: 0.15 }} className="mt-5">
+              <a
+                href={`/api/w/${calendarSlug}/calendar`}
+                className="inline-flex items-center gap-2 rounded-full px-4 py-2 text-xs font-medium text-gold border border-gold/30 bg-gold/5 hover:bg-gold/10 transition-colors"
+              >
+                <CalendarPlus className="size-3.5" />
+                Ajouter au calendrier
+              </a>
+            </motion.div>
+          )}
         </motion.div>
 
         {/* Auth status chip */}

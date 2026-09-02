@@ -10,6 +10,45 @@ import { logger } from '@/lib/logger';
 import { internalError, badRequest } from '@/lib/api-errors';
 // P2-CQ-7: writeAuditLog populates ipAddress + userAgent from request.
 import { writeAuditLog } from '@/lib/audit';
+// P2-UX (sprint premium): RSVP confirmation email via the SSOT transport.
+import { sendEmail } from '@/lib/email';
+
+/**
+ * P2-UX — fire-and-forget RSVP confirmation email.
+ * NEVER blocks or fails the RSVP: void-ed promise + full try/catch. When no
+ * email provider is configured the SSOT transport falls back to the operator
+ * log stub (no guest PII beyond the envelope; no secret in the body).
+ */
+function sendRsvpConfirmation(params: {
+  to: string;
+  guestName: string;
+  status: 'CONFIRMED' | 'DECLINED';
+  weddingTitle: string;
+  weddingDateText: string;
+  venueText: string;
+}): void {
+  void (async () => {
+    try {
+      const confirmed = params.status === 'CONFIRMED';
+      const subject = confirmed
+        ? `Présence confirmée — Mariage de ${params.weddingTitle}`
+        : `Réponse enregistrée — Mariage de ${params.weddingTitle}`;
+      const text =
+        `Bonjour ${params.guestName},\n\n` +
+        (confirmed
+          ? `Nous avons bien enregistré votre présence au mariage de ${params.weddingTitle}.\n`
+          : `Nous avons bien enregistré votre réponse (absence) pour le mariage de ${params.weddingTitle}.\n`) +
+        (params.weddingDateText ? `\nDate : ${params.weddingDateText}\n` : '') +
+        (params.venueText ? `Lieu : ${params.venueText}\n` : '') +
+        `\nMerci !\n— ${params.weddingTitle} & l'équipe Heureux Mariage`;
+      await sendEmail({ to: params.to, subject, text, kind: 'rsvp-confirmation' });
+    } catch (err) {
+      logger.error('RSVP confirmation email failed (non-blocking)', {
+        errMessage: err instanceof Error ? err.message : String(err),
+      });
+    }
+  })();
+}
 
 /**
  * RSVP API — Guest confirms or declines invitation (tenant-scoped)
@@ -97,6 +136,48 @@ export async function POST(request: NextRequest) {
         details: `Guest ${existing.firstName} ${existing.lastName} RSVP: ${status}`,
         request,
       });
+
+      // P2-UX: confirmation email when the guest has an address on file.
+      // Best-effort wedding context (settings read must never fail the RSVP).
+      if (existing.email) {
+        let weddingTitle = 'Mariage';
+        let weddingDateText = '';
+        let venueText = '';
+        try {
+          const [weddingRow, settingRows] = await Promise.all([
+            db.wedding.findUnique({
+              where: { id: context.weddingId },
+              select: { coupleLabel: true, brideName: true, groomName: true, weddingDate: true, venueName: true, venueCity: true },
+            }),
+            db.settings.findMany({
+              where: { weddingId: context.weddingId, key: { in: ['site_title', 'wedding_date'] } },
+              select: { key: true, value: true },
+            }),
+          ]);
+          const sMap: Record<string, string> = {};
+          for (const r of settingRows) sMap[r.key] = r.value;
+          weddingTitle =
+            weddingRow?.coupleLabel ||
+            [weddingRow?.brideName, weddingRow?.groomName].filter(Boolean).join(' & ') ||
+            sMap.site_title ||
+            'Mariage';
+          const rawDate = weddingRow?.weddingDate
+            ? weddingRow.weddingDate.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+            : sMap.wedding_date || '';
+          weddingDateText = rawDate.charAt(0).toUpperCase() + rawDate.slice(1);
+          venueText = [weddingRow?.venueName, weddingRow?.venueCity].filter(Boolean).join(', ');
+        } catch {
+          // Envelope without venue/date still confirms the RSVP.
+        }
+        sendRsvpConfirmation({
+          to: existing.email,
+          guestName: `${existing.firstName} ${existing.lastName}`.trim(),
+          status,
+          weddingTitle,
+          weddingDateText,
+          venueText,
+        });
+      }
 
       return NextResponse.json({
         success: true,

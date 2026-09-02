@@ -5,9 +5,12 @@ import { motion } from 'framer-motion'
 import Image from 'next/image'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Users, UserCheck, Clock, CheckCircle, Grid3X3, Armchair, Activity, Heart } from 'lucide-react'
+import { Users, UserCheck, Clock, CheckCircle, Grid3X3, Armchair, Activity, Heart, PieChart as PieChartIcon, BarChart3 } from 'lucide-react'
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts'
 import { toast } from 'sonner'
+// P2-UX (sprint premium) — parcours de configuration visible + empty states premium
+import { SetupProgress } from '@/components/admin/SetupProgress'
+import { EmptyState } from '@/components/admin/EmptyState'
 
 interface DashboardData {
   totalGuests: number
@@ -228,6 +231,9 @@ export default function Dashboard({ token, onSessionExpired }: DashboardProps) {
         <div className="absolute bottom-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-gold/40 to-transparent" />
       </motion.div>
 
+      {/* P2-UX — Parcours de configuration (auto-masqué à 100%) */}
+      <SetupProgress />
+
       {/* Metric Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 md:gap-4">
         {metricCards.map((card, i) => (
@@ -322,9 +328,12 @@ export default function Dashboard({ token, onSessionExpired }: DashboardProps) {
                   </PieChart>
                 </ResponsiveContainer>
               ) : (
-                <div className="h-[260px] flex items-center justify-center text-muted-foreground text-sm">
-                  Aucune donnée disponible
-                </div>
+                <EmptyState
+                  compact
+                  icon={PieChartIcon}
+                  title="Aucune réponse pour l'instant"
+                  description="Dès que vos invités confirment, la répartition apparaît ici."
+                />
               )}
             </CardContent>
           </Card>
@@ -363,9 +372,12 @@ export default function Dashboard({ token, onSessionExpired }: DashboardProps) {
                   </BarChart>
                 </ResponsiveContainer>
               ) : (
-                <div className="h-[260px] flex items-center justify-center text-muted-foreground text-sm">
-                  Aucune donnée disponible
-                </div>
+                <EmptyState
+                  compact
+                  icon={BarChart3}
+                  title="Aucune catégorie renseignée"
+                  description="Classez vos invités (VIP, famille, amis…) pour voir la répartition."
+                />
               )}
             </CardContent>
           </Card>
@@ -419,7 +431,12 @@ export default function Dashboard({ token, onSessionExpired }: DashboardProps) {
                 ))}
               </div>
             ) : (
-              <p className="text-sm text-muted-foreground text-center py-4">Aucune activité récente</p>
+              <EmptyState
+                compact
+                icon={Activity}
+                title="Aucune activité pour l'instant"
+                description="Les actions sur votre mariage s'afficheront ici."
+              />
             )}
           </CardContent>
         </Card>
