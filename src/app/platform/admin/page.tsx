@@ -324,7 +324,21 @@ export default function PlatformAdminPage() {
   const mounted = useSyncExternalStore(emptySubscribe, getTrue, getFalse)
   const [user, setUser] = useState<AuthUser | null>(null)
   const [authChecked, setAuthChecked] = useState(false)
-  const [activeTab, setActiveTab] = useState<TabId>('dashboard')
+  const [activeTab, setActiveTabState] = useState<TabId>('dashboard')
+
+  // ─── P4-FUSION tranche 4 — URL-addressable tabs (?tab=) ───────────────
+  // Tab changes are mirrored into the URL via replaceState so a refresh,
+  // a shared link or browser back/forward keep the operator's position.
+  // The name & signature are unchanged: every existing caller
+  // (handleTabChange, handleSectionChange, child tab props) mirrors the
+  // URL automatically — single write path, no parallel state.
+  const setActiveTab = useCallback((tabId: TabId) => {
+    setActiveTabState(tabId)
+    if (typeof window === 'undefined') return
+    const url = new URL(window.location.href)
+    url.searchParams.set('tab', tabId)
+    window.history.replaceState({}, '', url.toString())
+  }, [])
   // P4.7: 2FA setup modal — visible to ALL logged-in platform users.
   const [twoFactorOpen, setTwoFactorOpen] = useState(false)
 
@@ -370,6 +384,32 @@ export default function PlatformAdminPage() {
     }
   }, [authChecked, user, router])
 
+  // ─── P4-FUSION tranche 4 — deep-link seed (?tab=<id>) ───────────────
+  // The URL is the SSOT for the active tab: a ?tab=<id> present at load
+  // selects that tab once auth resolves. Unknown ids are ignored.
+  useEffect(() => {
+    if (!authChecked || !user) return
+    const requested = new URLSearchParams(window.location.search).get('tab')
+    if (!requested) return
+    if (NAV_ITEMS.some((item) => item.id === requested)) {
+      setActiveTabState(requested as TabId)
+    }
+  }, [authChecked, user])
+
+  // Browser back/forward between ?tab= states follows the URL (raw state —
+  // the URL already carries the tab, no replaceState needed).
+  useEffect(() => {
+    const onPopState = () => {
+      const requested = new URLSearchParams(window.location.search).get('tab')
+      if (!requested) return
+      if (NAV_ITEMS.some((item) => item.id === requested)) {
+        setActiveTabState(requested as TabId)
+      }
+    }
+    window.addEventListener('popstate', onPopState)
+    return () => window.removeEventListener('popstate', onPopState)
+  }, [])
+
   // Phase 4C — When the middleware's impersonation auto-expiry redirects
   // here with ?impersonation_expired=1, surface a one-shot toast so the
   // admin understands why they were bounced out of the wedding admin.
@@ -382,9 +422,12 @@ export default function PlatformAdminPage() {
       toast.info("Session d'impersonation expirée", {
         description: 'La session de 30 minutes est terminée. Vous pouvez relancer l\'impersonation si nécessaire.',
       })
-      // Clean the query param so the toast doesn't re-fire on refresh.
-      const cleanUrl = window.location.pathname
-      window.history.replaceState({}, '', cleanUrl)
+      // Clean ONLY this param so the toast doesn't re-fire on refresh —
+      // a concurrent ?tab= deep link is preserved (P4-FUSION tranche 4:
+      // the URL, not the state, is the SSOT for the active tab).
+      const cleanupUrl = new URL(window.location.href)
+      cleanupUrl.searchParams.delete('impersonation_expired')
+      window.history.replaceState({}, '', cleanupUrl.toString())
     }
   }, [])
 

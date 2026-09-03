@@ -220,10 +220,24 @@ export default function PerWeddingAdminPage() {
   const [user, setUser] = useState<AuthUser | null>(null)
   const [authChecked, setAuthChecked] = useState(false)
 
-  const [activeTab, setActiveTab] = useState<TabId>('dashboard')
+  const [activeTab, setActiveTabState] = useState<TabId>('dashboard')
   // P4.7: 2FA setup modal — visible to ALL logged-in admin/staff users.
   const [twoFactorOpen, setTwoFactorOpen] = useState(false)
   const sessionExpiredRef = useRef(false)
+
+  // ─── P4-FUSION tranche 4 — URL-addressable tabs (?tab=) ───────────────
+  // Tab changes are mirrored into the URL via replaceState so a refresh,
+  // a shared link or browser back/forward keep the operator's position.
+  // The name & signature are unchanged: every existing caller
+  // (handleTabChange, handleSectionChange, SectionTabBar, child props)
+  // mirrors the URL automatically — single write path, no parallel state.
+  const setActiveTab = useCallback((tabId: TabId) => {
+    setActiveTabState(tabId)
+    if (typeof window === 'undefined') return
+    const url = new URL(window.location.href)
+    url.searchParams.set('tab', tabId)
+    window.history.replaceState({}, '', url.toString())
+  }, [])
 
   // ─── Phase 4C — Impersonation state ──────────────────────────────────────
   // When a PLATFORM_ADMIN is impersonating a wedding admin, the
@@ -357,6 +371,40 @@ export default function PerWeddingAdminPage() {
       }
     }
   }, [authChecked, user, slug, router, wedding.id])
+
+  // ─── P4-FUSION tranche 4 — deep-link seed (?tab=<id>) ─────────────────
+  // The URL is the SSOT for the active tab. A ?tab=<id> present at load
+  // selects that tab once auth resolves. Ids hidden for the current role
+  // (superAdminOnly) are ignored — same rule as the sidebar's
+  // visibleNavItems filter, so a non-superadmin can never be dropped onto
+  // a hidden tab via a crafted link.
+  useEffect(() => {
+    if (!authChecked || !user) return
+    const requested = new URLSearchParams(window.location.search).get('tab')
+    if (!requested) return
+    const visible = NAV_ITEMS.some(
+      (item) => item.id === requested &&
+        (!item.superAdminOnly || isPlatformAdmin(user?.role || ''))
+    )
+    if (visible) setActiveTabState(requested as TabId)
+  }, [authChecked, user])
+
+  // Browser back/forward between ?tab= states follows the URL (raw state —
+  // the URL already carries the tab, no replaceState needed).
+  useEffect(() => {
+    if (!authChecked || !user) return
+    const onPopState = () => {
+      const requested = new URLSearchParams(window.location.search).get('tab')
+      if (!requested) return
+      const visible = NAV_ITEMS.some(
+        (item) => item.id === requested &&
+          (!item.superAdminOnly || isPlatformAdmin(user?.role || ''))
+      )
+      if (visible) setActiveTabState(requested as TabId)
+    }
+    window.addEventListener('popstate', onPopState)
+    return () => window.removeEventListener('popstate', onPopState)
+  }, [authChecked, user])
 
   // ─── Phase 4C — Check impersonation status on mount ───────────────────────
   // Fires once after auth check completes. If impersonating, the banner

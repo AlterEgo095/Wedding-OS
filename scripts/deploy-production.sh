@@ -88,7 +88,7 @@ fi
 
 # ─── 8. Smoke tests ───────────────────────────────────────────────────────────
 echo "🧪 Smoke-testing critical routes..."
-BASE="https://wedding.hpph.net"
+BASE="https://wedding.aenews.store"
 for path in "/" "/api/health" "/platform/admin"; do
   CODE=$(curl -sk -o /dev/null -w "%{http_code}" "$BASE$path")
   if [ "$CODE" = "200" ] || [ "$CODE" = "302" ]; then
